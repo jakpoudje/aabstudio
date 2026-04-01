@@ -673,10 +673,16 @@ footer{padding:28px 48px;border-top:0.5px solid var(--bdr);display:flex;align-it
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-var SUPA=supabase.createClient(
-  'https://phjlxkyloafogznhyyig.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBoamx4a3lsb2Fmb2d6bmh5eWlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNTcxNDgsImV4cCI6MjA5MDYzMzE0OH0.wI9E9CIHwwFN6d_lgJXwO0_G7J3aq4zesp7eU6TCDiI'
-);
+var SUPA=null;
+function getSupa(){
+  if(!SUPA&&window.supabase){
+    SUPA=window.supabase.createClient(
+      'https://phjlxkyloafogznhyyig.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBoamx4a3lsb2Fmb2d6bmh5eWlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNTcxNDgsImV4cCI6MjA5MDYzMzE0OH0.wI9E9CIHwwFN6d_lgJXwO0_G7J3aq4zesp7eU6TCDiI'
+    );
+  }
+  return SUPA;
+}
 
 var APP={
   annual:false,plan:'free',user:null,checkoutItem:null,
@@ -763,7 +769,7 @@ async function doSignIn(){
   if(!e||!p){showAuthErr('Please fill in all fields.');return;}
   var btn=document.querySelector('#si-form .full-btn');
   btn.textContent='Signing in...';btn.disabled=true;
-  var result=await SUPA.auth.signInWithPassword({email:e,password:p});
+  var result=await getSupa().auth.signInWithPassword({email:e,password:p});
   btn.textContent='Sign in to AABStudio';btn.disabled=false;
   if(result.error){showAuthErr(result.error.message);return;}
   var u=result.data.user;
@@ -779,7 +785,7 @@ async function doSignUp(){
   if(p.length<8){showAuthErr('Password must be at least 8 characters.');return;}
   var btn=document.querySelector('#su-form .full-btn');
   btn.textContent='Creating account...';btn.disabled=true;
-  var result=await SUPA.auth.signUp({email:e,password:p,options:{data:{name:n}}});
+  var result=await getSupa().auth.signUp({email:e,password:p,options:{data:{name:n}}});
   btn.textContent='Create free account';btn.disabled=false;
   if(result.error){showAuthErr(result.error.message);return;}
   if(result.data.session){
@@ -793,7 +799,7 @@ async function doSignUp(){
 }
 
 async function doSocial(provider){
-  var result=await SUPA.auth.signInWithOAuth({
+  var result=await getSupa().auth.signInWithOAuth({
     provider:provider.toLowerCase(),
     options:{redirectTo:'https://aabstudio.ai'}
   });
@@ -801,7 +807,7 @@ async function doSocial(provider){
 }
 
 async function signOut(){
-  await SUPA.auth.signOut();
+  await getSupa().auth.signOut();
   APP.user=null;APP.plan='free';APP.projects=[];
   updateNav();nav('home');
 }
@@ -894,7 +900,7 @@ async function callAnalysis(req){
 
     // Save to Supabase if logged in
     if(APP.user&&APP.user.id){
-      await SUPA.from('projects').insert({
+      await getSupa().from('projects').insert({
         user_id:APP.user.id,
         title:report.title,
         doc_type:report.docType,
@@ -931,7 +937,7 @@ async function loadAndRenderProjects(){
   list.innerHTML='<div class="loading-row"><div class="spin"></div>Loading projects...</div>';
 
   if(APP.user&&APP.user.id){
-    var result=await SUPA.from('projects').select('*').eq('user_id',APP.user.id).order('created_at',{ascending:false});
+    var result=await getSupa().from('projects').select('*').eq('user_id',APP.user.id).order('created_at',{ascending:false});
     if(result.data&&result.data.length){
       APP.projects=result.data.map(function(p){
         return {id:p.id,title:p.title,docType:p.doc_type,domain:p.domain,date:new Date(p.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}),report:p.report};
@@ -1079,28 +1085,31 @@ function setLiveSpd(v){APP.liveWpm=parseInt(v);document.getElementById('live-spd
 updateNav();
 
 // Supabase session init — restores login on every page load
-(async function(){
-  var result=await SUPA.auth.getSession();
-  if(result.data&&result.data.session){
-    var u=result.data.session.user;
-    APP.user={id:u.id,name:u.user_metadata&&u.user_metadata.name?u.user_metadata.name:u.email.split('@')[0],email:u.email};
-    updateNav();
-    var params=new URLSearchParams(window.location.search);
-    if(params.get('checkout')==='success'){
-      history.replaceState(null,'','/');
-      nav('dashboard-pg');
-      setTimeout(function(){showToast('Payment successful — your plan is now active.','success');},600);
-    } else if(params.get('checkout')==='cancelled'){
-      history.replaceState(null,'','/');
-      nav('pricing-pg');
+window.addEventListener('load',function(){
+  var supa=getSupa();
+  if(!supa){console.error('Supabase failed to load');return;}
+  supa.auth.getSession().then(function(result){
+    if(result.data&&result.data.session){
+      var u=result.data.session.user;
+      APP.user={id:u.id,name:u.user_metadata&&u.user_metadata.name?u.user_metadata.name:u.email.split('@')[0],email:u.email};
+      updateNav();
+      var params=new URLSearchParams(window.location.search);
+      if(params.get('checkout')==='success'){
+        history.replaceState(null,'','/');
+        nav('dashboard-pg');
+        setTimeout(function(){showToast('Payment successful — your plan is now active.','success');},600);
+      } else if(params.get('checkout')==='cancelled'){
+        history.replaceState(null,'','/');
+        nav('pricing-pg');
+      }
+    } else {
+      var params=new URLSearchParams(window.location.search);
+      if(params.get('checkout')==='success'||params.get('checkout')==='cancelled'){
+        history.replaceState(null,'','/');
+      }
     }
-  } else {
-    var params=new URLSearchParams(window.location.search);
-    if(params.get('checkout')==='success'||params.get('checkout')==='cancelled'){
-      history.replaceState(null,'','/');
-    }
-  }
-  SUPA.auth.onAuthStateChange(function(event,session){
+  });
+  supa.auth.onAuthStateChange(function(event,session){
     if(event==='SIGNED_IN'&&session){
       var u=session.user;
       APP.user={id:u.id,name:u.user_metadata&&u.user_metadata.name?u.user_metadata.name:u.email.split('@')[0],email:u.email};
@@ -1110,7 +1119,7 @@ updateNav();
       APP.user=null;APP.plan='free';APP.projects=[];updateNav();
     }
   });
-})();
+});
 </script>
 </body>
 </html>
