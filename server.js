@@ -1,88 +1,49 @@
 const express = require('express');
 const cors = require('cors');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const mammoth = require('mammoth');
-const XLSX = require('xlsx');
-
 const app = express();
 
 app.use(cors());
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
-app.use(express.json({ limit: '30mb' }));
-
-async function extractText(fileName, fileBase64, mimeType) {
-  if (!fileBase64) return null;
-  const buffer = Buffer.from(fileBase64, 'base64');
-  const name = (fileName || '').toLowerCase();
-
-  try {
-    // DOCX / DOC
-    if (name.endsWith('.docx') || name.endsWith('.doc')) {
-      const result = await mammoth.extractRawText({ buffer });
-      return result.value.slice(0, 8000);
-    }
-    // XLSX / XLS
-    if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
-      const workbook = XLSX.read(buffer, { type: 'buffer' });
-      let text = '';
-      workbook.SheetNames.forEach(s => {
-        text += `[Sheet: ${s}]\n` + XLSX.utils.sheet_to_csv(workbook.Sheets[s]) + '\n';
-      });
-      return text.slice(0, 8000);
-    }
-    // PPTX
-    if (name.endsWith('.pptx')) {
-      const workbook = XLSX.read(buffer, { type: 'buffer' });
-      let text = '';
-      workbook.SheetNames.forEach((s, i) => {
-        text += `[Slide ${i+1}]\n` + XLSX.utils.sheet_to_txt(workbook.Sheets[s]) + '\n';
-      });
-      return text.slice(0, 8000);
-    }
-    // CSV / TXT / JSON / HTML / MD — plain text
-    if (name.match(/\.(csv|txt|md|json|html|htm)$/) || (mimeType && mimeType.startsWith('text/'))) {
-      return buffer.toString('utf8').slice(0, 8000);
-    }
-    return null;
-  } catch (err) {
-    console.error('Extraction error:', err.message);
-    return null;
-  }
-}
+app.use(express.json({ limit: '10mb' }));
 
 app.post('/api/analyse', async (req, res) => {
   try {
-    const { request, depth, fileName, fileContent, fileBase64, mimeType } = req.body;
-    const name = (fileName || '').toLowerCase();
-    const isPDF = name.endsWith('.pdf') || mimeType === 'application/pdf';
+    const { request, depth, output, fileName, fileContent } = req.body;
 
-    const analysisPrompt = `You are AABStudio AI — a professional document intelligence engine for lawyers, journalists, financial analysts, researchers, and investigators.
+    const docSection = fileContent
+      ? `\n\nDOCUMENT NAME: ${fileName || 'uploaded document'}\nDOCUMENT CONTENT:\n${fileContent.slice(0, 6000)}`
+      : `\n\nNote: No document content was provided. Analyse based on the request description only.`;
+
+    const prompt = `You are AABStudio AI — a professional document intelligence engine built for lawyers, journalists, financial analysts, researchers, and investigators.
 
 Analysis request: "${request}"
 Analysis depth: ${depth || 'deep'}
+Output type: ${output || 'report'}
+${docSection}
 
-Return ONLY valid JSON with no markdown and no code fences:
+Return ONLY a valid JSON object (no markdown, no code fences, no preamble):
 {
-  "title": "specific descriptive report title based on actual document content",
-  "docType": "document type (e.g. Legal Contract, Financial Report, Research Paper, Policy Document, Spreadsheet, Presentation, Consent Form)",
-  "domain": "Legal | Financial | Research | Investigative | Policy | Technical | General",
-  "executiveSummary": "2-3 sentences of substantive findings drawn directly from the document content",
+  "title": "concise, specific report title based on the actual document",
+  "docType": "detected document type (e.g. Legal Contract, Financial Report, Research Paper, Policy Document)",
+  "domain": "detected domain (Legal/Financial/Research/Investigative/Policy/Technical/General)",
+  "executiveSummary": "2-3 sentences of substantive analytical findings specific to this document and request",
   "sections": [
     {
       "title": "section title",
-      "body": "3-4 sentences of substantive analysis referencing specific content from the document",
+      "body": "3-4 sentences of real analytical content with specific details from the document",
       "reasoning": {
-        "observation": "specific observation drawn from the document",
-        "implication": "what this means in practice for the user",
-        "recommendation": "specific actionable recommendation"
+        "observation": "specific observation from the document",
+        "implication": "what this means in practice",
+        "recommendation": "concrete action recommended"
       },
       "evidenceItems": [
         {
-          "label": "Risk Clause | Financial Anomaly | Key Entity | Contradiction | Obligation | Data Point | Legal Provision",
-          "source": "specific location e.g. Section 4.2, Page 17, Clause 3, Row 23, Slide 4",
-          "text": "direct quote or close paraphrase from the document",
+          "label": "finding type (e.g. Risk Clause, Financial Anomaly, Key Entity, Contradiction)",
+          "source": "e.g. Section 4.2, Page 17, Paragraph 3",
+          "text": "specific quoted or paraphrased text from the document",
           "interpretation": "what this text means analytically",
-          "implication": "practical consequence or risk",
+          "implication": "practical consequence or significance",
           "confidence": "High|Medium|Low"
         }
       ]
@@ -90,49 +51,19 @@ Return ONLY valid JSON with no markdown and no code fences:
   ]
 }
 
-Generate 4-5 sections with 2-3 evidence items each. Reference actual clauses, figures, names, and dates from the document. Reasoning framework: Observation → Implication → Recommendation.`;
-
-    let messages;
-
-    if (isPDF && fileBase64) {
-      // PDFs — send natively to Claude which reads them directly
-      messages = [{
-        role: 'user',
-        content: [
-          {
-            type: 'document',
-            source: { type: 'base64', media_type: 'application/pdf', data: fileBase64 }
-          },
-          { type: 'text', text: analysisPrompt }
-        ]
-      }];
-    } else {
-      // All other formats — extract text server-side then send as text
-      let documentText = null;
-      if (fileBase64) {
-        documentText = await extractText(fileName, fileBase64, mimeType);
-      }
-      documentText = documentText || fileContent || null;
-
-      const docSection = documentText
-        ? `\n\nDOCUMENT NAME: ${fileName}\n\nDOCUMENT CONTENT:\n${documentText}`
-        : `\n\nDocument name: "${fileName}" — content could not be extracted. Analyse based on filename and request context only.`;
-
-      messages = [{ role: 'user', content: analysisPrompt + docSection }];
-    }
+Generate 4-5 sections with 2-3 evidence items each. Be specific to the actual document content. Use the analytical reasoning framework: Observation → Explanation → Implication → Evidence → Recommendation.`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'anthropic-beta': 'pdfs-2024-09-25'
+        'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 3500,
-        messages
+        max_tokens: 3000,
+        messages: [{ role: 'user', content: prompt }]
       })
     });
 
@@ -153,6 +84,90 @@ Generate 4-5 sections with 2-3 evidence items each. Reference actual clauses, fi
   }
 });
 
+app.post('/api/scenes', async (req, res) => {
+  try {
+    const { report, presenterMode } = req.body;
+
+    const prompt = `You are AABStudio Scene Engine — you convert analytical reports into broadcast-ready presenter scripts broken into 8-second scenes.
+
+REPORT TITLE: ${report.title}
+DOCUMENT TYPE: ${report.docType}
+DOMAIN: ${report.domain}
+EXECUTIVE SUMMARY: ${report.executiveSummary}
+
+REPORT SECTIONS:
+${report.sections.map((s, i) => `Section ${i+1}: ${s.title}\n${s.body}\nKey findings: ${(s.evidenceItems||[]).map(e => e.text).join(' | ')}`).join('\n\n')}
+
+PRESENTER MODE: ${presenterMode || 'human'}
+- human: teleprompter format, natural spoken language, one presenter
+- ai: narration format, third-person authoritative tone, one presenter  
+- dual: split between Presenter A (introduces/questions) and Presenter B (explains/analyses)
+
+SCENE RULES:
+- Maximum 8 seconds per scene
+- Normal pacing: 140 words/minute = ~18 words per scene
+- Each scene must be 15-20 words exactly
+- Scenes must flow continuously — no abrupt cuts
+- Scene types: Introduction | Evidence | Explanation | Comparison | Recommendation | Conclusion
+
+Return ONLY valid JSON, no markdown, no code fences:
+{
+  "title": "production title for the video",
+  "presenterMode": "${presenterMode || 'human'}",
+  "totalScenes": 0,
+  "estimatedDuration": "total duration in seconds",
+  "discussions": [
+    {
+      "sectionTitle": "section this discussion block covers",
+      "discussionText": "2-3 sentence expanded spoken explanation of this section, written as natural speech",
+      "scenes": [
+        {
+          "sceneNumber": 1,
+          "type": "Introduction",
+          "duration": 8,
+          "presenterA": "15-20 word script for presenter A (or single presenter)",
+          "presenterB": "15-20 word script for presenter B (only for dual mode, otherwise null)",
+          "visualPrompt": "brief description of what should appear on screen — e.g. document excerpt, chart, key statistic, or relevant imagery",
+          "evidenceRef": "EV-101 or null if no direct evidence reference"
+        }
+      ]
+    }
+  ]
+}
+
+Generate one discussion block per report section. Each discussion block should have 3-5 scenes. Make the language natural, engaging, and broadcast-ready. Reference specific evidence where relevant.`;
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4000,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      return res.status(500).json({ error: 'Anthropic API error', details: err });
+    }
+
+    const data = await response.json();
+    const text = data.content.map(c => c.text || '').join('');
+    const clean = text.replace(/```json|```/g, '').trim();
+    const scenes = JSON.parse(clean);
+    res.json(scenes);
+
+  } catch (err) {
+    console.error('Scene generation error:', err);
+    res.status(500).json({ error: 'Scene generation failed', details: err.message });
+  }
+});
+
 app.post('/api/stripe/create-checkout', async (req, res) => {
   try {
     const { priceId, mode, customerEmail } = req.body;
@@ -168,7 +183,7 @@ app.post('/api/stripe/create-checkout', async (req, res) => {
     });
     res.json({ url: session.url, sessionId: session.id });
   } catch (err) {
-    console.error('Stripe error:', err);
+    console.error('Stripe checkout error:', err);
     res.status(500).json({ error: 'Checkout failed', details: err.message });
   }
 });
@@ -181,20 +196,19 @@ app.post('/api/stripe/webhook', (req, res) => {
   } catch (err) {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
-  console.log('Webhook:', event.type);
+  console.log('Webhook event:', event.type, event.data.object.id);
   res.json({ received: true });
 });
 
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
-    platform: 'AABStudio API v3',
+    platform: 'AABStudio API v2',
     anthropic: process.env.ANTHROPIC_API_KEY ? 'set' : 'missing',
     stripe: process.env.STRIPE_SECRET_KEY ? 'set' : 'missing',
-    webhook: process.env.STRIPE_WEBHOOK_SECRET ? 'set' : 'missing',
-    formats: ['pdf', 'docx', 'doc', 'xlsx', 'xls', 'pptx', 'csv', 'txt', 'json', 'html', 'md']
+    webhook: process.env.STRIPE_WEBHOOK_SECRET ? 'set' : 'missing'
   });
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`AABStudio API v3 running on port ${PORT}`));
+app.listen(PORT, () => console.log(`AABStudio API v2 running on port ${PORT}`));
