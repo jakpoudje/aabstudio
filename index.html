@@ -671,7 +671,13 @@ footer{padding:28px 48px;border-top:0.5px solid var(--bdr);display:flex;align-it
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+const SUPA=supabase.createClient(
+  'https://phjlxkyloafogznhyyig.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBoamx4a3lsb2Fmb2d6bmh5eWlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNTcxNDgsImV4cCI6MjA5MDYzMzE0OH0.wI9E9CIHwwFN6d_lgJXwO0_G7J3aq4zesp7eU6TCDiI'
+);
+
 var APP={
   annual:false,plan:'free',user:null,checkoutItem:null,
   uploadedFile:null,uploadedContent:'',uploadedBase64:null,uploadedMime:null,
@@ -704,8 +710,9 @@ function updateNav(){
   document.getElementById('nav-signout').style.display=loggedIn?'':'none';
   document.getElementById('nav-dash').style.display=loggedIn?'':'none';
   if(loggedIn&&APP.user){
-    document.getElementById('dash-av').textContent=APP.user.name.split(' ').map(function(w){return w[0];}).join('').slice(0,2).toUpperCase();
-    document.getElementById('dash-name').textContent=APP.user.name;
+    var initials=(APP.user.name||APP.user.email||'U').split(' ').map(function(w){return w[0];}).join('').slice(0,2).toUpperCase();
+    document.getElementById('dash-av').textContent=initials;
+    document.getElementById('dash-name').textContent=APP.user.name||APP.user.email;
     document.getElementById('dash-email').textContent=APP.user.email;
   }
 }
@@ -715,13 +722,31 @@ function nav(pg){
   var el=document.getElementById(pg);
   if(el)el.classList.add('on');
   if(pg==='live-pg')initLive();
-  if(pg==='dashboard-pg')renderProjects();
+  if(pg==='dashboard-pg')loadAndRenderProjects();
   window.scrollTo(0,0);
 }
 
 function heroStart(){
   if(APP.user)nav('analysis-pg');
   else nav('onboard-pg');
+}
+
+function showAuthErr(msg){
+  var el=document.getElementById('auth-err');
+  el.textContent=msg||'Please fill in all fields.';
+  el.classList.add('on');
+  setTimeout(function(){el.classList.remove('on');},4000);
+}
+
+function showToast(msg,type){
+  var box=document.createElement('div');
+  var bg=type==='error'?'var(--red-bg)':type==='warning'?'var(--amber-bg)':'var(--green-bg)';
+  var col=type==='error'?'var(--red)':type==='warning'?'var(--amber)':'var(--green)';
+  var bdr=type==='error'?'rgba(192,57,43,.2)':type==='warning'?'rgba(138,98,0,.2)':'rgba(26,122,74,.2)';
+  box.style.cssText='position:fixed;top:20px;right:20px;background:'+bg+';border:0.5px solid '+bdr+';border-radius:var(--radius-lg);padding:14px 18px;font-size:14px;color:'+col+';z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.1);max-width:320px;line-height:1.5;';
+  box.textContent=msg;
+  document.body.appendChild(box);
+  setTimeout(function(){box.remove();},5000);
 }
 
 function switchAuth(t){
@@ -732,38 +757,53 @@ function switchAuth(t){
   document.getElementById('auth-err').classList.remove('on');
 }
 
-function doSignIn(){
+async function doSignIn(){
   var e=document.getElementById('si-email').value.trim();
   var p=document.getElementById('si-pass').value;
-  if(!e||!p){document.getElementById('auth-err').classList.add('on');return;}
-  APP.user={name:e.split('@')[0].replace(/[._]/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();}),email:e};
-  APP.plan='free';
-  updateNav();
-  nav('analysis-pg');
+  if(!e||!p){showAuthErr('Please fill in all fields.');return;}
+  var btn=document.querySelector('#si-form .full-btn');
+  btn.textContent='Signing in...';btn.disabled=true;
+  var result=await SUPA.auth.signInWithPassword({email:e,password:p});
+  btn.textContent='Sign in to AABStudio';btn.disabled=false;
+  if(result.error){showAuthErr(result.error.message);return;}
+  var u=result.data.user;
+  APP.user={id:u.id,name:u.user_metadata.name||e.split('@')[0],email:u.email};
+  updateNav();nav('analysis-pg');
 }
 
-function doSignUp(){
+async function doSignUp(){
   var n=document.getElementById('su-name').value.trim();
   var e=document.getElementById('su-email').value.trim();
   var p=document.getElementById('su-pass').value;
-  if(!n||!e||!p){document.getElementById('auth-err').classList.add('on');return;}
-  APP.user={name:n,email:e};
-  APP.plan='free';
-  updateNav();
-  nav('analysis-pg');
+  if(!n||!e||!p){showAuthErr('Please fill in all fields.');return;}
+  if(p.length<8){showAuthErr('Password must be at least 8 characters.');return;}
+  var btn=document.querySelector('#su-form .full-btn');
+  btn.textContent='Creating account...';btn.disabled=true;
+  var result=await SUPA.auth.signUp({email:e,password:p,options:{data:{name:n}}});
+  btn.textContent='Create free account';btn.disabled=false;
+  if(result.error){showAuthErr(result.error.message);return;}
+  if(result.data.session){
+    var u=result.data.user;
+    APP.user={id:u.id,name:n,email:u.email};
+    updateNav();nav('analysis-pg');
+  } else {
+    showAuthErr('Check your email to confirm your account, then sign in.');
+    switchAuth('si');
+  }
 }
 
-function doSocial(provider){
-  APP.user={name:'New User',email:'user@'+provider.toLowerCase()+'.com'};
-  APP.plan='free';
-  updateNav();
-  nav('analysis-pg');
+async function doSocial(provider){
+  var result=await SUPA.auth.signInWithOAuth({
+    provider:provider.toLowerCase(),
+    options:{redirectTo:'https://aabstudio.ai'}
+  });
+  if(result.error)showAuthErr(result.error.message);
 }
 
-function signOut(){
+async function signOut(){
+  await SUPA.auth.signOut();
   APP.user=null;APP.plan='free';APP.projects=[];
-  updateNav();
-  nav('home');
+  updateNav();nav('home');
 }
 
 function pickRole(el){document.querySelectorAll('#ob-roles .ob-option').forEach(function(o){o.classList.remove('sel');o.querySelector('.ob-dot').style.cssText='';});el.classList.add('sel');el.querySelector('.ob-dot').style.cssText='border-color:var(--blue);background:var(--blue).';}
@@ -851,9 +891,29 @@ async function callAnalysis(req){
     });
     var report=await res.json();
     if(report.error)throw new Error(report.error+(report.details?' — '+report.details:''));
-    APP.projects.unshift({id:Date.now(),title:report.title,docType:report.docType,domain:report.domain,date:new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}),report:report});
-    document.getElementById('usage-projects').textContent=APP.projects.length;
-    document.getElementById('usage-reports').textContent=APP.projects.length;
+
+    // Save to Supabase if logged in
+    if(APP.user&&APP.user.id){
+      await SUPA.from('projects').insert({
+        user_id:APP.user.id,
+        title:report.title,
+        doc_type:report.docType,
+        domain:report.domain,
+        file_name:APP.uploadedFile?APP.uploadedFile.name:'',
+        request:req,
+        report:report
+      });
+    }
+
+    // Also keep in memory
+    APP.projects.unshift({
+      id:Date.now(),
+      title:report.title,
+      docType:report.docType,
+      domain:report.domain,
+      date:new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}),
+      report:report
+    });
     buildReport(report);
   }catch(e){
     buildReport({
@@ -863,6 +923,36 @@ async function callAnalysis(req){
       sections:[{title:'Troubleshooting',body:'Check the Railway backend is running at aabstudio-production.up.railway.app/health and that ANTHROPIC_API_KEY is set in Railway environment variables.',evidenceItems:[]}]
     });
   }
+  nav('report-pg');
+}
+
+async function loadAndRenderProjects(){
+  var list=document.getElementById('proj-list');
+  list.innerHTML='<div class="loading-row"><div class="spin"></div>Loading projects...</div>';
+
+  if(APP.user&&APP.user.id){
+    var result=await SUPA.from('projects').select('*').eq('user_id',APP.user.id).order('created_at',{ascending:false});
+    if(result.data&&result.data.length){
+      APP.projects=result.data.map(function(p){
+        return {id:p.id,title:p.title,docType:p.doc_type,domain:p.domain,date:new Date(p.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}),report:p.report};
+      });
+    }
+  }
+
+  if(!APP.projects.length){
+    list.innerHTML='<div class="empty-state"><svg width="40" height="40" viewBox="0 0 40 40" style="opacity:.3;margin:0 auto 16px;display:block;"><rect x="8" y="5" width="24" height="30" rx="3" fill="none" stroke="var(--blue)" stroke-width="1.5"/><path d="M14 15h12M14 20h12M14 25h8" stroke="var(--blue)" stroke-width="1.2" stroke-linecap="round"/></svg><h3>No projects yet</h3><p>Upload your first document to get started.</p><button class="btn-primary" onclick="nav(\'analysis-pg\')">Start first analysis</button></div>';
+    return;
+  }
+
+  list.innerHTML=APP.projects.map(function(p,i){
+    return '<div style="background:var(--white);border:0.5px solid var(--bdr);border-radius:var(--radius-lg);padding:16px 20px;margin-bottom:8px;display:flex;align-items:center;gap:14px;cursor:pointer;transition:all .15s;" onmouseenter="this.style.borderColor=\'rgba(26,58,92,.2)\'" onmouseleave="this.style.borderColor=\'rgba(0,0,0,.08)\'" onclick="loadProject('+i+')">'
+      +'<div style="flex:1;"><div style="font-size:14px;font-weight:500;color:var(--ink);margin-bottom:3px;">'+p.title+'</div><div style="font-size:12px;color:var(--muted);">'+p.docType+' · '+p.domain+' · '+p.date+'</div></div>'
+      +'<span class="badge b-blue">Report ready</span><span style="color:var(--muted);">→</span></div>';
+  }).join('');
+}
+
+function loadProject(i){
+  buildReport(APP.projects[i].report);
   nav('report-pg');
 }
 
@@ -988,27 +1078,38 @@ function setLiveSpd(v){APP.liveWpm=parseInt(v);document.getElementById('live-spd
 
 updateNav();
 
-(function(){
-  var params=new URLSearchParams(window.location.search);
-  if(params.get('checkout')==='success'){
-    history.replaceState(null,'','/');
-    if(APP.user){
+// Supabase session init — restores login on every page load
+(async function(){
+  var result=await SUPA.auth.getSession();
+  if(result.data&&result.data.session){
+    var u=result.data.session.user;
+    APP.user={id:u.id,name:u.user_metadata&&u.user_metadata.name?u.user_metadata.name:u.email.split('@')[0],email:u.email};
+    updateNav();
+    var params=new URLSearchParams(window.location.search);
+    if(params.get('checkout')==='success'){
+      history.replaceState(null,'','/');
       nav('dashboard-pg');
-      setTimeout(function(){
-        var box=document.createElement('div');
-        box.style.cssText='position:fixed;top:20px;right:20px;background:var(--green-bg);border:0.5px solid rgba(26,122,74,.2);border-radius:var(--radius-lg);padding:16px 20px;font-size:14px;color:var(--green);z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.1);max-width:320px;';
-        box.innerHTML='<div style="font-weight:500;margin-bottom:3px;">Payment successful</div><div style="font-size:13px;opacity:.8;">Your plan is now active. Start your first analysis.</div>';
-        document.body.appendChild(box);
-        setTimeout(function(){box.remove();},5000);
-      },500);
-    } else {
-      nav('auth-pg');
+      setTimeout(function(){showToast('Payment successful — your plan is now active.','success');},600);
+    } else if(params.get('checkout')==='cancelled'){
+      history.replaceState(null,'','/');
+      nav('pricing-pg');
+    }
+  } else {
+    var params=new URLSearchParams(window.location.search);
+    if(params.get('checkout')==='success'||params.get('checkout')==='cancelled'){
+      history.replaceState(null,'','/');
     }
   }
-  if(params.get('checkout')==='cancelled'){
-    history.replaceState(null,'','/');
-    nav('pricing-pg');
-  }
+  SUPA.auth.onAuthStateChange(function(event,session){
+    if(event==='SIGNED_IN'&&session){
+      var u=session.user;
+      APP.user={id:u.id,name:u.user_metadata&&u.user_metadata.name?u.user_metadata.name:u.email.split('@')[0],email:u.email};
+      updateNav();
+    }
+    if(event==='SIGNED_OUT'){
+      APP.user=null;APP.plan='free';APP.projects=[];updateNav();
+    }
+  });
 })();
 </script>
 </body>
