@@ -302,7 +302,29 @@ footer{padding:28px 48px;border-top:0.5px solid var(--bdr);display:flex;align-it
 .ss-item{text-align:center;}
 .ss-num{font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:600;color:var(--blue);}
 .ss-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
-@media(max-width:768px){.scene-stats{flex-wrap:wrap;}.ss-item{flex:1;min-width:80px;}}
+.export-platform-card{background:var(--white);border:0.5px solid var(--bdr);border-radius:var(--radius-lg);padding:18px;cursor:pointer;transition:all .2s;}
+.export-platform-card:hover{border-color:rgba(26,58,92,.2);transform:translateY(-2px);}
+.export-platform-card.selected{border:2px solid var(--blue);background:var(--blue-pale);}
+.export-platform-btns{display:flex;gap:6px;flex-wrap:wrap;}
+.export-platform-btns button{padding:6px 12px;border-radius:7px;font-size:12px;cursor:pointer;border:0.5px solid var(--bdr2);background:var(--white);color:var(--ink);font-family:'DM Sans',sans-serif;transition:all .15s;}
+.export-platform-btns button:hover{border-color:var(--blue);color:var(--blue);background:var(--blue-pale);}
+.render-scene-item{background:var(--white);border:0.5px solid var(--bdr);border-radius:var(--radius-lg);padding:14px;position:relative;overflow:hidden;}
+.rsi-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.rsi-num{font-family:'DM Mono',monospace;font-size:11px;color:var(--gold);font-weight:500;}
+.rsi-status{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:500;margin-left:auto;}
+.rsi-pending{background:var(--warm);color:var(--muted);}
+.rsi-voice{background:var(--amber-bg);color:var(--amber);}
+.rsi-video{background:var(--blue-pale);color:var(--blue);}
+.rsi-done{background:var(--green-bg);color:var(--green);}
+.rsi-error{background:var(--red-bg);color:var(--red);}
+.rsi-script{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:8px;}
+.rsi-progress{height:3px;background:var(--bdr2);border-radius:3px;}
+.rsi-fill{height:100%;border-radius:3px;background:var(--blue);transition:width .5s;}
+.meta-field{margin-bottom:14px;}
+.meta-field label{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px;}
+.meta-value{width:100%;padding:10px 12px;border-radius:var(--radius);font-size:13px;font-family:'DM Sans',sans-serif;background:var(--off-white);border:0.5px solid var(--bdr);color:var(--ink);line-height:1.6;white-space:pre-wrap;}
+.meta-copy-btn{margin-top:6px;padding:6px 12px;border-radius:7px;font-size:12px;cursor:pointer;border:0.5px solid var(--bdr2);background:var(--white);color:var(--blue);font-family:'DM Sans',sans-serif;}
+@media(max-width:768px){#export-platform-grid{grid-template-columns:1fr;}.scene-stats{flex-wrap:wrap;}.ss-item{flex:1;min-width:80px;}.topnav{padding:0 16px;}.hero{padding:48px 24px 40px;}.hero h1{font-size:36px;}.uc-grid,.t-grid{grid-template-columns:1fr;}.tier-grid{grid-template-columns:1fr;}.credits-grid{grid-template-columns:1fr;}.pad{padding:20px 16px;}.pipeline-steps{grid-template-columns:1fr 1fr;}.app-layout{flex-direction:column;}.report-layout{grid-template-columns:1fr;}.rpt-sidebar{display:none;}}
 </style>
 </head>
 <body>
@@ -705,8 +727,8 @@ footer{padding:28px 48px;border-top:0.5px solid var(--bdr);display:flex;align-it
   <div class="pipebar">
     <div class="pip done" onclick="nav('report-pg')"><span class="pip-dot"></span>Report</div><span class="pip-arr">›</span>
     <div class="pip active"><span class="pip-dot"></span>Scenes</div><span class="pip-arr">›</span>
-    <div class="pip"><span class="pip-dot"></span>Studio</div><span class="pip-arr">›</span>
-    <div class="pip"><span class="pip-dot"></span>Render</div><span class="pip-arr">›</span>
+    <div class="pip" onclick="nav('studio-pg')"><span class="pip-dot"></span>Studio</div><span class="pip-arr">›</span>
+    <div class="pip" onclick="nav('render-pg')"><span class="pip-dot"></span>Render</div><span class="pip-arr">›</span>
     <div class="pip" onclick="nav('live-pg')"><span class="pip-dot"></span>Live</div>
   </div>
   <div style="display:flex;flex:1;overflow:hidden;">
@@ -734,9 +756,10 @@ footer{padding:28px 48px;border-top:0.5px solid var(--bdr);display:flex;align-it
       </div>
       <button class="full-btn" id="gen-scenes-btn" onclick="generateScenes()">Generate scenes</button>
       <button class="full-btn outline" style="margin-top:8px;" onclick="nav('report-pg')">← Back to report</button>
-      <div style="margin-top:16px;padding-top:14px;border-top:0.5px solid var(--bdr);display:flex;flex-direction:column;gap:7px;" id="scene-export-btns" style="display:none;">
+      <div style="margin-top:16px;padding-top:14px;border-top:0.5px solid var(--bdr);display:flex;flex-direction:column;gap:7px;" id="scene-export-btns">
         <button class="full-btn outline" style="margin:0;padding:9px;font-size:13px;" onclick="exportScriptTxt()">Export script .txt</button>
-        <button class="full-btn" style="margin:0;padding:9px;font-size:13px;" onclick="nav('live-pg')">→ Go live</button>
+        <button class="full-btn" style="margin:0;padding:9px;font-size:13px;" onclick="nav('studio-pg')">→ Studio setup</button>
+        <button class="full-btn outline" style="margin:0;padding:9px;font-size:13px;" onclick="launchLiveFromScenes()">→ Go live now</button>
       </div>
     </div>
     <div style="flex:1;overflow-y:auto;" class="pad" id="scenes-content">
@@ -763,6 +786,218 @@ footer{padding:28px 48px;border-top:0.5px solid var(--bdr);display:flex;align-it
         <div class="ei wait" id="se2"><span class="edot"></span>Scene script engine</div>
         <div class="ei wait" id="se3"><span class="edot"></span>Visual prompt generation</div>
         <div class="ei wait" id="se4"><span class="edot"></span>Presenter mode formatting</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- STUDIO SETUP -->
+<div id="studio-pg" class="pg-flex" style="flex-direction:column;">
+  <div class="pipebar">
+    <div class="pip done" onclick="nav('report-pg')"><span class="pip-dot"></span>Report</div><span class="pip-arr">›</span>
+    <div class="pip done" onclick="nav('scenes-pg')"><span class="pip-dot"></span>Scenes</div><span class="pip-arr">›</span>
+    <div class="pip active"><span class="pip-dot"></span>Studio</div><span class="pip-arr">›</span>
+    <div class="pip"><span class="pip-dot"></span>Render</div><span class="pip-arr">›</span>
+    <div class="pip" onclick="nav('live-pg')"><span class="pip-dot"></span>Live</div>
+  </div>
+  <div style="display:flex;flex:1;overflow:hidden;">
+    <div style="width:280px;flex-shrink:0;border-right:0.5px solid var(--bdr);padding:22px 18px;background:var(--off-white);overflow-y:auto;">
+      <div class="section-label">Voice engine</div>
+      <div style="margin-bottom:18px;">
+        <div class="field"><label>Voice</label>
+          <select id="studio-voice" style="width:100%;padding:10px 12px;border-radius:var(--radius);font-size:13px;border:0.5px solid var(--bdr2);background:var(--white);color:var(--ink);font-family:'DM Sans',sans-serif;">
+            <option value="EXAVITQu4vr4xnSDxMaL">Sarah — Clear &amp; Professional</option>
+            <option value="21m00Tcm4TlvDq8ikWAM">Rachel — Warm &amp; Authoritative</option>
+            <option value="AZnzlk1XvdvUeBnXmlld">Domi — Strong &amp; Confident</option>
+            <option value="MF3mGyEYCl7XYWbV9V6O">Elli — Friendly &amp; Energetic</option>
+            <option value="TxGEqnHWrfWFTfGW9XjX">Josh — Deep &amp; Authoritative</option>
+            <option value="VR6AewLTigWG4xSOukaG">Arnold — Powerful &amp; Direct</option>
+            <option value="pNInz6obpgDQGcFmaJgB">Adam — Professional &amp; Clear</option>
+          </select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div class="field"><label>Stability <span id="stab-val">50</span>%</label><input type="range" id="studio-stab" min="0" max="100" value="50" oninput="document.getElementById('stab-val').textContent=this.value" style="width:100%;margin-top:6px;"></div>
+          <div class="field"><label>Clarity <span id="sim-val">75</span>%</label><input type="range" id="studio-sim" min="0" max="100" value="75" oninput="document.getElementById('sim-val').textContent=this.value" style="width:100%;margin-top:6px;"></div>
+        </div>
+        <button class="full-btn outline" style="margin:0;padding:8px;font-size:12px;" onclick="previewVoice()">▶ Preview voice</button>
+        <div id="voice-preview" style="margin-top:8px;"></div>
+      </div>
+      <div class="section-label">Video engine</div>
+      <div style="margin-bottom:18px;">
+        <div class="field"><label>Model</label>
+          <select id="studio-model" style="width:100%;padding:10px 12px;border-radius:var(--radius);font-size:13px;border:0.5px solid var(--bdr2);background:var(--white);color:var(--ink);font-family:'DM Sans',sans-serif;">
+            <option value="gen3a_turbo">Gen3 Turbo — Fast</option>
+            <option value="gen3a">Gen3 — High quality</option>
+          </select>
+        </div>
+        <div class="field"><label>Aspect ratio</label>
+          <select id="studio-ratio" style="width:100%;padding:10px 12px;border-radius:var(--radius);font-size:13px;border:0.5px solid var(--bdr2);background:var(--white);color:var(--ink);font-family:'DM Sans',sans-serif;">
+            <option value="1280:768">16:9 — YouTube / LinkedIn</option>
+            <option value="768:1280">9:16 — TikTok / Instagram Reels</option>
+            <option value="1024:1024">1:1 — Instagram / Facebook</option>
+          </select>
+        </div>
+      </div>
+      <div class="section-label">Background music</div>
+      <div style="margin-bottom:18px;">
+        <div class="presenter-toggle" style="margin-bottom:12px;">
+          <button class="pt-btn on" id="music-none" onclick="setMusicMode('none',this)">None</button>
+          <button class="pt-btn" id="music-upload" onclick="setMusicMode('upload',this)">Upload</button>
+          <button class="pt-btn" id="music-library" onclick="setMusicMode('library',this)">Library</button>
+        </div>
+        <div id="music-upload-area" style="display:none;">
+          <div class="upload-zone" style="padding:16px;margin-bottom:10px;" onclick="document.getElementById('music-fi').click()">
+            <div style="font-size:13px;color:var(--blue);">Click to upload music</div>
+            <div style="font-size:11px;color:var(--muted);">MP3, WAV, M4A</div>
+            <input type="file" id="music-fi" style="display:none;" accept=".mp3,.wav,.m4a" onchange="handleMusicUpload(this)">
+          </div>
+          <div id="music-file-info"></div>
+          <div style="margin-bottom:10px;">
+            <div class="section-label" style="margin-bottom:6px;">Trim</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div class="field"><label>Start (sec)</label><input type="number" id="music-start" value="0" min="0" style="width:100%;padding:8px;border-radius:7px;font-size:13px;border:0.5px solid var(--bdr2);"></div>
+              <div class="field"><label>End (sec)</label><input type="number" id="music-end" value="0" min="0" style="width:100%;padding:8px;border-radius:7px;font-size:13px;border:0.5px solid var(--bdr2);"></div>
+            </div>
+          </div>
+        </div>
+        <div id="music-library-area" style="display:none;">
+          <div style="display:flex;flex-direction:column;gap:6px;" id="music-lib-list">
+            <div class="o-opt" onclick="selectLibraryTrack(this,'ambient-corporate','Ambient Corporate')"><div class="o-dot"></div><div class="o-txt">Ambient Corporate</div></div>
+            <div class="o-opt" onclick="selectLibraryTrack(this,'cinematic-tension','Cinematic Tension')"><div class="o-dot"></div><div class="o-txt">Cinematic Tension</div></div>
+            <div class="o-opt" onclick="selectLibraryTrack(this,'documentary-pulse','Documentary Pulse')"><div class="o-dot"></div><div class="o-txt">Documentary Pulse</div></div>
+            <div class="o-opt" onclick="selectLibraryTrack(this,'news-broadcast','News Broadcast')"><div class="o-dot"></div><div class="o-txt">News Broadcast</div></div>
+            <div class="o-opt" onclick="selectLibraryTrack(this,'tech-minimal','Tech Minimal')"><div class="o-dot"></div><div class="o-txt">Tech Minimal</div></div>
+          </div>
+        </div>
+        <div id="music-controls" style="display:none;margin-top:10px;">
+          <div class="section-label" style="margin-bottom:8px;">Audio mix</div>
+          <div class="field"><label>Music level <span id="music-vol-val">30</span>%</label><input type="range" id="music-vol" min="0" max="100" value="30" oninput="document.getElementById('music-vol-val').textContent=this.value" style="width:100%;margin-top:6px;"></div>
+          <div class="field"><label>Duck during speech <span id="music-duck-val">15</span>%</label><input type="range" id="music-duck" min="0" max="50" value="15" oninput="document.getElementById('music-duck-val').textContent=this.value" style="width:100%;margin-top:6px;"></div>
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--blue-pale);border-radius:7px;margin-top:6px;">
+            <input type="checkbox" id="music-sidechain" checked style="margin:0;">
+            <label for="music-sidechain" style="font-size:12px;color:var(--blue);cursor:pointer;">Auto-sidechain (duck during speech)</label>
+          </div>
+        </div>
+      </div>
+      <button class="full-btn" onclick="startRender()">Start render →</button>
+      <button class="full-btn outline" style="margin-top:8px;" onclick="nav('scenes-pg')">← Back to scenes</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;" class="pad">
+      <div class="page-title">Studio setup</div>
+      <div class="page-sub">Configure voice, video, and music before rendering your production.</div>
+      <div style="background:var(--white);border:0.5px solid var(--bdr);border-radius:var(--radius-lg);padding:20px;margin-bottom:16px;">
+        <div style="font-size:15px;font-weight:500;color:var(--blue);margin-bottom:14px;">Production summary</div>
+        <div id="studio-summary">
+          <div style="font-size:13px;color:var(--muted);">Generate scenes first to see your production summary here.</div>
+        </div>
+      </div>
+      <div style="background:var(--white);border:0.5px solid var(--bdr);border-radius:var(--radius-lg);padding:20px;margin-bottom:16px;" id="studio-scenes-preview">
+        <div style="font-size:15px;font-weight:500;color:var(--blue);margin-bottom:14px;">Scene preview</div>
+        <div style="font-size:13px;color:var(--muted);">Scene list will appear here after generation.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- RENDER QUEUE -->
+<div id="render-pg" class="pg-flex" style="flex-direction:column;">
+  <div class="pipebar">
+    <div class="pip done" onclick="nav('report-pg')"><span class="pip-dot"></span>Report</div><span class="pip-arr">›</span>
+    <div class="pip done" onclick="nav('scenes-pg')"><span class="pip-dot"></span>Scenes</div><span class="pip-arr">›</span>
+    <div class="pip done" onclick="nav('studio-pg')"><span class="pip-dot"></span>Studio</div><span class="pip-arr">›</span>
+    <div class="pip active"><span class="pip-dot"></span>Render</div><span class="pip-arr">›</span>
+    <div class="pip" onclick="nav('live-pg')"><span class="pip-dot"></span>Live</div>
+  </div>
+  <div style="display:flex;flex:1;overflow:hidden;">
+    <div style="width:280px;flex-shrink:0;border-right:0.5px solid var(--bdr);padding:22px 18px;background:var(--off-white);overflow-y:auto;">
+      <div class="section-label" style="margin-bottom:10px;">Render queue</div>
+      <div id="render-queue-list"></div>
+      <div style="margin-top:16px;padding-top:14px;border-top:0.5px solid var(--bdr);">
+        <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;"><span style="color:var(--muted);">Total scenes</span><span id="rq-total" style="font-weight:500;">0</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;"><span style="color:var(--muted);">Voice complete</span><span id="rq-voice" style="font-weight:500;color:var(--green);">0</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;"><span style="color:var(--muted);">Video complete</span><span id="rq-video" style="font-weight:500;color:var(--blue);">0</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;"><span style="color:var(--muted);">Failed</span><span id="rq-failed" style="font-weight:500;color:var(--red);">0</span></div>
+      </div>
+    </div>
+    <div style="flex:1;overflow-y:auto;" class="pad">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+        <div><div class="page-title">Render queue</div><div class="page-sub" id="render-status-text">Preparing render...</div></div>
+        <button class="btn-primary" id="render-export-btn" style="display:none;" onclick="nav('export-pg')">→ Export centre</button>
+      </div>
+      <div class="prog-track" style="height:6px;margin-bottom:20px;"><div class="prog-fill" id="render-total-fill" style="width:0%;background:var(--blue);"></div></div>
+      <div id="render-scene-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- EXPORT CENTRE -->
+<div id="export-pg" class="pg-flex" style="flex-direction:column;">
+  <div class="pipebar">
+    <div class="pip done" onclick="nav('report-pg')"><span class="pip-dot"></span>Report</div><span class="pip-arr">›</span>
+    <div class="pip done" onclick="nav('scenes-pg')"><span class="pip-dot"></span>Scenes</div><span class="pip-arr">›</span>
+    <div class="pip done" onclick="nav('studio-pg')"><span class="pip-dot"></span>Studio</div><span class="pip-arr">›</span>
+    <div class="pip done" onclick="nav('render-pg')"><span class="pip-dot"></span>Render</div><span class="pip-arr">›</span>
+    <div class="pip active"><span class="pip-dot"></span>Export</div>
+  </div>
+  <div style="overflow-y:auto;flex:1;" class="pad">
+    <div class="page-title">Export centre</div>
+    <div class="page-sub">Export and publish your production to any platform.</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:28px;" id="export-platform-grid">
+      <div class="export-platform-card" id="ep-youtube" onclick="openExportPanel('youtube',this)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><div style="width:36px;height:36px;border-radius:8px;background:#FF0000;display:flex;align-items:center;justify-content:center;"><svg width="16" height="12" viewBox="0 0 16 12" fill="white"><path d="M15.7 1.9c-.2-.7-.7-1.2-1.4-1.4C13 0 8 0 8 0S3 0 1.7.5C1 .7.5 1.2.3 1.9 0 3.2 0 6 0 6s0 2.8.3 4.1c.2.7.7 1.2 1.4 1.4C3 12 8 12 8 12s5 0 6.3-.5c.7-.2 1.2-.7 1.4-1.4C16 8.8 16 6 16 6s0-2.8-.3-4.1zM6.4 8.6V3.4L10.6 6 6.4 8.6z"/></svg></div><div><div style="font-size:14px;font-weight:500;color:var(--ink);">YouTube</div><div style="font-size:11px;color:var(--muted);">16:9 · Up to 4K</div></div></div>
+        <div class="export-platform-btns">
+          <button onclick="downloadExport('youtube','16:9');event.stopPropagation()">⬇ Download</button>
+          <button onclick="generatePlatformMeta('youtube');event.stopPropagation()">✦ Get metadata</button>
+        </div>
+      </div>
+      <div class="export-platform-card" id="ep-instagram" onclick="openExportPanel('instagram',this)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><div style="width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);display:flex;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 16 16" fill="white"><rect x="1" y="1" width="14" height="14" rx="4" fill="none" stroke="white" stroke-width="1.5"/><circle cx="8" cy="8" r="3" fill="none" stroke="white" stroke-width="1.5"/><circle cx="12" cy="4" r="1" fill="white"/></svg></div><div><div style="font-size:14px;font-weight:500;color:var(--ink);">Instagram</div><div style="font-size:11px;color:var(--muted);">Reels 9:16 · Feed 1:1</div></div></div>
+        <div class="export-platform-btns">
+          <button onclick="downloadExport('instagram','9:16');event.stopPropagation()">⬇ Reels</button>
+          <button onclick="generatePlatformMeta('instagram');event.stopPropagation()">✦ Caption</button>
+        </div>
+      </div>
+      <div class="export-platform-card" id="ep-tiktok" onclick="openExportPanel('tiktok',this)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><div style="width:36px;height:36px;border-radius:8px;background:#000;display:flex;align-items:center;justify-content:center;"><svg width="14" height="16" viewBox="0 0 14 16" fill="white"><path d="M10 0h-3v11a2 2 0 11-2-2v-3a5 5 0 105 5V5a7 7 0 004 1V3a4 4 0 01-4-3z"/></svg></div><div><div style="font-size:14px;font-weight:500;color:var(--ink);">TikTok</div><div style="font-size:11px;color:var(--muted);">9:16 vertical</div></div></div>
+        <div class="export-platform-btns">
+          <button onclick="downloadExport('tiktok','9:16');event.stopPropagation()">⬇ Download</button>
+          <button onclick="generatePlatformMeta('tiktok');event.stopPropagation()">✦ Caption</button>
+        </div>
+      </div>
+      <div class="export-platform-card" id="ep-linkedin" onclick="openExportPanel('linkedin',this)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><div style="width:36px;height:36px;border-radius:8px;background:#0A66C2;display:flex;align-items:center;justify-content:center;"><svg width="14" height="14" viewBox="0 0 14 14" fill="white"><rect x="0" y="4" width="3" height="10"/><circle cx="1.5" cy="1.5" r="1.5"/><path d="M5 4h3v1.5C8.5 4.5 9.5 4 11 4c2 0 3 1 3 3.5V14h-3V8c0-1-.5-1.5-1.5-1.5S8 7 8 8v6H5V4z"/></svg></div><div><div style="font-size:14px;font-weight:500;color:var(--ink);">LinkedIn</div><div style="font-size:11px;color:var(--muted);">16:9 · Professional</div></div></div>
+        <div class="export-platform-btns">
+          <button onclick="downloadExport('linkedin','16:9');event.stopPropagation()">⬇ Download</button>
+          <button onclick="generatePlatformMeta('linkedin');event.stopPropagation()">✦ Post copy</button>
+        </div>
+      </div>
+      <div class="export-platform-card" id="ep-twitter" onclick="openExportPanel('twitter',this)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><div style="width:36px;height:36px;border-radius:8px;background:#000;display:flex;align-items:center;justify-content:center;"><svg width="14" height="14" viewBox="0 0 14 14" fill="white"><path d="M11 1h2l-4.5 5.1L14 13h-3.5l-3-4-3.5 4H2l4.8-5.5L0 1h3.5l2.7 3.6L11 1z"/></svg></div><div><div style="font-size:14px;font-weight:500;color:var(--ink);">Twitter / X</div><div style="font-size:11px;color:var(--muted);">16:9 · 2:20 max</div></div></div>
+        <div class="export-platform-btns">
+          <button onclick="downloadExport('twitter','16:9');event.stopPropagation()">⬇ Download</button>
+          <button onclick="generatePlatformMeta('twitter');event.stopPropagation()">✦ Tweet copy</button>
+        </div>
+      </div>
+      <div class="export-platform-card" id="ep-facebook" onclick="openExportPanel('facebook',this)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><div style="width:36px;height:36px;border-radius:8px;background:#1877F2;display:flex;align-items:center;justify-content:center;"><svg width="10" height="16" viewBox="0 0 10 16" fill="white"><path d="M7 3H10V0H7C5 0 3 2 3 4V6H0V9H3V16H6V9H9L10 6H6V4C6 3.4 6.4 3 7 3Z"/></svg></div><div><div style="font-size:14px;font-weight:500;color:var(--ink);">Facebook</div><div style="font-size:11px;color:var(--muted);">16:9 · Reels 9:16</div></div></div>
+        <div class="export-platform-btns">
+          <button onclick="downloadExport('facebook','16:9');event.stopPropagation()">⬇ Download</button>
+          <button onclick="generatePlatformMeta('facebook');event.stopPropagation()">✦ Post copy</button>
+        </div>
+      </div>
+    </div>
+    <div id="export-meta-panel" style="display:none;background:var(--white);border:0.5px solid var(--bdr);border-radius:var(--radius-lg);padding:24px;margin-bottom:20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div style="font-size:16px;font-weight:500;color:var(--blue);" id="meta-platform-title">Platform metadata</div>
+        <button onclick="document.getElementById('export-meta-panel').style.display='none'" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;">×</button>
+      </div>
+      <div id="meta-loading" style="display:none;"><div class="loading-row"><div class="spin"></div>Generating optimised metadata...</div></div>
+      <div id="meta-content"></div>
+    </div>
+    <div style="background:var(--white);border:0.5px solid var(--bdr);border-radius:var(--radius-lg);padding:20px;">
+      <div style="font-size:15px;font-weight:500;color:var(--blue);margin-bottom:14px;">Saved channel music</div>
+      <div id="saved-music-list">
+        <div style="font-size:13px;color:var(--muted);">No saved music yet. Upload your jingles in Studio setup to save them here.</div>
       </div>
     </div>
   </div>
@@ -1392,7 +1627,198 @@ function launchLiveFromScenes(){
   nav('live-pg');
 }
 
-updateNav();
+// ── STUDIO ────────────────────────────────────────────────────────────────────
+var STUDIO={voiceId:'EXAVITQu4vr4xnSDxMaL',model:'gen3a_turbo',ratio:'1280:768',musicMode:'none',musicTrack:null,musicFile:null,musicStart:0,musicEnd:0,musicVol:30,musicDuck:15,sidechain:true};
+var RENDER={scenes:[],voiceData:{},videoData:{},totalDone:0};
+
+function setMusicMode(mode,el){
+  STUDIO.musicMode=mode;
+  document.querySelectorAll('#studio-pg .pt-btn').forEach(function(b){b.classList.remove('on');});
+  el.classList.add('on');
+  document.getElementById('music-upload-area').style.display=mode==='upload'?'block':'none';
+  document.getElementById('music-library-area').style.display=mode==='library'?'block':'none';
+  document.getElementById('music-controls').style.display=mode!=='none'?'block':'none';
+}
+
+function selectLibraryTrack(el,id,name){
+  document.querySelectorAll('#music-lib-list .o-opt').forEach(function(o){o.classList.remove('on');o.querySelector('.o-dot').style.cssText='';});
+  el.classList.add('on');el.querySelector('.o-dot').style.cssText='border-color:var(--blue);background:var(--blue).';
+  STUDIO.musicTrack=id;STUDIO.musicTrackName=name;
+}
+
+function handleMusicUpload(inp){
+  if(!inp.files.length)return;
+  var file=inp.files[0];
+  STUDIO.musicFile=file;
+  document.getElementById('music-file-info').innerHTML='<div style="font-size:12px;color:var(--green);padding:6px 0;">✓ '+file.name+' ('+Math.round(file.size/1024)+'KB)</div>';
+  var audio=new Audio();
+  audio.src=URL.createObjectURL(file);
+  audio.onloadedmetadata=function(){document.getElementById('music-end').value=Math.round(audio.duration);STUDIO.musicEnd=Math.round(audio.duration);};
+}
+
+async function previewVoice(){
+  var vid=document.getElementById('studio-voice').value;
+  var stab=document.getElementById('studio-stab').value/100;
+  var sim=document.getElementById('studio-sim').value/100;
+  var previewEl=document.getElementById('voice-preview');
+  previewEl.innerHTML='<div class="loading-row"><div class="spin"></div>Generating preview...</div>';
+  try{
+    var res=await fetch('https://aabstudio-production.up.railway.app/api/voice',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:'This is AABStudio. Your professional document intelligence and broadcast platform.',voiceId:vid,stability:stab,similarityBoost:sim})});
+    var data=await res.json();
+    if(data.audio){previewEl.innerHTML='<audio controls style="width:100%;margin-top:6px;"><source src="data:audio/mpeg;base64,'+data.audio+'" type="audio/mpeg"></audio>';}
+    else{previewEl.innerHTML='<div style="font-size:12px;color:var(--red);">Preview failed</div>';}
+  }catch(e){previewEl.innerHTML='<div style="font-size:12px;color:var(--red);">Error: '+e.message+'</div>';}
+}
+
+function updateStudioSummary(){
+  var summary=document.getElementById('studio-summary');
+  if(!APP_SCENES.data){summary.innerHTML='<div style="font-size:13px;color:var(--muted);">Generate scenes first.</div>';return;}
+  var total=0;(APP_SCENES.data.discussions||[]).forEach(function(d){total+=(d.scenes||[]).length;});
+  var dur=total*8;var mins=Math.floor(dur/60);var secs=dur%60;
+  summary.innerHTML='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">'
+    +'<div class="usage-item"><div class="ui-label">Scenes</div><div class="ui-nums"><span class="ui-used">'+total+'</span></div></div>'
+    +'<div class="usage-item"><div class="ui-label">Duration</div><div class="ui-nums"><span class="ui-used" style="font-size:15px;">'+(mins>0?mins+'m ':'')+secs+'s</span></div></div>'
+    +'<div class="usage-item"><div class="ui-label">Mode</div><div class="ui-nums"><span class="ui-used" style="font-size:14px;">'+(APP_SCENES.presenterMode||'human')+'</span></div></div>'
+    +'</div>';
+}
+
+function startRender(){
+  if(!APP_SCENES.data){alert('Generate scenes first.');nav('scenes-pg');return;}
+  STUDIO.voiceId=document.getElementById('studio-voice').value;
+  STUDIO.model=document.getElementById('studio-model').value;
+  STUDIO.ratio=document.getElementById('studio-ratio').value;
+  STUDIO.musicVol=parseInt(document.getElementById('music-vol').value||30);
+  STUDIO.musicDuck=parseInt(document.getElementById('music-duck').value||15);
+  STUDIO.sidechain=document.getElementById('music-sidechain').checked;
+  RENDER.scenes=[];RENDER.voiceData={};RENDER.videoData={};RENDER.totalDone=0;
+  (APP_SCENES.data.discussions||[]).forEach(function(d){
+    (d.scenes||[]).forEach(function(s){
+      RENDER.scenes.push({sceneNumber:s.sceneNumber,section:d.sectionTitle,script:s.presenterA||'',type:s.type||'Explanation',visualPrompt:s.visualPrompt||'Professional studio setting with document analysis graphics',status:'pending',voiceDone:false,videoDone:false,error:null});
+    });
+  });
+  nav('render-pg');
+  buildRenderQueue();
+  runRender();
+}
+
+function buildRenderQueue(){
+  var total=RENDER.scenes.length;
+  document.getElementById('rq-total').textContent=total;
+  document.getElementById('rq-voice').textContent='0';
+  document.getElementById('rq-video').textContent='0';
+  document.getElementById('rq-failed').textContent='0';
+  document.getElementById('render-status-text').textContent='Rendering '+total+' scenes — voice + video...';
+  document.getElementById('render-scene-grid').innerHTML=RENDER.scenes.map(function(s,i){
+    return '<div class="render-scene-item" id="rsi-'+i+'">'
+      +'<div class="rsi-header"><span class="rsi-num">SCENE '+String(s.sceneNumber).padStart(3,'0')+'</span><span class="badge b-gold" style="font-size:10px;">'+s.type+'</span><span class="rsi-status rsi-pending" id="rsi-status-'+i+'">Pending</span></div>'
+      +'<div class="rsi-script" id="rsi-script-'+i+'">'+s.script.slice(0,80)+(s.script.length>80?'...':'')+'</div>'
+      +'<div class="rsi-progress"><div class="rsi-fill" id="rsi-fill-'+i+'" style="width:0%;"></div></div>'
+      +'</div>';
+  }).join('');
+}
+
+async function runRender(){
+  var voiceDone=0,videoDone=0,failed=0;
+  var total=RENDER.scenes.length;
+  for(var i=0;i<total;i+=3){
+    var batch=RENDER.scenes.slice(i,Math.min(i+3,total));
+    var batchPromises=batch.map(function(scene,bi){
+      var idx=i+bi;
+      return renderScene(scene,idx).then(function(){
+        if(scene.error)failed++;
+        else{if(scene.voiceDone)voiceDone++;if(scene.videoDone)videoDone++;}
+        document.getElementById('rq-voice').textContent=voiceDone;
+        document.getElementById('rq-video').textContent=videoDone;
+        document.getElementById('rq-failed').textContent=failed;
+        var pct=Math.round(((voiceDone+videoDone)/(total*2))*100);
+        document.getElementById('render-total-fill').style.width=pct+'%';
+      });
+    });
+    await Promise.all(batchPromises);
+  }
+  document.getElementById('render-status-text').textContent='Render complete — '+voiceDone+' scenes with voice, '+videoDone+' with video';
+  document.getElementById('render-export-btn').style.display='';
+  showToast('Render complete! Head to Export Centre.','success');
+}
+
+async function renderScene(scene,idx){
+  updateRSI(idx,'Generating voice...','rsi-voice',20);
+  try{
+    var vRes=await fetch('https://aabstudio-production.up.railway.app/api/voice',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:scene.script,voiceId:STUDIO.voiceId,stability:0.5,similarityBoost:0.75})});
+    var vData=await vRes.json();
+    if(vData.audio){RENDER.voiceData[idx]='data:audio/mpeg;base64,'+vData.audio;scene.voiceDone=true;}
+    updateRSI(idx,'Generating video...','rsi-video',50);
+    var vidRes=await fetch('https://aabstudio-production.up.railway.app/api/video/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:scene.visualPrompt+'. Cinematic quality, professional broadcast style.',duration:8,ratio:STUDIO.ratio,model:STUDIO.model})});
+    var vidData=await vidRes.json();
+    if(vidData.taskId){
+      var taskId=vidData.taskId;var done=false;var attempts=0;
+      while(!done&&attempts<40){
+        await new Promise(function(r){setTimeout(r,3000);});
+        var sRes=await fetch('https://aabstudio-production.up.railway.app/api/video/status/'+taskId);
+        var sData=await sRes.json();
+        updateRSI(idx,'Video '+(Math.round((sData.progress||0)*100))+'%...','rsi-video',50+Math.round((sData.progress||0)*45));
+        if(sData.status==='SUCCEEDED'&&sData.videoUrl){RENDER.videoData[idx]=sData.videoUrl;scene.videoDone=true;done=true;}
+        else if(sData.status==='FAILED'){scene.error='Video generation failed';done=true;}
+        attempts++;
+      }
+      if(!done)scene.error='Timeout';
+    }
+    if(scene.error)updateRSI(idx,'Error','rsi-error',0);
+    else updateRSI(idx,'Done','rsi-done',100);
+  }catch(e){scene.error=e.message;updateRSI(idx,'Error','rsi-error',0);}
+}
+
+function updateRSI(idx,label,statusClass,pct){
+  var statusEl=document.getElementById('rsi-status-'+idx);
+  var fillEl=document.getElementById('rsi-fill-'+idx);
+  if(statusEl){statusEl.className='rsi-status '+statusClass;statusEl.textContent=label.slice(0,22);}
+  if(fillEl){fillEl.style.width=pct+'%';fillEl.style.background=statusClass==='rsi-done'?'var(--green)':statusClass==='rsi-error'?'var(--red)':'var(--blue)';}
+}
+
+// ── EXPORT ────────────────────────────────────────────────────────────────────
+function openExportPanel(platform,el){
+  document.querySelectorAll('.export-platform-card').forEach(function(c){c.classList.remove('selected');});
+  el.classList.add('selected');
+}
+
+async function generatePlatformMeta(platform){
+  if(!APP.lastReport){showToast('No report found. Run an analysis first.','error');return;}
+  var panel=document.getElementById('export-meta-panel');
+  panel.style.display='block';
+  document.getElementById('meta-platform-title').textContent=platform.charAt(0).toUpperCase()+platform.slice(1)+' — Optimised metadata';
+  document.getElementById('meta-loading').style.display='block';
+  document.getElementById('meta-content').innerHTML='';
+  try{
+    var res=await fetch('https://aabstudio-production.up.railway.app/api/export/metadata',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({report:APP.lastReport,platform:platform})});
+    var data=await res.json();
+    document.getElementById('meta-loading').style.display='none';
+    var html='';
+    if(data.title)html+='<div class="meta-field"><label>Title</label><div class="meta-value" id="meta-title">'+data.title+'</div><button class="meta-copy-btn" onclick="copyMeta(document.getElementById(\'meta-title\').textContent)">Copy</button></div>';
+    if(data.description)html+='<div class="meta-field"><label>Description / Caption</label><div class="meta-value" id="meta-desc">'+data.description+'</div><button class="meta-copy-btn" onclick="copyMeta(document.getElementById(\'meta-desc\').textContent)">Copy</button></div>';
+    if(data.hashtags&&data.hashtags.length)html+='<div class="meta-field"><label>Hashtags</label><div class="meta-value" id="meta-tags">'+data.hashtags.map(function(h){return '#'+h;}).join(' ')+'</div><button class="meta-copy-btn" onclick="copyMeta(document.getElementById(\'meta-tags\').textContent)">Copy all</button></div>';
+    if(data.chapters&&data.chapters.length)html+='<div class="meta-field"><label>Chapters</label><div class="meta-value" id="meta-chapters">'+data.chapters.map(function(c){return c.time+' '+c.title;}).join('\n')+'</div><button class="meta-copy-btn" onclick="copyMeta(document.getElementById(\'meta-chapters\').textContent)">Copy</button></div>';
+    document.getElementById('meta-content').innerHTML=html||'<div style="font-size:13px;color:var(--muted);">No metadata generated.</div>';
+  }catch(e){document.getElementById('meta-loading').style.display='none';document.getElementById('meta-content').innerHTML='<div style="font-size:13px;color:var(--red);">Error: '+e.message+'</div>';}
+}
+
+function copyMeta(text){navigator.clipboard.writeText(text).then(function(){showToast('Copied to clipboard','success');});}
+
+function downloadExport(platform,ratio){
+  if(!RENDER.scenes.length){showToast('Complete the render first.','error');return;}
+  showToast('Preparing '+platform+' export ('+ratio+')...','info');
+  // In production: stitch video+audio and trigger download
+  // For now confirm render data exists
+  var voiceCount=Object.keys(RENDER.voiceData).length;
+  var videoCount=Object.keys(RENDER.videoData).length;
+  setTimeout(function(){showToast('Export ready: '+voiceCount+' voice scenes, '+videoCount+' video scenes. Full stitch coming with FFmpeg integration.','success');},1500);
+}
+
+// Wire up Studio page when navigating to it
+var _origNav=nav;
+nav=function(pg){
+  _origNav(pg);
+  if(pg==='studio-pg')updateStudioSummary();
+};
 
 // Supabase session init — restores login on every page load
 window.addEventListener('load',function(){
