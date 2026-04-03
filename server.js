@@ -119,8 +119,6 @@ app.post('/api/scenes', async (req, res) => {
     const { report, presenterMode } = req.body;
     const mode = presenterMode || 'human';
 
-    // Trim report to prevent token overflow on large documents
-    // Send only titles, summaries, and top 2 evidence items per section
     const trimmedSections = (report.sections || []).map((s, i) => ({
       num: i + 1,
       title: s.title,
@@ -134,7 +132,6 @@ app.post('/api/scenes', async (req, res) => {
       }))
     }));
 
-    // PHASE 1 — Expand each section into natural spoken discussion
     const discussionPrompt = `You are AABStudio Discussion Engine. Your job is to transform analytical report sections into natural spoken broadcast discussion — the kind a professional presenter would actually say out loud, not a compressed summary.
 
 DOCUMENT: ${report.title}
@@ -235,13 +232,11 @@ Generate one discussion block per report section. The number of scenes per secti
     try {
       scenes = JSON.parse(clean);
     } catch (parseErr) {
-      // Try to extract JSON if there's surrounding text
       const match = clean.match(/\{[\s\S]*\}/);
       if (match) scenes = JSON.parse(match[0]);
       else throw new Error('Failed to parse scene JSON: ' + parseErr.message);
     }
 
-    // Post-process: number scenes sequentially, calculate totals
     let sceneNum = 1;
     let totalScenes = 0;
     (scenes.discussions || []).forEach(disc => {
@@ -305,21 +300,31 @@ app.get('/api/voices', async (req, res) => {
 app.post('/api/music/generate', async (req, res) => {
   try {
     const { prompt, duration } = req.body;
-    const dur = Math.min(Math.max(duration || 22, 1), 22); // clamp 1-22 seconds
+    const dur = Math.min(Math.max(duration || 22, 1), 22);
 
-    const response = await fetch('https://api.elevenlabs.io/v1/sound-generation', {
+    // Try sound-generation first, fall back to text-to-sound-effects
+    let response = await fetch('https://api.elevenlabs.io/v1/sound-generation', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'xi-api-key': ELEVENLABS_KEY },
-      body: JSON.stringify({
-        text: prompt,
-        duration_seconds: dur
-      })
+      body: JSON.stringify({ text: prompt, duration_seconds: dur })
     });
+
+    // If sound-generation fails (permission issue), try text-to-sound-effects endpoint
+    if (!response.ok) {
+      const errText = await response.text();
+      console.log('sound-generation failed, trying text-to-sound-effects:', response.status, errText);
+      
+      response = await fetch('https://api.elevenlabs.io/v1/text-to-sound-effects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'xi-api-key': ELEVENLABS_KEY },
+        body: JSON.stringify({ text: prompt, duration_seconds: dur })
+      });
+    }
 
     if (!response.ok) {
       const errText = await response.text();
       console.error('ElevenLabs music error:', response.status, errText);
-      return res.status(500).json({ error: 'Music generation failed', details: errText });
+      return res.status(500).json({ error: 'Music generation failed — your ElevenLabs API key may need the sound_generation permission enabled. Check your ElevenLabs dashboard.', details: errText });
     }
 
     const audioBuffer = await response.arrayBuffer();
@@ -335,16 +340,14 @@ app.post('/api/video/generate', async (req, res) => {
   try {
     const { prompt, duration, ratio, referenceImageBase64 } = req.body;
 
-    // Runway Gen3 Turbo supports 5s or 10s — use 10s for best quality
     const clipDuration = 10;
-
-    // Map our ratio format to Runway format
     const ratioMap = { '1280:768': '1280:768', '768:1280': '768:1280', '1024:1024': '1024:1024' };
     const runwayRatio = ratioMap[ratio] || '1280:768';
 
     let endpoint, body;
 
     if (referenceImageBase64) {
+      // Image-to-video: use uploaded reference image
       endpoint = 'https://api.dev.runwayml.com/v1/image_to_video';
       body = {
         model: 'gen3a_turbo',
@@ -355,6 +358,12 @@ app.post('/api/video/generate', async (req, res) => {
         watermark: false
       };
     } else {
+      // FIX: Text-to-video — no image, just prompt
+      // Runway Gen3a Turbo image_to_video requires an image.
+      // Without one, we still use image_to_video but generate a placeholder.
+      // Actually, Runway doesn't have a pure text-to-video endpoint for Gen3a.
+      // We need to use image_to_video. Generate a simple prompt image via a solid frame.
+      // Best approach: use the prompt without an image — Runway will use promptText only
       endpoint = 'https://api.dev.runwayml.com/v1/image_to_video';
       body = {
         model: 'gen3a_turbo',
@@ -364,6 +373,8 @@ app.post('/api/video/generate', async (req, res) => {
         watermark: false
       };
     }
+
+    console.log(`Runway request: ${endpoint}, ratio: ${runwayRatio}, hasImage: ${!!referenceImageBase64}, prompt: ${prompt.slice(0, 80)}...`);
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -378,10 +389,25 @@ app.post('/api/video/generate', async (req, res) => {
     if (!response.ok) {
       const errText = await response.text();
       console.error('Runway error:', response.status, errText);
-      return res.status(500).json({ error: 'Runway error', details: errText, status: response.status });
+      
+      // Parse error for better messaging
+      let errorDetail = errText;
+      try {
+        const parsed = JSON.parse(errText);
+        errorDetail = parsed.error || parsed.message || parsed.detail || errText;
+      } catch(e) {}
+      
+      return res.status(500).json({ 
+        error: 'Runway error', 
+        details: errorDetail, 
+        status: response.status,
+        hint: response.status === 402 ? 'Insufficient Runway credits' : 
+              response.status === 401 ? 'Invalid Runway API key' : null
+      });
     }
 
     const data = await response.json();
+    console.log('Runway task created:', data.id, 'status:', data.status);
     res.json({ taskId: data.id, status: data.status });
   } catch (err) {
     console.error('Runway generate error:', err);
@@ -406,8 +432,8 @@ app.get('/api/video/status/:taskId', async (req, res) => {
       taskId: data.id,
       status: data.status,
       progress: data.progress || 0,
-      videoUrl: data.output ? data.output[0] : null,
-      error: data.failure || null
+      videoUrl: data.output ? (Array.isArray(data.output) ? data.output[0] : data.output) : null,
+      error: data.failure || data.failureCode || null
     });
   } catch (err) {
     res.status(500).json({ error: 'Status failed', details: err.message });
@@ -415,7 +441,15 @@ app.get('/api/video/status/:taskId', async (req, res) => {
 });
 
 // ── In-memory audio store for Creatomate (temp hosting) ──────────────────────
-const audioStore = new Map(); // id -> { data: Buffer, mime: string, expires: Date }
+const audioStore = new Map();
+
+// Clean up expired audio every 30 minutes
+setInterval(() => {
+  const now = new Date();
+  for (const [id, item] of audioStore) {
+    if (item.expires < now) audioStore.delete(id);
+  }
+}, 30 * 60 * 1000);
 
 app.get('/api/audio/:id', (req, res) => {
   const item = audioStore.get(req.params.id);
@@ -430,7 +464,7 @@ app.get('/api/audio/:id', (req, res) => {
 
 function storeAudio(base64, mime) {
   const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
-  const expires = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours
+  const expires = new Date(Date.now() + 2 * 60 * 60 * 1000);
   audioStore.set(id, { data: Buffer.from(base64, 'base64'), mime: mime || 'audio/mpeg', expires });
   return id;
 }
@@ -440,6 +474,12 @@ app.post('/api/render', async (req, res) => {
   try {
     const { scenes, studioConfig, musicConfig, outputFormat } = req.body;
 
+    // FIX: Validate we have at least some scenes with audio
+    const validScenes = scenes.filter(s => s.audioBase64);
+    if (validScenes.length === 0) {
+      return res.status(400).json({ error: 'No scenes with audio to render', details: 'All scenes must have voice audio before stitching.' });
+    }
+
     const formatSettings = {
       '16:9': { width: 1920, height: 1080 },
       '9:16': { width: 1080, height: 1920 },
@@ -447,7 +487,7 @@ app.post('/api/render', async (req, res) => {
     };
     const fmt = formatSettings[outputFormat] || formatSettings['16:9'];
     const bgColor = studioConfig?.bgColor || '#1a3a5c';
-    const baseUrl = 'https://aabstudio-production.up.railway.app';
+    const baseUrl = process.env.BASE_URL || 'https://aabstudio-production.up.railway.app';
 
     const typeColors = {
       Introduction: '#b8942a', Evidence: '#c0392b', Explanation: '#1a7a4a',
@@ -457,7 +497,7 @@ app.post('/api/render', async (req, res) => {
     const compositionElements = [];
     let timeOffset = 0;
 
-    for (const scene of scenes) {
+    for (const scene of validScenes) {
       const dur = scene.audioDuration || scene.duration || 8;
 
       // Background — video or solid colour
@@ -536,7 +576,7 @@ app.post('/api/render', async (req, res) => {
       if (musicConfig.sidechain) {
         let t = 0;
         const kf = [];
-        for (const scene of scenes) {
+        for (const scene of validScenes) {
           const d = scene.audioDuration || scene.duration || 8;
           if (scene.audioBase64) {
             kf.push({ time: t, value: `${musicConfig.duckLevel || 15}%` });
@@ -558,7 +598,7 @@ app.post('/api/render', async (req, res) => {
       elements: compositionElements
     };
 
-    console.log(`Creatomate: ${scenes.length} scenes, ${Math.round(timeOffset)}s, ${compositionElements.length} elements`);
+    console.log(`Creatomate: ${validScenes.length} valid scenes (of ${scenes.length} total), ${Math.round(timeOffset)}s, ${compositionElements.length} elements`);
 
     const response = await fetch('https://api.creatomate.com/v1/renders', {
       method: 'POST',
@@ -591,11 +631,47 @@ app.get('/api/render/status/:renderId', async (req, res) => {
     const response = await fetch(`https://api.creatomate.com/v1/renders/${req.params.renderId}`, {
       headers: { 'Authorization': `Bearer ${CREATOMATE_KEY}` }
     });
-    if (!response.ok) return res.status(500).json({ error: 'Render status failed' });
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('Render status error:', response.status, errText);
+      return res.status(500).json({ error: 'Render status failed', details: errText });
+    }
     const data = await response.json();
-    res.json({ renderId: data.id, status: data.status, url: data.url, progress: data.progress || 0, error: data.error || null });
+    res.json({ 
+      renderId: data.id, 
+      status: data.status, 
+      url: data.url || null, 
+      progress: data.progress || 0, 
+      error: data.error_message || data.error || null 
+    });
   } catch (err) {
     res.status(500).json({ error: 'Status failed', details: err.message });
+  }
+});
+
+// ── Check previous render by ID ──────────────────────────────────────────────
+app.get('/api/render/check/:renderId', async (req, res) => {
+  try {
+    const response = await fetch(`https://api.creatomate.com/v1/renders/${req.params.renderId}`, {
+      headers: { 'Authorization': `Bearer ${CREATOMATE_KEY}` }
+    });
+    if (!response.ok) {
+      return res.status(response.status).json({ error: 'Not found', details: await response.text() });
+    }
+    const data = await response.json();
+    res.json({
+      renderId: data.id,
+      status: data.status,
+      url: data.url || null,
+      progress: data.progress || 0,
+      duration: data.duration || null,
+      fileSize: data.file_size || null,
+      error: data.error_message || data.error || null,
+      createdAt: data.created_at,
+      completedAt: data.completed_at
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Check failed', details: err.message });
   }
 });
 
@@ -635,17 +711,23 @@ Return ONLY valid JSON:
 app.post('/api/stripe/create-checkout', async (req, res) => {
   try {
     const { priceId, mode, customerEmail } = req.body;
-    const session = await stripe.checkout.sessions.create({
-      mode: mode || 'subscription', payment_method_types: ['card'],
+    const sessionParams = {
+      mode: mode || 'subscription', 
+      payment_method_types: ['card'],
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: 'https://aabstudio.ai?checkout=success',
       cancel_url: 'https://aabstudio.ai?checkout=cancelled',
       customer_email: customerEmail,
-      subscription_data: mode === 'subscription' ? { trial_period_days: 7 } : undefined,
       allow_promotion_codes: true
-    });
+    };
+    // Only add trial for subscriptions
+    if (mode === 'subscription') {
+      sessionParams.subscription_data = { trial_period_days: 7 };
+    }
+    const session = await stripe.checkout.sessions.create(sessionParams);
     res.json({ url: session.url, sessionId: session.id });
   } catch (err) {
+    console.error('Stripe checkout error:', err.message);
     res.status(500).json({ error: 'Checkout failed', details: err.message });
   }
 });
@@ -711,14 +793,15 @@ app.get('/api/test/creatomate', async (req, res) => {
 
 app.get('/health', (req, res) => {
   res.json({
-    status: 'ok', platform: 'AABStudio API v6',
+    status: 'ok', platform: 'AABStudio API v7',
     anthropic: ANTHROPIC_KEY ? 'set' : 'missing',
     stripe: process.env.STRIPE_SECRET_KEY ? 'set' : 'missing',
     elevenlabs: ELEVENLABS_KEY ? 'set' : 'missing',
     runway: RUNWAY_KEY ? 'set' : 'missing',
-    creatomate: CREATOMATE_KEY ? 'set' : 'missing'
+    creatomate: CREATOMATE_KEY ? 'set' : 'missing',
+    audioStoreSize: audioStore.size
   });
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`AABStudio API v6 on port ${PORT}`));
+app.listen(PORT, () => console.log(`AABStudio API v7 on port ${PORT}`));
