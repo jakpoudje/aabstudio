@@ -568,8 +568,8 @@ footer{padding:28px 48px;border-top:0.5px solid var(--bdr);display:flex;align-it
   <div class="pipebar">
     <div class="pip done"><span class="pip-dot"></span>Report</div><span class="pip-arr">›</span>
     <div class="pip" onclick="nav('scenes-pg')"><span class="pip-dot"></span>Scenes</div><span class="pip-arr">›</span>
-    <div class="pip" onclick="comingSoon('Studio Setup')"><span class="pip-dot"></span>Studio</div><span class="pip-arr">›</span>
-    <div class="pip" onclick="comingSoon('Render')"><span class="pip-dot"></span>Render</div><span class="pip-arr">›</span>
+    <div class="pip" onclick="nav('studio-pg')"><span class="pip-dot"></span>Studio</div><span class="pip-arr">›</span>
+    <div class="pip" onclick="nav('render-pg')"><span class="pip-dot"></span>Render</div><span class="pip-arr">›</span>
     <div class="pip" onclick="nav('live-pg')"><span class="pip-dot"></span>Live</div>
   </div>
   <div class="report-layout">
@@ -1131,6 +1131,9 @@ function nav(pg){
   if(el)el.classList.add('on');
   if(pg==='live-pg')initLive();
   if(pg==='dashboard-pg')loadAndRenderProjects();
+  if(pg==='studio-pg'){updateStudioSummary();renderSavedMusic();}
+  if(pg==='record-pg')initRecordingPage();
+  if(pg==='export-pg')renderSavedMusic();
   window.scrollTo(0,0);
 }
 
@@ -1476,13 +1479,17 @@ function dashNav(sec,el){document.querySelectorAll('.sb-item').forEach(function(
 function comingSoon(f){alert(f+' — coming soon. Connect ElevenLabs and Runway APIs to activate.');}
 
 function initLive(){
-  // Use scenes from Scene Studio if available
   if(window.LIVE_SCENES&&window.LIVE_SCENES.length){
     LIVE_SCENES.length=0;
     window.LIVE_SCENES.forEach(function(s){LIVE_SCENES.push(s);});
   }
+  // Always reset to first scene and ensure valid state
   APP.liveScene=0;APP.liveAuto=false;APP.liveElapsed=0;
   clearInterval(APP.liveTimer);clearInterval(APP.liveElTimer);
+  if(!LIVE_SCENES.length){
+    document.getElementById('live-sq').innerHTML='<div style="padding:12px;font-size:12px;color:var(--muted);">No scenes — generate scenes first.</div>';
+    return;
+  }
   APP.liveElTimer=setInterval(function(){APP.liveElapsed++;var m=Math.floor(APP.liveElapsed/60),s=APP.liveElapsed%60;document.getElementById('l-rs-el').textContent=m+':'+(s<10?'0':'')+s;},1000);
   renderLiveSQ();renderLiveTP();
 }
@@ -2251,15 +2258,6 @@ function exportRecordedScenes(){
   showToast(clipCount+' scenes recorded. Sending to Export Centre...','success');
   nav('export-pg');
 }
-
-// Wire up pages on navigation
-var _origNav2=nav;
-nav=function(pg){
-  _origNav2(pg);
-  if(pg==='studio-pg'){updateStudioSummary();renderSavedMusic();}
-  if(pg==='record-pg')initRecordingPage();
-  if(pg==='export-pg')renderSavedMusic();
-};
 
 // Supabase session init — restores login on every page load
 window.addEventListener('load',function(){
