@@ -415,18 +415,14 @@ app.post('/api/render', async (req, res) => {
     const fmt = formatSettings[outputFormat] || formatSettings['16:9'];
     const bgColor = studioConfig?.bgColor || '#1a3a5c';
 
-    const typeColors = {
-      Introduction: '#b8942a', Evidence: '#c0392b', Explanation: '#1a7a4a',
-      Comparison: '#8a6200', Recommendation: '#2d5f8e', Conclusion: '#1a3a5c'
-    };
-
+    // Process all scenes — no artificial limits
     const compositionElements = [];
     let timeOffset = 0;
 
     for (const scene of scenes) {
       const dur = scene.audioDuration || scene.duration || 8;
 
-      // Background — video or solid colour
+      // Background
       if (scene.videoUrl) {
         compositionElements.push({
           type: 'video',
@@ -464,53 +460,48 @@ app.post('/api/render', async (req, res) => {
         });
       }
 
-      // Scene type tag — shown for first 2s
+      // Scene type tag — top left, shown for first 2s
       if (scene.type) {
+        const typeColors = {
+          Introduction: '#b8942a', Evidence: '#c0392b', Explanation: '#1a7a4a',
+          Comparison: '#8a6200', Recommendation: '#2d5f8e', Conclusion: '#1a3a5c'
+        };
         compositionElements.push({
           type: 'text',
           track: 3,
           time: timeOffset,
           duration: 2,
           text: scene.type.toUpperCase(),
-          x: '3%',
-          y: '6%',
-          x_anchor: '0%',
-          y_anchor: '50%',
-          width: 'auto',
-          height: 'auto',
+          x: '3%', y: '6%',
+          x_anchor: '0%', y_anchor: '50%',
+          width: 'auto', height: 'auto',
           font_family: 'Montserrat',
           font_weight: '700',
-          font_size: '16px',
+          font_size: '15px',
           color: '#ffffff',
-          background_color: typeColors[scene.type] || bgColor,
-          x_padding: '12px',
-          y_padding: '5px',
-          border_radius: '20px',
-          letter_spacing: '1px'
+          background_color: typeColors[scene.type] || '#1a3a5c',
+          x_padding: '10px', y_padding: '4px',
+          border_radius: '20px'
         });
       }
 
-      // Lower third overlay
-      if (scene.overlayText && scene.overlayText !== 'null') {
+      // Lower third overlay text
+      if (scene.overlayText && scene.overlayText !== 'null' && scene.overlayText !== null) {
         compositionElements.push({
           type: 'text',
           track: 4,
           time: timeOffset + 0.5,
           duration: dur - 1,
           text: scene.overlayText,
-          x: '5%',
-          y: '88%',
-          x_anchor: '0%',
-          y_anchor: '50%',
-          width: '90%',
-          height: 'auto',
+          x: '5%', y: '88%',
+          x_anchor: '0%', y_anchor: '50%',
+          width: '90%', height: 'auto',
           font_family: 'Montserrat',
           font_weight: '600',
           font_size: '20px',
           color: '#ffffff',
-          background_color: 'rgba(26,58,92,0.88)',
-          x_padding: '16px',
-          y_padding: '8px',
+          background_color: 'rgba(26,58,92,0.9)',
+          x_padding: '14px', y_padding: '7px',
           border_radius: '6px'
         });
       }
@@ -522,7 +513,7 @@ app.post('/api/render', async (req, res) => {
     if (musicConfig && musicConfig.audioBase64) {
       compositionElements.push({
         type: 'audio',
-        track: 5,
+        track: 3,
         time: 0,
         duration: timeOffset,
         source: `data:audio/mpeg;base64,${musicConfig.audioBase64}`,
@@ -541,7 +532,7 @@ app.post('/api/render', async (req, res) => {
       elements: compositionElements
     };
 
-    console.log(`Creatomate: ${scenes.length} scenes, ${timeOffset}s, format ${outputFormat}, elements ${compositionElements.length}`);
+    console.log(`Creatomate: ${scenes.length} scenes, ${Math.round(timeOffset)}s, ${compositionElements.length} elements`);
 
     const response = await fetch('https://api.creatomate.com/v1/renders', {
       method: 'POST',
@@ -559,8 +550,8 @@ app.post('/api/render', async (req, res) => {
     }
 
     const data = await response.json();
-    console.log('Creatomate response:', JSON.stringify(data).slice(0, 200));
     const renderId = Array.isArray(data) ? data[0].id : data.id;
+    console.log('Creatomate render started:', renderId);
     res.json({ renderId, status: 'rendering' });
 
   } catch (err) {
