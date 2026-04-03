@@ -1257,12 +1257,19 @@ async function runRender(){
       return renderScene(scene,idx).then(function(){
         if(scene.error)failed++;
         else{if(scene.voiceDone)voiceDone++;if(scene.videoDone)videoDone++;}
+      }).catch(function(err){
+        console.error('Scene '+idx+' crashed:',err);
+        scene.error=err.message||'Unknown error';
+        failed++;
+        updateRSI(idx,'Crashed','rsi-error',0);
+      }).then(function(){
         document.getElementById('rq-voice').textContent=voiceDone;
         document.getElementById('rq-video').textContent=videoDone;
         document.getElementById('rq-failed').textContent=failed;
         var pct=Math.round(((voiceDone+videoDone)/(total*2))*100);
         document.getElementById('render-pct').textContent=pct+'%';
         document.getElementById('render-total-fill').style.width=pct+'%';
+        document.getElementById('render-status-text').textContent='Rendering... '+voiceDone+' voice, '+videoDone+' video, '+failed+' failed of '+total;
       });
     }));
   }
@@ -1285,22 +1292,27 @@ async function renderScene(scene,idx){
   updateRSI(idx,'Voice...','rsi-voice',20);
   try{
     var vRes=await fetch('https://aabstudio-production.up.railway.app/api/voice',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:scene.script,voiceId:STUDIO.voiceId,stability:STUDIO.stability,similarityBoost:STUDIO.similarityBoost})});
-    var vData=await vRes.json();
+    if(!vRes.ok){scene.error='Voice HTTP '+vRes.status;updateRSI(idx,'Voice '+vRes.status,'rsi-error',0);return;}
+    var vData;
+    try{vData=await vRes.json();}catch(parseErr){scene.error='Voice response not JSON';updateRSI(idx,'Voice parse error','rsi-error',0);return;}
     if(vData.audio){scene.audioBase64=vData.audio;scene.voiceDone=true;saveRenderProgress();}
-    else{scene.error='Voice failed: '+(vData.error||'unknown');updateRSI(idx,'Voice failed','rsi-error',0);return;}
+    else{scene.error='Voice failed: '+(vData.error||'no audio');updateRSI(idx,'Voice failed','rsi-error',0);return;}
 
     // VIDEO — optional, skip gracefully
     updateRSI(idx,'Video...','rsi-video',50);
     try{
       var ratioMap={'16:9':'1280:768','9:16':'768:1280','1:1':'1024:1024'};
       var vidRes=await fetch('https://aabstudio-production.up.railway.app/api/video/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:scene.visualPrompt,duration:8,ratio:ratioMap[STUDIO.outputFormat]||'1280:768',referenceImageBase64:STUDIO.avatarAImage||null})});
-      var vidData=await vidRes.json();
+      if(!vidRes.ok){console.log('Video generate failed for scene',idx,'status:',vidRes.status);throw new Error('Video HTTP '+vidRes.status);}
+      var vidData;
+      try{vidData=await vidRes.json();}catch(e){throw new Error('Video response not JSON');}
       if(vidData.taskId){
         var done=false,attempts=0;
         while(!done&&attempts<40){
           await new Promise(function(r){setTimeout(r,3000);});
           var sRes=await fetch('https://aabstudio-production.up.railway.app/api/video/status/'+vidData.taskId);
-          var sData=await sRes.json();
+          if(!sRes.ok){attempts++;continue;}
+          var sData;try{sData=await sRes.json();}catch(e){attempts++;continue;}
           updateRSI(idx,'Video '+(Math.round((sData.progress||0)*100))+'%','rsi-video',50+Math.round((sData.progress||0)*40));
           if(sData.status==='SUCCEEDED'&&sData.videoUrl){scene.videoUrl=sData.videoUrl;scene.videoDone=true;done=true;showSceneVideoPreview(idx,sData.videoUrl);saveRenderProgress();}
           else if(sData.status==='FAILED'){done=true;console.log('Video failed for scene',idx,sData.error);}
@@ -1345,9 +1357,9 @@ async function stitchWithCreatomate(){
       document.getElementById('stitch-status-text').textContent='Creatomate processing (ID: '+data.renderId.slice(0,8)+'...)';
       await pollCreatomateRender(data.renderId);
     } else {
-      var errorMsg=data.error||'Unknown error';
+      var errorMsg=data.error||'No render ID returned';
       var errorDetails=data.details||'';
-      document.getElementById('stitch-status-text').textContent='Stitch failed: '+errorMsg+(errorDetails?' — '+errorDetails:'');
+      document.getElementById('stitch-status-text').textContent='Stitch failed: '+errorMsg+(errorDetails?' — '+String(errorDetails).slice(0,100):'');
       document.getElementById('rq-stitch').textContent='Failed';
       document.getElementById('render-export-btn').style.display='';
     }
