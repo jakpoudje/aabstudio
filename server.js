@@ -793,7 +793,7 @@ app.get('/api/test/creatomate', async (req, res) => {
 
 app.get('/health', (req, res) => {
   res.json({
-    status: 'ok', platform: 'AABStudio API v7',
+    status: 'ok', platform: 'AABStudio API v7.1',
     anthropic: ANTHROPIC_KEY ? 'set' : 'missing',
     stripe: process.env.STRIPE_SECRET_KEY ? 'set' : 'missing',
     elevenlabs: ELEVENLABS_KEY ? 'set' : 'missing',
@@ -804,4 +804,4 @@ app.get('/health', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`AABStudio API v7 on port ${PORT}`));
+app.listen(PORT, () => console.log(`AABStudio API v7.1 on port ${PORT}`));
