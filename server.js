@@ -650,6 +650,56 @@ app.post('/api/stripe/webhook', (req, res) => {
   res.json({ received: true });
 });
 
+// ── Creatomate test endpoint ──────────────────────────────────────────────────
+app.get('/api/test/creatomate', async (req, res) => {
+  try {
+    const testPayload = {
+      source: {
+        output_format: 'mp4',
+        width: 1280,
+        height: 720,
+        duration: 5,
+        elements: [
+          {
+            type: 'rectangle',
+            track: 1,
+            time: 0,
+            duration: 5,
+            x: '50%', y: '50%',
+            width: '100%', height: '100%',
+            fill_color: '#1a3a5c'
+          },
+          {
+            type: 'text',
+            track: 2,
+            time: 0,
+            duration: 5,
+            text: 'AABStudio Test',
+            x: '50%', y: '50%',
+            font_family: 'Montserrat',
+            font_size: '40px',
+            color: '#ffffff'
+          }
+        ]
+      }
+    };
+
+    const response = await fetch('https://api.creatomate.com/v1/renders', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${CREATOMATE_KEY}`
+      },
+      body: JSON.stringify(testPayload)
+    });
+
+    const text = await response.text();
+    res.json({ status: response.status, ok: response.ok, body: text, key_present: !!CREATOMATE_KEY, key_prefix: CREATOMATE_KEY ? CREATOMATE_KEY.slice(0, 8) + '...' : 'missing' });
+  } catch (err) {
+    res.json({ error: err.message });
+  }
+});
+
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok', platform: 'AABStudio API v6',
