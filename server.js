@@ -333,8 +333,7 @@ app.post('/api/video/generate', async (req, res) => {
     let endpoint, body;
 
     if (referenceImageBase64) {
-      // Image-to-video with reference image
-      endpoint = 'https://api.runwayml.com/v1/image_to_video';
+      endpoint = 'https://api.dev.runwayml.com/v1/image_to_video';
       body = {
         model: 'gen3a_turbo',
         promptImage: `data:image/jpeg;base64,${referenceImageBase64}`,
@@ -344,8 +343,7 @@ app.post('/api/video/generate', async (req, res) => {
         watermark: false
       };
     } else {
-      // Text-to-video
-      endpoint = 'https://api.runwayml.com/v1/text_to_video';
+      endpoint = 'https://api.dev.runwayml.com/v1/image_to_video';
       body = {
         model: 'gen3a_turbo',
         promptText: prompt,
@@ -381,7 +379,7 @@ app.post('/api/video/generate', async (req, res) => {
 
 app.get('/api/video/status/:taskId', async (req, res) => {
   try {
-    const response = await fetch(`https://api.runwayml.com/v1/tasks/${req.params.taskId}`, {
+    const response = await fetch(`https://api.dev.runwayml.com/v1/tasks/${req.params.taskId}`, {
       headers: {
         'Authorization': `Bearer ${RUNWAY_KEY}`,
         'X-Runway-Version': '2024-11-06'
@@ -422,14 +420,13 @@ app.post('/api/render', async (req, res) => {
       Comparison: '#8a6200', Recommendation: '#2d5f8e', Conclusion: '#1a3a5c'
     };
 
-    // Build one composition element per scene
     const compositionElements = [];
     let timeOffset = 0;
 
     for (const scene of scenes) {
       const dur = scene.audioDuration || scene.duration || 8;
 
-      // Background — video if available, else solid colour
+      // Background — video or solid colour
       if (scene.videoUrl) {
         compositionElements.push({
           type: 'video',
@@ -443,10 +440,12 @@ app.post('/api/render', async (req, res) => {
         });
       } else {
         compositionElements.push({
-          type: 'shape',
+          type: 'rectangle',
           track: 1,
           time: timeOffset,
           duration: dur,
+          x: '50%',
+          y: '50%',
           width: '100%',
           height: '100%',
           fill_color: bgColor
@@ -465,88 +464,74 @@ app.post('/api/render', async (req, res) => {
         });
       }
 
-      // Scene type pill (top-left, shown for first 2.5s)
+      // Scene type tag — shown for first 2s
       if (scene.type) {
         compositionElements.push({
           type: 'text',
           track: 3,
           time: timeOffset,
-          duration: 2.5,
+          duration: 2,
           text: scene.type.toUpperCase(),
-          x: '3%', y: '5%',
-          x_anchor: '0%', y_anchor: '50%',
-          width: 'auto', height: 'auto',
+          x: '3%',
+          y: '6%',
+          x_anchor: '0%',
+          y_anchor: '50%',
+          width: 'auto',
+          height: 'auto',
           font_family: 'Montserrat',
-          font_size: '13 vmin',
           font_weight: '700',
+          font_size: '16px',
           color: '#ffffff',
           background_color: typeColors[scene.type] || bgColor,
-          x_padding: '12 vmin', y_padding: '6 vmin',
-          border_radius: '50 vmin',
-          letter_spacing: '8%',
-          enter: { visible: false, time: 0 },
-          exit: { visible: false, time: 2.5 }
+          x_padding: '12px',
+          y_padding: '5px',
+          border_radius: '20px',
+          letter_spacing: '1px'
         });
       }
 
-      // Lower-third overlay text
-      if (scene.overlayText) {
+      // Lower third overlay
+      if (scene.overlayText && scene.overlayText !== 'null') {
         compositionElements.push({
           type: 'text',
           track: 4,
           time: timeOffset + 0.5,
           duration: dur - 1,
           text: scene.overlayText,
-          x: '5%', y: '88%',
-          x_anchor: '0%', y_anchor: '50%',
-          width: '90%', height: 'auto',
+          x: '5%',
+          y: '88%',
+          x_anchor: '0%',
+          y_anchor: '50%',
+          width: '90%',
+          height: 'auto',
           font_family: 'Montserrat',
-          font_size: '20 vmin',
           font_weight: '600',
+          font_size: '20px',
           color: '#ffffff',
           background_color: 'rgba(26,58,92,0.88)',
-          x_padding: '16 vmin', y_padding: '8 vmin',
-          border_radius: '8 vmin',
-          enter: { effect: 'slide', direction: 'up', duration: 0.4 },
-          exit: { effect: 'fade', duration: 0.3 }
+          x_padding: '16px',
+          y_padding: '8px',
+          border_radius: '6px'
         });
       }
 
       timeOffset += dur;
     }
 
-    // Background music with optional sidechain
+    // Background music
     if (musicConfig && musicConfig.audioBase64) {
-      const musicEl = {
+      compositionElements.push({
         type: 'audio',
         track: 5,
         time: 0,
         duration: timeOffset,
         source: `data:audio/mpeg;base64,${musicConfig.audioBase64}`,
         volume: `${musicConfig.volume || 30}%`,
-        audio_fade_in: 1.0,
-        audio_fade_out: 2.0
-      };
-
-      // Sidechain keyframes — duck music during speech
-      if (musicConfig.sidechain) {
-        let t = 0;
-        const kf = [];
-        for (const scene of scenes) {
-          const dur = scene.audioDuration || scene.duration || 8;
-          if (scene.audioBase64) {
-            kf.push({ time: t, value: `${musicConfig.duckLevel || 15}%` });
-            kf.push({ time: t + dur - 0.5, value: `${musicConfig.volume || 30}%` });
-          }
-          t += dur;
-        }
-        if (kf.length) musicEl.volume_keyframes = kf;
-      }
-
-      compositionElements.push(musicEl);
+        audio_fade_in: 1,
+        audio_fade_out: 2
+      });
     }
 
-    // Creatomate source composition
     const source = {
       output_format: 'mp4',
       width: fmt.width,
@@ -556,7 +541,7 @@ app.post('/api/render', async (req, res) => {
       elements: compositionElements
     };
 
-    console.log('Creatomate render — scenes:', scenes.length, 'duration:', timeOffset, 'format:', outputFormat);
+    console.log(`Creatomate: ${scenes.length} scenes, ${timeOffset}s, format ${outputFormat}, elements ${compositionElements.length}`);
 
     const response = await fetch('https://api.creatomate.com/v1/renders', {
       method: 'POST',
@@ -569,12 +554,12 @@ app.post('/api/render', async (req, res) => {
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error('Creatomate error:', errText);
+      console.error('Creatomate error:', response.status, errText);
       return res.status(500).json({ error: 'Creatomate error', details: errText });
     }
 
     const data = await response.json();
-    console.log('Creatomate response:', JSON.stringify(data).slice(0, 300));
+    console.log('Creatomate response:', JSON.stringify(data).slice(0, 200));
     const renderId = Array.isArray(data) ? data[0].id : data.id;
     res.json({ renderId, status: 'rendering' });
 
