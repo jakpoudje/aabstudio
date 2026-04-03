@@ -402,6 +402,27 @@ app.get('/api/video/status/:taskId', async (req, res) => {
   }
 });
 
+// ── In-memory audio store for Creatomate (temp hosting) ──────────────────────
+const audioStore = new Map(); // id -> { data: Buffer, mime: string, expires: Date }
+
+app.get('/api/audio/:id', (req, res) => {
+  const item = audioStore.get(req.params.id);
+  if (!item || item.expires < new Date()) {
+    audioStore.delete(req.params.id);
+    return res.status(404).send('Not found or expired');
+  }
+  res.set('Content-Type', item.mime);
+  res.set('Cache-Control', 'public, max-age=3600');
+  res.send(item.data);
+});
+
+function storeAudio(base64, mime) {
+  const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const expires = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours
+  audioStore.set(id, { data: Buffer.from(base64, 'base64'), mime: mime || 'audio/mpeg', expires });
+  return id;
+}
+
 // ── Creatomate render ─────────────────────────────────────────────────────────
 app.post('/api/render', async (req, res) => {
   try {
@@ -414,115 +435,92 @@ app.post('/api/render', async (req, res) => {
     };
     const fmt = formatSettings[outputFormat] || formatSettings['16:9'];
     const bgColor = studioConfig?.bgColor || '#1a3a5c';
+    const baseUrl = 'https://aabstudio-production.up.railway.app';
 
-    // Process all scenes — no artificial limits
+    const typeColors = {
+      Introduction: '#b8942a', Evidence: '#c0392b', Explanation: '#1a7a4a',
+      Comparison: '#8a6200', Recommendation: '#2d5f8e', Conclusion: '#1a3a5c'
+    };
+
     const compositionElements = [];
     let timeOffset = 0;
 
     for (const scene of scenes) {
       const dur = scene.audioDuration || scene.duration || 8;
 
-      // Background
+      // Background — video or solid colour
       if (scene.videoUrl) {
         compositionElements.push({
-          type: 'video',
-          track: 1,
-          time: timeOffset,
-          duration: dur,
+          type: 'video', track: 1,
+          time: timeOffset, duration: dur,
           source: scene.videoUrl,
-          fit: 'cover',
-          width: '100%',
-          height: '100%'
+          fit: 'cover', width: '100%', height: '100%'
         });
       } else {
         compositionElements.push({
-          type: 'rectangle',
-          track: 1,
-          time: timeOffset,
-          duration: dur,
-          x: '50%',
-          y: '50%',
-          width: '100%',
-          height: '100%',
+          type: 'rectangle', track: 1,
+          time: timeOffset, duration: dur,
+          x: '50%', y: '50%', width: '100%', height: '100%',
           fill_color: bgColor
         });
       }
 
-      // Voice audio
+      // Voice audio — served via URL not inline base64
       if (scene.audioBase64) {
+        const audioId = storeAudio(scene.audioBase64, 'audio/mpeg');
         compositionElements.push({
-          type: 'audio',
-          track: 2,
-          time: timeOffset,
-          duration: dur,
-          source: `data:audio/mpeg;base64,${scene.audioBase64}`,
+          type: 'audio', track: 2,
+          time: timeOffset, duration: dur,
+          source: `${baseUrl}/api/audio/${audioId}`,
           volume: '100%'
         });
       }
 
-      // Scene type tag — top left, shown for first 2s
+      // Scene type tag
       if (scene.type) {
-        const typeColors = {
-          Introduction: '#b8942a', Evidence: '#c0392b', Explanation: '#1a7a4a',
-          Comparison: '#8a6200', Recommendation: '#2d5f8e', Conclusion: '#1a3a5c'
-        };
         compositionElements.push({
-          type: 'text',
-          track: 3,
-          time: timeOffset,
-          duration: 2,
+          type: 'text', track: 3,
+          time: timeOffset, duration: 2,
           text: scene.type.toUpperCase(),
           x: '3%', y: '6%',
           x_anchor: '0%', y_anchor: '50%',
           width: 'auto', height: 'auto',
-          font_family: 'Montserrat',
-          font_weight: '700',
-          font_size: '15px',
+          font_family: 'Montserrat', font_weight: '700', font_size: '15px',
           color: '#ffffff',
-          background_color: typeColors[scene.type] || '#1a3a5c',
-          x_padding: '10px', y_padding: '4px',
-          border_radius: '20px'
+          background_color: typeColors[scene.type] || bgColor,
+          x_padding: '10px', y_padding: '4px', border_radius: '20px'
         });
       }
 
-      // Lower third overlay text
+      // Lower third overlay
       if (scene.overlayText && scene.overlayText !== 'null' && scene.overlayText !== null) {
         compositionElements.push({
-          type: 'text',
-          track: 4,
-          time: timeOffset + 0.5,
-          duration: dur - 1,
+          type: 'text', track: 4,
+          time: timeOffset + 0.5, duration: dur - 1,
           text: scene.overlayText,
           x: '5%', y: '88%',
           x_anchor: '0%', y_anchor: '50%',
           width: '90%', height: 'auto',
-          font_family: 'Montserrat',
-          font_weight: '600',
-          font_size: '20px',
+          font_family: 'Montserrat', font_weight: '600', font_size: '20px',
           color: '#ffffff',
           background_color: 'rgba(26,58,92,0.9)',
-          x_padding: '14px', y_padding: '7px',
-          border_radius: '6px'
+          x_padding: '14px', y_padding: '7px', border_radius: '6px'
         });
       }
 
       timeOffset += dur;
     }
 
-    // Background music with sidechain ducking
+    // Background music
     if (musicConfig && musicConfig.audioBase64) {
+      const musicId = storeAudio(musicConfig.audioBase64, 'audio/mpeg');
       const musicEl = {
-        type: 'audio',
-        track: 5,
-        time: 0,
-        duration: timeOffset,
-        source: `data:audio/mpeg;base64,${musicConfig.audioBase64}`,
+        type: 'audio', track: 5,
+        time: 0, duration: timeOffset,
+        source: `${baseUrl}/api/audio/${musicId}`,
         volume: `${musicConfig.volume || 30}%`,
-        audio_fade_in: 1,
-        audio_fade_out: 2
+        audio_fade_in: 1, audio_fade_out: 2
       };
-
-      // Sidechain — duck music during each scene's speech
       if (musicConfig.sidechain) {
         let t = 0;
         const kf = [];
@@ -536,7 +534,6 @@ app.post('/api/render', async (req, res) => {
         }
         if (kf.length) musicEl.volume_keyframes = kf;
       }
-
       compositionElements.push(musicEl);
     }
 
