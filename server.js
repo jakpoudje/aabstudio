@@ -117,52 +117,154 @@ Generate 4-5 sections, 2-3 evidence items each.`;
 app.post('/api/scenes', async (req, res) => {
   try {
     const { report, presenterMode } = req.body;
-    const prompt = `You are AABStudio Scene Engine. Convert this report into broadcast-ready scripts.
-REPORT: ${report.title} | TYPE: ${report.docType} | DOMAIN: ${report.domain}
-SUMMARY: ${report.executiveSummary}
-SECTIONS: ${report.sections.map((s,i) => `${i+1}. ${s.title}: ${s.body} | Evidence: ${(s.evidenceItems||[]).map(e=>e.text).join(' | ')}`).join('\n')}
-PRESENTER MODE: ${presenterMode || 'human'}
-- human: natural teleprompter, one presenter
-- ai: authoritative narration, third-person
-- dual: Presenter A introduces, Presenter B explains
-RULES: 8 seconds max, 140wpm = 15-20 words exactly per scene. Scenes flow continuously.
-Scene types: Introduction | Evidence | Explanation | Comparison | Recommendation | Conclusion
-Return ONLY valid JSON:
+    const mode = presenterMode || 'human';
+
+    // Trim report to prevent token overflow on large documents
+    // Send only titles, summaries, and top 2 evidence items per section
+    const trimmedSections = (report.sections || []).map((s, i) => ({
+      num: i + 1,
+      title: s.title,
+      body: s.body ? s.body.slice(0, 400) : '',
+      reasoning: s.reasoning || {},
+      evidence: (s.evidenceItems || []).slice(0, 2).map(e => ({
+        label: e.label,
+        source: e.source,
+        text: e.text ? e.text.slice(0, 150) : '',
+        implication: e.implication ? e.implication.slice(0, 100) : ''
+      }))
+    }));
+
+    // PHASE 1 — Expand each section into natural spoken discussion
+    const discussionPrompt = `You are AABStudio Discussion Engine. Your job is to transform analytical report sections into natural spoken broadcast discussion — the kind a professional presenter would actually say out loud, not a compressed summary.
+
+DOCUMENT: ${report.title}
+TYPE: ${report.docType} | DOMAIN: ${report.domain}
+EXECUTIVE SUMMARY: ${report.executiveSummary}
+
+REPORT SECTIONS:
+${trimmedSections.map(s => `
+SECTION ${s.num}: ${s.title}
+Analysis: ${s.body}
+Observation: ${s.reasoning.observation || ''}
+Implication: ${s.reasoning.implication || ''}
+Recommendation: ${s.reasoning.recommendation || ''}
+Key evidence: ${s.evidence.map(e => `[${e.label}] ${e.text} — ${e.implication}`).join(' | ')}
+`).join('\n')}
+
+PRESENTER MODE: ${mode}
+- human: natural first-person teleprompter, conversational, direct address ("here's what this means for you...")
+- ai: authoritative third-person narration ("the document reveals...", "analysis indicates...")
+- dual: Presenter A sets context and asks questions, Presenter B provides analysis and explains
+
+CRITICAL RULES FOR DISCUSSION WRITING:
+1. Write as if speaking naturally — not bullet points or compressed sentences
+2. Each section should become a flowing spoken discussion of 60-180 words
+3. Use natural speech patterns: pauses implied by punctuation, transitions between ideas
+4. Reference specific evidence, clause numbers, figures, names from the document
+5. The discussion should feel like a documentary or news segment — engaging and informative
+6. For dual mode: alternate between A and B naturally within the discussion
+
+SCENE SPLITTING RULES — APPLY AFTER WRITING DISCUSSION:
+- Split discussion into scenes of EXACTLY 15-20 words each
+- Count words precisely — 140 words per minute × 8 seconds = 18.67 words
+- Target exactly 18 words per scene — never more than 20, never fewer than 14
+- Each scene must be a complete thought that flows into the next
+- Scenes must read as continuous speech when played back-to-back
+
+SCENE TYPES — assign the most accurate type to each scene:
+- Introduction: opening a topic or section
+- Evidence: citing specific document content, clause, figure, or quote
+- Explanation: unpacking what evidence means in plain language
+- Comparison: contrasting two things or showing change over time
+- Recommendation: advising action or highlighting what to do
+- Conclusion: closing a section or the whole production
+
+Return ONLY valid JSON, no markdown, no code fences:
 {
-  "title": "production title",
-  "presenterMode": "${presenterMode||'human'}",
+  "title": "compelling production title based on the document",
+  "presenterMode": "${mode}",
   "totalScenes": 0,
+  "estimatedDuration": "calculated from total scenes × 8 seconds",
   "discussions": [
     {
-      "sectionTitle": "section title",
-      "discussionText": "2-3 sentence spoken expansion",
+      "sectionTitle": "exact section title from report",
+      "discussionText": "the full natural spoken discussion for this section — 60 to 180 words of broadcast-quality prose",
+      "wordCount": 0,
       "scenes": [
         {
           "sceneNumber": 1,
           "type": "Introduction",
           "duration": 8,
-          "presenterA": "exactly 15-20 word script",
-          "presenterB": "15-20 words for dual only, null otherwise",
-          "visualPrompt": "cinematic scene description for video generation — setting, mood, movement, lighting",
-          "evidenceRef": "EV-101 or null",
-          "overlayText": "optional short text overlay for screen — key stat, quote, or name. null if none"
+          "wordCount": 18,
+          "presenterA": "exactly 15-20 words of natural speech — this scene's portion of the discussion",
+          "presenterB": "15-20 words for dual mode only, null for human or ai mode",
+          "visualPrompt": "specific cinematic description — what appears on screen, camera angle, lighting, mood, any text or graphics shown",
+          "evidenceRef": "specific evidence ID like EV-101 if this scene references evidence, otherwise null",
+          "overlayText": "short on-screen text if relevant — a key stat, name, clause number, or quote. Keep under 6 words. null if none"
         }
       ]
     }
   ]
 }
-One block per section, 3-5 scenes per block. Natural broadcast language.`;
+
+Generate one discussion block per report section. The number of scenes per section is determined entirely by the length of the discussion — longer sections with more evidence produce more scenes. Do not artificially limit or pad scene count. The total scene count reflects the actual substance of the document.`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 4000, messages: [{ role: 'user', content: prompt }] })
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 6000,
+        messages: [{ role: 'user', content: discussionPrompt }]
+      })
     });
-    if (!response.ok) return res.status(500).json({ error: 'Scene error', details: await response.text() });
+
+    if (!response.ok) {
+      const err = await response.text();
+      return res.status(500).json({ error: 'Scene engine error', details: err });
+    }
+
     const data = await response.json();
     const text = data.content.map(c => c.text || '').join('');
-    res.json(JSON.parse(text.replace(/```json|```/g, '').trim()));
+    const clean = text.replace(/```json|```/g, '').trim();
+    let scenes;
+    try {
+      scenes = JSON.parse(clean);
+    } catch (parseErr) {
+      // Try to extract JSON if there's surrounding text
+      const match = clean.match(/\{[\s\S]*\}/);
+      if (match) scenes = JSON.parse(match[0]);
+      else throw new Error('Failed to parse scene JSON: ' + parseErr.message);
+    }
+
+    // Post-process: number scenes sequentially, calculate totals
+    let sceneNum = 1;
+    let totalScenes = 0;
+    (scenes.discussions || []).forEach(disc => {
+      disc.wordCount = disc.discussionText ? disc.discussionText.split(/\s+/).length : 0;
+      (disc.scenes || []).forEach(scene => {
+        scene.sceneNumber = sceneNum++;
+        scene.wordCount = scene.presenterA ? scene.presenterA.split(/\s+/).length : 0;
+        scene.duration = 8;
+        totalScenes++;
+      });
+    });
+
+    scenes.totalScenes = totalScenes;
+    const totalSecs = totalScenes * 8;
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    scenes.estimatedDuration = `${mins > 0 ? mins + 'm ' : ''}${secs}s`;
+
+    console.log(`Scene engine: ${totalScenes} scenes across ${(scenes.discussions||[]).length} discussion blocks`);
+    res.json(scenes);
+
   } catch (err) {
+    console.error('Scene generation error:', err);
     res.status(500).json({ error: 'Scene generation failed', details: err.message });
   }
 });
