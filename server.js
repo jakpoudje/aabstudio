@@ -322,46 +322,83 @@ app.post('/api/music/generate', async (req, res) => {
 app.post('/api/video/generate', async (req, res) => {
   try {
     const { prompt, duration, ratio, referenceImageBase64 } = req.body;
-    let body;
+
+    // Runway Gen3 Turbo only supports 5 or 10 second clips
+    const clipDuration = duration > 7 ? 10 : 5;
+
+    // Map our ratio format to Runway format
+    const ratioMap = { '1280:768': '1280:768', '768:1280': '768:1280', '1024:1024': '1024:1024' };
+    const runwayRatio = ratioMap[ratio] || '1280:768';
+
+    let endpoint, body;
+
     if (referenceImageBase64) {
+      // Image-to-video with reference image
+      endpoint = 'https://api.runwayml.com/v1/image_to_video';
       body = {
         model: 'gen3a_turbo',
         promptImage: `data:image/jpeg;base64,${referenceImageBase64}`,
         promptText: prompt,
-        duration: duration || 8,
-        ratio: ratio || '1280:768',
+        duration: clipDuration,
+        ratio: runwayRatio,
         watermark: false
       };
     } else {
+      // Text-to-video
+      endpoint = 'https://api.runwayml.com/v1/text_to_video';
       body = {
         model: 'gen3a_turbo',
         promptText: prompt,
-        duration: duration || 8,
-        ratio: ratio || '1280:768',
+        duration: clipDuration,
+        ratio: runwayRatio,
         watermark: false
       };
     }
-    const response = await fetch('https://api.dev.runwayml.com/v1/image_to_video', {
+
+    const response = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RUNWAY_KEY}`, 'X-Runway-Version': '2024-11-06' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${RUNWAY_KEY}`,
+        'X-Runway-Version': '2024-11-06'
+      },
       body: JSON.stringify(body)
     });
-    if (!response.ok) return res.status(500).json({ error: 'Runway error', details: await response.text() });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('Runway error:', response.status, errText);
+      return res.status(500).json({ error: 'Runway error', details: errText, status: response.status });
+    }
+
     const data = await response.json();
     res.json({ taskId: data.id, status: data.status });
   } catch (err) {
+    console.error('Runway generate error:', err);
     res.status(500).json({ error: 'Video generation failed', details: err.message });
   }
 });
 
 app.get('/api/video/status/:taskId', async (req, res) => {
   try {
-    const response = await fetch(`https://api.dev.runwayml.com/v1/tasks/${req.params.taskId}`, {
-      headers: { 'Authorization': `Bearer ${RUNWAY_KEY}`, 'X-Runway-Version': '2024-11-06' }
+    const response = await fetch(`https://api.runwayml.com/v1/tasks/${req.params.taskId}`, {
+      headers: {
+        'Authorization': `Bearer ${RUNWAY_KEY}`,
+        'X-Runway-Version': '2024-11-06'
+      }
     });
-    if (!response.ok) return res.status(500).json({ error: 'Status check failed' });
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(500).json({ error: 'Status check failed', details: errText });
+    }
     const data = await response.json();
-    res.json({ taskId: data.id, status: data.status, progress: data.progress || 0, videoUrl: data.output ? data.output[0] : null, error: data.failure || null });
+    res.json({
+      taskId: data.id,
+      status: data.status,
+      progress: data.progress || 0,
+      videoUrl: data.output ? data.output[0] : null,
+      error: data.failure || null
+    });
   } catch (err) {
     res.status(500).json({ error: 'Status failed', details: err.message });
   }
