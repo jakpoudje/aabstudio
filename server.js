@@ -323,8 +323,8 @@ app.post('/api/video/generate', async (req, res) => {
   try {
     const { prompt, duration, ratio, referenceImageBase64 } = req.body;
 
-    // Runway Gen3 Turbo only supports 5 or 10 second clips
-    const clipDuration = duration > 7 ? 10 : 5;
+    // Runway Gen3 Turbo supports 5s or 10s — use 10s for best quality
+    const clipDuration = 10;
 
     // Map our ratio format to Runway format
     const ratioMap = { '1280:768': '1280:768', '768:1280': '768:1280', '1024:1024': '1024:1024' };
@@ -408,9 +408,9 @@ app.post('/api/render', async (req, res) => {
     const { scenes, studioConfig, musicConfig, outputFormat } = req.body;
 
     const formatSettings = {
-      '16:9': { width: 1280, height: 720 },
-      '9:16': { width: 720, height: 1280 },
-      '1:1':  { width: 720, height: 720 }
+      '16:9': { width: 1920, height: 1080 },
+      '9:16': { width: 1080, height: 1920 },
+      '1:1':  { width: 1080, height: 1080 }
     };
     const fmt = formatSettings[outputFormat] || formatSettings['16:9'];
     const bgColor = studioConfig?.bgColor || '#1a3a5c';
@@ -509,18 +509,35 @@ app.post('/api/render', async (req, res) => {
       timeOffset += dur;
     }
 
-    // Background music
+    // Background music with sidechain ducking
     if (musicConfig && musicConfig.audioBase64) {
-      compositionElements.push({
+      const musicEl = {
         type: 'audio',
-        track: 3,
+        track: 5,
         time: 0,
         duration: timeOffset,
         source: `data:audio/mpeg;base64,${musicConfig.audioBase64}`,
         volume: `${musicConfig.volume || 30}%`,
         audio_fade_in: 1,
         audio_fade_out: 2
-      });
+      };
+
+      // Sidechain — duck music during each scene's speech
+      if (musicConfig.sidechain) {
+        let t = 0;
+        const kf = [];
+        for (const scene of scenes) {
+          const d = scene.audioDuration || scene.duration || 8;
+          if (scene.audioBase64) {
+            kf.push({ time: t, value: `${musicConfig.duckLevel || 15}%` });
+            kf.push({ time: t + d - 0.5, value: `${musicConfig.volume || 30}%` });
+          }
+          t += d;
+        }
+        if (kf.length) musicEl.volume_keyframes = kf;
+      }
+
+      compositionElements.push(musicEl);
     }
 
     const source = {
