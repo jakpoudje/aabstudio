@@ -268,161 +268,182 @@ app.get('/api/video/status/:taskId', async (req, res) => {
 // ── Creatomate render ─────────────────────────────────────────────────────────
 app.post('/api/render', async (req, res) => {
   try {
-    const { scenes, studioConfig, musicConfig, outputFormat, presenterMode } = req.body;
+    const { scenes, studioConfig, musicConfig, outputFormat } = req.body;
 
-    // Build Creatomate composition
-    const elements = [];
+    const formatSettings = {
+      '16:9': { width: 1280, height: 720 },
+      '9:16': { width: 720, height: 1280 },
+      '1:1':  { width: 720, height: 720 }
+    };
+    const fmt = formatSettings[outputFormat] || formatSettings['16:9'];
+    const bgColor = studioConfig?.bgColor || '#1a3a5c';
+
+    const typeColors = {
+      Introduction: '#b8942a', Evidence: '#c0392b', Explanation: '#1a7a4a',
+      Comparison: '#8a6200', Recommendation: '#2d5f8e', Conclusion: '#1a3a5c'
+    };
+
+    // Build one composition element per scene
+    const compositionElements = [];
     let timeOffset = 0;
 
     for (const scene of scenes) {
-      const sceneDuration = scene.audioDuration || scene.duration || 8;
+      const dur = scene.audioDuration || scene.duration || 8;
 
-      // Video track
+      // Background — video if available, else solid colour
       if (scene.videoUrl) {
-        elements.push({
+        compositionElements.push({
           type: 'video',
-          source: scene.videoUrl,
+          track: 1,
           time: timeOffset,
-          duration: sceneDuration,
+          duration: dur,
+          source: scene.videoUrl,
           fit: 'cover',
           width: '100%',
           height: '100%'
         });
       } else {
-        // Fallback: colour background with studio colour
-        elements.push({
-          type: 'rectangle',
+        compositionElements.push({
+          type: 'shape',
+          track: 1,
           time: timeOffset,
-          duration: sceneDuration,
+          duration: dur,
           width: '100%',
           height: '100%',
-          color: studioConfig?.bgColor || '#1a3a5c'
+          fill_color: bgColor
         });
       }
 
-      // Voice audio track
+      // Voice audio
       if (scene.audioBase64) {
-        elements.push({
+        compositionElements.push({
           type: 'audio',
-          source: `data:audio/mpeg;base64,${scene.audioBase64}`,
+          track: 2,
           time: timeOffset,
-          duration: sceneDuration,
+          duration: dur,
+          source: `data:audio/mpeg;base64,${scene.audioBase64}`,
           volume: '100%'
         });
       }
 
-      // Text overlay — lower third
-      if (scene.overlayText) {
-        elements.push({
+      // Scene type pill (top-left, shown for first 2.5s)
+      if (scene.type) {
+        compositionElements.push({
           type: 'text',
-          text: scene.overlayText,
-          time: timeOffset + 0.5,
-          duration: sceneDuration - 1,
-          x: '5%',
-          y: '82%',
-          width: '90%',
-          height: 'auto',
+          track: 3,
+          time: timeOffset,
+          duration: 2.5,
+          text: scene.type.toUpperCase(),
+          x: '3%', y: '5%',
+          x_anchor: '0%', y_anchor: '50%',
+          width: 'auto', height: 'auto',
           font_family: 'Montserrat',
-          font_size: '28px',
+          font_size: '13 vmin',
+          font_weight: '700',
+          color: '#ffffff',
+          background_color: typeColors[scene.type] || bgColor,
+          x_padding: '12 vmin', y_padding: '6 vmin',
+          border_radius: '50 vmin',
+          letter_spacing: '8%',
+          enter: { visible: false, time: 0 },
+          exit: { visible: false, time: 2.5 }
+        });
+      }
+
+      // Lower-third overlay text
+      if (scene.overlayText) {
+        compositionElements.push({
+          type: 'text',
+          track: 4,
+          time: timeOffset + 0.5,
+          duration: dur - 1,
+          text: scene.overlayText,
+          x: '5%', y: '88%',
+          x_anchor: '0%', y_anchor: '50%',
+          width: '90%', height: 'auto',
+          font_family: 'Montserrat',
+          font_size: '20 vmin',
           font_weight: '600',
           color: '#ffffff',
-          background_color: 'rgba(26,58,92,0.85)',
-          x_padding: '16px',
-          y_padding: '8px',
-          border_radius: '6px',
-          x_alignment: 'left',
-          animations: [{ time: 'start', duration: 0.4, type: 'slide', direction: 'up', fade: true }]
+          background_color: 'rgba(26,58,92,0.88)',
+          x_padding: '16 vmin', y_padding: '8 vmin',
+          border_radius: '8 vmin',
+          enter: { effect: 'slide', direction: 'up', duration: 0.4 },
+          exit: { effect: 'fade', duration: 0.3 }
         });
       }
 
-      // Scene type tag
-      if (scene.type) {
-        const typeColors = {
-          Introduction: '#b8942a', Evidence: '#c0392b', Explanation: '#1a7a4a',
-          Comparison: '#8a6200', Recommendation: '#2d5f8e', Conclusion: '#1a3a5c'
-        };
-        elements.push({
-          type: 'text',
-          text: scene.type.toUpperCase(),
-          time: timeOffset,
-          duration: 2,
-          x: '5%', y: '5%', width: 'auto', height: 'auto',
-          font_family: 'Montserrat', font_size: '11px', font_weight: '700',
-          color: '#ffffff',
-          background_color: typeColors[scene.type] || '#1a3a5c',
-          x_padding: '10px', y_padding: '5px', border_radius: '20px',
-          letter_spacing: '1.5px',
-          animations: [{ time: 'start', duration: 0.3, type: 'fade' }, { time: 'end', duration: 0.3, type: 'fade' }]
-        });
-      }
-
-      timeOffset += sceneDuration;
+      timeOffset += dur;
     }
 
-    // Background music
+    // Background music with optional sidechain
     if (musicConfig && musicConfig.audioBase64) {
-      const totalDuration = timeOffset;
-      elements.push({
+      const musicEl = {
         type: 'audio',
-        source: `data:audio/mpeg;base64,${musicConfig.audioBase64}`,
+        track: 5,
         time: 0,
-        duration: totalDuration,
+        duration: timeOffset,
+        source: `data:audio/mpeg;base64,${musicConfig.audioBase64}`,
         volume: `${musicConfig.volume || 30}%`,
-        audio_fade_in: 1,
-        audio_fade_out: 2,
-        keyframes: musicConfig.sidechain ? buildSidechainKeyframes(scenes, musicConfig) : null
-      });
+        audio_fade_in: 1.0,
+        audio_fade_out: 2.0
+      };
+
+      // Sidechain keyframes — duck music during speech
+      if (musicConfig.sidechain) {
+        let t = 0;
+        const kf = [];
+        for (const scene of scenes) {
+          const dur = scene.audioDuration || scene.duration || 8;
+          if (scene.audioBase64) {
+            kf.push({ time: t, value: `${musicConfig.duckLevel || 15}%` });
+            kf.push({ time: t + dur - 0.5, value: `${musicConfig.volume || 30}%` });
+          }
+          t += dur;
+        }
+        if (kf.length) musicEl.volume_keyframes = kf;
+      }
+
+      compositionElements.push(musicEl);
     }
 
-    // Output format settings
-    const formatSettings = {
-      '16:9': { width: 1920, height: 1080 },
-      '9:16': { width: 1080, height: 1920 },
-      '1:1': { width: 1080, height: 1080 }
-    };
-    const fmt = formatSettings[outputFormat] || formatSettings['16:9'];
-
-    const renderBody = {
+    // Creatomate source composition
+    const source = {
       output_format: 'mp4',
       width: fmt.width,
       height: fmt.height,
       frame_rate: 24,
-      elements
+      duration: timeOffset,
+      elements: compositionElements
     };
+
+    console.log('Creatomate render — scenes:', scenes.length, 'duration:', timeOffset, 'format:', outputFormat);
 
     const response = await fetch('https://api.creatomate.com/v1/renders', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${CREATOMATE_KEY}` },
-      body: JSON.stringify(renderBody)
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${CREATOMATE_KEY}`
+      },
+      body: JSON.stringify({ source })
     });
 
     if (!response.ok) {
-      const err = await response.text();
-      return res.status(500).json({ error: 'Creatomate error', details: err });
+      const errText = await response.text();
+      console.error('Creatomate error:', errText);
+      return res.status(500).json({ error: 'Creatomate error', details: errText });
     }
 
     const data = await response.json();
+    console.log('Creatomate response:', JSON.stringify(data).slice(0, 300));
     const renderId = Array.isArray(data) ? data[0].id : data.id;
     res.json({ renderId, status: 'rendering' });
+
   } catch (err) {
+    console.error('Render error:', err);
     res.status(500).json({ error: 'Render failed', details: err.message });
   }
 });
-
-function buildSidechainKeyframes(scenes, musicConfig) {
-  const keyframes = [];
-  let t = 0;
-  for (const scene of scenes) {
-    const dur = scene.audioDuration || scene.duration || 8;
-    if (scene.audioBase64) {
-      keyframes.push({ time: t, volume: `${musicConfig.duckLevel || 15}%` });
-      keyframes.push({ time: t + 0.3, volume: `${musicConfig.duckLevel || 15}%` });
-      keyframes.push({ time: t + dur - 0.3, volume: `${musicConfig.volume || 30}%` });
-    }
-    t += dur;
-  }
-  return keyframes;
-}
 
 app.get('/api/render/status/:renderId', async (req, res) => {
   try {
