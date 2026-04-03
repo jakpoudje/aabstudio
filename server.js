@@ -305,15 +305,27 @@ app.get('/api/voices', async (req, res) => {
 app.post('/api/music/generate', async (req, res) => {
   try {
     const { prompt, duration } = req.body;
+    const dur = Math.min(Math.max(duration || 22, 1), 22); // clamp 1-22 seconds
+
     const response = await fetch('https://api.elevenlabs.io/v1/sound-generation', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'xi-api-key': ELEVENLABS_KEY },
-      body: JSON.stringify({ text: prompt, duration_seconds: Math.min(duration || 30, 22), prompt_influence: 0.3 })
+      body: JSON.stringify({
+        text: prompt,
+        duration_seconds: dur
+      })
     });
-    if (!response.ok) return res.status(500).json({ error: 'Music generation failed', details: await response.text() });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('ElevenLabs music error:', response.status, errText);
+      return res.status(500).json({ error: 'Music generation failed', details: errText });
+    }
+
     const audioBuffer = await response.arrayBuffer();
     res.json({ audio: Buffer.from(audioBuffer).toString('base64'), mimeType: 'audio/mpeg' });
   } catch (err) {
+    console.error('Music error:', err);
     res.status(500).json({ error: 'Music failed', details: err.message });
   }
 });
