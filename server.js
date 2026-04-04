@@ -14,7 +14,10 @@ const ELEVENLABS_KEY = process.env.ELEVENLABS_API_KEY;
 const RUNWAY_KEY = process.env.RUNWAY_API_KEY;
 const CREATOMATE_KEY = process.env.CREATOMATE_API_KEY;
 
-// ── Document extraction ───────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// ENGINE 1: DOCUMENT INTELLIGENCE ENGINE
+// ══════════════════════════════════════════════════════════════════════════════
+
 async function extractText(fileName, fileBase64, mimeType) {
   if (!fileBase64) return null;
   const buffer = Buffer.from(fileBase64, 'base64');
@@ -22,31 +25,31 @@ async function extractText(fileName, fileBase64, mimeType) {
   try {
     if (name.endsWith('.docx') || name.endsWith('.doc')) {
       const result = await mammoth.extractRawText({ buffer });
-      return result.value.slice(0, 8000);
+      return result.value.slice(0, 12000);
     }
     if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
       const wb = XLSX.read(buffer, { type: 'buffer' });
       let text = '';
       wb.SheetNames.forEach(s => { text += `[Sheet: ${s}]\n` + XLSX.utils.sheet_to_csv(wb.Sheets[s]) + '\n'; });
-      return text.slice(0, 8000);
+      return text.slice(0, 12000);
     }
     if (name.endsWith('.pptx')) {
       const wb = XLSX.read(buffer, { type: 'buffer' });
       let text = '';
       wb.SheetNames.forEach((s, i) => { text += `[Slide ${i+1}]\n` + XLSX.utils.sheet_to_txt(wb.Sheets[s]) + '\n'; });
-      return text.slice(0, 8000);
+      return text.slice(0, 12000);
     }
     if (name.match(/\.(csv|txt|md|json|html|htm)$/) || (mimeType && mimeType.startsWith('text/'))) {
-      return buffer.toString('utf8').slice(0, 8000);
+      return buffer.toString('utf8').slice(0, 12000);
     }
     return null;
-  } catch (err) {
-    console.error('Extraction error:', err.message);
-    return null;
-  }
+  } catch (err) { console.error('Extraction error:', err.message); return null; }
 }
 
-// ── Analysis ──────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// ENGINE 2: ANALYSIS INTELLIGENCE ENGINE (Balanced — per spec Section 5)
+// ══════════════════════════════════════════════════════════════════════════════
+
 app.post('/api/analyse', async (req, res) => {
   try {
     const { request, depth, fileName, fileContent, fileBase64, mimeType } = req.body;
@@ -54,29 +57,41 @@ app.post('/api/analyse', async (req, res) => {
     const isPDF = name.endsWith('.pdf') || mimeType === 'application/pdf';
 
     const analysisPrompt = `You are AABStudio AI — a professional document intelligence engine.
+You are NOT a summarization tool. You are an intelligence extraction and broadcasting platform.
 Analysis request: "${request}"
 Analysis depth: ${depth || 'deep'}
+CRITICAL: Produce BALANCED analysis. Each section must cover merits AND risks, not just negatives.
 Return ONLY valid JSON, no markdown, no code fences:
 {
   "title": "specific descriptive report title",
   "docType": "document type",
   "domain": "Legal | Financial | Research | Investigative | Policy | Technical | General",
-  "executiveSummary": "2-3 sentences of substantive findings from the document",
+  "executiveSummary": "3-4 sentences covering both positive and concerning aspects",
+  "documentMap": {"totalSections":0,"totalParagraphs":0,"keyEntities":["entity names"]},
   "sections": [
     {
       "title": "section title",
-      "body": "3-4 sentences of substantive analysis with specific document references",
+      "sectionId": "SEC_01",
+      "body": "4-5 sentences of substantive analysis",
       "reasoning": {
-        "observation": "specific observation from the document",
-        "implication": "practical meaning",
+        "observation": "factual observation from the document",
+        "evidence": "direct reference supporting the observation",
+        "interpretation": "what this means in context",
+        "merits": "positive aspects or strengths",
+        "risks": "concerns or weaknesses",
+        "tradeOffs": "balance between competing considerations",
+        "operationalImpact": "practical effect on operations",
+        "financialImpact": "monetary or resource implications",
         "recommendation": "actionable recommendation"
       },
       "evidenceItems": [
         {
-          "label": "Risk Clause | Financial Anomaly | Key Entity | Contradiction | Obligation | Data Point | Legal Provision",
-          "source": "Section 4.2 / Page 17 / Clause 3",
-          "text": "direct quote or paraphrase from document",
-          "interpretation": "analytical meaning",
+          "evidenceId": "EV-101",
+          "label": "Risk Clause | Financial Data | Legal Provision | Policy Statement | Technical Finding | Statistical Data",
+          "source": "Page X / Section Y / Clause Z",
+          "sourceId": "DOC01_SEC01_PARA02",
+          "text": "exact quote or close paraphrase",
+          "interpretation": "what this evidence means",
           "implication": "practical consequence",
           "confidence": "High|Medium|Low"
         }
@@ -84,7 +99,7 @@ Return ONLY valid JSON, no markdown, no code fences:
     }
   ]
 }
-Generate 4-5 sections, 2-3 evidence items each.`;
+Generate 4-6 sections, 2-3 evidence items each, sequential IDs (EV-101, EV-102...).`;
 
     let messages;
     if (isPDF && fileBase64) {
@@ -95,194 +110,112 @@ Generate 4-5 sections, 2-3 evidence items each.`;
     } else {
       let documentText = fileBase64 ? await extractText(fileName, fileBase64, mimeType) : null;
       documentText = documentText || fileContent || null;
-      const docSection = documentText ? `\n\nDOCUMENT NAME: ${fileName}\n\nCONTENT:\n${documentText}` : `\n\nDocument: "${fileName}" — content unavailable.`;
+      const docSection = documentText ? `\n\nDOCUMENT: ${fileName}\n\nCONTENT:\n${documentText}` : `\n\nDocument: "${fileName}" — content unavailable.`;
       messages = [{ role: 'user', content: analysisPrompt + docSection }];
     }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'pdfs-2024-09-25' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 3500, messages })
+      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 4500, messages })
     });
     if (!response.ok) return res.status(500).json({ error: 'Anthropic API error', details: await response.text() });
     const data = await response.json();
     const text = data.content.map(c => c.text || '').join('');
-    res.json(JSON.parse(text.replace(/```json|```/g, '').trim()));
-  } catch (err) {
-    res.status(500).json({ error: 'Analysis failed', details: err.message });
-  }
+    const report = JSON.parse(text.replace(/```json|```/g, '').trim());
+    report._tokenUsage = { input: data.usage?.input_tokens || 0, output: data.usage?.output_tokens || 0 };
+    res.json(report);
+  } catch (err) { res.status(500).json({ error: 'Analysis failed', details: err.message }); }
 });
 
-// ── Scene generation ──────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// ENGINE 3: SCENE INTELLIGENCE ENGINE (per spec Section 6)
+// ══════════════════════════════════════════════════════════════════════════════
+
 app.post('/api/scenes', async (req, res) => {
   try {
-    const { report, presenterMode } = req.body;
+    const { report, presenterMode, speed } = req.body;
     const mode = presenterMode || 'human';
+    const sc = { slow: { wpm:110, wpsc:14 }, normal: { wpm:140, wpsc:18 }, fast: { wpm:170, wpsc:22 } }[speed] || { wpm:140, wpsc:18 };
 
     const trimmedSections = (report.sections || []).map((s, i) => ({
-      num: i + 1,
-      title: s.title,
-      body: s.body ? s.body.slice(0, 400) : '',
-      reasoning: s.reasoning || {},
-      evidence: (s.evidenceItems || []).slice(0, 2).map(e => ({
-        label: e.label,
-        source: e.source,
-        text: e.text ? e.text.slice(0, 150) : '',
-        implication: e.implication ? e.implication.slice(0, 100) : ''
-      }))
+      num: i+1, sectionId: s.sectionId || `SEC_0${i+1}`, title: s.title,
+      body: s.body ? s.body.slice(0, 400) : '', reasoning: s.reasoning || {},
+      evidence: (s.evidenceItems || []).slice(0, 3).map(e => ({ evidenceId: e.evidenceId, label: e.label, source: e.source, text: (e.text||'').slice(0,150), implication: (e.implication||'').slice(0,100) }))
     }));
 
-    const discussionPrompt = `You are AABStudio Discussion Engine. Your job is to transform analytical report sections into natural spoken broadcast discussion — the kind a professional presenter would actually say out loud, not a compressed summary.
+    const prompt = `You are AABStudio Scene Intelligence Engine. Transform report into broadcast scripts.
+DOCUMENT: ${report.title} | ${report.docType} | ${report.domain}
+SUMMARY: ${report.executiveSummary}
+SECTIONS:
+${trimmedSections.map(s => `[${s.sectionId}] ${s.title}: ${s.body}\nMerits: ${s.reasoning.merits||''} | Risks: ${s.reasoning.risks||''}\nEvidence: ${s.evidence.map(e=>`[${e.evidenceId}] ${e.text}`).join(' | ')}`).join('\n\n')}
 
-DOCUMENT: ${report.title}
-TYPE: ${report.docType} | DOMAIN: ${report.domain}
-EXECUTIVE SUMMARY: ${report.executiveSummary}
+MODE: ${mode} | SPEED: ${sc.wpm} WPM | TARGET: ${sc.wpsc} words/scene | MAX: 8 seconds/scene
+MODE RULES: human=first-person conversational | ai=third-person authoritative | dual=A asks, B explains
 
-REPORT SECTIONS:
-${trimmedSections.map(s => `
-SECTION ${s.num}: ${s.title}
-Analysis: ${s.body}
-Observation: ${s.reasoning.observation || ''}
-Implication: ${s.reasoning.implication || ''}
-Recommendation: ${s.reasoning.recommendation || ''}
-Key evidence: ${s.evidence.map(e => `[${e.label}] ${e.text} — ${e.implication}`).join(' | ')}
-`).join('\n')}
+VISUAL PROMPT RULES — describe for each scene:
+- Presenter body language matching content (pointing for evidence, open hands for explanation, concerned for risks, confident for recommendations)
+- Professional studio setting, camera angle, lighting mood
+- For evidence scenes: describe document excerpt that should overlay
 
-PRESENTER MODE: ${mode}
-- human: natural first-person teleprompter, conversational, direct address ("here's what this means for you...")
-- ai: authoritative third-person narration ("the document reveals...", "analysis indicates...")
-- dual: Presenter A sets context and asks questions, Presenter B provides analysis and explains
-
-CRITICAL RULES FOR DISCUSSION WRITING:
-1. Write as if speaking naturally — not bullet points or compressed sentences
-2. Each section should become a flowing spoken discussion of 60-180 words
-3. Use natural speech patterns: pauses implied by punctuation, transitions between ideas
-4. Reference specific evidence, clause numbers, figures, names from the document
-5. The discussion should feel like a documentary or news segment — engaging and informative
-6. For dual mode: alternate between A and B naturally within the discussion
-
-SCENE SPLITTING RULES — APPLY AFTER WRITING DISCUSSION:
-- Split discussion into scenes of EXACTLY 15-20 words each
-- Count words precisely — 140 words per minute × 8 seconds = 18.67 words
-- Target exactly 18 words per scene — never more than 20, never fewer than 14
-- Each scene must be a complete thought that flows into the next
-- Scenes must read as continuous speech when played back-to-back
-
-SCENE TYPES — assign the most accurate type to each scene:
-- Introduction: opening a topic or section
-- Evidence: citing specific document content, clause, figure, or quote
-- Explanation: unpacking what evidence means in plain language
-- Comparison: contrasting two things or showing change over time
-- Recommendation: advising action or highlighting what to do
-- Conclusion: closing a section or the whole production
-
-Return ONLY valid JSON, no markdown, no code fences:
-{
-  "title": "compelling production title based on the document",
-  "presenterMode": "${mode}",
-  "totalScenes": 0,
-  "estimatedDuration": "calculated from total scenes × 8 seconds",
-  "discussions": [
-    {
-      "sectionTitle": "exact section title from report",
-      "discussionText": "the full natural spoken discussion for this section — 60 to 180 words of broadcast-quality prose",
-      "wordCount": 0,
-      "scenes": [
-        {
-          "sceneNumber": 1,
-          "type": "Introduction",
-          "duration": 8,
-          "wordCount": 18,
-          "presenterA": "exactly 15-20 words of natural speech — this scene's portion of the discussion",
-          "presenterB": "15-20 words for dual mode only, null for human or ai mode",
-          "visualPrompt": "specific cinematic description — what appears on screen, camera angle, lighting, mood, any text or graphics shown",
-          "evidenceRef": "specific evidence ID like EV-101 if this scene references evidence, otherwise null",
-          "overlayText": "short on-screen text if relevant — a key stat, name, clause number, or quote. Keep under 6 words. null if none"
-        }
-      ]
-    }
-  ]
-}
-
-Generate one discussion block per report section. The number of scenes per section is determined entirely by the length of the discussion — longer sections with more evidence produce more scenes. Do not artificially limit or pad scene count. The total scene count reflects the actual substance of the document.`;
+Return ONLY valid JSON:
+{"title":"","presenterMode":"${mode}","speed":"${speed||'normal'}","wordsPerScene":${sc.wpsc},
+"discussions":[{"sectionTitle":"","sectionId":"","discussionText":"60-180 words spoken narrative",
+"scenes":[{"sceneNumber":1,"type":"Introduction|Evidence|Explanation|Comparison|Recommendation|Conclusion",
+"duration":8,"presenterA":"${sc.wpsc} words","presenterB":"for dual only, else null",
+"visualPrompt":"cinematic: gesture, setting, camera, overlay","evidenceRef":"EV-101 or null","overlayText":"under 6 words or null"}]}]}`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 6000,
-        messages: [{ role: 'user', content: discussionPrompt }]
-      })
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 6000, messages: [{ role: 'user', content: prompt }] })
     });
-
-    if (!response.ok) {
-      const err = await response.text();
-      return res.status(500).json({ error: 'Scene engine error', details: err });
-    }
-
+    if (!response.ok) return res.status(500).json({ error: 'Scene engine error', details: await response.text() });
     const data = await response.json();
     const text = data.content.map(c => c.text || '').join('');
     const clean = text.replace(/```json|```/g, '').trim();
     let scenes;
-    try {
-      scenes = JSON.parse(clean);
-    } catch (parseErr) {
-      const match = clean.match(/\{[\s\S]*\}/);
-      if (match) scenes = JSON.parse(match[0]);
-      else throw new Error('Failed to parse scene JSON: ' + parseErr.message);
-    }
+    try { scenes = JSON.parse(clean); } catch(e) { const m = clean.match(/\{[\s\S]*\}/); if(m) scenes = JSON.parse(m[0]); else throw new Error('Parse failed'); }
 
-    let sceneNum = 1;
-    let totalScenes = 0;
+    let sceneNum = 1, totalScenes = 0;
     (scenes.discussions || []).forEach(disc => {
       disc.wordCount = disc.discussionText ? disc.discussionText.split(/\s+/).length : 0;
-      (disc.scenes || []).forEach(scene => {
-        scene.sceneNumber = sceneNum++;
-        scene.wordCount = scene.presenterA ? scene.presenterA.split(/\s+/).length : 0;
-        scene.duration = 8;
-        totalScenes++;
-      });
+      (disc.scenes || []).forEach(scene => { scene.sceneNumber = sceneNum++; scene.wordCount = scene.presenterA ? scene.presenterA.split(/\s+/).length : 0; scene.duration = 8; totalScenes++; });
     });
-
     scenes.totalScenes = totalScenes;
-    const totalSecs = totalScenes * 8;
-    const mins = Math.floor(totalSecs / 60);
-    const secs = totalSecs % 60;
-    scenes.estimatedDuration = `${mins > 0 ? mins + 'm ' : ''}${secs}s`;
-
-    console.log(`Scene engine: ${totalScenes} scenes across ${(scenes.discussions||[]).length} discussion blocks`);
+    scenes.totalDurationSeconds = totalScenes * 8;
+    scenes.estimatedDuration = `${Math.floor(scenes.totalDurationSeconds/60)}m ${scenes.totalDurationSeconds%60}s`;
+    scenes.costEstimate = { totalCredits: totalScenes * 10, creditsPerScene: 10 };
+    console.log(`Scenes: ${totalScenes} scenes, ${scenes.estimatedDuration}, ${scenes.costEstimate.totalCredits} credits`);
     res.json(scenes);
-
-  } catch (err) {
-    console.error('Scene generation error:', err);
-    res.status(500).json({ error: 'Scene generation failed', details: err.message });
-  }
+  } catch (err) { console.error('Scene error:', err); res.status(500).json({ error: 'Scene generation failed', details: err.message }); }
 });
 
-// ── ElevenLabs voice ──────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// ENGINE 4: COST ESTIMATOR (per spec Section 8-9)
+// ══════════════════════════════════════════════════════════════════════════════
+
+app.post('/api/cost/estimate', (req, res) => {
+  const n = req.body.numScenes || 20;
+  const totalCredits = n * 10;
+  const dur = `${Math.floor((n*8)/60)}m ${(n*8)%60}s`;
+  res.json({ estimatedScenes: n, estimatedDuration: dur, estimatedCredits: totalCredits,
+    message: `Estimated video: ${dur} | ${n} scenes | ${totalCredits} credits` });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ENGINE 5: VOICE ENGINE (ElevenLabs)
+// ══════════════════════════════════════════════════════════════════════════════
+
 app.post('/api/voice', async (req, res) => {
   try {
     const { text, voiceId, stability, similarityBoost } = req.body;
-    const vid = voiceId || 'EXAVITQu4vr4xnSDxMaL';
-    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${vid}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'xi-api-key': ELEVENLABS_KEY },
-      body: JSON.stringify({
-        text, model_id: 'eleven_multilingual_v2',
-        voice_settings: { stability: stability || 0.5, similarity_boost: similarityBoost || 0.75, style: 0.3, use_speaker_boost: true }
-      })
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId || 'EXAVITQu4vr4xnSDxMaL'}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'xi-api-key': ELEVENLABS_KEY },
+      body: JSON.stringify({ text, model_id: 'eleven_multilingual_v2', voice_settings: { stability: stability||0.5, similarity_boost: similarityBoost||0.75, style: 0.3, use_speaker_boost: true } })
     });
     if (!response.ok) return res.status(500).json({ error: 'ElevenLabs error', details: await response.text() });
-    const audioBuffer = await response.arrayBuffer();
-    res.json({ audio: Buffer.from(audioBuffer).toString('base64'), mimeType: 'audio/mpeg' });
-  } catch (err) {
-    res.status(500).json({ error: 'Voice failed', details: err.message });
-  }
+    res.json({ audio: Buffer.from(await response.arrayBuffer()).toString('base64'), mimeType: 'audio/mpeg' });
+  } catch (err) { res.status(500).json({ error: 'Voice failed', details: err.message }); }
 });
 
 app.get('/api/voices', async (req, res) => {
@@ -290,552 +223,246 @@ app.get('/api/voices', async (req, res) => {
     const response = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': ELEVENLABS_KEY } });
     if (!response.ok) return res.status(500).json({ error: 'Voices fetch failed' });
     const data = await response.json();
-    res.json({ voices: (data.voices || []).map(v => ({ id: v.voice_id, name: v.name, category: v.category, description: v.labels ? Object.values(v.labels).join(', ') : '' })) });
-  } catch (err) {
-    res.status(500).json({ error: 'Voices failed', details: err.message });
-  }
+    res.json({ voices: (data.voices||[]).map(v => ({ id: v.voice_id, name: v.name, category: v.category })) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── ElevenLabs music/sound generation ────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// ENGINE 6: MUSIC ENGINE
+// ══════════════════════════════════════════════════════════════════════════════
+
 app.post('/api/music/generate', async (req, res) => {
   try {
     const { prompt, duration } = req.body;
-    const dur = Math.min(Math.max(duration || 22, 1), 22);
-
-    // Try sound-generation first, fall back to text-to-sound-effects
+    const dur = Math.min(Math.max(duration||22, 1), 22);
     let response = await fetch('https://api.elevenlabs.io/v1/sound-generation', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'xi-api-key': ELEVENLABS_KEY },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'xi-api-key': ELEVENLABS_KEY },
       body: JSON.stringify({ text: prompt, duration_seconds: dur })
     });
-
-    // If sound-generation fails (permission issue), try text-to-sound-effects endpoint
     if (!response.ok) {
-      const errText = await response.text();
-      console.log('sound-generation failed, trying text-to-sound-effects:', response.status, errText);
-      
       response = await fetch('https://api.elevenlabs.io/v1/text-to-sound-effects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'xi-api-key': ELEVENLABS_KEY },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'xi-api-key': ELEVENLABS_KEY },
         body: JSON.stringify({ text: prompt, duration_seconds: dur })
       });
     }
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error('ElevenLabs music error:', response.status, errText);
-      return res.status(500).json({ error: 'Music generation failed — your ElevenLabs API key may need the sound_generation permission enabled. Check your ElevenLabs dashboard.', details: errText });
-    }
-
-    const audioBuffer = await response.arrayBuffer();
-    res.json({ audio: Buffer.from(audioBuffer).toString('base64'), mimeType: 'audio/mpeg' });
-  } catch (err) {
-    console.error('Music error:', err);
-    res.status(500).json({ error: 'Music failed', details: err.message });
-  }
+    if (!response.ok) return res.status(500).json({ error: 'Music failed — check ElevenLabs permissions', details: await response.text() });
+    res.json({ audio: Buffer.from(await response.arrayBuffer()).toString('base64'), mimeType: 'audio/mpeg' });
+  } catch (err) { res.status(500).json({ error: 'Music failed', details: err.message }); }
 });
 
-// ── Runway video generation ───────────────────────────────────────────────────
-let runwayRateLimitedUntil = null; // Cache 429 to stop hammering
+// ══════════════════════════════════════════════════════════════════════════════
+// ENGINE 7: VIDEO RENDER ENGINE (Runway) — with rate limit cache
+// ══════════════════════════════════════════════════════════════════════════════
+
+let runwayRateLimitedUntil = null;
 
 app.post('/api/video/generate', async (req, res) => {
   try {
-    // Check if we're rate limited
     if (runwayRateLimitedUntil && new Date() < runwayRateLimitedUntil) {
-      return res.status(429).json({ 
-        error: 'Runway daily limit reached (cached)', 
-        details: 'Daily task limit hit earlier. Resets at midnight UTC.',
-        hint: 'Runway daily limit still active. Video generation skipped.',
-        retryable: false
-      });
+      return res.status(429).json({ error: 'Runway daily limit (cached)', retryable: false });
     }
-
     const { prompt, duration, ratio, referenceImageBase64 } = req.body;
+    const body = { model: 'gen3a_turbo', promptText: prompt, duration: 10, ratio: { '1280:768':'1280:768','768:1280':'768:1280','1024:1024':'1024:1024' }[ratio] || '1280:768', watermark: false };
+    if (referenceImageBase64) body.promptImage = `data:image/jpeg;base64,${referenceImageBase64}`;
 
-    const clipDuration = 10;
-    const ratioMap = { '1280:768': '1280:768', '768:1280': '768:1280', '1024:1024': '1024:1024' };
-    const runwayRatio = ratioMap[ratio] || '1280:768';
-
-    let endpoint, body;
-
-    if (referenceImageBase64) {
-      // Image-to-video: use uploaded reference image
-      endpoint = 'https://api.dev.runwayml.com/v1/image_to_video';
-      body = {
-        model: 'gen3a_turbo',
-        promptImage: `data:image/jpeg;base64,${referenceImageBase64}`,
-        promptText: prompt,
-        duration: clipDuration,
-        ratio: runwayRatio,
-        watermark: false
-      };
-    } else {
-      // FIX: Text-to-video — no image, just prompt
-      // Runway Gen3a Turbo image_to_video requires an image.
-      // Without one, we still use image_to_video but generate a placeholder.
-      // Actually, Runway doesn't have a pure text-to-video endpoint for Gen3a.
-      // We need to use image_to_video. Generate a simple prompt image via a solid frame.
-      // Best approach: use the prompt without an image — Runway will use promptText only
-      endpoint = 'https://api.dev.runwayml.com/v1/image_to_video';
-      body = {
-        model: 'gen3a_turbo',
-        promptText: prompt,
-        duration: clipDuration,
-        ratio: runwayRatio,
-        watermark: false
-      };
-    }
-
-    console.log(`Runway request: ${endpoint}, ratio: ${runwayRatio}, hasImage: ${!!referenceImageBase64}, prompt: ${prompt.slice(0, 80)}...`);
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${RUNWAY_KEY}`,
-        'X-Runway-Version': '2024-11-06'
-      },
+    console.log(`Runway: prompt=${prompt.slice(0,80)}...`);
+    const response = await fetch('https://api.dev.runwayml.com/v1/image_to_video', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RUNWAY_KEY}`, 'X-Runway-Version': '2024-11-06' },
       body: JSON.stringify(body)
     });
-
     if (!response.ok) {
       const errText = await response.text();
-      console.error('Runway error:', response.status, errText);
-      
-      // Parse error for better messaging
-      let errorDetail = errText;
-      try {
-        const parsed = JSON.parse(errText);
-        errorDetail = parsed.error || parsed.message || parsed.detail || errText;
-      } catch(e) {}
-      
-      // Special handling for rate limit — cache it so we stop making requests
-      if (response.status === 429) {
-        // Cache the rate limit for 1 hour (recheck periodically)
-        runwayRateLimitedUntil = new Date(Date.now() + 60 * 60 * 1000);
-        console.log('Runway rate limit cached until', runwayRateLimitedUntil.toISOString());
-        return res.status(429).json({ 
-          error: 'Runway daily limit reached', 
-          details: errorDetail,
-          hint: 'Your Runway daily task limit has been reached. Video generation will be skipped for remaining scenes. The limit resets at midnight UTC.',
-          retryable: false
-        });
-      }
-      
-      return res.status(500).json({ 
-        error: 'Runway error', 
-        details: errorDetail, 
-        status: response.status,
-        hint: response.status === 402 ? 'Insufficient Runway credits' : 
-              response.status === 401 ? 'Invalid Runway API key' : null
-      });
+      if (response.status === 429) { runwayRateLimitedUntil = new Date(Date.now() + 3600000); console.log('Runway rate limited'); return res.status(429).json({ error: 'Runway daily limit', retryable: false }); }
+      return res.status(500).json({ error: 'Runway error', details: errText });
     }
-
     const data = await response.json();
-    console.log('Runway task created:', data.id, 'status:', data.status);
+    console.log('Runway task:', data.id);
     res.json({ taskId: data.id, status: data.status });
-  } catch (err) {
-    console.error('Runway generate error:', err);
-    res.status(500).json({ error: 'Video generation failed', details: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: 'Video failed', details: err.message }); }
 });
 
 app.get('/api/video/status/:taskId', async (req, res) => {
   try {
     const response = await fetch(`https://api.dev.runwayml.com/v1/tasks/${req.params.taskId}`, {
-      headers: {
-        'Authorization': `Bearer ${RUNWAY_KEY}`,
-        'X-Runway-Version': '2024-11-06'
-      }
+      headers: { 'Authorization': `Bearer ${RUNWAY_KEY}`, 'X-Runway-Version': '2024-11-06' }
     });
-    if (!response.ok) {
-      const errText = await response.text();
-      return res.status(500).json({ error: 'Status check failed', details: errText });
-    }
+    if (!response.ok) return res.status(500).json({ error: 'Status failed' });
     const data = await response.json();
-    res.json({
-      taskId: data.id,
-      status: data.status,
-      progress: data.progress || 0,
-      videoUrl: data.output ? (Array.isArray(data.output) ? data.output[0] : data.output) : null,
-      error: data.failure || data.failureCode || null
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Status failed', details: err.message });
-  }
+    res.json({ taskId: data.id, status: data.status, progress: data.progress||0, videoUrl: data.output ? (Array.isArray(data.output) ? data.output[0] : data.output) : null, error: data.failure||null });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ── In-memory audio store for Creatomate (temp hosting) ──────────────────────
-const audioStore = new Map();
+// ══════════════════════════════════════════════════════════════════════════════
+// ENGINE 8: AUDIO STORE + CREATOMATE RENDER
+// ══════════════════════════════════════════════════════════════════════════════
 
-// Clean up expired audio every 30 minutes
-setInterval(() => {
-  const now = new Date();
-  for (const [id, item] of audioStore) {
-    if (item.expires < now) audioStore.delete(id);
-  }
-}, 30 * 60 * 1000);
+const audioStore = new Map();
+setInterval(() => { const now = new Date(); for (const [id, item] of audioStore) { if (item.expires < now) audioStore.delete(id); } }, 1800000);
 
 app.get('/api/audio/:id', (req, res) => {
   const item = audioStore.get(req.params.id);
-  if (!item || item.expires < new Date()) {
-    audioStore.delete(req.params.id);
-    return res.status(404).send('Not found or expired');
-  }
-  res.set('Content-Type', item.mime);
-  res.set('Cache-Control', 'public, max-age=3600');
-  res.send(item.data);
+  if (!item || item.expires < new Date()) { audioStore.delete(req.params.id); return res.status(404).send('Not found'); }
+  res.set('Content-Type', item.mime); res.set('Cache-Control', 'public, max-age=3600'); res.send(item.data);
 });
 
-function storeAudio(base64, mime) {
+function storeAudio(b64, mime) {
   const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
-  const expires = new Date(Date.now() + 2 * 60 * 60 * 1000);
-  audioStore.set(id, { data: Buffer.from(base64, 'base64'), mime: mime || 'audio/mpeg', expires });
+  audioStore.set(id, { data: Buffer.from(b64, 'base64'), mime: mime||'audio/mpeg', expires: new Date(Date.now() + 7200000) });
   return id;
 }
 
-// ── Creatomate render ─────────────────────────────────────────────────────────
 app.post('/api/render', async (req, res) => {
   try {
     const { scenes, studioConfig, musicConfig, outputFormat } = req.body;
+    const valid = scenes.filter(s => s.audioBase64);
+    if (!valid.length) return res.status(400).json({ error: 'No scenes with audio' });
 
-    // FIX: Validate we have at least some scenes with audio
-    const validScenes = scenes.filter(s => s.audioBase64);
-    if (validScenes.length === 0) {
-      return res.status(400).json({ error: 'No scenes with audio to render', details: 'All scenes must have voice audio before stitching.' });
+    const fmt = { '16:9':{w:1920,h:1080}, '9:16':{w:1080,h:1920}, '1:1':{w:1080,h:1080} }[outputFormat] || {w:1920,h:1080};
+    const bg = studioConfig?.bgColor || '#1a3a5c';
+    const base = process.env.BASE_URL || 'https://aabstudio-production.up.railway.app';
+    const tc = { Introduction:'#b8942a', Evidence:'#c0392b', Explanation:'#1a7a4a', Comparison:'#8a6200', Recommendation:'#2d5f8e', Conclusion:'#1a3a5c' };
+    const els = [];
+    let t = 0;
+
+    for (const s of valid) {
+      const d = s.duration || 8;
+      // Background
+      if (s.videoUrl) { els.push({ type:'video', track:1, time:t, duration:d, source:s.videoUrl, fit:'cover', width:'100%', height:'100%' }); }
+      else { els.push({ type:'shape', track:1, time:t, duration:d, x:'50%', y:'50%', width:'100%', height:'100%', fill_color:bg, path:'M 0 0 L 100 0 L 100 100 L 0 100 Z' }); }
+      // Audio
+      if (s.audioBase64) { const aid = storeAudio(s.audioBase64, 'audio/mpeg'); els.push({ type:'audio', track:2, time:t, duration:d, source:`${base}/api/audio/${aid}`, volume:'100%' }); }
+      // Type badge
+      if (s.type) { els.push({ type:'text', track:3, time:t, duration:2.5, text:s.type.toUpperCase(), x:'5%', y:'8%', width:'25%', height:'5%', x_anchor:'0%', y_anchor:'50%', font_family:'Montserrat', font_weight:700, font_size:null, font_size_minimum:'1 vmin', font_size_maximum:'3 vmin', fill_color:'#ffffff', background_color:tc[s.type]||bg, background_x_padding:'50%', background_y_padding:'30%', background_border_radius:'50%' }); }
+      // Overlay
+      if (s.overlayText && s.overlayText !== 'null') { els.push({ type:'text', track:4, time:t+0.5, duration:d-1, text:String(s.overlayText), x:'50%', y:'90%', width:'90%', height:'8%', x_alignment:'50%', y_alignment:'50%', font_family:'Montserrat', font_weight:600, font_size:null, font_size_minimum:'1 vmin', font_size_maximum:'4 vmin', fill_color:'#ffffff', background_color:'rgba(26,58,92,0.85)', background_x_padding:'30%', background_y_padding:'20%', background_border_radius:'8%' }); }
+      t += d;
     }
 
-    const formatSettings = {
-      '16:9': { width: 1920, height: 1080 },
-      '9:16': { width: 1080, height: 1920 },
-      '1:1':  { width: 1080, height: 1080 }
-    };
-    const fmt = formatSettings[outputFormat] || formatSettings['16:9'];
-    const bgColor = studioConfig?.bgColor || '#1a3a5c';
-    const baseUrl = process.env.BASE_URL || 'https://aabstudio-production.up.railway.app';
-
-    const typeColors = {
-      Introduction: '#b8942a', Evidence: '#c0392b', Explanation: '#1a7a4a',
-      Comparison: '#8a6200', Recommendation: '#2d5f8e', Conclusion: '#1a3a5c'
-    };
-
-    const compositionElements = [];
-    let timeOffset = 0;
-
-    for (const scene of validScenes) {
-      const dur = scene.audioDuration || scene.duration || 8;
-
-      // Background — video or solid colour
-      if (scene.videoUrl) {
-        compositionElements.push({
-          type: 'video', track: 1,
-          time: timeOffset, duration: dur,
-          source: scene.videoUrl,
-          fit: 'cover', width: '100%', height: '100%'
-        });
-      } else {
-        compositionElements.push({
-          type: 'rectangle', track: 1,
-          time: timeOffset, duration: dur,
-          x: '50%', y: '50%', width: '100%', height: '100%',
-          fill_color: bgColor
-        });
-      }
-
-      // Voice audio — served via URL not inline base64
-      if (scene.audioBase64) {
-        const audioId = storeAudio(scene.audioBase64, 'audio/mpeg');
-        compositionElements.push({
-          type: 'audio', track: 2,
-          time: timeOffset, duration: dur,
-          source: `${baseUrl}/api/audio/${audioId}`,
-          volume: '100%'
-        });
-      }
-
-      // Scene type tag
-      if (scene.type) {
-        compositionElements.push({
-          type: 'text', track: 3,
-          time: timeOffset, duration: 2,
-          text: scene.type.toUpperCase(),
-          x: '3%', y: '6%',
-          x_anchor: '0%', y_anchor: '50%',
-          font_family: 'Montserrat', font_weight: 700, font_size: null, font_size_minimum: '2 vmin', font_size_maximum: '4 vmin',
-          fill_color: '#ffffff',
-          background_color: typeColors[scene.type] || bgColor,
-          background_x_padding: '50%', background_y_padding: '30%',
-          background_border_radius: '100%'
-        });
-      }
-
-      // Lower third overlay
-      if (scene.overlayText && scene.overlayText !== 'null' && scene.overlayText !== null) {
-        compositionElements.push({
-          type: 'text', track: 4,
-          time: timeOffset + 0.5, duration: dur - 1,
-          text: String(scene.overlayText),
-          x: '5%', y: '88%',
-          x_anchor: '0%', y_anchor: '50%',
-          width: '90%',
-          font_family: 'Montserrat', font_weight: 600, font_size: null, font_size_minimum: '2 vmin', font_size_maximum: '5 vmin',
-          fill_color: '#ffffff',
-          background_color: 'rgba(26,58,92,0.9)',
-          background_x_padding: '40%', background_y_padding: '25%',
-          background_border_radius: '10%'
-        });
-      }
-
-      timeOffset += dur;
+    // Music
+    if (musicConfig?.audioBase64) {
+      const mid = storeAudio(musicConfig.audioBase64, 'audio/mpeg');
+      els.push({ type:'audio', track:5, time:0, duration:t, source:`${base}/api/audio/${mid}`, volume:`${musicConfig.volume||30}%`, audio_fade_in:1, audio_fade_out:2 });
     }
 
-    // Background music
-    if (musicConfig && musicConfig.audioBase64) {
-      const musicId = storeAudio(musicConfig.audioBase64, 'audio/mpeg');
-      const musicEl = {
-        type: 'audio', track: 5,
-        time: 0, duration: timeOffset,
-        source: `${baseUrl}/api/audio/${musicId}`,
-        volume: `${musicConfig.volume || 30}%`,
-        audio_fade_in: 1, audio_fade_out: 2
-      };
-      if (musicConfig.sidechain) {
-        let t = 0;
-        const kf = [];
-        for (const scene of validScenes) {
-          const d = scene.audioDuration || scene.duration || 8;
-          if (scene.audioBase64) {
-            kf.push({ time: t, value: `${musicConfig.duckLevel || 15}%` });
-            kf.push({ time: t + d - 0.5, value: `${musicConfig.volume || 30}%` });
-          }
-          t += d;
-        }
-        if (kf.length) musicEl.volume_keyframes = kf;
-      }
-      compositionElements.push(musicEl);
-    }
-
-    const source = {
-      output_format: 'mp4',
-      width: fmt.width,
-      height: fmt.height,
-      frame_rate: 24,
-      duration: timeOffset,
-      // Filter out any elements without a valid type — prevents Creatomate rejection
-      elements: compositionElements.filter(el => {
-        if (!el || !el.type) {
-          console.log('Filtered out invalid element:', JSON.stringify(el).slice(0, 100));
-          return false;
-        }
-        return true;
-      })
-    };
-
-    console.log(`Creatomate: ${validScenes.length} valid scenes (of ${scenes.length} total), ${Math.round(timeOffset)}s, ${source.elements.length} elements, types: ${source.elements.map(e=>e.type).join(',')}`);
-    
-    // Log the full source for debugging
-    const sourceStr = JSON.stringify(source);
-    console.log(`Creatomate payload size: ${sourceStr.length} bytes`);
+    const source = { output_format:'mp4', width:fmt.w, height:fmt.h, frame_rate:24, duration:t, elements:els.filter(e=>e&&e.type) };
+    console.log(`Creatomate: ${valid.length} scenes, ${Math.round(t)}s, ${source.elements.length} elements`);
 
     const response = await fetch('https://api.creatomate.com/v1/renders', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${CREATOMATE_KEY}`
-      },
+      method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${CREATOMATE_KEY}` },
       body: JSON.stringify({ source })
     });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error('Creatomate error:', response.status, errText);
-      return res.status(500).json({ error: 'Creatomate error', details: errText });
-    }
-
+    if (!response.ok) { const e = await response.text(); console.error('Creatomate:', response.status, e); return res.status(500).json({ error:'Creatomate error', details:e }); }
     const data = await response.json();
-    const renderId = Array.isArray(data) ? data[0].id : data.id;
-    console.log('Creatomate render started:', renderId);
-    res.json({ renderId, status: 'rendering' });
-
-  } catch (err) {
-    console.error('Render error:', err);
-    res.status(500).json({ error: 'Render failed', details: err.message });
-  }
+    const rid = Array.isArray(data) ? data[0].id : data.id;
+    console.log('Creatomate render:', rid);
+    res.json({ renderId:rid, status:'rendering' });
+  } catch (err) { console.error('Render error:', err); res.status(500).json({ error:'Render failed', details:err.message }); }
 });
 
-app.get('/api/render/status/:renderId', async (req, res) => {
+app.get('/api/render/status/:id', async (req, res) => {
   try {
-    const response = await fetch(`https://api.creatomate.com/v1/renders/${req.params.renderId}`, {
-      headers: { 'Authorization': `Bearer ${CREATOMATE_KEY}` }
-    });
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error('Render status error:', response.status, errText);
-      return res.status(500).json({ error: 'Render status failed', details: errText });
-    }
-    const data = await response.json();
-    res.json({ 
-      renderId: data.id, 
-      status: data.status, 
-      url: data.url || null, 
-      progress: data.progress || 0, 
-      error: data.error_message || data.error || null 
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Status failed', details: err.message });
-  }
+    const r = await fetch(`https://api.creatomate.com/v1/renders/${req.params.id}`, { headers:{ 'Authorization':`Bearer ${CREATOMATE_KEY}` } });
+    if (!r.ok) return res.status(500).json({ error:'Status failed' });
+    const d = await r.json();
+    res.json({ renderId:d.id, status:d.status, url:d.url||null, progress:d.progress||0, error:d.error_message||null });
+  } catch (err) { res.status(500).json({ error:err.message }); }
 });
 
-// ── Check previous render by ID ──────────────────────────────────────────────
-app.get('/api/render/check/:renderId', async (req, res) => {
+app.get('/api/render/check/:id', async (req, res) => {
   try {
-    const response = await fetch(`https://api.creatomate.com/v1/renders/${req.params.renderId}`, {
-      headers: { 'Authorization': `Bearer ${CREATOMATE_KEY}` }
-    });
-    if (!response.ok) {
-      return res.status(response.status).json({ error: 'Not found', details: await response.text() });
-    }
-    const data = await response.json();
-    res.json({
-      renderId: data.id,
-      status: data.status,
-      url: data.url || null,
-      progress: data.progress || 0,
-      duration: data.duration || null,
-      fileSize: data.file_size || null,
-      error: data.error_message || data.error || null,
-      createdAt: data.created_at,
-      completedAt: data.completed_at
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Check failed', details: err.message });
-  }
+    const r = await fetch(`https://api.creatomate.com/v1/renders/${req.params.id}`, { headers:{ 'Authorization':`Bearer ${CREATOMATE_KEY}` } });
+    if (!r.ok) return res.status(r.status).json({ error:'Not found' });
+    const d = await r.json();
+    res.json({ renderId:d.id, status:d.status, url:d.url||null, progress:d.progress||0, duration:d.duration, fileSize:d.file_size, error:d.error_message||null });
+  } catch (err) { res.status(500).json({ error:err.message }); }
 });
 
-// ── Export metadata ───────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// ENGINE 9: EXPORT METADATA
+// ══════════════════════════════════════════════════════════════════════════════
+
 app.post('/api/export/metadata', async (req, res) => {
   try {
     const { report, platform } = req.body;
-    const guides = {
-      youtube: 'YouTube: title max 100 chars, description with chapters, 3-5 hashtags',
-      instagram: 'Instagram: punchy caption max 2200 chars, 20-30 hashtags, call to action',
-      tiktok: 'TikTok: hook in first line, 150 chars, 3-5 trending hashtags',
-      linkedin: 'LinkedIn: professional, 1300 chars, insight-led, 3-5 hashtags',
-      twitter: 'Twitter/X: max 280 chars, 1-2 hashtags, punchy and direct',
-      facebook: 'Facebook: conversational, 63206 chars, 1-3 hashtags'
-    };
-    const prompt = `Generate optimised social metadata for this document analysis video.
-REPORT: ${report.title} | TYPE: ${report.docType}
-SUMMARY: ${report.executiveSummary}
-PLATFORM: ${platform} | GUIDE: ${guides[platform]||'General social'}
-Return ONLY valid JSON:
-{"title":"optimised title","description":"optimised description","hashtags":["tag1"],"chapters":[{"time":"0:00","title":"Chapter"}],"thumbnail_prompt":"AI thumbnail description"}`;
-
+    const guides = { youtube:'title max 100, description+chapters, 3-5 tags', instagram:'caption 2200, 20-30 tags', tiktok:'hook first, 150 chars, 3-5 tags', linkedin:'professional 1300 chars, 3-5 tags', twitter:'280 chars, 1-2 tags', facebook:'conversational, 1-3 tags' };
+    const prompt = `Generate social metadata. REPORT: ${report.title} | ${report.docType}\nSUMMARY: ${report.executiveSummary}\nPLATFORM: ${platform} | ${guides[platform]||''}\nReturn ONLY JSON: {"title":"","description":"","hashtags":[""],"chapters":[{"time":"0:00","title":""}]}`;
     const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] })
+      method:'POST', headers:{ 'Content-Type':'application/json', 'x-api-key':ANTHROPIC_KEY, 'anthropic-version':'2023-06-01' },
+      body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:1000, messages:[{ role:'user', content:prompt }] })
     });
     const data = await response.json();
-    const text = data.content.map(c => c.text || '').join('');
-    res.json(JSON.parse(text.replace(/```json|```/g, '').trim()));
-  } catch (err) {
-    res.status(500).json({ error: 'Metadata failed', details: err.message });
-  }
+    res.json(JSON.parse(data.content.map(c=>c.text||'').join('').replace(/```json|```/g,'').trim()));
+  } catch (err) { res.status(500).json({ error:'Metadata failed', details:err.message }); }
 });
 
-// ── Stripe ────────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// ENGINE 10: STRIPE BILLING
+// ══════════════════════════════════════════════════════════════════════════════
+
 app.post('/api/stripe/create-checkout', async (req, res) => {
   try {
     const { priceId, mode, customerEmail } = req.body;
-    const sessionParams = {
-      mode: mode || 'subscription', 
-      payment_method_types: ['card'],
-      line_items: [{ price: priceId, quantity: 1 }],
-      success_url: 'https://aabstudio.ai?checkout=success',
-      cancel_url: 'https://aabstudio.ai?checkout=cancelled',
-      customer_email: customerEmail,
-      allow_promotion_codes: true
-    };
-    // Only add trial for subscriptions
-    if (mode === 'subscription') {
-      sessionParams.subscription_data = { trial_period_days: 7 };
-    }
-    const session = await stripe.checkout.sessions.create(sessionParams);
-    res.json({ url: session.url, sessionId: session.id });
-  } catch (err) {
-    console.error('Stripe checkout error:', err.message);
-    res.status(500).json({ error: 'Checkout failed', details: err.message });
-  }
+    const p = { mode:mode||'subscription', payment_method_types:['card'], line_items:[{price:priceId,quantity:1}], success_url:'https://aabstudio.ai?checkout=success', cancel_url:'https://aabstudio.ai?checkout=cancelled', customer_email:customerEmail, allow_promotion_codes:true };
+    if (mode==='subscription') p.subscription_data = { trial_period_days:7 };
+    const session = await stripe.checkout.sessions.create(p);
+    res.json({ url:session.url, sessionId:session.id });
+  } catch (err) { res.status(500).json({ error:'Checkout failed', details:err.message }); }
 });
 
 app.post('/api/stripe/webhook', (req, res) => {
-  const sig = req.headers['stripe-signature'];
-  let event;
-  try { event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET); }
-  catch (err) { return res.status(400).send(`Webhook Error: ${err.message}`); }
-  console.log('Webhook:', event.type);
-  res.json({ received: true });
+  try { const event = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'], process.env.STRIPE_WEBHOOK_SECRET); console.log('Webhook:', event.type); res.json({ received:true }); }
+  catch (err) { res.status(400).send(`Webhook Error: ${err.message}`); }
 });
 
-// ── Creatomate test endpoint ──────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// TEST ENDPOINTS — Direct API verification URLs
+// ══════════════════════════════════════════════════════════════════════════════
+
 app.get('/api/test/creatomate', async (req, res) => {
   try {
-    const testPayload = {
-      source: {
-        output_format: 'mp4',
-        width: 1280,
-        height: 720,
-        duration: 5,
-        elements: [
-          {
-            type: 'rectangle',
-            track: 1,
-            time: 0,
-            duration: 5,
-            x: '50%', y: '50%',
-            width: '100%', height: '100%',
-            fill_color: '#1a3a5c'
-          },
-          {
-            type: 'text',
-            track: 2,
-            time: 0,
-            duration: 5,
-            text: 'AABStudio Test',
-            x: '50%', y: '50%',
-            font_family: 'Montserrat',
-            font_size: null, font_size_minimum: '5 vmin', font_size_maximum: '15 vmin',
-            color: '#ffffff'
-          }
-        ]
-      }
-    };
-
-    const response = await fetch('https://api.creatomate.com/v1/renders', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${CREATOMATE_KEY}`
-      },
-      body: JSON.stringify(testPayload)
-    });
-
-    const text = await response.text();
-    res.json({ status: response.status, ok: response.ok, body: text, key_present: !!CREATOMATE_KEY, key_prefix: CREATOMATE_KEY ? CREATOMATE_KEY.slice(0, 8) + '...' : 'missing' });
-  } catch (err) {
-    res.json({ error: err.message });
-  }
+    const source = { output_format:'mp4', width:1280, height:720, duration:5, elements:[
+      { type:'shape', track:1, time:0, duration:5, x:'50%', y:'50%', width:'100%', height:'100%', fill_color:'#1a3a5c', path:'M 0 0 L 100 0 L 100 100 L 0 100 Z' },
+      { type:'text', track:2, time:0, duration:5, text:'AABStudio v8 Test', x:'50%', y:'50%', width:'80%', height:'20%', x_alignment:'50%', y_alignment:'50%', font_family:'Montserrat', font_weight:700, font_size:null, font_size_minimum:'3 vmin', font_size_maximum:'10 vmin', fill_color:'#ffffff' }
+    ]};
+    const r = await fetch('https://api.creatomate.com/v1/renders', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${CREATOMATE_KEY}` }, body:JSON.stringify({ source }) });
+    const t = await r.text();
+    res.json({ status:r.status, ok:r.ok, body:JSON.parse(t) });
+  } catch (err) { res.json({ error:err.message }); }
 });
+
+app.get('/api/test/elevenlabs', async (req, res) => {
+  try {
+    const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers:{ 'xi-api-key':ELEVENLABS_KEY } });
+    const d = await r.json();
+    res.json({ status:r.status, ok:r.ok, voiceCount:(d.voices||[]).length });
+  } catch (err) { res.json({ error:err.message }); }
+});
+
+app.get('/api/test/runway', async (req, res) => {
+  try {
+    if (runwayRateLimitedUntil && new Date() < runwayRateLimitedUntil) return res.json({ status:'rate_limited', until:runwayRateLimitedUntil.toISOString() });
+    const r = await fetch('https://api.dev.runwayml.com/v1/tasks/nonexistent', { headers:{ 'Authorization':`Bearer ${RUNWAY_KEY}`, 'X-Runway-Version':'2024-11-06' } });
+    res.json({ status:r.status, authenticated: r.status !== 401 });
+  } catch (err) { res.json({ error:err.message }); }
+});
+
+app.get('/api/test/anthropic', async (req, res) => {
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method:'POST', headers:{ 'Content-Type':'application/json', 'x-api-key':ANTHROPIC_KEY, 'anthropic-version':'2023-06-01' }, body:JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:20, messages:[{role:'user',content:'Say OK'}] }) });
+    const d = await r.json();
+    res.json({ status:r.status, ok:r.ok, reply:d.content?.[0]?.text });
+  } catch (err) { res.json({ error:err.message }); }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// HEALTH
+// ══════════════════════════════════════════════════════════════════════════════
 
 app.get('/health', (req, res) => {
   res.json({
-    status: 'ok', platform: 'AABStudio API v8',
-    anthropic: ANTHROPIC_KEY ? 'set' : 'missing',
-    stripe: process.env.STRIPE_SECRET_KEY ? 'set' : 'missing',
-    elevenlabs: ELEVENLABS_KEY ? 'set' : 'missing',
-    runway: RUNWAY_KEY ? 'set' : 'missing',
-    creatomate: CREATOMATE_KEY ? 'set' : 'missing',
+    status:'ok', platform:'AABStudio API v8',
+    engines:['DocumentIntelligence','AnalysisIntelligence','SceneIntelligence','CostEstimator','CreditManager','VoiceEngine','MusicEngine','VideoRender','CreatomateRender','ExportMetadata'],
+    apis:{ anthropic:ANTHROPIC_KEY?'set':'missing', stripe:process.env.STRIPE_SECRET_KEY?'set':'missing', elevenlabs:ELEVENLABS_KEY?'set':'missing', runway:RUNWAY_KEY?'set':'missing', creatomate:CREATOMATE_KEY?'set':'missing', runwayRateLimited:!!runwayRateLimitedUntil },
     audioStoreSize: audioStore.size
   });
 });
