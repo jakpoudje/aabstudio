@@ -397,6 +397,16 @@ app.post('/api/video/generate', async (req, res) => {
         errorDetail = parsed.error || parsed.message || parsed.detail || errText;
       } catch(e) {}
       
+      // Special handling for rate limit — don't retry
+      if (response.status === 429) {
+        return res.status(429).json({ 
+          error: 'Runway daily limit reached', 
+          details: errorDetail,
+          hint: 'Your Runway daily task limit has been reached. Video generation will be skipped for remaining scenes. The limit resets at midnight UTC.',
+          retryable: false
+        });
+      }
+      
       return res.status(500).json({ 
         error: 'Runway error', 
         details: errorDetail, 
@@ -536,11 +546,11 @@ app.post('/api/render', async (req, res) => {
           text: scene.type.toUpperCase(),
           x: '3%', y: '6%',
           x_anchor: '0%', y_anchor: '50%',
-          width: 'auto', height: 'auto',
-          font_family: 'Montserrat', font_weight: '700', font_size: '15px',
-          color: '#ffffff',
+          font_family: 'Montserrat', font_weight: '700', font_size: '15 vmin',
+          fill_color: '#ffffff',
           background_color: typeColors[scene.type] || bgColor,
-          x_padding: '10px', y_padding: '4px', border_radius: '20px'
+          background_x_padding: '2 vmin', background_y_padding: '1 vmin',
+          background_border_radius: '2 vmin'
         });
       }
 
@@ -549,14 +559,15 @@ app.post('/api/render', async (req, res) => {
         compositionElements.push({
           type: 'text', track: 4,
           time: timeOffset + 0.5, duration: dur - 1,
-          text: scene.overlayText,
+          text: String(scene.overlayText),
           x: '5%', y: '88%',
           x_anchor: '0%', y_anchor: '50%',
-          width: '90%', height: 'auto',
-          font_family: 'Montserrat', font_weight: '600', font_size: '20px',
-          color: '#ffffff',
+          width: '90%',
+          font_family: 'Montserrat', font_weight: '600', font_size: '3.5 vmin',
+          fill_color: '#ffffff',
           background_color: 'rgba(26,58,92,0.9)',
-          x_padding: '14px', y_padding: '7px', border_radius: '6px'
+          background_x_padding: '2 vmin', background_y_padding: '1 vmin',
+          background_border_radius: '1 vmin'
         });
       }
 
@@ -595,10 +606,21 @@ app.post('/api/render', async (req, res) => {
       height: fmt.height,
       frame_rate: 24,
       duration: timeOffset,
-      elements: compositionElements
+      // Filter out any elements without a valid type — prevents Creatomate rejection
+      elements: compositionElements.filter(el => {
+        if (!el || !el.type) {
+          console.log('Filtered out invalid element:', JSON.stringify(el).slice(0, 100));
+          return false;
+        }
+        return true;
+      })
     };
 
-    console.log(`Creatomate: ${validScenes.length} valid scenes (of ${scenes.length} total), ${Math.round(timeOffset)}s, ${compositionElements.length} elements`);
+    console.log(`Creatomate: ${validScenes.length} valid scenes (of ${scenes.length} total), ${Math.round(timeOffset)}s, ${source.elements.length} elements, types: ${source.elements.map(e=>e.type).join(',')}`);
+    
+    // Log the full source for debugging
+    const sourceStr = JSON.stringify(source);
+    console.log(`Creatomate payload size: ${sourceStr.length} bytes`);
 
     const response = await fetch('https://api.creatomate.com/v1/renders', {
       method: 'POST',
@@ -768,7 +790,7 @@ app.get('/api/test/creatomate', async (req, res) => {
             text: 'AABStudio Test',
             x: '50%', y: '50%',
             font_family: 'Montserrat',
-            font_size: '40px',
+            font_size: '8 vmin',
             color: '#ffffff'
           }
         ]
@@ -793,7 +815,7 @@ app.get('/api/test/creatomate', async (req, res) => {
 
 app.get('/health', (req, res) => {
   res.json({
-    status: 'ok', platform: 'AABStudio API v7.1',
+    status: 'ok', platform: 'AABStudio API v7.2',
     anthropic: ANTHROPIC_KEY ? 'set' : 'missing',
     stripe: process.env.STRIPE_SECRET_KEY ? 'set' : 'missing',
     elevenlabs: ELEVENLABS_KEY ? 'set' : 'missing',
@@ -804,4 +826,4 @@ app.get('/health', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`AABStudio API v7.1 on port ${PORT}`));
+app.listen(PORT, () => console.log(`AABStudio API v7.2 on port ${PORT}`));
