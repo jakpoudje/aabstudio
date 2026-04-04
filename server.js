@@ -103,13 +103,45 @@ Generate 4-6 sections, 2-3 evidence items each, sequential IDs (EV-101, EV-102..
 
     let messages;
     if (isPDF && fileBase64) {
-      messages = [{ role: 'user', content: [
-        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileBase64 } },
-        { type: 'text', text: analysisPrompt }
-      ]}];
+      // Guard: truncate PDF base64 if too large (200K tokens ≈ ~150K base64 chars for PDF)
+      // Each base64 char ≈ 1.3 tokens for PDF content
+      const maxBase64Chars = 120000; // ~156K tokens, safely under 200K with prompt
+      let pdfData = fileBase64;
+      let truncated = false;
+      if (pdfData.length > maxBase64Chars) {
+        console.log(`PDF too large: ${pdfData.length} base64 chars, truncating to ${maxBase64Chars}`);
+        // For very large PDFs, extract text instead of sending base64
+        let documentText = await extractText(fileName, fileBase64, mimeType);
+        if (documentText && documentText.length > 100) {
+          // Use extracted text instead of PDF binary
+          const docSection = `\n\nDOCUMENT: ${fileName} (${Math.round(fileBase64.length * 0.75 / 1024)}KB PDF — text extracted)\n\nCONTENT:\n${documentText}`;
+          messages = [{ role: 'user', content: analysisPrompt + docSection }];
+          truncated = true;
+        } else {
+          // Truncate the base64 (sends partial PDF — Anthropic handles gracefully)
+          pdfData = fileBase64.slice(0, maxBase64Chars);
+          truncated = true;
+        }
+      }
+      if (!truncated) {
+        messages = [{ role: 'user', content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfData } },
+          { type: 'text', text: analysisPrompt }
+        ]}];
+      } else if (!messages) {
+        messages = [{ role: 'user', content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfData } },
+          { type: 'text', text: analysisPrompt + '\n\nNote: This PDF was truncated due to size. Analyse what is available.' }
+        ]}];
+      }
     } else {
       let documentText = fileBase64 ? await extractText(fileName, fileBase64, mimeType) : null;
       documentText = documentText || fileContent || null;
+      // Also guard text length
+      if (documentText && documentText.length > 50000) {
+        console.log(`Text too long: ${documentText.length} chars, truncating to 50000`);
+        documentText = documentText.slice(0, 50000) + '\n\n[Document truncated — first 50,000 characters analysed]';
+      }
       const docSection = documentText ? `\n\nDOCUMENT: ${fileName}\n\nCONTENT:\n${documentText}` : `\n\nDocument: "${fileName}" — content unavailable.`;
       messages = [{ role: 'user', content: analysisPrompt + docSection }];
     }
