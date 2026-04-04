@@ -336,8 +336,20 @@ app.post('/api/music/generate', async (req, res) => {
 });
 
 // ── Runway video generation ───────────────────────────────────────────────────
+let runwayRateLimitedUntil = null; // Cache 429 to stop hammering
+
 app.post('/api/video/generate', async (req, res) => {
   try {
+    // Check if we're rate limited
+    if (runwayRateLimitedUntil && new Date() < runwayRateLimitedUntil) {
+      return res.status(429).json({ 
+        error: 'Runway daily limit reached (cached)', 
+        details: 'Daily task limit hit earlier. Resets at midnight UTC.',
+        hint: 'Runway daily limit still active. Video generation skipped.',
+        retryable: false
+      });
+    }
+
     const { prompt, duration, ratio, referenceImageBase64 } = req.body;
 
     const clipDuration = 10;
@@ -397,8 +409,11 @@ app.post('/api/video/generate', async (req, res) => {
         errorDetail = parsed.error || parsed.message || parsed.detail || errText;
       } catch(e) {}
       
-      // Special handling for rate limit — don't retry
+      // Special handling for rate limit — cache it so we stop making requests
       if (response.status === 429) {
+        // Cache the rate limit for 1 hour (recheck periodically)
+        runwayRateLimitedUntil = new Date(Date.now() + 60 * 60 * 1000);
+        console.log('Runway rate limit cached until', runwayRateLimitedUntil.toISOString());
         return res.status(429).json({ 
           error: 'Runway daily limit reached', 
           details: errorDetail,
@@ -546,11 +561,11 @@ app.post('/api/render', async (req, res) => {
           text: scene.type.toUpperCase(),
           x: '3%', y: '6%',
           x_anchor: '0%', y_anchor: '50%',
-          font_family: 'Montserrat', font_weight: '700', font_size: '15 vmin',
+          font_family: 'Montserrat', font_weight: 700, font_size: null, font_size_minimum: '2 vmin', font_size_maximum: '4 vmin',
           fill_color: '#ffffff',
           background_color: typeColors[scene.type] || bgColor,
-          background_x_padding: '2 vmin', background_y_padding: '1 vmin',
-          background_border_radius: '2 vmin'
+          background_x_padding: '50%', background_y_padding: '30%',
+          background_border_radius: '100%'
         });
       }
 
@@ -563,11 +578,11 @@ app.post('/api/render', async (req, res) => {
           x: '5%', y: '88%',
           x_anchor: '0%', y_anchor: '50%',
           width: '90%',
-          font_family: 'Montserrat', font_weight: '600', font_size: '3.5 vmin',
+          font_family: 'Montserrat', font_weight: 600, font_size: null, font_size_minimum: '2 vmin', font_size_maximum: '5 vmin',
           fill_color: '#ffffff',
           background_color: 'rgba(26,58,92,0.9)',
-          background_x_padding: '2 vmin', background_y_padding: '1 vmin',
-          background_border_radius: '1 vmin'
+          background_x_padding: '40%', background_y_padding: '25%',
+          background_border_radius: '10%'
         });
       }
 
@@ -790,7 +805,7 @@ app.get('/api/test/creatomate', async (req, res) => {
             text: 'AABStudio Test',
             x: '50%', y: '50%',
             font_family: 'Montserrat',
-            font_size: '8 vmin',
+            font_size: null, font_size_minimum: '5 vmin', font_size_maximum: '15 vmin',
             color: '#ffffff'
           }
         ]
@@ -815,7 +830,7 @@ app.get('/api/test/creatomate', async (req, res) => {
 
 app.get('/health', (req, res) => {
   res.json({
-    status: 'ok', platform: 'AABStudio API v7.2',
+    status: 'ok', platform: 'AABStudio API v8',
     anthropic: ANTHROPIC_KEY ? 'set' : 'missing',
     stripe: process.env.STRIPE_SECRET_KEY ? 'set' : 'missing',
     elevenlabs: ELEVENLABS_KEY ? 'set' : 'missing',
@@ -826,4 +841,4 @@ app.get('/health', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`AABStudio API v7.2 on port ${PORT}`));
+app.listen(PORT, () => console.log(`AABStudio API v8 on port ${PORT}`));
