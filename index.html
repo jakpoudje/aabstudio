@@ -668,9 +668,10 @@ var LIVE_SCENES=[
 
 var CHECKOUT_DATA={
   pro:{title:'Upgrade to Pro',sub:'7-day free trial — no charge today',rows:[['Plan','Pro monthly'],['Trial','7 days free'],['After trial','£24.00/mo'],['Today','£0.00']],btn:'Start free trial'},
-  studio:{title:'Upgrade to Studio',sub:'7-day free trial — no charge today',rows:[['Plan','Studio monthly'],['Includes','5 video credits'],['After trial','£69.00/mo'],['Today','£0.00']],btn:'Start free trial'},
-  'cred-starter':{title:'Buy Starter Pack',sub:'3 video credits — one-time',rows:[['Credits','3 projects'],['Per project','£9.67'],['Total','£29.00']],btn:'Pay £29.00'},
-  'cred-creator':{title:'Buy Creator Pack',sub:'10 video credits — one-time',rows:[['Credits','10 projects'],['Per project','£7.90'],['Total','£79.00']],btn:'Pay £79.00'},
+  studio:{title:'Upgrade to Studio',sub:'7-day free trial — no charge today',rows:[['Plan','Studio monthly'],['Includes','2500 credits/mo'],['After trial','£69.00/mo'],['Today','£0.00']],btn:'Start free trial'},
+  'cred-starter':{title:'Buy Starter Pack',sub:'400 credits — one-time',rows:[['Credits','400'],['Per scene','~£0.48'],['Total','£19.00']],btn:'Pay £19.00',credits:400},
+  'cred-creator':{title:'Buy Creator Pack',sub:'1000 credits — one-time',rows:[['Credits','1,000'],['Per scene','~£0.49'],['Total','£49.00']],btn:'Pay £49.00',credits:1000},
+  'cred-studio':{title:'Buy Studio Pack',sub:'2500 credits — one-time',rows:[['Credits','2,500'],['Per scene','~£0.40'],['Total','£99.00']],btn:'Pay £99.00',credits:2500},
   'cred-studio':{title:'Buy Studio Pack',sub:'25 video credits — one-time',rows:[['Credits','25 projects'],['Per project','£6.76'],['Total','£169.00']],btn:'Pay £169.00'}
 };
 
@@ -1118,7 +1119,7 @@ function runSceneEngines(){
 
 async function callSceneAPI(){
   try{
-    var res=await fetch('https://aabstudio-production.up.railway.app/api/scenes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({report:APP.lastReport,presenterMode:APP_SCENES.presenterMode})});
+    var res=await fetch('https://aabstudio-production.up.railway.app/api/scenes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({report:APP.lastReport,presenterMode:APP_SCENES.presenterMode,speed:APP_SCENES.pacing})});
     var data=await res.json();if(data.error)throw new Error(data.error);
     APP_SCENES.data=data;buildScenesView(data);
   }catch(e){buildScenesError(e.message);}
@@ -1129,7 +1130,7 @@ function buildScenesView(data){
   var totalScenes=0;var totalWords=0;
   (data.discussions||[]).forEach(function(d){totalScenes+=(d.scenes||[]).length;(d.scenes||[]).forEach(function(s){totalWords+=(s.presenterA||'').split(/\s+/).length;});});
   var totalSecs=totalScenes*8;var mins=Math.floor(totalSecs/60);var secs=totalSecs%60;var avgWords=totalScenes>0?Math.round(totalWords/totalScenes):0;
-  var html='<div class="scene-stats"><div class="ss-item"><div class="ss-num">'+totalScenes+'</div><div class="ss-label">Scenes</div></div><div class="ss-item"><div class="ss-num">'+(data.discussions||[]).length+'</div><div class="ss-label">Sections</div></div><div class="ss-item"><div class="ss-num">'+(mins>0?mins+'m ':'')+secs+'s</div><div class="ss-label">Duration</div></div><div class="ss-item"><div class="ss-num">'+avgWords+'</div><div class="ss-label">Avg words/scene</div></div></div>';
+  var html='<div class="scene-stats"><div class="ss-item"><div class="ss-num">'+totalScenes+'</div><div class="ss-label">Scenes</div></div><div class="ss-item"><div class="ss-num">'+(data.discussions||[]).length+'</div><div class="ss-label">Sections</div></div><div class="ss-item"><div class="ss-num">'+(mins>0?mins+'m ':'')+secs+'s</div><div class="ss-label">Duration</div></div><div class="ss-item"><div class="ss-num">'+(data.costEstimate?data.costEstimate.totalCredits:totalScenes*10)+'</div><div class="ss-label">Credits</div></div></div>';
   html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;"><div><div class="page-title">'+data.title+'</div><div class="page-sub">'+APP_SCENES.presenterMode.charAt(0).toUpperCase()+APP_SCENES.presenterMode.slice(1)+' presenter · '+totalScenes+' scenes · '+(mins>0?mins+'m ':'')+secs+'s</div></div><div style="display:flex;gap:8px;"><button class="btn-outline" onclick="exportScriptTxt()">Export script</button><button class="btn-outline" onclick="nav(\'studio-pg\')">→ Studio</button><button class="btn-primary" onclick="launchLiveFromScenes()">→ Go live</button></div></div>';
   (data.discussions||[]).forEach(function(disc,di){
     html+='<div class="disc-block"><div class="disc-header"><span class="disc-num">0'+(di+1)+'</span><div style="flex:1;"><div class="disc-title">'+disc.sectionTitle+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">'+(disc.scenes||[]).length+' scenes</div></div></div>';
@@ -1207,7 +1208,17 @@ function updateSceneScript(di,si,val){if(APP_SCENES.data&&APP_SCENES.data.discus
 // ── RENDER — CRITICAL FIX: Don't stitch until ALL voice is done ─────────────
 function startRender(){
   if(!APP_SCENES.data){alert('Generate scenes first.');nav('scenes-pg');return;}
-  if(!consumeCredit())return;
+  // Cost check: 1 scene = 10 credits per spec Section 9
+  var totalScenes=0;
+  (APP_SCENES.data.discussions||[]).forEach(function(d){totalScenes+=(d.scenes||[]).length;});
+  var requiredCredits=totalScenes*10;
+  if(CREDITS.remaining<requiredCredits){
+    if(confirm('This render needs '+requiredCredits+' credits ('+totalScenes+' scenes × 10). You have '+CREDITS.remaining+'. Go to pricing?'))nav('pricing-pg');
+    return;
+  }
+  CREDITS.remaining-=requiredCredits;CREDITS.used+=requiredCredits;saveCredits();loadCreditsDisplay();
+  showToast('Deducted '+requiredCredits+' credits for '+totalScenes+' scenes.','success');
+  
   STUDIO.voiceId=document.getElementById('studio-voice').value;
   STUDIO.stability=document.getElementById('studio-stab').value/100;
   STUDIO.similarityBoost=document.getElementById('studio-sim').value/100;
@@ -1258,19 +1269,12 @@ async function runRender(){
       return renderScene(scene,idx).then(function(){
         if(scene.error)failed++;
         else{if(scene.voiceDone)voiceDone++;if(scene.videoDone)videoDone++;}
-      }).catch(function(err){
-        console.error('Scene '+idx+' crashed:',err);
-        scene.error=err.message||'Unknown error';
-        failed++;
-        updateRSI(idx,'Crashed','rsi-error',0);
-      }).then(function(){
         document.getElementById('rq-voice').textContent=voiceDone;
         document.getElementById('rq-video').textContent=videoDone;
         document.getElementById('rq-failed').textContent=failed;
         var pct=Math.round(((voiceDone+videoDone)/(total*2))*100);
         document.getElementById('render-pct').textContent=pct+'%';
         document.getElementById('render-total-fill').style.width=pct+'%';
-        document.getElementById('render-status-text').textContent='Rendering... '+voiceDone+' voice, '+videoDone+' video, '+failed+' failed of '+total;
       });
     }));
   }
@@ -1294,44 +1298,33 @@ async function renderScene(scene,idx){
   try{
     var vRes=await fetch('https://aabstudio-production.up.railway.app/api/voice',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:scene.script,voiceId:STUDIO.voiceId,stability:STUDIO.stability,similarityBoost:STUDIO.similarityBoost})});
     if(!vRes.ok){scene.error='Voice HTTP '+vRes.status;updateRSI(idx,'Voice '+vRes.status,'rsi-error',0);return;}
-    var vData;
-    try{vData=await vRes.json();}catch(parseErr){scene.error='Voice response not JSON';updateRSI(idx,'Voice parse error','rsi-error',0);return;}
+    var vData;try{vData=await vRes.json();}catch(e){scene.error='Voice parse error';updateRSI(idx,'Voice error','rsi-error',0);return;}
     if(vData.audio){scene.audioBase64=vData.audio;scene.voiceDone=true;saveRenderProgress();}
     else{scene.error='Voice failed: '+(vData.error||'no audio');updateRSI(idx,'Voice failed','rsi-error',0);return;}
 
-    // VIDEO — optional, skip gracefully
+    // VIDEO — skip if Runway rate limited
+    if(window._runwayLimitHit){updateRSI(idx,'Done (voice)','rsi-done',100);return;}
     updateRSI(idx,'Video...','rsi-video',50);
-    if(window._runwayLimitHit){
-      console.log('Skipping video for scene',idx,'— Runway daily limit');
-      updateRSI(idx,'Done (voice only)','rsi-done',100);
-      return;
-    }
     try{
       var ratioMap={'16:9':'1280:768','9:16':'768:1280','1:1':'1024:1024'};
       var vidRes=await fetch('https://aabstudio-production.up.railway.app/api/video/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:scene.visualPrompt,duration:8,ratio:ratioMap[STUDIO.outputFormat]||'1280:768',referenceImageBase64:STUDIO.avatarAImage||null})});
-      if(vidRes.status===429){
-        window._runwayLimitHit=true;
-        showToast('Runway daily limit reached. Remaining scenes will be voice-only.','warning');
-        updateRSI(idx,'Done (voice only)','rsi-done',100);
-        return;
-      }
-      if(!vidRes.ok){console.log('Video generate failed for scene',idx,'status:',vidRes.status);throw new Error('Video HTTP '+vidRes.status);}
-      var vidData;
-      try{vidData=await vidRes.json();}catch(e){throw new Error('Video response not JSON');}
+      if(vidRes.status===429){window._runwayLimitHit=true;showToast('Runway daily limit. Remaining scenes voice-only.','warning');updateRSI(idx,'Done (voice)','rsi-done',100);return;}
+      if(!vidRes.ok){throw new Error('Video HTTP '+vidRes.status);}
+      var vidData;try{vidData=await vidRes.json();}catch(e){throw new Error('Video parse error');}
       if(vidData.taskId){
         var done=false,attempts=0;
         while(!done&&attempts<40){
           await new Promise(function(r){setTimeout(r,3000);});
-          var sRes=await fetch('https://aabstudio-production.up.railway.app/api/video/status/'+vidData.taskId);
-          if(!sRes.ok){attempts++;continue;}
-          var sData;try{sData=await sRes.json();}catch(e){attempts++;continue;}
-          updateRSI(idx,'Video '+(Math.round((sData.progress||0)*100))+'%','rsi-video',50+Math.round((sData.progress||0)*40));
-          if(sData.status==='SUCCEEDED'&&sData.videoUrl){scene.videoUrl=sData.videoUrl;scene.videoDone=true;done=true;showSceneVideoPreview(idx,sData.videoUrl);saveRenderProgress();}
-          else if(sData.status==='FAILED'){done=true;console.log('Video failed for scene',idx,sData.error);}
+          try{
+            var sRes=await fetch('https://aabstudio-production.up.railway.app/api/video/status/'+vidData.taskId);
+            if(!sRes.ok){attempts++;continue;}
+            var sData=await sRes.json();
+            updateRSI(idx,'Video '+(Math.round((sData.progress||0)*100))+'%','rsi-video',50+Math.round((sData.progress||0)*40));
+            if(sData.status==='SUCCEEDED'&&sData.videoUrl){scene.videoUrl=sData.videoUrl;scene.videoDone=true;done=true;showSceneVideoPreview(idx,sData.videoUrl);saveRenderProgress();}
+            else if(sData.status==='FAILED'){done=true;}
+          }catch(pollErr){/* continue */}
           attempts++;
         }
-      } else if(vidData.hint){
-        console.log('Video skipped for scene',idx,':',vidData.hint);
       }
     }catch(videoErr){console.log('Video generation skipped for scene',idx,':',videoErr.message);}
     updateRSI(idx,'Done','rsi-done',100);
@@ -1369,9 +1362,9 @@ async function stitchWithCreatomate(){
       document.getElementById('stitch-status-text').textContent='Creatomate processing (ID: '+data.renderId.slice(0,8)+'...)';
       await pollCreatomateRender(data.renderId);
     } else {
-      var errorMsg=data.error||'No render ID returned';
+      var errorMsg=data.error||'Unknown error';
       var errorDetails=data.details||'';
-      document.getElementById('stitch-status-text').textContent='Stitch failed: '+errorMsg+(errorDetails?' — '+String(errorDetails).slice(0,100):'');
+      document.getElementById('stitch-status-text').textContent='Stitch failed: '+errorMsg+(errorDetails?' — '+errorDetails:'');
       document.getElementById('rq-stitch').textContent='Failed';
       document.getElementById('render-export-btn').style.display='';
     }
