@@ -1216,6 +1216,7 @@ function startRender(){
   STUDIO.sidechain=document.getElementById('music-sidechain').checked;
 
   RENDER.scenes=[];RENDER.voiceData={};RENDER.videoData={};RENDER.stitchUrl=null;RENDER.lastRenderId=null;
+  window._runwayLimitHit=false;
   (APP_SCENES.data.discussions||[]).forEach(function(d){
     (d.scenes||[]).forEach(function(s){
       RENDER.scenes.push({sceneNumber:s.sceneNumber,section:d.sectionTitle,script:s.presenterA||'',type:s.type||'Explanation',visualPrompt:buildVisualPrompt(s),overlayText:s.overlayText||null,duration:s.duration||8,voiceDone:false,videoDone:false,error:null,audioBase64:null,videoUrl:null,audioDuration:s.duration||8});
@@ -1300,9 +1301,20 @@ async function renderScene(scene,idx){
 
     // VIDEO — optional, skip gracefully
     updateRSI(idx,'Video...','rsi-video',50);
+    if(window._runwayLimitHit){
+      console.log('Skipping video for scene',idx,'— Runway daily limit');
+      updateRSI(idx,'Done (voice only)','rsi-done',100);
+      return;
+    }
     try{
       var ratioMap={'16:9':'1280:768','9:16':'768:1280','1:1':'1024:1024'};
       var vidRes=await fetch('https://aabstudio-production.up.railway.app/api/video/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:scene.visualPrompt,duration:8,ratio:ratioMap[STUDIO.outputFormat]||'1280:768',referenceImageBase64:STUDIO.avatarAImage||null})});
+      if(vidRes.status===429){
+        window._runwayLimitHit=true;
+        showToast('Runway daily limit reached. Remaining scenes will be voice-only.','warning');
+        updateRSI(idx,'Done (voice only)','rsi-done',100);
+        return;
+      }
       if(!vidRes.ok){console.log('Video generate failed for scene',idx,'status:',vidRes.status);throw new Error('Video HTTP '+vidRes.status);}
       var vidData;
       try{vidData=await vidRes.json();}catch(e){throw new Error('Video response not JSON');}
