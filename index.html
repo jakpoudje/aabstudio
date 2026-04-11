@@ -2061,6 +2061,35 @@ async function generateSceneImage(sceneNumber, visualPrompt) {
 
   var cfg = getStudioConfig();
 
+  // ── REFERENCE IMAGE CHAINING ──────────────────────────────────────────────
+  // Scene 1: use user's avatar photo to establish look
+  // Scene 2+: use Scene 1's generated image as the reference → same face, clothes, studio
+  var referenceB64 = null;
+  var isFirst = false;
+
+  var allSceneNums = [];
+  (APP_SCENES.data && APP_SCENES.data.discussions || []).forEach(function(d) {
+    (d.scenes || []).forEach(function(s) { allSceneNums.push(s.sceneNumber); });
+  });
+  var firstSceneNum = allSceneNums.length > 0 ? Math.min.apply(null, allSceneNums) : 1;
+
+  if (sceneNumber === firstSceneNum) {
+    // This IS Scene 1 — use the avatar reference photo if available
+    isFirst = true;
+    referenceB64 = STUDIO && STUDIO.avatarAImage ? STUDIO.avatarAImage : null;
+  } else {
+    // This is NOT Scene 1 — use Scene 1's generated image as the reference
+    var scene1Image = SCENE_IMAGES[firstSceneNum];
+    if (scene1Image && scene1Image.base64) {
+      referenceB64 = scene1Image.base64;
+      isFirst = false;
+    } else if (STUDIO && STUDIO.avatarAImage) {
+      // Scene 1 not generated yet — fall back to avatar photo
+      referenceB64 = STUDIO.avatarAImage;
+      isFirst = true;
+    }
+  }
+
   try {
     var r = await fetch('https://aabstudio-production.up.railway.app/api/image/generate', {
       method: 'POST',
@@ -2072,6 +2101,8 @@ async function generateSceneImage(sceneNumber, visualPrompt) {
         cinematographyPreset: cfg.cinematographyPreset,
         studioBg: cfg.studioBg,
         avatarDesc: cfg.avatarDesc,
+        referenceImageBase64: referenceB64,
+        isFirstScene: isFirst,
         provider: 'dalle'
       })
     });
@@ -2080,7 +2111,6 @@ async function generateSceneImage(sceneNumber, visualPrompt) {
     var d = await r.json();
     if (d.error) throw new Error(d.error);
 
-    // Store the image
     SCENE_IMAGES[sceneNumber] = {
       base64: d.imageBase64,
       provider: d.provider,
@@ -2088,21 +2118,35 @@ async function generateSceneImage(sceneNumber, visualPrompt) {
       dataUrl: 'data:image/png;base64,' + d.imageBase64
     };
 
-    // Show the image in the thumbnail
     thumb.innerHTML = '<img src="data:image/png;base64,' + d.imageBase64 + '" alt="Scene ' + sceneNumber + '" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:7px;cursor:pointer;" onclick="previewSceneImage(' + sceneNumber + ')">';
 
-    // Show action buttons
     if (actions) actions.style.display = 'flex';
 
-    // Also store image reference on the render scene if it exists
     if (RENDER && RENDER.scenes) {
       var rs = RENDER.scenes.find(function(s) { return s.sceneNumber === sceneNumber; });
       if (rs) rs.imageBase64 = d.imageBase64;
     }
 
-    showToast('Scene ' + sceneNumber + ' image ready', 'success');
+    // If this was Scene 1, automatically offer to generate the rest
+    if (sceneNumber === firstSceneNum && allSceneNums.length > 1) {
+      showToast('Scene 1 generated — reference established. Generating remaining scenes...', 'success');
+      // Auto-generate remaining scenes with Scene 1 as reference
+      var remaining = allSceneNums.filter(function(n) { return n !== firstSceneNum; });
+      for (var i = 0; i < remaining.length; i += 3) {
+        var batch = remaining.slice(i, i + 3);
+        await Promise.all(batch.map(function(sn) {
+          var sp = APP_SCENES._prompts && APP_SCENES._prompts[sn] || '';
+          return generateSceneImage(sn, sp).catch(function(e) {
+            console.warn('Scene ' + sn + ' failed:', e.message);
+          });
+        }));
+      }
+      showToast('All scenes generated with consistent look', 'success');
+    } else {
+      showToast('Scene ' + sceneNumber + ' image ready', 'success');
+    }
 
-    } catch (e) {
+  } catch (e) {
     var retryDiv = document.createElement('div');
     retryDiv.className = 'scene-img-placeholder';
     retryDiv.style.cursor = 'pointer';
@@ -2113,7 +2157,6 @@ async function generateSceneImage(sceneNumber, visualPrompt) {
     showToast('Image failed: ' + e.message, 'error');
   }
 }
-
 // Generate images for ALL scenes in batch (3 at a time)
 async function generateAllSceneImages() {
   if (!APP_SCENES.data) { showToast('Generate scenes first.', 'error'); return; }
