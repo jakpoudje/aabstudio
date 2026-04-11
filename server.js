@@ -5,6 +5,30 @@ const Stripe = require('stripe');
 
 const app = express();
 app.use(cors());
+
+// ── STRIPE WEBHOOK — must be raw body, registered BEFORE express.json() ──────
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  try {
+    if (!stripe) throw new Error('Stripe not configured');
+    if (!STRIPE_WEBHOOK_SECRET) {
+      console.warn('STRIPE_WEBHOOK_SECRET not set — skipping signature verification');
+      res.json({ received: true });
+      return;
+    }
+    const event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+      console.log('Payment completed:', session.id, session.customer_email);
+      // TODO: credit user account in Supabase
+    }
+    res.json({ received: true });
+  } catch (e) {
+    console.error('Webhook error:', e.message);
+    res.status(400).json({ error: e.message });
+  }
+});
+
 app.use(express.json({ limit: '50mb' }));
 
 // ── ENV ───────────────────────────────────────────────────────────────────────
@@ -184,18 +208,93 @@ User request: ${request}`;
 // ── ENGINE 2: ANALYSIS ────────────────────────────────────────────────────────
 app.post('/api/analyse', async (req, res) => {
   try {
-    const messages = buildAnalysisMessages(req.body);
+    const { request, depth, fileName, fileBase64, fileContent, mimeType } = req.body;
+
+    const systemPrompt = `You are AABStudio's Document Intelligence Engine — a professional-grade analysis AI.
+
+You produce DEEP, BALANCED analysis reports that are fair, evidence-based, and multi-perspective.
+
+BALANCED REASONING REQUIRED — every section must include a "reasoning" object:
+- observation: what you see in the document
+- merits: positive aspects, benefits, strengths
+- risks: concerns, risks, weaknesses
+- tradeoffs: the tension between merits and risks
+- operationalImpact: practical day-to-day consequences
+- financialImpact: financial consequences
+- recommendation: specific actionable advice
+
+EVIDENCE EXTRACTION — each section should include evidenceItems:
+- label, source (page/clause), text (direct quote), interpretation, implication, confidence (High/Medium/Low)
+
+Analysis depth: ${depth || 'deep'}
+User request: ${request}
+
+OUTPUT: respond with ONLY valid JSON, no markdown, no preamble:
+{
+  "title": "...",
+  "docType": "...",
+  "domain": "...",
+  "executiveSummary": "...",
+  "sections": [
+    {
+      "title": "...",
+      "body": "...",
+      "reasoning": {
+        "observation": "...", "merits": "...", "risks": "...",
+        "tradeoffs": "...", "operationalImpact": "...",
+        "financialImpact": "...", "recommendation": "..."
+      },
+      "evidenceItems": [
+        { "label": "...", "source": "...", "text": "...", "interpretation": "...", "implication": "...", "confidence": "High" }
+      ]
+    }
+  ]
+}`;
+
+    // Build user message content
+    const userContent = [];
+    const isPDF = mimeType === 'application/pdf' || fileName?.toLowerCase().endsWith('.pdf');
+    const isImage = mimeType?.startsWith('image/');
+    const tooLarge = fileBase64 && fileBase64.length > 120000;
+
+    if (fileBase64 && !tooLarge) {
+      if (isPDF) {
+        userContent.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileBase64 } });
+      } else if (isImage) {
+        userContent.push({ type: 'image', source: { type: 'base64', media_type: mimeType, data: fileBase64 } });
+      } else {
+        // Office docs / text — extract as text
+        const extracted = extractBase64Text(fileBase64, mimeType, fileName);
+        if (extracted) {
+          userContent.push({ type: 'text', text: `Document: ${fileName}\n\n${extracted}` });
+        } else {
+          // Try sending as document anyway (some office formats work)
+          try {
+            userContent.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileBase64 } });
+          } catch (e) {
+            userContent.push({ type: 'text', text: `File: ${fileName} (binary format — analyse based on filename and request)` });
+          }
+        }
+      }
+    } else if (tooLarge) {
+      const extracted = extractBase64Text(fileBase64, mimeType, fileName);
+      userContent.push({ type: 'text', text: extracted ? `Document: ${fileName} (first 50,000 chars):\n\n${extracted}` : `File: ${fileName} (too large — analyse based on filename and request)` });
+    }
+
+    if (fileContent) userContent.push({ type: 'text', text: `Content:\n${fileContent.slice(0, 20000)}` });
+    userContent.push({ type: 'text', text: `Analyse this document. Request: "${request}". Return ONLY valid JSON.` });
+
     const response = await anthropic.messages.create({
       model: 'claude-opus-4-5',
       max_tokens: 8000,
-      system: messages[0] ? undefined : '',
-      messages
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userContent }]
     });
 
     const text = response.content.map(c => c.text || '').join('').trim();
     const jsonStart = text.indexOf('{');
     const jsonEnd = text.lastIndexOf('}');
-    if (jsonStart === -1 || jsonEnd === -1) throw new Error('No JSON in response');
+    if (jsonStart === -1 || jsonEnd === -1) throw new Error('Claude returned no JSON — check ANTHROPIC_API_KEY is valid');
     const report = JSON.parse(text.slice(jsonStart, jsonEnd + 1));
     res.json(report);
   } catch (e) {
@@ -911,21 +1010,7 @@ app.post('/api/stripe/create-checkout', async (req, res) => {
   }
 });
 
-app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-  const sig = req.headers['stripe-signature'];
-  try {
-    const event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object;
-      console.log('Payment completed:', session.id, session.customer_email);
-      // TODO: credit user account in Supabase
-    }
-    res.json({ received: true });
-  } catch (e) {
-    console.error('Webhook error:', e.message);
-    res.status(400).json({ error: e.message });
-  }
-});
+// Stripe webhook registered above (before express.json middleware)
 
 // ── TEST ENDPOINTS ────────────────────────────────────────────────────────────
 app.get('/api/test/anthropic', async (req, res) => {
