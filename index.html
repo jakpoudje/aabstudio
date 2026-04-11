@@ -241,6 +241,13 @@ footer{padding:28px 48px;border-top:0.5px solid var(--bdr);display:flex;align-it
 .scene-script{font-family:'DM Mono',monospace;font-size:13px;line-height:1.75;color:var(--ink);background:var(--off-white);padding:12px 14px;border-radius:var(--radius);margin-bottom:10px;border-left:3px solid var(--blue);}
 .scene-script-b{border-left-color:var(--gold);}
 .scene-presenter-label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:5px;font-weight:600;}
+.scene-img-row{display:flex;align-items:center;gap:10px;margin-top:10px;padding-top:10px;border-top:0.5px solid var(--bdr);}
+.scene-img-thumb{width:96px;height:54px;flex-shrink:0;border-radius:7px;overflow:hidden;background:var(--off-white);border:0.5px solid var(--bdr);}
+.scene-img-placeholder{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:background .15s;}
+.scene-img-placeholder:hover{background:var(--blue-pale);}
+.scene-img-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.scene-img-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.scene-img-generating{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--navy);border-radius:7px;}
 .scene-visual{font-size:12px;color:var(--muted);display:flex;align-items:flex-start;gap:7px;margin-top:8px;padding:8px 10px;background:linear-gradient(135deg,var(--warm),var(--off-white));border-radius:7px;border:0.5px solid var(--bdr);}
 .evidence-overlay-tag{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:8px;background:var(--gold-pale);border:0.5px solid var(--gold-border);font-size:11px;color:var(--gold);font-weight:500;margin-top:6px;font-family:'DM Mono',monospace;}
 .scene-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;}
@@ -826,6 +833,13 @@ footer{padding:28px 48px;border-top:0.5px solid var(--bdr);display:flex;align-it
       <div id="music-upload-area" style="display:none;margin-bottom:10px;"><div class="upload-zone" style="padding:10px;" onclick="document.getElementById('music-fi').click()"><div style="font-size:12px;color:var(--blue);" id="music-file-label">Upload MP3, WAV or M4A</div><input type="file" id="music-fi" style="display:none;" accept=".mp3,.wav,.m4a" onchange="handleMusicUpload(this)"></div><div id="music-file-info"></div></div>
       <div id="music-suno-area" style="display:none;margin-bottom:10px;"><div style="background:var(--gold-pale);border:0.5px solid var(--gold-border);border-radius:var(--radius);padding:10px;margin-bottom:8px;font-size:12px;color:var(--muted);">Generate music on Suno, download, then upload here.</div><textarea id="suno-prompt" class="req-box" style="min-height:50px;font-size:12px;" placeholder="corporate news background no vocals"></textarea><button class="full-btn outline" style="margin:6px 0 0;padding:7px;font-size:12px;" onclick="openSuno()">Open Suno →</button></div>
       <div id="music-controls" style="display:none;margin-bottom:12px;"><div class="field"><label>Volume <span id="music-vol-val">30</span>%</label><input type="range" id="music-vol" min="0" max="100" value="30" oninput="document.getElementById('music-vol-val').textContent=this.value" style="width:100%;margin-top:4px;"></div><div class="field"><label>Duck level <span id="music-duck-val">15</span>%</label><input type="range" id="music-duck" min="0" max="50" value="15" oninput="document.getElementById('music-duck-val').textContent=this.value" style="width:100%;margin-top:4px;"></div><div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--blue-pale);border-radius:7px;"><input type="checkbox" id="music-sidechain" checked style="margin:0;"><label for="music-sidechain" style="font-size:12px;color:var(--blue);cursor:pointer;">Auto-sidechain during speech</label></div><button class="full-btn outline" style="margin-top:8px;padding:7px;font-size:12px;" onclick="saveMusicToAccount()">💾 Save to channel</button></div>
+      <div class="section-label">Video provider</div>
+      <select id="studio-video-provider" style="width:100%;padding:8px 10px;border-radius:8px;font-size:12px;border:0.5px solid var(--bdr);background:var(--white);color:var(--ink);margin-bottom:14px;">
+        <option value="kling">Kling AI — background video</option>
+        <option value="kling-pro">Kling Pro — higher quality</option>
+        <option value="heygen">HeyGen — lip-sync presenter</option>
+        <option value="image-only">Image only — no video</option>
+      </select>
       <div class="section-label">Output format</div>
       <div style="margin-bottom:14px;"><div class="o-opt on" onclick="pickOutputFormat(this,'16:9')"><div class="o-dot" style="border-color:var(--blue);background:var(--blue);"></div><div class="o-txt">16:9 — YouTube / LinkedIn</div></div><div class="o-opt" onclick="pickOutputFormat(this,'9:16')"><div class="o-dot"></div><div class="o-txt">9:16 — TikTok / Reels</div></div><div class="o-opt" onclick="pickOutputFormat(this,'1:1')"><div class="o-dot"></div><div class="o-txt">1:1 — Instagram / Facebook</div></div></div>
       <button class="full-btn" onclick="showCostEstimate()">Estimate cost &amp; render →</button>
@@ -1534,8 +1548,16 @@ var PM_DESCS={human:'Human presenter — teleprompter and recording studio.',ai:
 function setPresenterMode(m,el){APP_SCENES.presenterMode=m;document.querySelectorAll('#scenes-pg .pt-btn').forEach(function(b){b.classList.remove('on');});el.classList.add('on');var d=document.getElementById('pm-desc');if(d)d.textContent=PM_DESCS[m]||'';}
 function setPacing(el,p){APP_SCENES.pacing=p;var par=el.closest('[style]');if(par)par.querySelectorAll('.o-opt').forEach(function(o){o.classList.remove('on');o.querySelector('.o-dot').style.cssText='';});el.classList.add('on');el.querySelector('.o-dot').style.cssText='border-color:var(--blue);background:var(--blue)';}
 function generateScenes(){if(!APP.lastReport){showToast('Run an analysis first.','error');nav('analysis-pg');return;}nav('scene-proc-pg');var steps=[{id:'se0',pct:20},{id:'se1',pct:40},{id:'se2',pct:60},{id:'se3',pct:80},{id:'se4',pct:94}],labels=['Expanding sections into discussion blocks...','Planning scene structure...','Writing presenter scripts...','Generating visual & evidence overlay prompts...','Formatting for '+APP_SCENES.presenterMode+' presenter mode...'],i=0;function next(){if(i>0){document.getElementById(steps[i-1].id).classList.remove('run');document.getElementById(steps[i-1].id).classList.add('done');}if(i>=steps.length){document.getElementById('scene-proc-fill').style.width='100%';document.getElementById('scene-proc-status').textContent='Calling Claude scene engine...';callSceneAPI();return;}document.getElementById(steps[i].id).classList.remove('wait');document.getElementById(steps[i].id).classList.add('run');document.getElementById('scene-proc-fill').style.width=steps[i].pct+'%';document.getElementById('scene-proc-status').textContent=labels[i];i++;setTimeout(next,800);}setTimeout(next,300);}
-async function callSceneAPI(){var ep=APP_SCENES.presenterMode==='documentary'?'https://aabstudio-production.up.railway.app/api/documentary':'https://aabstudio-production.up.railway.app/api/scenes';try{var r=await fetch(ep,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({report:APP.lastReport,presenterMode:APP_SCENES.presenterMode,speed:APP_SCENES.pacing})});if(!r.ok)throw new Error('HTTP '+r.status);var data=await r.json();if(data.error)throw new Error(data.error);APP_SCENES.data=data;buildScenesView(data);}catch(e){document.getElementById('scenes-content').innerHTML='<div class="pad"><div style="background:var(--red-bg);border:0.5px solid rgba(192,57,43,.2);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--red);">Failed: '+e.message+'</div></div>';}nav('scenes-pg');}
-function buildScenesView(data){var total=0;(data.discussions||[]).forEach(function(d){total+=(d.scenes||[]).length;});var secs=total*8,mins=Math.floor(secs/60),s=secs%60,credits=total*10,html='<div class="scene-stats"><div class="ss-item"><div class="ss-num">'+total+'</div><div class="ss-label">Scenes</div></div><div class="ss-item"><div class="ss-num">'+(data.discussions||[]).length+'</div><div class="ss-label">Sections</div></div><div class="ss-item"><div class="ss-num">'+(mins>0?mins+'m ':'')+s+'s</div><div class="ss-label">Duration</div></div><div class="ss-item"><div class="ss-num">'+credits+'</div><div class="ss-label">Credits to render</div></div></div>';html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;"><div><div class="page-title">'+(data.title||'Scenes')+'</div><div class="page-sub">'+APP_SCENES.presenterMode+' · '+total+' scenes · '+(mins>0?mins+'m ':'')+s+'s · '+credits+' credits to render</div></div><div style="display:flex;gap:8px;"><button class="btn-outline" onclick="exportScriptTxt()">Export script</button><button class="btn-primary" onclick="launchLiveFromScenes()">→ Go live</button></div></div>';(data.discussions||[]).forEach(function(disc,di){html+='<div class="disc-block"><div class="disc-header"><span class="disc-num">0'+(di+1)+'</span><div style="flex:1;"><div class="disc-title">'+disc.sectionTitle+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">'+(disc.scenes||[]).length+' scenes</div></div></div>';if(disc.discussionText)html+='<div style="background:linear-gradient(135deg,var(--blue-pale),var(--off-white));border-left:3px solid var(--blue);border-radius:0 14px 14px 0;padding:14px 18px;margin-bottom:16px;"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--blue);margin-bottom:8px;">Discussion narrative</div><div style="font-size:14px;color:var(--ink-mid);line-height:1.75;">'+disc.discussionText+'</div></div>';(disc.scenes||[]).forEach(function(scene){var ts=(scene.type||'explanation').toLowerCase().replace(/\s+/g,'-'),wc=scene.wordCount||(scene.presenterA?scene.presenterA.split(/\s+/).length:0),wcc=wc<14?'var(--red)':wc>22?'var(--amber)':'var(--green)';html+='<div class="scene-card type-'+ts+'"><div class="scene-card-header"><span class="scene-num">SCENE '+String(scene.sceneNumber).padStart(3,'0')+'</span><span class="scene-type st-'+ts+'">'+(scene.type||'Explanation')+'</span>';if(scene.evidenceRef&&scene.evidenceRef!=='null')html+='<span class="evidence-overlay-tag">📎 '+scene.evidenceRef+'</span>';html+='<span style="font-family:monospace;font-size:10px;color:'+wcc+';margin-left:auto;background:rgba(0,0,0,.04);padding:2px 7px;border-radius:8px;">'+wc+'w</span><span class="scene-duration" style="margin-left:6px;">'+(scene.duration||8)+'s</span></div><div class="scene-card-body">';if(APP_SCENES.presenterMode==='dual'){html+='<div class="scene-presenter-label">Presenter A</div><div class="scene-script">'+scene.presenterA+'</div>';if(scene.presenterB&&scene.presenterB!=='null')html+='<div class="scene-presenter-label">Presenter B</div><div class="scene-script scene-script-b">'+scene.presenterB+'</div>';}else html+='<div class="scene-script">'+scene.presenterA+'</div>';if(scene.overlayText&&scene.overlayText!=='null')html+='<div style="font-size:12px;display:flex;align-items:flex-start;gap:6px;margin-top:6px;padding:7px 10px;background:var(--amber-bg);border-radius:7px;"><span>📝</span><span style="color:var(--amber);">Overlay: '+scene.overlayText+'</span></div>';if(scene.visualPrompt)html+='<div class="scene-visual"><svg width="12" height="12" viewBox="0 0 12 12"><rect x=".5" y=".5" width="11" height="11" rx="1.5" fill="none" stroke="var(--muted-light)" stroke-width="1"/></svg>'+scene.visualPrompt+'</div>';html+='</div></div>';});html+='</div>';});document.getElementById('scenes-content').innerHTML=html;updateStudioSummary();}
+async function callSceneAPI(){var ep=APP_SCENES.presenterMode==='documentary'?'https://aabstudio-production.up.railway.app/api/documentary':'https://aabstudio-production.up.railway.app/api/scenes';try{var r=await fetch(ep,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({report:APP.lastReport,presenterMode:APP_SCENES.presenterMode,speed:APP_SCENES.pacing})});if(!r.ok)throw new Error('HTTP '+r.status);var data=await r.json();if(data.error)throw new Error(data.error);APP_SCENES.data=data;APP_SCENES._prompts={};(data.discussions||[]).forEach(function(d){(d.scenes||[]).forEach(function(s){APP_SCENES._prompts[s.sceneNumber]=s.visualPrompt||'';});});buildScenesView(data);}catch(e){document.getElementById('scenes-content').innerHTML='<div class="pad"><div style="background:var(--red-bg);border:0.5px solid rgba(192,57,43,.2);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--red);">Failed: '+e.message+'</div></div>';}nav('scenes-pg');}
+function buildScenesView(data){var total=0;(data.discussions||[]).forEach(function(d){total+=(d.scenes||[]).length;});var secs=total*8,mins=Math.floor(secs/60),s=secs%60,credits=total*10,html='<div class="scene-stats"><div class="ss-item"><div class="ss-num">'+total+'</div><div class="ss-label">Scenes</div></div><div class="ss-item"><div class="ss-num">'+(data.discussions||[]).length+'</div><div class="ss-label">Sections</div></div><div class="ss-item"><div class="ss-num">'+(mins>0?mins+'m ':'')+s+'s</div><div class="ss-label">Duration</div></div><div class="ss-item"><div class="ss-num">'+credits+'</div><div class="ss-label">Credits to render</div></div></div>';html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;"><div><div class="page-title">'+(data.title||'Scenes')+'</div><div class="page-sub">'+APP_SCENES.presenterMode+' · '+total+' scenes · '+(mins>0?mins+'m ':'')+s+'s · '+credits+' credits to render</div></div><div style="display:flex;gap:8px;"><button class="btn-outline" onclick="exportScriptTxt()">Export script</button><button class="btn-outline" onclick="generateAllSceneImages()" style="border-color:rgba(13,115,119,.3);color:var(--teal);">✦ Generate all images</button><button class="btn-primary" onclick="launchLiveFromScenes()">→ Go live</button></div></div>';(data.discussions||[]).forEach(function(disc,di){html+='<div class="disc-block"><div class="disc-header"><span class="disc-num">0'+(di+1)+'</span><div style="flex:1;"><div class="disc-title">'+disc.sectionTitle+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">'+(disc.scenes||[]).length+' scenes</div></div></div>';if(disc.discussionText)html+='<div style="background:linear-gradient(135deg,var(--blue-pale),var(--off-white));border-left:3px solid var(--blue);border-radius:0 14px 14px 0;padding:14px 18px;margin-bottom:16px;"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--blue);margin-bottom:8px;">Discussion narrative</div><div style="font-size:14px;color:var(--ink-mid);line-height:1.75;">'+disc.discussionText+'</div></div>';(disc.scenes||[]).forEach(function(scene){var ts=(scene.type||'explanation').toLowerCase().replace(/\s+/g,'-'),wc=scene.wordCount||(scene.presenterA?scene.presenterA.split(/\s+/).length:0),wcc=wc<14?'var(--red)':wc>22?'var(--amber)':'var(--green)';html+='<div class="scene-card type-'+ts+'"><div class="scene-card-header"><span class="scene-num">SCENE '+String(scene.sceneNumber).padStart(3,'0')+'</span><span class="scene-type st-'+ts+'">'+(scene.type||'Explanation')+'</span>';if(scene.evidenceRef&&scene.evidenceRef!=='null')html+='<span class="evidence-overlay-tag">📎 '+scene.evidenceRef+'</span>';html+='<span style="font-family:monospace;font-size:10px;color:'+wcc+';margin-left:auto;background:rgba(0,0,0,.04);padding:2px 7px;border-radius:8px;">'+wc+'w</span><span class="scene-duration" style="margin-left:6px;">'+(scene.duration||8)+'s</span></div><div class="scene-card-body">';if(APP_SCENES.presenterMode==='dual'){html+='<div class="scene-presenter-label">Presenter A</div><div class="scene-script">'+scene.presenterA+'</div>';if(scene.presenterB&&scene.presenterB!=='null')html+='<div class="scene-presenter-label">Presenter B</div><div class="scene-script scene-script-b">'+scene.presenterB+'</div>';}else html+='<div class="scene-script">'+scene.presenterA+'</div>';if(scene.overlayText&&scene.overlayText!=='null')html+='<div style="font-size:12px;display:flex;align-items:flex-start;gap:6px;margin-top:6px;padding:7px 10px;background:var(--amber-bg);border-radius:7px;"><span>📝</span><span style="color:var(--amber);">Overlay: '+scene.overlayText+'</span></div>';if(scene.visualPrompt)html+='<div class="scene-visual"><svg width="12" height="12" viewBox="0 0 12 12"><rect x=".5" y=".5" width="11" height="11" rx="1.5" fill="none" stroke="var(--muted-light)" stroke-width="1"/></svg>'+scene.visualPrompt+'</div>';
+html+='<div class="scene-img-row" id="img-row-'+scene.sceneNumber+'">';
+html+='<div class="scene-img-thumb" id="img-thumb-'+scene.sceneNumber+'"><div class="scene-img-placeholder" onclick="generateSceneImage('+scene.sceneNumber+','+JSON.stringify(scene.visualPrompt||'').replace(/'/g,"&#39;")+')">';
+html+='<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" rx="3" stroke="var(--muted-light)" stroke-width="1"/><path d="M5 14l3-4 2 2.5 3-4 4 5.5H5z" fill="none" stroke="var(--muted-light)" stroke-width="1" stroke-linejoin="round"/></svg>';
+html+='<div style="font-size:10px;color:var(--muted);margin-top:5px;">Generate image</div></div></div>';
+html+='<div class="scene-img-actions" id="img-actions-'+scene.sceneNumber+'" style="display:none;">';
+html+='<button onclick="generateSceneImage('+scene.sceneNumber+','+JSON.stringify(scene.visualPrompt||'').replace(/'/g,"&#39;")+')" style="font-size:11px;padding:4px 10px;border-radius:6px;cursor:pointer;border:0.5px solid var(--bdr2);background:transparent;color:var(--muted);">↺ Regenerate</button>';
+html+='<button onclick="generateVideoFromScene('+scene.sceneNumber+')" style="font-size:11px;padding:4px 10px;border-radius:6px;cursor:pointer;border:none;background:var(--gold);color:#fff;">→ Generate video</button>';
+html+='</div></div>';html+='</div></div>';});html+='</div>';});document.getElementById('scenes-content').innerHTML=html;updateStudioSummary();}
 function exportScriptTxt(){if(!APP_SCENES.data)return;var txt=(APP_SCENES.data.title||'Script')+'\n\n';(APP_SCENES.data.discussions||[]).forEach(function(d){txt+='=== '+d.sectionTitle+' ===\n\n';if(d.discussionText)txt+=d.discussionText+'\n\n';(d.scenes||[]).forEach(function(s){txt+='[SCENE '+s.sceneNumber+' — '+s.type+']\n'+s.presenterA+'\n\n';if(s.presenterB)txt+='[B]\n'+s.presenterB+'\n\n';});});var blob=new Blob([txt],{type:'text/plain'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='AABStudio-script.txt';a.click();}
 function launchLiveFromScenes(){if(APP_SCENES.data&&APP_SCENES.data.discussions){var all=[];APP_SCENES.data.discussions.forEach(function(d){(d.scenes||[]).forEach(function(s){all.push({num:s.sceneNumber,section:d.sectionTitle,script:s.presenterA||'',presenterA:s.presenterA||'',presenterB:s.presenterB||null,secs:s.duration||8,type:s.type,visualPrompt:s.visualPrompt||'',evidenceRef:s.evidenceRef||null,overlayText:s.overlayText||null});});});if(all.length){LIVE_SCENES.length=0;all.forEach(function(s){LIVE_SCENES.push(s);});}}nav('live-pg');}
 
@@ -2002,6 +2024,228 @@ function renderLectureResults(d){
   (d.sections||[]).forEach(function(s,i){html+='<div style="margin-bottom:20px;"><div class="rpt-sec-hd"><span class="rpt-sec-num">0'+(i+1)+'</span><span class="rpt-sec-title">'+s.title+'</span></div><div style="background:var(--off-white);border-left:3px solid var(--blue);padding:12px 14px;margin-bottom:8px;font-size:13px;color:var(--ink-mid);font-family:monospace;line-height:1.7;">'+s.presenterScript+'</div>'+(s.keyPoints&&s.keyPoints.length?'<div style="font-size:12px;color:var(--muted);">Key points: '+s.keyPoints.join(' · ')+'</div>':'')+'</div>';});
   if(d.qaSection&&d.qaSection.length){html+='<div class="divider"></div><div style="font-size:15px;font-weight:500;color:var(--blue);margin-bottom:14px;">Student Q&amp;A</div>';d.qaSection.forEach(function(qa){html+='<div style="margin-bottom:14px;"><div style="font-size:13px;font-weight:600;color:var(--blue);margin-bottom:5px;">Q: '+qa.question+'</div><div style="font-size:13px;color:var(--ink-mid);line-height:1.7;padding-left:14px;border-left:2px solid var(--gold);">'+qa.answer+'</div></div>';});}
   el.innerHTML=html;
+}
+
+// ── PER-SCENE IMAGE GENERATION ───────────────────────────────────────────────
+
+// In-memory store: sceneNumber -> { base64, provider, prompt }
+var SCENE_IMAGES = {};
+var IMAGE_SESSION_ID = 'sess_' + Date.now();
+
+// Get studio config locked for this session
+function getStudioConfig() {
+  return {
+    characterStyle: SPECIALIST.charStyle || 'realistic',
+    cinematographyPreset: SPECIALIST.cinePreset || 'news',
+    studioBg: (STUDIO && STUDIO.bgPrompt) || 'professional broadcast studio',
+    avatarDesc: (STUDIO && STUDIO.avatarA) ? (AVATARS[STUDIO.avatarA]||{}).name||'' : ''
+  };
+}
+
+async function generateSceneImage(sceneNumber, visualPrompt) {
+  var thumb = document.getElementById('img-thumb-' + sceneNumber);
+  var actions = document.getElementById('img-actions-' + sceneNumber);
+  if (!thumb) return;
+
+  // Show spinner
+  thumb.innerHTML = '<div class="scene-img-generating"><div class="spin" style="border-color:rgba(255,255,255,.2);border-top-color:#fff;width:18px;height:18px;"></div></div>';
+
+  var cfg = getStudioConfig();
+
+  try {
+    var r = await fetch('https://aabstudio-production.up.railway.app/api/image/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scenePrompt: visualPrompt,
+        sceneNumber: sceneNumber,
+        characterStyle: cfg.characterStyle,
+        cinematographyPreset: cfg.cinematographyPreset,
+        studioBg: cfg.studioBg,
+        avatarDesc: cfg.avatarDesc,
+        provider: 'dalle'
+      })
+    });
+
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var d = await r.json();
+    if (d.error) throw new Error(d.error);
+
+    // Store the image
+    SCENE_IMAGES[sceneNumber] = {
+      base64: d.imageBase64,
+      provider: d.provider,
+      prompt: d.revisedPrompt || d.prompt,
+      dataUrl: 'data:image/png;base64,' + d.imageBase64
+    };
+
+    // Show the image in the thumbnail
+    thumb.innerHTML = '<img src="data:image/png;base64,' + d.imageBase64 + '" alt="Scene ' + sceneNumber + '" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:7px;cursor:pointer;" onclick="previewSceneImage(' + sceneNumber + ')">';
+
+    // Show action buttons
+    if (actions) actions.style.display = 'flex';
+
+    // Also store image reference on the render scene if it exists
+    if (RENDER && RENDER.scenes) {
+      var rs = RENDER.scenes.find(function(s) { return s.sceneNumber === sceneNumber; });
+      if (rs) rs.imageBase64 = d.imageBase64;
+    }
+
+    showToast('Scene ' + sceneNumber + ' image ready', 'success');
+
+    } catch (e) {
+    var retryDiv = document.createElement('div');
+    retryDiv.className = 'scene-img-placeholder';
+    retryDiv.style.cursor = 'pointer';
+    retryDiv.innerHTML = '<div style="font-size:10px;color:var(--red);text-align:center;padding:4px;">Failed — tap to retry</div>';
+    (function(sn){ retryDiv.onclick = function(){ generateSceneImage(sn, (APP_SCENES._prompts && APP_SCENES._prompts[sn]) || ''); }; })(sceneNumber);
+    thumb.innerHTML = '';
+    thumb.appendChild(retryDiv);
+    showToast('Image failed: ' + e.message, 'error');
+  }
+}
+
+// Generate images for ALL scenes in batch (3 at a time)
+async function generateAllSceneImages() {
+  if (!APP_SCENES.data) { showToast('Generate scenes first.', 'error'); return; }
+
+  var allScenes = [];
+  (APP_SCENES.data.discussions || []).forEach(function(d) {
+    (d.scenes || []).forEach(function(s) {
+      allScenes.push({ num: s.sceneNumber, prompt: s.visualPrompt || '' });
+    });
+  });
+
+  if (!allScenes.length) return;
+  showToast('Generating ' + allScenes.length + ' scene images...', 'success');
+
+  // Process in batches of 3 (respect rate limits)
+  for (var i = 0; i < allScenes.length; i += 3) {
+    var batch = allScenes.slice(i, i + 3);
+    await Promise.all(batch.map(function(s) {
+      return generateSceneImage(s.num, s.prompt).catch(function(e) {
+        console.warn('Scene ' + s.num + ' image failed:', e.message);
+      });
+    }));
+  }
+  showToast('All scene images generated', 'success');
+}
+
+// Preview a scene image in a lightbox
+function previewSceneImage(sceneNumber) {
+  var img = SCENE_IMAGES[sceneNumber];
+  if (!img) return;
+
+  var modal = document.getElementById('img-preview-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'img-preview-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:pointer;';
+
+    var inner = document.createElement('div');
+    inner.style.cssText = 'max-width:90vw;max-height:90vh;position:relative;cursor:default;';
+    inner.onclick = function(e) { e.stopPropagation(); };
+
+    var imgEl = document.createElement('img');
+    imgEl.id = 'img-preview-img';
+    imgEl.style.cssText = 'max-width:90vw;max-height:75vh;object-fit:contain;border-radius:10px;display:block;';
+
+    var caption = document.createElement('div');
+    caption.id = 'img-preview-caption';
+    caption.style.cssText = 'text-align:center;color:rgba(255,255,255,.6);font-size:12px;margin-top:8px;';
+
+    var btn = document.createElement('button');
+    btn.id = 'img-preview-btn';
+    btn.style.cssText = 'margin-top:10px;width:100%;padding:10px;border-radius:8px;border:none;background:var(--gold);color:#fff;font-size:13px;font-weight:500;cursor:pointer;';
+    btn.textContent = '→ Generate video clip from this image';
+
+    inner.appendChild(imgEl);
+    inner.appendChild(caption);
+    inner.appendChild(btn);
+    modal.appendChild(inner);
+    modal.onclick = function() { modal.style.display = 'none'; };
+    document.body.appendChild(modal);
+  }
+
+  var previewBtn = document.getElementById('img-preview-btn');
+  if (previewBtn) {
+    previewBtn.onclick = function() {
+      generateVideoFromScene(sceneNumber);
+      document.getElementById('img-preview-modal').style.display = 'none';
+    };
+  }
+
+  document.getElementById('img-preview-img').src = img.dataUrl;
+  var cap = document.getElementById('img-preview-caption');
+  if (cap) cap.textContent = img.prompt ? img.prompt.slice(0, 120) + '...' : '';
+  modal.style.display = 'flex';
+}
+
+// Generate video from a scene image (image-to-video via Kling)
+async function generateVideoFromScene(sceneNumber) {
+  var img = SCENE_IMAGES[sceneNumber];
+  if (!img) {
+    showToast('Generate the scene image first.', 'error');
+    return;
+  }
+
+  var provider = document.getElementById('studio-video-provider') ?
+    document.getElementById('studio-video-provider').value : 'kling';
+
+  showToast('Generating video for scene ' + sceneNumber + '...', 'success');
+
+  try {
+    var r = await fetch('https://aabstudio-production.up.railway.app/api/video/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: img.prompt,
+        imageBase64: img.base64,      // image-to-video
+        duration: 8,
+        ratio: STUDIO.outputFormat || '16:9',
+        provider: provider
+      })
+    });
+
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var d = await r.json();
+    if (d.error) throw new Error(d.error);
+
+    // Poll for completion
+    var taskId = d.taskId;
+    var attempts = 0;
+    var poll = setInterval(async function() {
+      attempts++;
+      try {
+        var sr = await fetch('https://aabstudio-production.up.railway.app/api/video/status/' + taskId);
+        var sd = await sr.json();
+        if (sd.status === 'SUCCEEDED' && sd.videoUrl) {
+          clearInterval(poll);
+          // Store video URL on the scene
+          if (RENDER && RENDER.scenes) {
+            var rs = RENDER.scenes.find(function(s) { return s.sceneNumber === sceneNumber; });
+            if (rs) { rs.videoUrl = sd.videoUrl; rs.videoDone = true; }
+          }
+          // Show play button on the scene thumbnail
+          var thumb = document.getElementById('img-thumb-' + sceneNumber);
+          if (thumb) {
+            thumb.innerHTML = '<div style="position:relative;width:100%;height:100%;">'
+              + '<img src="' + SCENE_IMAGES[sceneNumber].dataUrl + '" style="width:100%;height:100%;object-fit:cover;border-radius:7px;">'
+              + '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.3);border-radius:7px;">'
+              + '<a href="' + sd.videoUrl + '" target="_blank" style="width:24px;height:24px;background:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;">'
+              + '<svg width="10" height="10" viewBox="0 0 10 10"><path d="M3 1.5L8.5 5 3 8.5V1.5z" fill="var(--blue)"/></svg></a></div></div>';
+          }
+          showToast('Scene ' + sceneNumber + ' video ready!', 'success');
+        } else if (sd.status === 'FAILED' || attempts > 60) {
+          clearInterval(poll);
+          showToast('Video generation failed for scene ' + sceneNumber, 'error');
+        }
+      } catch (pe) { /* keep polling */ }
+    }, 5000);
+
+  } catch (e) {
+    showToast('Video failed: ' + e.message, 'error');
+  }
 }
 
 // ── SUPABASE SESSION INIT ─────────────────────────────────────────────────────
