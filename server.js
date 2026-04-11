@@ -1447,66 +1447,67 @@ function buildStudioSuffix({ characterStyle, cinematographyPreset, studioBg, ava
 app.post('/api/image/generate', async (req, res) => {
   try {
     const {
-      scenePrompt,      // the scene's visualPrompt from scene generation
-      sceneType,        // INTRODUCTION, EVIDENCE, etc.
-      sceneNumber,
-      characterStyle,
-      cinematographyPreset,
-      studioBg,
-      avatarDesc,
-      provider = 'dalle' // 'dalle' | 'stability'
+      scenePrompt, sceneType, sceneNumber,
+      characterStyle, cinematographyPreset, studioBg, avatarDesc,
+      referenceImageBase64,  // avatar photo OR previous scene output for consistency
+      isFirstScene           // true = establish look from reference; false = maintain it
     } = req.body;
 
     if (!scenePrompt) throw new Error('No scene prompt provided');
+    if (!DALLE_KEY) throw new Error('No OPENAI_API_KEY set in Railway environment variables');
 
     const suffix = buildStudioSuffix({ characterStyle, cinematographyPreset, studioBg, avatarDesc });
 
-    // Build the full prompt — scene content + constant studio suffix
-    const fullPrompt = `${scenePrompt.slice(0, 800)}. ${suffix}`.slice(0, 1000);
-
-    if (provider === 'stability' && STABILITY_KEY) {
-      // Stability AI SDXL
-      const response = await fetch('https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${STABILITY_KEY}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify({
-          text_prompts: [
-            { text: fullPrompt, weight: 1 },
-            { text: 'blurry, low quality, text, watermark, ugly, distorted, cartoon (if realistic), robotic', weight: -1 }
-          ],
-          cfg_scale: 7,
-          height: 1024,
-          width: 1024,
-          steps: 30,
-          samples: 1
-        })
-      });
-      if (!response.ok) throw new Error('Stability API HTTP ' + response.status + ': ' + (await response.text()).slice(0, 200));
-      const data = await response.json();
-      const b64 = data.artifacts?.[0]?.base64;
-      if (!b64) throw new Error('No image returned from Stability');
-      return res.json({ imageBase64: b64, provider: 'stability', prompt: fullPrompt });
+    // Consistency prefix — anchors character appearance across all scenes
+    let prefix = '';
+    if (referenceImageBase64) {
+      prefix = isFirstScene
+        ? 'Based on the provided reference photo: same person, same face, same clothing, same hairstyle. '
+        : 'IDENTICAL appearance to reference image: same face, same outfit, same hairstyle, same studio background. Only the scene action differs. ';
     }
 
-    // Default: DALL-E 3
-    if (!DALLE_KEY) throw new Error('No OPENAI_API_KEY or STABILITY_API_KEY set — cannot generate images');
+    const fullPrompt = (prefix + scenePrompt.slice(0, 700) + '. ' + suffix).slice(0, 1000);
 
+    // With reference image: use GPT-Image-1 edits endpoint for visual consistency
+    if (referenceImageBase64) {
+      try {
+        const imageBuffer = Buffer.from(referenceImageBase64, 'base64');
+        const { Blob } = await import('buffer');
+        const formData = new FormData();
+        formData.append('image', new File([imageBuffer], 'reference.png', { type: 'image/png' }));
+        formData.append('prompt', fullPrompt);
+        formData.append('model', 'gpt-image-1');
+        formData.append('n', '1');
+        formData.append('size', '1024x1024');
+
+        const editRes = await fetch('https://api.openai.com/v1/images/edits', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + DALLE_KEY },
+          body: formData
+        });
+
+        if (editRes.ok) {
+          const editData = await editRes.json();
+          const b64 = editData.data?.[0]?.b64_json;
+          if (b64) return res.json({ imageBase64: b64, provider: 'gpt-image-1', prompt: fullPrompt });
+        }
+        // Fall through to DALL-E 3 with strong consistency prompt
+        console.warn('GPT-Image-1 edit not available, using DALL-E 3 with consistency prompt');
+      } catch (editErr) {
+        console.warn('Image edit error:', editErr.message);
+      }
+    }
+
+    // DALL-E 3 — used for Scene 1 or as fallback
     const response = await fetch('https://api.openai.com/v1/images/generations', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${DALLE_KEY}`,
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Authorization': 'Bearer ' + DALLE_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'dall-e-3',
         prompt: fullPrompt,
         n: 1,
         size: '1024x1024',
-        quality: 'standard',
+        quality: 'hd',
         response_format: 'b64_json'
       })
     });
@@ -1518,16 +1519,14 @@ app.post('/api/image/generate', async (req, res) => {
 
     const data = await response.json();
     const b64 = data.data?.[0]?.b64_json;
-    const revisedPrompt = data.data?.[0]?.revised_prompt;
-    if (!b64) throw new Error('No image data returned from DALL-E');
+    if (!b64) throw new Error('No image returned from DALL-E');
 
-    res.json({ imageBase64: b64, provider: 'dalle', prompt: fullPrompt, revisedPrompt });
+    res.json({ imageBase64: b64, provider: 'dalle', prompt: fullPrompt, revisedPrompt: data.data?.[0]?.revised_prompt });
   } catch (e) {
     console.error('Image generate error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
-
 // ── ENGINE: BATCH IMAGE STATUS (returns which scenes have images) ─────────────
 // Simple in-memory store for generated images (keyed by sessionId+sceneNumber)
 // In production this should be Supabase storage
