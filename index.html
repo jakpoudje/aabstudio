@@ -505,6 +505,11 @@ footer{padding:28px 48px;border-top:0.5px solid var(--bdr);display:flex;align-it
       <div style="margin-top:16px;padding-top:14px;border-top:0.5px solid var(--bdr);">
         <button class="full-btn teal" onclick="nav('compare-pg')">Compare two documents →</button>
       </div>
+      <div style="margin-top:10px;padding-top:14px;border-top:0.5px solid var(--bdr);">
+        <div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:6px;">Have your own script or report?</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:10px;">Skip AI analysis. Upload your content and go straight to scenes and teleprompter.</div>
+        <button class="full-btn" style="background:var(--teal);border-color:var(--teal);" onclick="nav('own-content-pg')">→ Use my own content</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1557,7 +1562,11 @@ html+='<div style="font-size:10px;color:var(--muted);margin-top:5px;">Generate i
 html+='<div class="scene-img-actions" id="img-actions-'+scene.sceneNumber+'" style="display:none;">';
 html+='<button onclick="generateSceneImage('+scene.sceneNumber+','+JSON.stringify(scene.visualPrompt||'').replace(/'/g,"&#39;")+')" style="font-size:11px;padding:4px 10px;border-radius:6px;cursor:pointer;border:0.5px solid var(--bdr2);background:transparent;color:var(--muted);">↺ Regenerate</button>';
 html+='<button onclick="generateVideoFromScene('+scene.sceneNumber+')" style="font-size:11px;padding:4px 10px;border-radius:6px;cursor:pointer;border:none;background:var(--gold);color:#fff;">→ Generate video</button>';
-html+='</div></div>';html+='</div></div>';});html+='</div>';});document.getElementById('scenes-content').innerHTML=html;updateStudioSummary();}
+html+='</div></div>';html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:0.5px solid var(--bdr);">'
+        +'<span id="ov-ind-'+scene.sceneNumber+'" style="display:none;font-size:11px;color:var(--blue);background:var(--blue-pale);padding:3px 8px;border-radius:6px;"></span>'
+        +'<button onclick="openOverlaySetup('+scene.sceneNumber+')" style="font-size:11px;padding:4px 10px;border-radius:6px;cursor:pointer;border:0.5px solid rgba(13,115,119,.3);background:var(--teal-light);color:var(--teal);margin-left:auto;">+ Assign overlay</button>'
+        +'</div>';
+html+='</div></div>';});html+='</div>';});document.getElementById('scenes-content').innerHTML=html;updateStudioSummary();}
 function exportScriptTxt(){if(!APP_SCENES.data)return;var txt=(APP_SCENES.data.title||'Script')+'\n\n';(APP_SCENES.data.discussions||[]).forEach(function(d){txt+='=== '+d.sectionTitle+' ===\n\n';if(d.discussionText)txt+=d.discussionText+'\n\n';(d.scenes||[]).forEach(function(s){txt+='[SCENE '+s.sceneNumber+' — '+s.type+']\n'+s.presenterA+'\n\n';if(s.presenterB)txt+='[B]\n'+s.presenterB+'\n\n';});});var blob=new Blob([txt],{type:'text/plain'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='AABStudio-script.txt';a.click();}
 function launchLiveFromScenes(){if(APP_SCENES.data&&APP_SCENES.data.discussions){var all=[];APP_SCENES.data.discussions.forEach(function(d){(d.scenes||[]).forEach(function(s){all.push({num:s.sceneNumber,section:d.sectionTitle,script:s.presenterA||'',presenterA:s.presenterA||'',presenterB:s.presenterB||null,secs:s.duration||8,type:s.type,visualPrompt:s.visualPrompt||'',evidenceRef:s.evidenceRef||null,overlayText:s.overlayText||null});});});if(all.length){LIVE_SCENES.length=0;all.forEach(function(s){LIVE_SCENES.push(s);});}}nav('live-pg');}
 
@@ -1637,7 +1646,7 @@ function updateTeleprompter(){
   var rb=document.getElementById('retake-btn');if(rb)rb.style.display=REC_STUDIO.clips[REC_STUDIO.currentScene]?'block':'none';
 }
 
-function jumpRecScene(i){REC_STUDIO.currentScene=i;renderRecordingList();updateTeleprompter();REC_STUDIO.tpAuto=false;}
+function jumpRecScene(i){REC_STUDIO.currentScene=i;renderRecordingList();updateTeleprompter();REC_STUDIO.tpAuto=false;showSceneOverlay((REC_STUDIO.allScenes[i]||{}).num||i+1);}
 function recNext(){if(REC_STUDIO.allScenes&&REC_STUDIO.currentScene<REC_STUDIO.allScenes.length-1){REC_STUDIO.currentScene++;renderRecordingList();updateTeleprompter();}}
 function recPrev(){if(REC_STUDIO.currentScene>0){REC_STUDIO.currentScene--;renderRecordingList();updateTeleprompter();}}
 function retakeScene(){delete REC_STUDIO.clips[REC_STUDIO.currentScene];delete REC_STUDIO.clipBlobs[REC_STUDIO.currentScene];renderRecordingList();updateTeleprompter();var d=document.getElementById('rec-done');if(d)d.textContent=Object.keys(REC_STUDIO.clips).length;}
@@ -2246,6 +2255,348 @@ async function generateVideoFromScene(sceneNumber) {
   } catch (e) {
     showToast('Video failed: ' + e.message, 'error');
   }
+}
+
+// ── SCENE OVERLAY SYSTEM ─────────────────────────────────────────────────────
+// Users assign content (image, doc, link) to scenes
+// During recording/live, overlays appear automatically at the right scene
+
+var SCENE_OVERLAYS = {};
+// Structure: { sceneNumber: { type, url, dataUrl, position, transition, label } }
+
+var OVERLAY_POSITIONS = ['top-left','top-right','bottom-left','bottom-right','full','pip-left','pip-right','lower-third'];
+var OVERLAY_TRANSITIONS = ['fade','slide-right','slide-up','zoom','instant'];
+
+function openOverlaySetup(sceneNumber) {
+  var modal = document.getElementById('overlay-setup-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'overlay-setup-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    modal.onclick = function() { closeOverlaySetup(); };
+
+    var inner = document.createElement('div');
+    inner.style.cssText = 'background:var(--white);border-radius:16px;padding:28px;width:520px;max-width:95vw;max-height:90vh;overflow-y:auto;';
+    inner.onclick = function(e) { e.stopPropagation(); };
+
+    inner.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">'
+      + '<div style="font-size:16px;font-weight:500;color:var(--ink);">Scene overlay setup</div>'
+      + '<button onclick="closeOverlaySetup()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);line-height:1;">&times;</button></div>'
+      + '<div id="overlay-scene-label" style="font-size:12px;color:var(--muted);margin-bottom:16px;"></div>'
+      + '<div class="section-label">Content type</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px;">'
+      + '<div class="d-opt on" id="ov-type-image" data-otype="image" onclick="setOverlayType(this,this.dataset.otype)" style="font-size:12px;">Image</div>'
+      + '<div class="d-opt" id="ov-type-doc" data-otype="document" onclick="setOverlayType(this,this.dataset.otype)" style="font-size:12px;">Document</div>'
+      + '<div class="d-opt" id="ov-type-link" data-otype="link" onclick="setOverlayType(this,this.dataset.otype)" style="font-size:12px;">Web link</div>'
+      + '</div>'
+      + '<div id="ov-upload-area" style="margin-bottom:16px;">'
+      + '<div class="upload-zone" style="padding:16px;" data-inputid="ov-file-input" onclick="document.getElementById(this.dataset.inputid).click()">'
+      + '<div style="font-size:13px;color:var(--blue);" id="ov-upload-label">Upload image or document</div>'
+      + '<input type="file" id="ov-file-input" style="display:none;" accept="image/*,.pdf,.docx" onchange="loadOverlayFile(this)">'
+      + '</div>'
+      + '<div id="ov-preview" style="margin-top:8px;"></div>'
+      + '</div>'
+      + '<div id="ov-link-area" style="display:none;margin-bottom:16px;">'
+      + '<div class="section-label">URL or embed link</div>'
+      + '<input type="text" id="ov-link-input" placeholder="https://..." style="width:100%;padding:9px 12px;border-radius:8px;border:0.5px solid var(--bdr);font-size:13px;">'
+      + '</div>'
+      + '<div class="section-label">Position on screen</div>'
+      + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:16px;" id="ov-pos-grid"></div>'
+      + '<div class="section-label">Entry transition</div>'
+      + '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:20px;" id="ov-trans-grid"></div>'
+      + '<div style="display:flex;gap:8px;">'
+      + '<button onclick="saveOverlay()" style="flex:1;padding:10px;border-radius:8px;border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:500;cursor:pointer;">Save overlay</button>'
+      + '<button onclick="removeOverlay()" style="padding:10px 14px;border-radius:8px;border:0.5px solid rgba(192,57,43,.3);background:var(--red-bg);color:var(--red);font-size:13px;cursor:pointer;">Remove</button>'
+      + '</div>';
+
+    modal.appendChild(inner);
+    document.body.appendChild(modal);
+
+    // Build position grid via DOM
+    var posGrid = inner.querySelector('#ov-pos-grid');
+    var posLabels = ['Top left','Top right','Bottom left','Bottom right','Full screen','Pip left','Pip right','Lower third'];
+    posLabels.forEach(function(p, i) {
+      var btn = document.createElement('div');
+      btn.className = 'd-opt' + (i === 4 ? ' on' : '');
+      btn.style.cssText = 'font-size:10px;padding:6px 4px;text-align:center;';
+      btn.textContent = p;
+      btn.dataset.pos = OVERLAY_POSITIONS[i];
+      btn.onclick = function() { setOverlayPos(this, this.dataset.pos); };
+      posGrid.appendChild(btn);
+    });
+
+    // Build transition grid via DOM
+    var transGrid = inner.querySelector('#ov-trans-grid');
+    var transLabels = ['Fade','Slide right','Slide up','Zoom','Instant'];
+    transLabels.forEach(function(t, i) {
+      var btn = document.createElement('div');
+      btn.className = 'd-opt' + (i === 0 ? ' on' : '');
+      btn.style.cssText = 'font-size:10px;padding:6px 4px;text-align:center;';
+      btn.textContent = t;
+      btn.dataset.trans = OVERLAY_TRANSITIONS[i];
+      btn.onclick = function() { setOverlayTrans(this, this.dataset.trans); };
+      transGrid.appendChild(btn);
+    });
+  }
+
+  modal._sceneNumber = sceneNumber;
+  var lbl = document.getElementById('overlay-scene-label');
+  if (lbl) lbl.textContent = 'Scene ' + sceneNumber + ' — content appears automatically when this scene plays';
+  modal.style.display = 'flex';
+}
+
+function closeOverlaySetup() {
+  var modal = document.getElementById('overlay-setup-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+var _overlayType = 'image';
+var _overlayPos = 'full';
+var _overlayTrans = 'fade';
+var _overlayFile = null;
+var _overlayDataUrl = null;
+
+function setOverlayType(el, type) {
+  document.querySelectorAll('#overlay-setup-modal .d-opt[id^="ov-type"]').forEach(function(o) { o.classList.remove('on'); });
+  el.classList.add('on');
+  _overlayType = type;
+  document.getElementById('ov-upload-area').style.display = type === 'link' ? 'none' : 'block';
+  document.getElementById('ov-link-area').style.display = type === 'link' ? 'block' : 'none';
+  var lbl = document.getElementById('ov-upload-label');
+  if (lbl) lbl.textContent = type === 'document' ? 'Upload PDF or document' : 'Upload image';
+  var inp = document.getElementById('ov-file-input');
+  if (inp) inp.accept = type === 'document' ? '.pdf,.docx,.doc' : 'image/*';
+}
+
+function setOverlayPos(el, pos) {
+  document.querySelectorAll('#ov-pos-grid .d-opt').forEach(function(o) { o.classList.remove('on'); });
+  if (el) el.classList.add('on');
+  _overlayPos = pos || 'full';
+}
+
+function setOverlayTrans(el, trans) {
+  document.querySelectorAll('#ov-trans-grid .d-opt').forEach(function(o) { o.classList.remove('on'); });
+  if (el) el.classList.add('on');
+  _overlayTrans = trans || 'fade';
+}
+
+function loadOverlayFile(inp) {
+  if (!inp.files.length) return;
+  var f = inp.files[0];
+  _overlayFile = f;
+  var lbl = document.getElementById('ov-upload-label');
+  if (lbl) lbl.textContent = '✓ ' + f.name;
+  var prev = document.getElementById('ov-preview');
+  if (f.type.startsWith('image/')) {
+    var url = URL.createObjectURL(f);
+    _overlayDataUrl = url;
+    if (prev) prev.innerHTML = '<img src="' + url + '" style="width:100%;max-height:120px;object-fit:contain;border-radius:8px;border:0.5px solid var(--bdr);">';
+  } else {
+    _overlayDataUrl = null;
+    if (prev) prev.innerHTML = '<div style="font-size:12px;color:var(--teal);padding:6px 0;">✓ ' + f.name + ' ready</div>';
+  }
+}
+
+function saveOverlay() {
+  var modal = document.getElementById('overlay-setup-modal');
+  if (!modal) return;
+  var sn = modal._sceneNumber;
+  var linkVal = (document.getElementById('ov-link-input') || {}).value || '';
+
+  SCENE_OVERLAYS[sn] = {
+    type: _overlayType,
+    dataUrl: _overlayDataUrl,
+    url: linkVal || (_overlayDataUrl ? _overlayDataUrl : null),
+    fileName: _overlayFile ? _overlayFile.name : null,
+    position: _overlayPos,
+    transition: _overlayTrans,
+    label: _overlayFile ? _overlayFile.name : (linkVal || 'Overlay')
+  };
+
+  // Refresh the scene card overlay indicator
+  var ind = document.getElementById('ov-ind-' + sn);
+  if (ind) {
+    ind.textContent = '📎 ' + SCENE_OVERLAYS[sn].label.slice(0, 20);
+    ind.style.display = 'inline-block';
+  }
+
+  closeOverlaySetup();
+  showToast('Overlay saved for scene ' + sn, 'success');
+}
+
+function removeOverlay() {
+  var modal = document.getElementById('overlay-setup-modal');
+  if (!modal) return;
+  var sn = modal._sceneNumber;
+  delete SCENE_OVERLAYS[sn];
+  var ind = document.getElementById('ov-ind-' + sn);
+  if (ind) ind.style.display = 'none';
+  closeOverlaySetup();
+  showToast('Overlay removed', 'success');
+}
+
+// Show overlay during recording when scene changes
+function showSceneOverlay(sceneNumber) {
+  var overlay = SCENE_OVERLAYS[sceneNumber];
+  // Remove any existing overlay display
+  var existing = document.getElementById('live-overlay-display');
+  if (existing) existing.remove();
+  if (!overlay || !overlay.url) return;
+
+  var container = document.getElementById('camera-preview');
+  if (!container) return;
+  var parent = container.parentElement;
+
+  var el = document.createElement('div');
+  el.id = 'live-overlay-display';
+
+  var posStyles = {
+    'full': 'position:absolute;inset:0;z-index:10;',
+    'top-left': 'position:absolute;top:8px;left:8px;width:35%;z-index:10;',
+    'top-right': 'position:absolute;top:8px;right:8px;width:35%;z-index:10;',
+    'bottom-left': 'position:absolute;bottom:8px;left:8px;width:35%;z-index:10;',
+    'bottom-right': 'position:absolute;bottom:8px;right:8px;width:35%;z-index:10;',
+    'pip-left': 'position:absolute;top:50%;left:8px;transform:translateY(-50%);width:30%;z-index:10;',
+    'pip-right': 'position:absolute;top:50%;right:8px;transform:translateY(-50%);width:30%;z-index:10;',
+    'lower-third': 'position:absolute;bottom:0;left:0;right:0;height:28%;z-index:10;'
+  };
+
+  var transStyles = {
+    'fade': 'opacity:0;transition:opacity .5s;',
+    'slide-right': 'opacity:0;transform:translateX(-30px);transition:opacity .4s,transform .4s;',
+    'slide-up': 'opacity:0;transform:translateY(20px);transition:opacity .4s,transform .4s;',
+    'zoom': 'opacity:0;transform:scale(.85);transition:opacity .4s,transform .4s;',
+    'instant': 'opacity:1;'
+  };
+
+  el.style.cssText = (posStyles[overlay.position] || posStyles.full) + (transStyles[overlay.transition] || transStyles.fade);
+
+  if (overlay.type === 'image' && overlay.url) {
+    el.innerHTML = '<img src="' + overlay.url + '" style="width:100%;height:100%;object-fit:contain;border-radius:8px;">';
+  } else if (overlay.type === 'link' && overlay.url) {
+    el.innerHTML = '<iframe src="' + overlay.url + '" style="width:100%;height:100%;border:none;border-radius:8px;background:#fff;"></iframe>';
+  } else {
+    el.innerHTML = '<div style="background:rgba(26,58,92,.9);border-radius:8px;padding:12px;color:#fff;font-size:13px;">' + (overlay.fileName || overlay.label || '') + '</div>';
+  }
+
+  parent.appendChild(el);
+
+  // Trigger transition
+  if (overlay.transition !== 'instant') {
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        el.style.opacity = '1';
+        el.style.transform = 'none';
+      });
+    });
+  }
+}
+
+// ── PATH 2: OWN CONTENT → SCENES ─────────────────────────────────────────────
+var OWN_CONTENT = {
+  file: null, base64: null, mime: null,
+  pacing: 'normal', destination: 'teleprompter'
+};
+
+function handleOwnFile(inp) {
+  if (!inp.files.length) return;
+  var f = inp.files[0];
+  OWN_CONTENT.file = f;
+  OWN_CONTENT.mime = f.type;
+  document.getElementById('uz-own').classList.add('has-file');
+  document.getElementById('uz-own-title').textContent = '✓ ' + f.name;
+  document.getElementById('own-file-pill').innerHTML =
+    '<div style="font-size:13px;color:var(--teal);margin-bottom:8px;"><strong>' + f.name + '</strong> (' + Math.round(f.size / 1024) + ' KB) ready</div>';
+  var rd = new FileReader();
+  rd.onload = function(e) {
+    var d = e.target.result;
+    OWN_CONTENT.base64 = d.indexOf(',') > -1 ? d.split(',')[1] : d;
+  };
+  rd.readAsDataURL(f);
+}
+
+function pickOwnDest(el, dest) {
+  document.querySelectorAll('#own-content-pg .o-opt').forEach(function(o) {
+    o.classList.remove('on');
+    o.querySelector('.o-dot').style.borderColor = '';
+    o.querySelector('.o-dot').style.background = '';
+  });
+  el.classList.add('on');
+  el.querySelector('.o-dot').style.borderColor = 'var(--teal)';
+  el.querySelector('.o-dot').style.background = 'var(--teal)';
+  OWN_CONTENT.destination = dest;
+}
+
+function pickOwnPacing(el, pacing) {
+  document.querySelectorAll('#own-content-pg .d-opt').forEach(function(o) { o.classList.remove('on'); });
+  el.classList.add('on');
+  OWN_CONTENT.pacing = pacing;
+}
+
+async function runOwnContent() {
+  var text = document.getElementById('own-text-box').value.trim();
+  var hasFile = !!OWN_CONTENT.base64;
+  var hasText = text.length > 50;
+
+  if (!hasFile && !hasText) {
+    document.getElementById('own-err').style.display = 'block';
+    return;
+  }
+  document.getElementById('own-err').style.display = 'none';
+
+  var btn = document.querySelector('#own-content-pg .full-btn.teal');
+  btn.textContent = 'Splitting into scenes...';
+  btn.disabled = true;
+
+  try {
+    var r = await fetch('https://aabstudio-production.up.railway.app/api/report-to-scenes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fileBase64: OWN_CONTENT.base64 || null,
+        mimeType: OWN_CONTENT.mime || 'text/plain',
+        fileName: OWN_CONTENT.file ? OWN_CONTENT.file.name : 'content.txt',
+        textContent: hasText ? text : null,
+        pacing: OWN_CONTENT.pacing,
+        destination: OWN_CONTENT.destination
+      })
+    });
+
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var data = await r.json();
+    if (data.error) throw new Error(data.error);
+
+    // Store as scenes data and navigate
+    APP_SCENES.data = data;
+    APP_SCENES.presenterMode = 'human';
+    APP_SCENES.pacing = OWN_CONTENT.pacing;
+    APP_SCENES._prompts = {};
+    (data.discussions || []).forEach(function(d) {
+      (d.scenes || []).forEach(function(s) {
+        APP_SCENES._prompts[s.sceneNumber] = s.visualPrompt || '';
+      });
+    });
+
+    buildScenesView(data);
+
+    if (OWN_CONTENT.destination === 'live') {
+      launchLiveFromScenes();
+    } else if (OWN_CONTENT.destination === 'teleprompter') {
+      // Init recording page with these scenes
+      nav('record-pg');
+      initRecordingPage();
+    } else {
+      nav('scenes-pg');
+    }
+
+    showToast('Content split into ' + (data.discussions || []).reduce(function(t, d) { return t + (d.scenes || []).length; }, 0) + ' scenes', 'success');
+
+  } catch (e) {
+    showToast('Failed: ' + e.message, 'error');
+  }
+
+  btn.textContent = 'Split into scenes →';
+  btn.disabled = false;
 }
 
 // ── SUPABASE SESSION INIT ─────────────────────────────────────────────────────
