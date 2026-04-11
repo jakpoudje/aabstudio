@@ -1415,4 +1415,144 @@ app.get('/api/test/creatomate', async (req, res) => {
 });
 
 // ── START ─────────────────────────────────────────────────────────────────────
+// ── ENGINE: PER-SCENE IMAGE GENERATION ───────────────────────────────────────
+// Generates a still image for each scene using OpenAI DALL-E 3 or Stability AI
+// The studio setup (bg, lighting, character style, cinematography preset) is
+// baked into every prompt as a constant suffix so all scenes look coherent.
+
+const DALLE_KEY = process.env.OPENAI_API_KEY;
+const STABILITY_KEY = process.env.STABILITY_API_KEY;
+
+// Build the constant suffix from studio setup — locked across all scenes
+function buildStudioSuffix({ characterStyle, cinematographyPreset, studioBg, avatarDesc }) {
+  const CINE = {
+    news: 'three-point broadcast lighting, slow push-in, neutral colour grade, clean broadcast studio background',
+    documentary: 'single dramatic key light, warm shadows, cinematic grade, intimate documentary setting',
+    cinematic: 'Rembrandt lighting, 2.39:1 anamorphic crop, teal-orange grade, filmic grain, deep shadows',
+    corporate: 'soft diffused octabox lighting, static framing, clean white studio, bright neutral grade',
+    investigative: 'hard side lighting, low-key exposure, cold noir tones, dark office atmosphere',
+    academic: 'warm tungsten library lighting, stable medium shot, wooden bookshelves background'
+  };
+  const CHAR = {
+    realistic: 'photorealistic, natural skin texture, natural blinking, subtle micro-expressions',
+    cartoon: 'Pixar-quality 3D animated style, expressive and vibrant',
+    anime: 'premium anime illustration style, fluid and expressive',
+    clay: 'claymation stop-motion aesthetic, rich handcrafted textures',
+    illustrated: 'high-quality editorial illustration style, confident brushwork',
+    avatar3d: 'ultra-realistic 3D render, subsurface scattering, hyper-detailed'
+  };
+  const preset = CINE[cinematographyPreset] || CINE.news;
+  const charStyle = CHAR[characterStyle] || CHAR.realistic;
+  const bg = studioBg || 'professional broadcast studio';
+  return `${charStyle}. Setting: ${bg}. ${preset}. 4K quality, professional production value, no text, no watermarks, clean composition.`;
+}
+
+app.post('/api/image/generate', async (req, res) => {
+  try {
+    const {
+      scenePrompt,      // the scene's visualPrompt from scene generation
+      sceneType,        // INTRODUCTION, EVIDENCE, etc.
+      sceneNumber,
+      characterStyle,
+      cinematographyPreset,
+      studioBg,
+      avatarDesc,
+      provider = 'dalle' // 'dalle' | 'stability'
+    } = req.body;
+
+    if (!scenePrompt) throw new Error('No scene prompt provided');
+
+    const suffix = buildStudioSuffix({ characterStyle, cinematographyPreset, studioBg, avatarDesc });
+
+    // Build the full prompt — scene content + constant studio suffix
+    const fullPrompt = `${scenePrompt.slice(0, 800)}. ${suffix}`.slice(0, 1000);
+
+    if (provider === 'stability' && STABILITY_KEY) {
+      // Stability AI SDXL
+      const response = await fetch('https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${STABILITY_KEY}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          text_prompts: [
+            { text: fullPrompt, weight: 1 },
+            { text: 'blurry, low quality, text, watermark, ugly, distorted, cartoon (if realistic), robotic', weight: -1 }
+          ],
+          cfg_scale: 7,
+          height: 1024,
+          width: 1024,
+          steps: 30,
+          samples: 1
+        })
+      });
+      if (!response.ok) throw new Error('Stability API HTTP ' + response.status + ': ' + (await response.text()).slice(0, 200));
+      const data = await response.json();
+      const b64 = data.artifacts?.[0]?.base64;
+      if (!b64) throw new Error('No image returned from Stability');
+      return res.json({ imageBase64: b64, provider: 'stability', prompt: fullPrompt });
+    }
+
+    // Default: DALL-E 3
+    if (!DALLE_KEY) throw new Error('No OPENAI_API_KEY or STABILITY_API_KEY set — cannot generate images');
+
+    const response = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${DALLE_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'dall-e-3',
+        prompt: fullPrompt,
+        n: 1,
+        size: '1024x1024',
+        quality: 'standard',
+        response_format: 'b64_json'
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error('DALL-E HTTP ' + response.status + ': ' + err.slice(0, 200));
+    }
+
+    const data = await response.json();
+    const b64 = data.data?.[0]?.b64_json;
+    const revisedPrompt = data.data?.[0]?.revised_prompt;
+    if (!b64) throw new Error('No image data returned from DALL-E');
+
+    res.json({ imageBase64: b64, provider: 'dalle', prompt: fullPrompt, revisedPrompt });
+  } catch (e) {
+    console.error('Image generate error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── ENGINE: BATCH IMAGE STATUS (returns which scenes have images) ─────────────
+// Simple in-memory store for generated images (keyed by sessionId+sceneNumber)
+// In production this should be Supabase storage
+const IMAGE_STORE = {};
+
+app.post('/api/image/store', async (req, res) => {
+  try {
+    const { sessionId, sceneNumber, imageBase64, provider } = req.body;
+    if (!sessionId || sceneNumber === undefined) throw new Error('sessionId and sceneNumber required');
+    const key = `${sessionId}_${sceneNumber}`;
+    IMAGE_STORE[key] = { imageBase64, provider, createdAt: Date.now() };
+    // Clean old entries (keep last 500)
+    const keys = Object.keys(IMAGE_STORE);
+    if (keys.length > 500) {
+      keys.sort((a, b) => IMAGE_STORE[a].createdAt - IMAGE_STORE[b].createdAt)
+          .slice(0, keys.length - 500)
+          .forEach(k => delete IMAGE_STORE[k]);
+    }
+    res.json({ ok: true, key });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.listen(PORT, () => console.log(`AABStudio server running on port ${PORT}`));
