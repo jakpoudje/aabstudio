@@ -4,7 +4,16 @@ const Anthropic = require('@anthropic-ai/sdk');
 const Stripe = require('stripe');
 
 const app = express();
-app.use(cors());
+
+// ── CORS — allow all origins including GitHub Pages and custom domains ─────────
+const corsOptions = {
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'apikey', 'x-client-info', 'x-supabase-api-version'],
+  credentials: false
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // ── STRIPE WEBHOOK — must be raw body, registered BEFORE express.json() ──────
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
