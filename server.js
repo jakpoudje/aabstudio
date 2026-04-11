@@ -657,42 +657,92 @@ app.post('/api/video/generate', async (req, res) => {
 });
 
 async function generateHeyGenVideo(req, res, { referenceImageBase64, audioBase64, ratio, duration }) {
-  // Step 1: Upload avatar photo to HeyGen
-  const avatarRes = await fetch('https://upload.heygen.com/v1/talking_photo', {
-    method: 'POST',
-    headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ image: referenceImageBase64 })
-  });
-  if (!avatarRes.ok) throw new Error('HeyGen avatar upload failed: HTTP ' + avatarRes.status);
-  const avatarData = await avatarRes.json();
-  const talkingPhotoId = avatarData.data?.talking_photo_id;
-  if (!talkingPhotoId) throw new Error('HeyGen: no talking_photo_id returned');
+  if (!HEYGEN_KEY) throw new Error('HEYGEN_API_KEY not set in Railway environment variables');
 
-  // Step 2: Create video generation task
-  const aspectMap = { '9:16': '9:16', '1:1': '1:1' };
+  // HeyGen Avatar IV — perfect lip sync pipeline:
+  // 1. Upload talking photo → get talking_photo_id
+  // 2. Create video with audio → perfect lip sync output
+
+  // Step 1: Upload the presenter photo as a talking photo
+  const avatarUploadRes = await fetch('https://upload.heygen.com/v1/talking_photo', {
+    method: 'POST',
+    headers: {
+      'X-Api-Key': HEYGEN_KEY,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      image: referenceImageBase64   // base64 PNG/JPG of the presenter face
+    })
+  });
+
+  if (!avatarUploadRes.ok) {
+    const err = await avatarUploadRes.text();
+    throw new Error('HeyGen photo upload failed: HTTP ' + avatarUploadRes.status + ' — ' + err.slice(0, 200));
+  }
+
+  const avatarData = await avatarUploadRes.json();
+  const talkingPhotoId = avatarData.data?.talking_photo_id;
+  if (!talkingPhotoId) throw new Error('HeyGen: no talking_photo_id returned from upload');
+
+  // Step 2: Create video generation job with audio for lip sync
+  const aspectMap = { '16:9': '16:9', '9:16': '9:16', '1:1': '1:1' };
   const aspect = aspectMap[ratio] || '16:9';
+
+  // Voice config — use uploaded audio for perfect lip sync
+  const voiceConfig = audioBase64
+    ? {
+        type: 'audio',
+        audio_base64: audioBase64,
+        // Ensure audio is the right format for HeyGen
+      }
+    : {
+        type: 'text',
+        input_text: 'Professional presenter speaking clearly.',
+        voice_id: '2d5b0e6cf36f460aa7fc47e3eee4ba54',  // HeyGen built-in voice
+        speed: 1.0,
+        pitch: 0
+      };
 
   const videoRes = await fetch('https://api.heygen.com/v2/video/generate', {
     method: 'POST',
-    headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'application/json' },
+    headers: {
+      'X-Api-Key': HEYGEN_KEY,
+      'Content-Type': 'application/json'
+    },
     body: JSON.stringify({
       video_inputs: [{
-        character: { type: 'talking_photo', talking_photo_id: talkingPhotoId },
-        voice: audioBase64
-          ? { type: 'audio', audio_base64: audioBase64 }
-          : { type: 'text', input_text: 'Placeholder', voice_id: '2d5b0e6cf36f460aa7fc47e3eee4ba54' }
+        character: {
+          type: 'talking_photo',
+          talking_photo_id: talkingPhotoId,
+          talking_photo_style: 'square',   // square = full face, bust = shoulders up
+          talking_style: 'expressive',     // expressive = natural lip movement, not robotic
+          expression: 'happy',             // natural expression baseline
+          movement_amplitude: 'auto'       // natural head movement
+        },
+        voice: voiceConfig,
+        background: {
+          type: 'color',
+          value: '#1a3a5c'                 // navy — will be replaced by Creatomate background
+        }
       }],
       aspect_ratio: aspect,
-      test: false
+      test: false,                         // set true for free 5-credit test renders
+      version: 'v2'
     })
   });
-  if (!videoRes.ok) throw new Error('HeyGen video create failed: HTTP ' + videoRes.status);
+
+  if (!videoRes.ok) {
+    const err = await videoRes.text();
+    throw new Error('HeyGen video create failed: HTTP ' + videoRes.status + ' — ' + err.slice(0, 300));
+  }
+
   const videoData = await videoRes.json();
   const videoId = videoData.data?.video_id;
-  if (!videoId) throw new Error('HeyGen: no video_id returned');
+  if (!videoId) throw new Error('HeyGen: no video_id returned — ' + JSON.stringify(videoData).slice(0, 200));
 
   res.json({ taskId: 'heygen-' + videoId, provider: 'heygen' });
 }
+
 
 async function generateKlingVideo(req, res, { prompt, duration, ratio }) {
   const ratioMap = { '9:16': '9:16', '1:1': '1:1' };
