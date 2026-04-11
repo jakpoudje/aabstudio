@@ -49,6 +49,8 @@ const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 const CREATOMATE_KEY = process.env.CREATOMATE_API_KEY;
 const HEYGEN_KEY = process.env.HEYGEN_API_KEY;
 const KLING_KEY = process.env.KLING_API_KEY;
+const DALLE_KEY = process.env.OPENAI_API_KEY;
+const STABILITY_KEY = process.env.STABILITY_API_KEY;
 
 const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY });
 const stripe = STRIPE_KEY ? new Stripe(STRIPE_KEY) : null;
@@ -68,6 +70,7 @@ app.get('/health', (req, res) => {
       creatomate: !!CREATOMATE_KEY,
       heygen: !!HEYGEN_KEY,
       kling: !!KLING_KEY,
+      openai: !!DALLE_KEY,
     }
   });
 });
@@ -1416,12 +1419,6 @@ app.get('/api/test/creatomate', async (req, res) => {
 
 // ── START ─────────────────────────────────────────────────────────────────────
 // ── ENGINE: PER-SCENE IMAGE GENERATION ───────────────────────────────────────
-// Generates a still image for each scene using OpenAI DALL-E 3 or Stability AI
-// The studio setup (bg, lighting, character style, cinematography preset) is
-// baked into every prompt as a constant suffix so all scenes look coherent.
-
-const DALLE_KEY = process.env.OPENAI_API_KEY;
-const STABILITY_KEY = process.env.STABILITY_API_KEY;
 
 // Build the constant suffix from studio setup — locked across all scenes
 function buildStudioSuffix({ characterStyle, cinematographyPreset, studioBg, avatarDesc }) {
