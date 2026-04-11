@@ -210,21 +210,20 @@ app.post('/api/analyse', async (req, res) => {
   try {
     const { request, depth, fileName, fileBase64, fileContent, mimeType } = req.body;
 
-    const systemPrompt = `You are AABStudio's Document Intelligence Engine — a professional-grade analysis AI.
+    const systemPrompt = `You are AABStudio's Document Intelligence Engine — a professional, consultant-grade analysis AI.
 
-You produce DEEP, BALANCED analysis reports that are fair, evidence-based, and multi-perspective.
+CORE PRINCIPLE: Every analysis must be BALANCED. You must identify both positive and negative elements.
+Do NOT only search for problems. Evaluate every section across four dimensions:
 
-BALANCED REASONING REQUIRED — every section must include a "reasoning" object:
-- observation: what you see in the document
-- merits: positive aspects, benefits, strengths
-- risks: concerns, risks, weaknesses
-- tradeoffs: the tension between merits and risks
-- operationalImpact: practical day-to-day consequences
-- financialImpact: financial consequences
-- recommendation: specific actionable advice
+1. STRENGTHS — what the document does well (clear vision, logical structure, strong roadmap, innovation)
+2. WEAKNESSES — areas lacking clarity or depth (missing detail, unclear costs, vague implementation)
+3. RISKS — potential future challenges (unrealistic timelines, technical dependencies, legal exposure)
+4. OPPORTUNITIES — ways the strategy could become stronger (partnerships, licensing, market expansion)
 
-EVIDENCE EXTRACTION — each section should include evidenceItems:
-- label, source (page/clause), text (direct quote), interpretation, implication, confidence (High/Medium/Low)
+EVIDENCE RULE: Every observation must link to a direct quote or section reference from the document.
+
+SCENE INTEGRATION: Each section you produce will become 2-5 presenter scenes in the Scene Studio.
+Write body text as clear, flowing narrative suitable for a presenter to read aloud.
 
 Analysis depth: ${depth || 'deep'}
 User request: ${request}
@@ -239,13 +238,21 @@ OUTPUT: respond with ONLY valid JSON, no markdown, no preamble:
     {
       "title": "...",
       "body": "...",
-      "reasoning": {
-        "observation": "...", "merits": "...", "risks": "...",
-        "tradeoffs": "...", "operationalImpact": "...",
-        "financialImpact": "...", "recommendation": "..."
-      },
+      "strengths": ["...", "..."],
+      "weaknesses": ["...", "..."],
+      "risks": ["...", "..."],
+      "opportunities": ["...", "..."],
+      "recommendation": "...",
+      "confidence": "High | Medium | Low",
       "evidenceItems": [
-        { "label": "...", "source": "...", "text": "...", "interpretation": "...", "implication": "...", "confidence": "High" }
+        {
+          "label": "...",
+          "source": "...",
+          "text": "direct quote from document",
+          "interpretation": "...",
+          "implication": "...",
+          "confidence": "High | Medium | Low"
+        }
       ]
     }
   ]
@@ -372,28 +379,31 @@ app.post('/api/scenes', async (req, res) => {
 
     const systemPrompt = `You are AABStudio's Scene Intelligence Engine.
 
-Convert analysis reports into broadcast-ready presenter scripts.
+Convert balanced analysis reports into broadcast-ready presenter scripts.
 
 SCENE RULES:
-- Each scene = exactly 8 seconds
-- Words per scene at ${wpm} wpm = ~${wordsPerScene} words (STRICT — keep within 2 words)
-- Scene types: INTRODUCTION, EVIDENCE, EXPLANATION, COMPARISON, RECOMMENDATION, CONCLUSION
-- Presenter mode: ${presenterMode}
+- Each scene = 6 to 10 seconds of narration
+- Words per scene at ${wpm} wpm = ~${wordsPerScene} words
+- Scene types: INTRODUCTION, STRENGTH, WEAKNESS, RISK, OPPORTUNITY, RECOMMENDATION, CONCLUSION
+- Each major report section generates 2 to 5 scenes
+- Map report fields to scenes as follows:
+  • executiveSummary → opening scene
+  • strengths → positive strategic scenes
+  • weaknesses → areas needing improvement scenes
+  • risks → risk explanation scenes
+  • opportunities → strategic opportunity scenes
+  • recommendation → closing recommendation scene
 
-${presenterMode === 'dual' ? `DUAL/DEBATE MODE:
-- presenterA: argues one position ("This clause benefits suppliers because...")
-- presenterB: responds with counter-perspective ("However, it increases buyer risk since...")
-- Each presenter ~${Math.floor(wordsPerScene / 2)} words` : ''}
-
-${presenterMode === 'human' ? 'HUMAN MODE: Write clear, natural speech for a human presenter to read.' : ''}
-${presenterMode === 'ai' ? 'AI MODE: Write clear, authoritative narration.' : ''}
+PRESENTER MODE: ${presenterMode}
+${presenterMode === 'dual' ? `DEBATE MODE: Presenter A presents the strength/opportunity, Presenter B presents the weakness/risk. Each ~${Math.floor(wordsPerScene / 2)} words.` : ''}
+${presenterMode === 'documentary' ? `DOCUMENTARY: Hook → Strength reveal → Weakness/Risk → Opportunity → Recommendation` : ''}
 
 EVIDENCE OVERLAYS:
-- evidenceRef: the evidence card ID that should overlay (e.g. "EV-101") or null
-- overlayText: short quote for on-screen display (max 12 words) or null
+- evidenceRef: the evidence ID (e.g. "EV-101") to show as overlay, or null
+- overlayText: short quote for on-screen display (max 12 words), or null
 
 VISUAL PROMPTS:
-- visualPrompt: describe the background/environment for AI video generation (30-50 words)
+- visualPrompt: 30-50 word description of background/environment for AI video
 
 OUTPUT — ONLY valid JSON:
 {
