@@ -1607,125 +1607,64 @@ app.post('/api/image/store', async (req, res) => {
 app.post('/api/report-to-scenes', async (req, res) => {
   try {
     const { fileBase64, mimeType, fileName, textContent, pacing, destination } = req.body;
-
     const wpmMap = { slow: 110, normal: 140, fast: 170 };
     const wpm = wpmMap[pacing] || 140;
     const wordsPerScene = Math.round(wpm * 8 / 60);
-
-    // Extract text content
     let rawText = textContent || '';
+
     if (!rawText && fileBase64) {
       const isPDF = mimeType === 'application/pdf';
-      if (isPDF && fileBase64.length < 120000) {
-        // Send PDF to Claude for text extraction + scene splitting in one step
-        const response = await anthropic.messages.create({
-          model: 'claude-opus-4-5',
-          max_tokens: 10000,
-          system: `You are AABStudio's Content Splitter. The user has uploaded their own document to split into presenter scenes.
-
-DO NOT analyse or critique the content. Simply split it into scenes for a presenter to read.
-
-RULES:
-- Each scene = exactly ${wordsPerScene} words (±2 words) at ${wpm} wpm
-- Respect section headings as natural scene breaks
-- Split at sentence boundaries, never mid-sentence
-- Generate a short visual prompt per scene (what should appear behind the presenter)
-- Scene types: INTRODUCTION, MAIN, EVIDENCE, SUMMARY, CONCLUSION
-
-OUTPUT — ONLY valid JSON:
-{
-  "title": "...",
-  "presenterMode": "human",
-  "totalDuration": 0,
-  "costEstimate": { "totalScenes": 0, "totalCredits": 0 },
-  "discussions": [
-    {
-      "sectionTitle": "...",
-      "discussionText": "",
-      "scenes": [
-        {
-          "sceneNumber": 1,
-          "type": "INTRODUCTION",
-          "duration": 8,
-          "wordCount": ${wordsPerScene},
-          "presenterA": "exact words from the document for this scene",
-          "presenterB": null,
-          "evidenceRef": null,
-          "overlayText": null,
-          "visualPrompt": "professional background matching the content theme"
-        }
-      ]
-    }
-  ]
-}`,
-          messages: [{
-            role: 'user',
-            content: [
+      if (isPDF) {
+        try {
+          const response = await anthropic.messages.create({
+            model: 'claude-opus-4-5', max_tokens: 12000,
+            system: `Split the uploaded document into presenter scenes. DO NOT analyse. Each scene = ${wordsPerScene} words (±3). Respect headings. Never split mid-sentence. OUTPUT ONLY valid JSON: {"title":"...","presenterMode":"human","totalDuration":0,"costEstimate":{"totalScenes":0,"totalCredits":0},"discussions":[{"sectionTitle":"...","discussionText":"","scenes":[{"sceneNumber":1,"type":"INTRODUCTION","duration":8,"wordCount":${wordsPerScene},"presenterA":"exact words","presenterB":null,"evidenceRef":null,"overlayText":null,"visualPrompt":"professional studio"}]}]}`,
+            messages: [{ role: 'user', content: [
               { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileBase64 } },
-              { type: 'text', text: `Split this document into ${wordsPerScene}-word presenter scenes. Return ONLY valid JSON.` }
-            ]
-          }]
-        });
-
-        const text = response.content.map(c => c.text || '').join('').trim();
-        const j = text.indexOf('{'), k = text.lastIndexOf('}');
-        if (j === -1) throw new Error('No JSON returned');
-        const result = JSON.parse(text.slice(j, k + 1));
-        // Add cost estimate
-        let total = 0;
-        (result.discussions || []).forEach(d => { total += (d.scenes || []).length; });
-        result.costEstimate = { totalScenes: total, totalCredits: total * 10 };
-        result.totalDuration = total * 8;
-        return res.json(result);
+              { type: 'text', text: `Split into ${wordsPerScene}-word presenter scenes. Return ONLY valid JSON.` }
+            ]}]
+          });
+          const txt = response.content.map(c => c.text || '').join('').trim();
+          const j = txt.indexOf('{'), k = txt.lastIndexOf('}');
+          if (j !== -1) {
+            const result = JSON.parse(txt.slice(j, k + 1));
+            let total = 0;
+            (result.discussions || []).forEach(d => { total += (d.scenes || []).length; });
+            result.costEstimate = { totalScenes: total, totalCredits: total * 10 };
+            result.totalDuration = total * 8;
+            result.presenterMode = 'human';
+            return res.json(result);
+          }
+        } catch (pdfErr) { console.warn('PDF parse failed:', pdfErr.message); }
       }
-
-      // For non-PDF files, extract text
       rawText = extractBase64Text(fileBase64, mimeType, fileName) || '';
     }
 
-    if (!rawText || rawText.trim().length < 20) {
-      throw new Error('No readable content found. Please paste your text or upload a PDF/TXT file.');
+    if (!rawText || rawText.trim().length < 10) {
+      return res.status(400).json({ error: 'No readable content found. Paste your text directly or upload a PDF or TXT file.' });
     }
 
-    // Split text into scenes using Claude
     const response = await anthropic.messages.create({
-      model: 'claude-opus-4-5',
-      max_tokens: 10000,
-      system: `You are AABStudio's Content Splitter. Split the provided text into presenter scenes.
-
-DO NOT analyse or critique. Simply split into scenes for a presenter to read aloud.
-
-RULES:
-- Each scene = exactly ${wordsPerScene} words (±2 words)
-- Respect paragraph/section breaks as scene breaks where possible
-- Never split mid-sentence
-- Group related sentences into scenes
-- Generate a short visual prompt per scene
-- Use the document's own section headings as discussion titles
-
-OUTPUT — ONLY valid JSON with same schema as scenes endpoint.`,
-      messages: [{
-        role: 'user',
-        content: `Split this content into ${wordsPerScene}-word scenes:\n\n${rawText.slice(0, 40000)}\n\nReturn ONLY valid JSON.`
-      }]
+      model: 'claude-opus-4-5', max_tokens: 12000,
+      system: `Split the provided text into presenter scenes. DO NOT analyse. ${wordsPerScene} words per scene (±3). Respect paragraph breaks. Never split mid-sentence. OUTPUT ONLY valid JSON: {"title":"...","presenterMode":"human","totalDuration":0,"costEstimate":{"totalScenes":0,"totalCredits":0},"discussions":[{"sectionTitle":"...","discussionText":"","scenes":[{"sceneNumber":1,"type":"INTRODUCTION","duration":8,"wordCount":${wordsPerScene},"presenterA":"exact words","presenterB":null,"evidenceRef":null,"overlayText":null,"visualPrompt":"professional studio"}]}]}`,
+      messages: [{ role: 'user', content: `Split into ${wordsPerScene}-word scenes:\n\n${rawText.slice(0, 50000)}\n\nReturn ONLY valid JSON.` }]
     });
 
-    const text = response.content.map(c => c.text || '').join('').trim();
-    const j = text.indexOf('{'), k = text.lastIndexOf('}');
-    if (j === -1) throw new Error('No JSON returned');
-    const result = JSON.parse(text.slice(j, k + 1));
-
+    const txt = response.content.map(c => c.text || '').join('').trim();
+    const j = txt.indexOf('{'), k = txt.lastIndexOf('}');
+    if (j === -1) throw new Error('AI returned no valid JSON. Try pasting your text directly.');
+    const result = JSON.parse(txt.slice(j, k + 1));
     let total = 0;
     (result.discussions || []).forEach(d => { total += (d.scenes || []).length; });
     result.costEstimate = { totalScenes: total, totalCredits: total * 10 };
     result.totalDuration = total * 8;
     result.presenterMode = 'human';
-
     res.json(result);
   } catch (e) {
     console.error('Report-to-scenes error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
+
 
 app.listen(PORT, () => console.log(`AABStudio server running on port ${PORT}`));
