@@ -474,8 +474,33 @@ footer{padding:28px 48px;border-top:0.5px solid var(--bdr);display:flex;align-it
   </div>
   <div style="display:flex;flex:1;overflow:hidden;">
     <div style="flex:1;overflow-y:auto;" class="pad">
-      <div class="page-title">New analysis</div>
-      <div class="page-sub">Upload your document and describe what you need. AABStudio handles the rest.</div>
+      <div class="page-title">New project</div>
+      <div class="page-sub">What do you want to do with your document?</div>
+
+      <!-- PATH SELECTOR — drives the whole experience -->
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:22px;" id="path-selector">
+        <div class="path-opt on" id="path-analyse" onclick="selectPath(this,'analyse')" style="padding:14px 16px;border-radius:12px;border:1.5px solid var(--blue);background:var(--blue-pale);cursor:pointer;">
+          <div style="font-size:13px;font-weight:500;color:var(--blue);margin-bottom:4px;">🔍 AI document analysis</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.5;">Deep analysis, SWOT, evidence cards, then optionally generate AI video</div>
+        </div>
+        <div class="path-opt" id="path-ai-video" onclick="selectPath(this,'ai-video')" style="padding:14px 16px;border-radius:12px;border:1.5px solid var(--bdr);background:var(--white);cursor:pointer;">
+          <div style="font-size:13px;font-weight:500;color:var(--ink);margin-bottom:4px;">🎬 Document to AI video</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.5;">Skip analysis — split into scenes, generate AI presenter video automatically</div>
+        </div>
+        <div class="path-opt" id="path-record" onclick="selectPath(this,'record')" style="padding:14px 16px;border-radius:12px;border:1.5px solid var(--bdr);background:var(--white);cursor:pointer;">
+          <div style="font-size:13px;font-weight:500;color:var(--ink);margin-bottom:4px;">📹 Record myself</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.5;">Upload my prepared document — split into scenes — record with teleprompter and export</div>
+        </div>
+        <div class="path-opt" id="path-live" onclick="selectPath(this,'live')" style="padding:14px 16px;border-radius:12px;border:1.5px solid var(--bdr);background:var(--white);cursor:pointer;">
+          <div style="font-size:13px;font-weight:500;color:var(--ink);margin-bottom:4px;">📡 Live broadcast</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.5;">Split into scenes — go live with teleprompter — camera and mic recording</div>
+        </div>
+      </div>
+
+      <!-- Context label changes based on path -->
+      <div id="path-context" style="font-size:12px;color:var(--blue);background:var(--blue-pale);border-radius:8px;padding:8px 12px;margin-bottom:14px;">
+        AI will analyse your document deeply then generate a full structured report with evidence cards.
+      </div>
       <div class="upload-zone" id="uz" onclick="document.getElementById('fi').click()">
         <svg width="40" height="40" viewBox="0 0 40 40" style="margin:0 auto 14px;display:block;"><rect x="8" y="5" width="24" height="30" rx="3" fill="none" stroke="var(--blue)" stroke-width="1.6"/><path d="M14 18h12M14 22h9M14 26h7" stroke="var(--blue)" stroke-width="1.3" stroke-linecap="round" opacity=".5"/><path d="M26 5v8h8" fill="none" stroke="var(--blue)" stroke-width="1.6" stroke-linejoin="round"/></svg>
         <div style="font-size:15px;font-weight:500;color:var(--blue);margin-bottom:6px;" id="uz-title">Drop your document here</div>
@@ -483,14 +508,8 @@ footer{padding:28px 48px;border-top:0.5px solid var(--bdr);display:flex;align-it
         <input type="file" id="fi" style="display:none;" onchange="handleFile(this)" accept=".pdf,.docx,.txt,.xlsx,.pptx,.csv,.json,.html,.doc">
       </div>
       <div id="file-pill"></div>
-      <div style="margin-bottom:18px;"><div class="section-label">Analysis request</div><textarea class="req-box" id="req-box" placeholder="e.g. 'Review this contract for hidden liabilities and risk clauses'..."></textarea></div>
-      <div style="margin-bottom:18px;">
-        <div class="section-label">Output mode</div>
-        <div class="o-opt on" onclick="pickOut(this)"><div class="o-dot" style="border-color:var(--blue);background:var(--blue);"></div><div class="o-txt">Report only — structured analysis with evidence cards</div></div>
-        <div class="o-opt" onclick="pickOut(this)"><div class="o-dot"></div><div class="o-txt">Continue to presentation — scripts &amp; scenes</div></div>
-        <div class="o-opt" onclick="pickOut(this)"><div class="o-dot"></div><div class="o-txt">Continue to video — AI presenter generation</div></div>
-        <div class="o-opt" onclick="pickOut(this)"><div class="o-dot"></div><div class="o-txt">Prepare for live broadcast</div></div>
-      </div>
+      <div id="req-section" style="margin-bottom:18px;"><div class="section-label">Analysis request</div><textarea class="req-box" id="req-box" placeholder="e.g. 'Review this contract for hidden liabilities and risk clauses'..."></textarea></div>
+
       <div id="analysis-err-doc" style="display:none;background:var(--red-bg);border:0.5px solid rgba(192,57,43,.2);border-radius:var(--radius);padding:10px 14px;font-size:13px;color:var(--red);margin-bottom:14px;">Please upload a document before generating.</div>
       <div id="analysis-err-req" style="display:none;background:var(--red-bg);border:0.5px solid rgba(192,57,43,.2);border-radius:var(--radius);padding:10px 14px;font-size:13px;color:var(--red);margin-bottom:14px;">Please enter an analysis request before generating.</div>
     </div>
@@ -1963,34 +1982,107 @@ function pickAnalysisType(el){var sb=el.closest('[style*="width:268px"]');if(sb)
 function pickCompareType(el){var par=el.closest('[style]');if(par)par.querySelectorAll('.o-opt').forEach(function(o){o.classList.remove('on');o.querySelector('.o-dot').style.cssText='';});el.classList.add('on');el.querySelector('.o-dot').style.cssText='border-color:var(--blue);background:var(--blue)';var t=el.querySelector('.o-txt').textContent;APP.compareType=t.indexOf('Risk')>-1?'risk':t.indexOf('Financial')>-1?'financial':t.indexOf('Policy')>-1?'policy':'full';}
 
 // ── ANALYSIS ──────────────────────────────────────────────────────────────────
-function startAnalysis(){var req=document.getElementById('req-box').value.trim();if(!APP.uploadedFile){document.getElementById('analysis-err-doc').style.display='block';setTimeout(function(){document.getElementById('analysis-err-doc').style.display='none';},3500);return;}if(!req){document.getElementById('analysis-err-req').style.display='block';setTimeout(function(){document.getElementById('analysis-err-req').style.display='none';},3500);return;}if(!APP.uploadedBase64){var att=0,w=setInterval(function(){att++;if(APP.uploadedBase64){clearInterval(w);nav('proc-pg');runEngines(req);}else if(att>20){clearInterval(w);showToast('File not ready. Try again.','error');}},200);return;}nav('proc-pg');runEngines(req);}
-function runEngines(req){
-  var facts=['Claude reads your entire document before writing a single word of analysis.','Evidence is cross-referenced across the whole document, not just nearby paragraphs.','Balanced reasoning means every risk is weighed against its merits — not just one side.','The investigation engine looks for patterns, actors, and contradictions automatically.','Your document structure is preserved — section by section, not scrambled.','Evidence cards are direct quotes from your document, not paraphrased summaries.'];
-  var fi=0;var factTimer=setInterval(function(){fi=(fi+1)%facts.length;var el=document.getElementById('proc-fact');if(el){el.style.opacity='0';setTimeout(function(){if(el)el.textContent=facts[fi];el.style.opacity='1';},300);}},5000);
-  var steps=[{id:'e0',label:'Parsing document structure...',pct:16},{id:'e1',label:'Classifying document type...',pct:32},{id:'e2',label:'Interpreting your request...',pct:48},{id:'e3',label:'Extracting evidence & entities...',pct:64},{id:'e4',label:'Balanced reasoning — merits, risks, tradeoffs...',pct:80},{id:'e5',label:'Building report & evidence cards...',pct:94}];
-  var i=0;
-  function next(){
-    if(i>0){document.getElementById(steps[i-1].id).classList.remove('run');document.getElementById(steps[i-1].id).classList.add('done');}
-    if(i>=steps.length){
-      document.getElementById('proc-fill').style.width='100%';
-      var ps=document.getElementById('proc-status');if(ps)ps.textContent='Claude AI is synthesising...';
-      var pp=document.getElementById('proc-pct');if(pp)pp.textContent='99%';
-      clearInterval(factTimer);
-      callAnalysis(req);return;
-    }
-    var s=steps[i];
-    document.getElementById(s.id).classList.remove('wait');
-    document.getElementById(s.id).classList.add('run');
-    document.getElementById('proc-fill').style.width=s.pct+'%';
-    var ps=document.getElementById('proc-status');if(ps)ps.textContent=s.label;
-    var pp=document.getElementById('proc-pct');if(pp)pp.textContent=s.pct+'%';
-    i++;setTimeout(next,750);
-  }
-  // Reset all engine dots
-  ['e0','e1','e2','e3','e4','e5'].forEach(function(id){var el=document.getElementById(id);if(el){el.classList.remove('run','done');el.classList.add('wait');}});
-  var pf=document.getElementById('proc-fill');if(pf)pf.style.width='0%';
-  setTimeout(next,300);
+// ── PATH SELECTION ────────────────────────────────────────────────────────────
+var SELECTED_PATH = 'analyse'; // analyse | ai-video | record | live
+
+var PATH_CONTEXTS = {
+  'analyse': 'AI will deeply analyse your document — SWOT, evidence cards, balanced reasoning — then optionally generate scenes and video.',
+  'ai-video': 'AI splits your document into presenter scenes and generates a full AI video. No manual analysis step.',
+  'record': 'Your document is split into timed scenes. Open the recording studio with teleprompter and record yourself scene by scene.',
+  'live': 'Your document is split into scenes. Go live with camera, mic, and teleprompter — overlays fire automatically.'
+};
+
+var PATH_LABELS = {
+  'analyse': 'Enter your analysis request below, then upload your document.',
+  'ai-video': 'Upload your document — AI will split it into scenes and generate video.',
+  'record': 'Upload your prepared document — no analysis needed.',
+  'live': 'Upload your document — go live immediately with teleprompter.'
+};
+
+function selectPath(el, path) {
+  SELECTED_PATH = path;
+  document.querySelectorAll('.path-opt').forEach(function(o) {
+    o.style.border = '1.5px solid var(--bdr)';
+    o.style.background = 'var(--white)';
+    o.querySelectorAll('div').forEach(function(d) { if(d.style.color === 'var(--blue)') d.style.color = 'var(--ink)'; });
+  });
+  el.style.border = '1.5px solid var(--blue)';
+  el.style.background = 'var(--blue-pale)';
+  el.querySelector('div').style.color = 'var(--blue)';
+
+  var ctx = document.getElementById('path-context');
+  if (ctx) ctx.textContent = PATH_CONTEXTS[path] || '';
+
+  // Show/hide analysis request box depending on path
+  var reqWrap = document.querySelector('#req-box')?.closest('[style]') || document.querySelector('#req-box')?.parentElement;
+  var reqSection = document.getElementById('req-section');
+  if (reqSection) reqSection.style.display = (path === 'analyse') ? 'block' : 'none';
+
+  // Change upload zone label
+  var uzTitle = document.getElementById('uz-title');
+  if (uzTitle) uzTitle.textContent = (path === 'analyse' || path === 'ai-video')
+    ? 'Drop your document here'
+    : 'Drop your prepared document here';
 }
+
+function startAnalysis(){
+  // Route based on selected path
+  if (SELECTED_PATH === 'record') {
+    // Go to own-content-pg with record destination pre-selected
+    OWN_CONTENT.destination = 'teleprompter';
+    OWN_CONTENT.pacing = 'normal';
+    // Transfer uploaded file if any
+    if (APP.uploadedBase64) {
+      OWN_CONTENT.base64 = APP.uploadedBase64;
+      OWN_CONTENT.mime = APP.uploadedMime;
+      OWN_CONTENT.file = APP.uploadedFile;
+    }
+    nav('own-content-pg');
+    // If file already loaded, auto-run
+    if (APP.uploadedBase64) {
+      setTimeout(function() { runOwnContent(); }, 200);
+    } else {
+      showToast('Upload your document on this page then click Split into scenes', 'success');
+    }
+    return;
+  }
+
+  if (SELECTED_PATH === 'live') {
+    OWN_CONTENT.destination = 'live';
+    if (APP.uploadedBase64) {
+      OWN_CONTENT.base64 = APP.uploadedBase64;
+      OWN_CONTENT.mime = APP.uploadedMime;
+      OWN_CONTENT.file = APP.uploadedFile;
+      setTimeout(function() { runOwnContent(); }, 200);
+    }
+    nav('own-content-pg');
+    return;
+  }
+
+  if (SELECTED_PATH === 'ai-video') {
+    // Skip analysis — go straight to scene splitting
+    if (!APP.uploadedFile) {
+      document.getElementById('analysis-err-doc').style.display = 'block';
+      setTimeout(function(){document.getElementById('analysis-err-doc').style.display='none';},3500);
+      return;
+    }
+    OWN_CONTENT.destination = 'video';
+    OWN_CONTENT.base64 = APP.uploadedBase64;
+    OWN_CONTENT.mime = APP.uploadedMime;
+    OWN_CONTENT.file = APP.uploadedFile;
+    nav('own-content-pg');
+    if (APP.uploadedBase64) setTimeout(function() { runOwnContent(); }, 200);
+    return;
+  }
+
+  // Default: full analysis
+  var req=document.getElementById('req-box').value.trim();
+  if(!APP.uploadedFile){document.getElementById('analysis-err-doc').style.display='block';setTimeout(function(){document.getElementById('analysis-err-doc').style.display='none';},3500);return;}
+  if(!req){document.getElementById('analysis-err-req').style.display='block';setTimeout(function(){document.getElementById('analysis-err-req').style.display='none';},3500);return;}
+  if(!APP.uploadedBase64){var att=0,w=setInterval(function(){att++;if(APP.uploadedBase64){clearInterval(w);nav('proc-pg');runEngines(req);}else if(att>20){clearInterval(w);showToast('File not ready. Try again.','error');}},200);return;}
+  nav('proc-pg');runEngines(req);
+}
+
 async function callAnalysis(req){try{var res=await fetch('https://aabstudio-production.up.railway.app/api/analyse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request:req,depth:APP.depth||'deep',fileName:APP.uploadedFile?APP.uploadedFile.name:'document',fileBase64:APP.uploadedBase64,mimeType:APP.uploadedMime||''})});if(!res.ok)throw new Error('Backend returned HTTP '+res.status+' — check Railway is deployed');var report=await res.json();if(report.error)throw new Error(report.error);if(APP.user&&APP.user.id){try{await getSupa().from('projects').insert({user_id:APP.user.id,title:report.title,doc_type:report.docType,domain:report.domain,file_name:APP.uploadedFile?APP.uploadedFile.name:'',request:req,report:report});}catch(dbErr){console.warn('Project save failed (non-fatal):',dbErr.message);}}APP.projects.unshift({id:Date.now(),title:report.title,docType:report.docType,domain:report.domain,date:new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}),report:report});buildReport(report);}catch(e){var msg=e.message||'Unknown error';var isNetwork=msg.indexOf('fetch')<0&&(msg.indexOf('Failed')<0)&&(msg.indexOf('HTTP')<0);buildReport({title:'Analysis Failed',docType:'Unknown',domain:'General',executiveSummary:'Error: '+msg+(isNetwork?'':' — visit aabstudio-production.up.railway.app/health to check backend status.'),sections:[{title:'What to check',body:'1. Visit aabstudio-production.up.railway.app/health in your browser.\n2. If it fails, redeploy on Railway.\n3. Make sure ANTHROPIC_API_KEY is set in Railway environment variables.',evidenceItems:[]}]});}nav('report-pg');}
 
 // ── COMPARISON ────────────────────────────────────────────────────────────────
@@ -2377,7 +2469,7 @@ function generateScenes(){
   setTimeout(next,300);
 }
 async function callSceneAPI(){var ep=APP_SCENES.presenterMode==='documentary'?'https://aabstudio-production.up.railway.app/api/documentary':'https://aabstudio-production.up.railway.app/api/scenes';try{var r=await fetch(ep,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({report:APP.lastReport,presenterMode:APP_SCENES.presenterMode,speed:APP_SCENES.pacing})});if(!r.ok)throw new Error('HTTP '+r.status);var data=await r.json();if(data.error)throw new Error(data.error);APP_SCENES.data=data;APP_SCENES._prompts={};var _total=0;(data.discussions||[]).forEach(function(d){(d.scenes||[]).forEach(function(s){APP_SCENES._prompts[s.sceneNumber]=s.visualPrompt||'';_total++;});});var sp=document.getElementById('sp-scenes');if(sp)sp.textContent=_total;var sd=document.getElementById('sp-duration');if(sd){var _m=Math.floor(_total*8/60),_s=_total*8%60;sd.textContent=(_m?_m+'m ':'')+_s+'s';}buildScenesView(data);}catch(e){document.getElementById('scenes-content').innerHTML='<div class="pad"><div style="background:var(--red-bg);border:0.5px solid rgba(192,57,43,.2);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--red);">Failed: '+e.message+'</div></div>';}nav('scenes-pg');}
-function buildScenesView(data){var total=0;(data.discussions||[]).forEach(function(d){total+=(d.scenes||[]).length;});var secs=total*8,mins=Math.floor(secs/60),s=secs%60,credits=total*10,html='<div class="scene-stats"><div class="ss-item"><div class="ss-num">'+total+'</div><div class="ss-label">Scenes</div></div><div class="ss-item"><div class="ss-num">'+(data.discussions||[]).length+'</div><div class="ss-label">Sections</div></div><div class="ss-item"><div class="ss-num">'+(mins>0?mins+'m ':'')+s+'s</div><div class="ss-label">Duration</div></div><div class="ss-item"><div class="ss-num">'+credits+'</div><div class="ss-label">Credits to render</div></div></div>';html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;"><div><div class="page-title">'+(data.title||'Scenes')+'</div><div class="page-sub">'+APP_SCENES.presenterMode+' · '+total+' scenes · '+(mins>0?mins+'m ':'')+s+'s · '+credits+' credits to render</div></div><div style="display:flex;gap:8px;"><button class="btn-outline" onclick="exportScriptTxt()">Export script</button><button class="btn-outline" onclick="generateAllSceneImages()" style="border-color:rgba(13,115,119,.3);color:var(--teal);">✦ Generate all images</button><button class="btn-primary" onclick="launchLiveFromScenes()">→ Go live</button></div></div>';(data.discussions||[]).forEach(function(disc,di){html+='<div class="disc-block"><div class="disc-header"><span class="disc-num">0'+(di+1)+'</span><div style="flex:1;"><div class="disc-title">'+disc.sectionTitle+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">'+(disc.scenes||[]).length+' scenes</div></div></div>';if(disc.discussionText)html+='<div style="background:linear-gradient(135deg,var(--blue-pale),var(--off-white));border-left:3px solid var(--blue);border-radius:0 14px 14px 0;padding:14px 18px;margin-bottom:16px;"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--blue);margin-bottom:8px;">Discussion narrative</div><div style="font-size:14px;color:var(--ink-mid);line-height:1.75;">'+disc.discussionText+'</div></div>';(disc.scenes||[]).forEach(function(scene){var ts=(scene.type||'explanation').toLowerCase().replace(/\s+/g,'-'),wc=scene.wordCount||(scene.presenterA?scene.presenterA.split(/\s+/).length:0),wcc=wc<14?'var(--red)':wc>22?'var(--amber)':'var(--green)';html+='<div class="scene-card type-'+ts+'"><div class="scene-card-header"><span class="scene-num">SCENE '+String(scene.sceneNumber).padStart(3,'0')+'</span><span class="scene-type st-'+ts+'">'+(scene.type||'Explanation')+'</span>';if(scene.evidenceRef&&scene.evidenceRef!=='null')html+='<span class="evidence-overlay-tag">📎 '+scene.evidenceRef+'</span>';html+='<span style="font-family:monospace;font-size:10px;color:'+wcc+';margin-left:auto;background:rgba(0,0,0,.04);padding:2px 7px;border-radius:8px;">'+wc+'w</span><span class="scene-duration" style="margin-left:6px;">'+(scene.duration||8)+'s</span></div><div class="scene-card-body">';if(APP_SCENES.presenterMode==='dual'){html+='<div class="scene-presenter-label">Presenter A</div><div class="scene-script">'+scene.presenterA+'</div>';if(scene.presenterB&&scene.presenterB!=='null')html+='<div class="scene-presenter-label">Presenter B</div><div class="scene-script scene-script-b">'+scene.presenterB+'</div>';}else html+='<div class="scene-script">'+scene.presenterA+'</div>';if(scene.overlayText&&scene.overlayText!=='null')html+='<div style="font-size:12px;display:flex;align-items:flex-start;gap:6px;margin-top:6px;padding:7px 10px;background:var(--amber-bg);border-radius:7px;"><span>📝</span><span style="color:var(--amber);">Overlay: '+scene.overlayText+'</span></div>';if(scene.visualPrompt)html+='<div class="scene-visual"><svg width="12" height="12" viewBox="0 0 12 12"><rect x=".5" y=".5" width="11" height="11" rx="1.5" fill="none" stroke="var(--muted-light)" stroke-width="1"/></svg>'+scene.visualPrompt+'</div>';
+function buildScenesView(data){var total=0;(data.discussions||[]).forEach(function(d){total+=(d.scenes||[]).length;});var secs=total*8,mins=Math.floor(secs/60),s=secs%60,credits=total*10,html='<div class="scene-stats"><div class="ss-item"><div class="ss-num">'+total+'</div><div class="ss-label">Scenes</div></div><div class="ss-item"><div class="ss-num">'+(data.discussions||[]).length+'</div><div class="ss-label">Sections</div></div><div class="ss-item"><div class="ss-num">'+(mins>0?mins+'m ':'')+s+'s</div><div class="ss-label">Duration</div></div><div class="ss-item"><div class="ss-num">'+credits+'</div><div class="ss-label">Credits to render</div></div></div>';html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;"><div><div class="page-title">'+(data.title||'Scenes')+'</div><div class="page-sub">'+APP_SCENES.presenterMode+' · '+total+' scenes · '+(mins>0?mins+'m ':'')+s+'s · '+credits+' credits to render</div></div><div style="display:flex;gap:8px;"><button class="btn-outline" onclick="exportScriptTxt()">Export script</button><button class="btn-outline" onclick="generateAllSceneImages()" style="border-color:rgba(13,115,119,.3);color:var(--teal);">✦ Generate all images</button><button class="btn-primary" onclick="launchLiveFromScenes()">→ Go live</button></div></div>';(data.discussions||[]).forEach(function(disc,di){html+='<div class="disc-block"><div class="disc-header"><span class="disc-num">0'+(di+1)+'</span><div style="flex:1;"><div class="disc-title">'+disc.sectionTitle+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">'+(disc.scenes||[]).length+' scenes</div></div></div>';if(disc.discussionText)html+='<div style="background:linear-gradient(135deg,var(--blue-pale),var(--off-white));border-left:3px solid var(--blue);border-radius:0 14px 14px 0;padding:14px 18px;margin-bottom:16px;"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--blue);margin-bottom:8px;">Discussion narrative</div><div style="font-size:14px;color:var(--ink-mid);line-height:1.75;">'+disc.discussionText+'</div></div>';(disc.scenes||[]).forEach(function(scene){var ts=(scene.type||'explanation').toLowerCase().replace(/\s+/g,'-'),wc=scene.wordCount||(scene.presenterA?scene.presenterA.split(/\s+/).length:0),wcc=wc<14?'var(--red)':wc>22?'var(--amber)':'var(--green)';html+='<div class="scene-card type-'+ts+'"><div class="scene-card-header"><span class="scene-num">SCENE '+String(scene.sceneNumber).padStart(3,'0')+'</span><span class="scene-type st-'+ts+'">'+(scene.type||'Explanation')+'</span>';if(scene.evidenceRef&&scene.evidenceRef!=='null')html+='<span class="evidence-overlay-tag">📎 '+scene.evidenceRef+'</span>';html+='<span style="font-family:monospace;font-size:10px;color:'+wcc+';margin-left:auto;background:rgba(0,0,0,.04);padding:2px 7px;border-radius:8px;">'+wc+'w</span><span class="scene-duration" style="margin-left:6px;">'+(scene.duration||8)+'s</span></div><div class="scene-card-body">';if(APP_SCENES.presenterMode==='dual'){html+='<div class="scene-presenter-label">Presenter A</div><div class="scene-script">'+(scene.presenterA||'Pending...')+'</div>';if(scene.presenterB&&scene.presenterB!=='null')html+='<div class="scene-presenter-label">Presenter B</div><div class="scene-script scene-script-b">'+scene.presenterB+'</div>';}else html+='<div class="scene-script">'+(scene.presenterA||'Script pending...')+'</div>';if(scene.overlayText&&scene.overlayText!=='null')html+='<div style="font-size:12px;display:flex;align-items:flex-start;gap:6px;margin-top:6px;padding:7px 10px;background:var(--amber-bg);border-radius:7px;"><span>📝</span><span style="color:var(--amber);">Overlay: '+scene.overlayText+'</span></div>';if(scene.visualPrompt)html+='<div class="scene-visual"><svg width="12" height="12" viewBox="0 0 12 12"><rect x=".5" y=".5" width="11" height="11" rx="1.5" fill="none" stroke="var(--muted-light)" stroke-width="1"/></svg>'+scene.visualPrompt+'</div>';
 html+='<div class="scene-img-row" id="img-row-'+scene.sceneNumber+'">';
 html+='<div class="scene-img-thumb" id="img-thumb-'+scene.sceneNumber+'"><div class="scene-img-placeholder" onclick="generateSceneImage('+scene.sceneNumber+','+JSON.stringify(scene.visualPrompt||'').replace(/'/g,"&#39;")+')">';
 html+='<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" rx="3" stroke="var(--muted-light)" stroke-width="1"/><path d="M5 14l3-4 2 2.5 3-4 4 5.5H5z" fill="none" stroke="var(--muted-light)" stroke-width="1" stroke-linejoin="round"/></svg>';
@@ -2434,7 +2526,7 @@ function saveMusicToAccount(){if(!STUDIO.musicAudioBase64){showToast('No music l
 function renderSavedMusic(){var saved=JSON.parse(localStorage.getItem('aab_music')||'[]'),el=document.getElementById('saved-music-list');if(!el)return;el.innerHTML=saved.length?saved.map(function(m,i){return'<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--off-white);border-radius:10px;margin-bottom:6px;"><div style="flex:1;"><div style="font-size:13px;font-weight:500;">'+m.name+'</div></div><button onclick="STUDIO.musicAudioBase64=\''+m.b64+'\';showToast(\'Loaded\',\'success\')" style="padding:5px 10px;border-radius:6px;font-size:12px;cursor:pointer;border:0.5px solid var(--bdr2);background:var(--white);color:var(--blue);font-family:sans-serif;">Use</button></div>';}).join(''):'<div style="font-size:13px;color:var(--muted);">No saved music.</div>';}
 function pickOutputFormat(el,f){el.closest('[style]').querySelectorAll('.o-opt').forEach(function(o){o.classList.remove('on');o.querySelector('.o-dot').style.cssText='';});el.classList.add('on');el.querySelector('.o-dot').style.cssText='border-color:var(--blue);background:var(--blue)';STUDIO.outputFormat=f;}
 async function previewVoice(){var el=document.getElementById('voice-preview');el.innerHTML='<div class="loading-row"><div class="spin"></div>Generating...</div>';try{var r=await fetch('https://aabstudio-production.up.railway.app/api/voice',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:'This is AABStudio — your document intelligence and broadcast platform.',voiceId:document.getElementById('studio-voice').value,stability:document.getElementById('studio-stab').value/100,similarityBoost:document.getElementById('studio-sim').value/100})});var d=await r.json();el.innerHTML=d.audio?'<audio controls style="width:100%;margin-top:6px;"><source src="data:audio/mpeg;base64,'+d.audio+'" type="audio/mpeg"></audio>':'<div style="font-size:12px;color:var(--red);">Failed</div>';}catch(e){el.innerHTML='<div style="font-size:12px;color:var(--red);">'+e.message+'</div>';}}
-function updateStudioSummary(){var sum=document.getElementById('studio-summary'),ed=document.getElementById('studio-scene-editor');if(!APP_SCENES.data){if(sum)sum.innerHTML='<div style="font-size:13px;color:var(--muted);">Generate scenes first.</div>';return;}var total=0;(APP_SCENES.data.discussions||[]).forEach(function(d){total+=(d.scenes||[]).length;});var dur=total*8,mins=Math.floor(dur/60),s=dur%60;if(sum)sum.innerHTML='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;"><div class="usage-item"><div class="ui-label">Scenes</div><div class="ui-nums"><span class="ui-used">'+total+'</span></div></div><div class="usage-item"><div class="ui-label">Duration</div><div class="ui-nums"><span class="ui-used" style="font-size:15px;">'+(mins>0?mins+'m ':'')+s+'s</span></div></div><div class="usage-item"><div class="ui-label">Credits</div><div class="ui-nums"><span class="ui-used">'+(total*10)+'</span></div></div></div>';if(ed){var html='';var sceneIdx=0;(APP_SCENES.data.discussions||[]).forEach(function(d,di){html+='<div style="margin-bottom:14px;"><div style="font-size:12px;font-weight:500;color:var(--blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px;">'+d.sectionTitle+'</div>';(d.scenes||[]).forEach(function(s,si){var idx=sceneIdx++;html+='<div style="margin-bottom:8px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><span class="scene-num" style="font-size:10px;">SCENE '+String(s.sceneNumber).padStart(3,'0')+'</span></div><textarea id="scene-edit-'+idx+'" style="width:100%;padding:8px 10px;border-radius:7px;font-size:13px;font-family:monospace;border:0.5px solid var(--bdr2);background:var(--white);color:var(--ink);line-height:1.5;resize:vertical;" rows="2" onchange="updateSceneScript('+di+','+si+',this.value)">'+s.presenterA+'</textarea></div>';});html+='</div>';});ed.innerHTML=html;}}
+function updateStudioSummary(){var sum=document.getElementById('studio-summary'),ed=document.getElementById('studio-scene-editor');if(!APP_SCENES.data){if(sum)sum.innerHTML='<div style="font-size:13px;color:var(--muted);">Generate scenes first.</div>';return;}var total=0;(APP_SCENES.data.discussions||[]).forEach(function(d){total+=(d.scenes||[]).length;});var dur=total*8,mins=Math.floor(dur/60),s=dur%60;if(sum)sum.innerHTML='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;"><div class="usage-item"><div class="ui-label">Scenes</div><div class="ui-nums"><span class="ui-used">'+total+'</span></div></div><div class="usage-item"><div class="ui-label">Duration</div><div class="ui-nums"><span class="ui-used" style="font-size:15px;">'+(mins>0?mins+'m ':'')+s+'s</span></div></div><div class="usage-item"><div class="ui-label">Credits</div><div class="ui-nums"><span class="ui-used">'+(total*10)+'</span></div></div></div>';if(ed){var html='';var sceneIdx=0;(APP_SCENES.data.discussions||[]).forEach(function(d,di){html+='<div style="margin-bottom:14px;"><div style="font-size:12px;font-weight:500;color:var(--blue);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px;">'+d.sectionTitle+'</div>';(d.scenes||[]).forEach(function(s,si){var idx=sceneIdx++;html+='<div style="margin-bottom:8px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><span class="scene-num" style="font-size:10px;">SCENE '+String(s.sceneNumber).padStart(3,'0')+'</span></div><textarea id="scene-edit-'+idx+'" style="width:100%;padding:8px 10px;border-radius:7px;font-size:13px;font-family:monospace;border:0.5px solid var(--bdr2);background:var(--white);color:var(--ink);line-height:1.5;resize:vertical;" rows="2" onchange="updateSceneScript('+di+','+si+',this.value)">'+(s.presenterA||'')+'</textarea></div>';});html+='</div>';});ed.innerHTML=html;}}
 function updateSceneScript(di,si,val){if(APP_SCENES.data&&APP_SCENES.data.discussions[di]&&APP_SCENES.data.discussions[di].scenes[si])APP_SCENES.data.discussions[di].scenes[si].presenterA=val;}
 
 // ── RENDER ────────────────────────────────────────────────────────────────────
