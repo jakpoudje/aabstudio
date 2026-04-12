@@ -510,8 +510,8 @@ footer{padding:28px 48px;border-top:0.5px solid var(--bdr);display:flex;align-it
       <div id="file-pill"></div>
       <div id="req-section" style="margin-bottom:18px;"><div class="section-label">Analysis request</div><textarea class="req-box" id="req-box" placeholder="e.g. 'Review this contract for hidden liabilities and risk clauses'..."></textarea></div>
 
-      <div id="analysis-err-doc" style="display:none;background:var(--red-bg);border:0.5px solid rgba(192,57,43,.2);border-radius:var(--radius);padding:10px 14px;font-size:13px;color:var(--red);margin-bottom:14px;">Please upload a document before generating.</div>
-      <div id="analysis-err-req" style="display:none;background:var(--red-bg);border:0.5px solid rgba(192,57,43,.2);border-radius:var(--radius);padding:10px 14px;font-size:13px;color:var(--red);margin-bottom:14px;">Please enter an analysis request before generating.</div>
+      <div id="analysis-err-doc" style="display:none;background:var(--red-bg);border:0.5px solid rgba(192,57,43,.4);border-radius:var(--radius);padding:12px 14px;font-size:13px;color:var(--red);margin-bottom:14px;font-weight:500;">⚠️ Please upload a document before continuing.</div>
+      <div id="analysis-err-req" style="display:none;background:var(--red-bg);border:0.5px solid rgba(192,57,43,.4);border-radius:var(--radius);padding:12px 14px;font-size:13px;color:var(--red);margin-bottom:14px;font-weight:500;">⚠️ Please describe what you want analysed — what should Claude focus on?</div>
     </div>
     <div style="width:268px;flex-shrink:0;border-left:0.5px solid var(--bdr);padding:22px 20px;overflow-y:auto;background:var(--off-white);">
       <div class="section-label">Analysis depth</div>
@@ -2014,9 +2014,14 @@ function selectPath(el, path) {
   if (ctx) ctx.textContent = PATH_CONTEXTS[path] || '';
 
   // Show/hide analysis request box depending on path
-  var reqWrap = document.querySelector('#req-box')?.closest('[style]') || document.querySelector('#req-box')?.parentElement;
   var reqSection = document.getElementById('req-section');
   if (reqSection) reqSection.style.display = (path === 'analyse') ? 'block' : 'none';
+
+  // Update button label
+  var genBtn = document.querySelector('#analysis-pg .sidebar-actions .full-btn');
+  if (!genBtn) genBtn = document.querySelector('#analysis-pg .pad ~ div .full-btn');
+  var btnLabels = {'analyse':'Generate analysis','ai-video':'Split into scenes →','record':'Open recording studio →','live':'Go live →'};
+  if (genBtn) genBtn.textContent = btnLabels[path] || 'Continue →';
 
   // Change upload zone label
   var uzTitle = document.getElementById('uz-title');
@@ -2075,12 +2080,29 @@ function startAnalysis(){
     return;
   }
 
-  // Default: full analysis
-  var req=document.getElementById('req-box').value.trim();
-  if(!APP.uploadedFile){document.getElementById('analysis-err-doc').style.display='block';setTimeout(function(){document.getElementById('analysis-err-doc').style.display='none';},3500);return;}
-  if(!req){document.getElementById('analysis-err-req').style.display='block';setTimeout(function(){document.getElementById('analysis-err-req').style.display='none';},3500);return;}
-  if(!APP.uploadedBase64){var att=0,w=setInterval(function(){att++;if(APP.uploadedBase64){clearInterval(w);nav('proc-pg');runEngines(req);}else if(att>20){clearInterval(w);showToast('File not ready. Try again.','error');}},200);return;}
-  nav('proc-pg');runEngines(req);
+  // Default: full AI analysis
+  var reqEl = document.getElementById('req-box');
+  var req = reqEl ? reqEl.value.trim() : '';
+  if (!APP.uploadedFile) {
+    var ed = document.getElementById('analysis-err-doc');
+    if (ed) { ed.style.display='block'; setTimeout(function(){ed.style.display='none';},3500); }
+    return;
+  }
+  if (!req) {
+    var er = document.getElementById('analysis-err-req');
+    if (er) { er.style.display='block'; setTimeout(function(){er.style.display='none';},3500); }
+    return;
+  }
+  if (!APP.uploadedBase64) {
+    var att=0, w=setInterval(function(){
+      att++;
+      if (APP.uploadedBase64) { clearInterval(w); nav('proc-pg'); runEngines(req); }
+      else if (att>20) { clearInterval(w); showToast('File not ready. Try again.','error'); }
+    }, 200);
+    return;
+  }
+  nav('proc-pg');
+  runEngines(req);
 }
 
 async function callAnalysis(req){try{var res=await fetch('https://aabstudio-production.up.railway.app/api/analyse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request:req,depth:APP.depth||'deep',fileName:APP.uploadedFile?APP.uploadedFile.name:'document',fileBase64:APP.uploadedBase64,mimeType:APP.uploadedMime||''})});if(!res.ok)throw new Error('Backend returned HTTP '+res.status+' — check Railway is deployed');var report=await res.json();if(report.error)throw new Error(report.error);if(APP.user&&APP.user.id){try{await getSupa().from('projects').insert({user_id:APP.user.id,title:report.title,doc_type:report.docType,domain:report.domain,file_name:APP.uploadedFile?APP.uploadedFile.name:'',request:req,report:report});}catch(dbErr){console.warn('Project save failed (non-fatal):',dbErr.message);}}APP.projects.unshift({id:Date.now(),title:report.title,docType:report.docType,domain:report.domain,date:new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}),report:report});buildReport(report);}catch(e){var msg=e.message||'Unknown error';var isNetwork=msg.indexOf('fetch')<0&&(msg.indexOf('Failed')<0)&&(msg.indexOf('HTTP')<0);buildReport({title:'Analysis Failed',docType:'Unknown',domain:'General',executiveSummary:'Error: '+msg+(isNetwork?'':' — visit aabstudio-production.up.railway.app/health to check backend status.'),sections:[{title:'What to check',body:'1. Visit aabstudio-production.up.railway.app/health in your browser.\n2. If it fails, redeploy on Railway.\n3. Make sure ANTHROPIC_API_KEY is set in Railway environment variables.',evidenceItems:[]}]});}nav('report-pg');}
