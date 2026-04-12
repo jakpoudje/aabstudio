@@ -758,7 +758,7 @@ footer{padding:28px 48px;border-top:0.5px solid var(--bdr);display:flex;align-it
       <button class="full-btn outline" style="margin-top:8px;" onclick="nav('report-pg')">← Back to report</button>
       <div style="margin-top:16px;padding-top:14px;border-top:0.5px solid var(--bdr);display:flex;flex-direction:column;gap:7px;">
         <button class="full-btn outline" style="margin:0;padding:9px;font-size:13px;" onclick="exportScriptTxt()">Export script .txt</button>
-        <button class="full-btn" style="margin:0;padding:9px;font-size:13px;" onclick="nav('studio-pg')">→ Studio setup</button>
+        <button class="full-btn" style="margin:0;padding:9px;font-size:13px;" onclick="nav('studio-pg')">→ Studio setup</button><div style="margin-top:8px;padding:10px;background:var(--blue-pale);border-radius:8px;font-size:11px;color:var(--blue);line-height:1.6;"><strong>Tip:</strong> Go to Studio setup → upload your presenter photo → click "Save &amp; generate scene images" to auto-generate all scenes with consistent look.</div>
         <button class="full-btn teal" style="margin:0;padding:9px;font-size:13px;" onclick="launchLiveFromScenes()">→ Go live now</button>
       </div>
     </div>
@@ -781,6 +781,13 @@ footer{padding:28px 48px;border-top:0.5px solid var(--bdr);display:flex;align-it
       <div class="section-label">Presenter mode</div>
       <div class="presenter-toggle" style="margin-bottom:18px;"><button class="pt-btn on" id="spm-ai" onclick="setStudioMode('ai',this)">AI</button><button class="pt-btn" id="spm-dual" onclick="setStudioMode('dual',this)">Dual AI</button><button class="pt-btn" id="spm-doc" onclick="setStudioMode('documentary',this)">Doc</button><button class="pt-btn" id="spm-human" onclick="setStudioMode('human',this)">Human</button></div>
       <div id="studio-ai-controls">
+        <div class="section-label">Presenter photo <span style="color:var(--muted);font-weight:400;">(for consistent look)</span></div>
+        <label style="display:flex;align-items:center;gap:8px;padding:9px 12px;border:0.5px solid var(--bdr);border-radius:8px;cursor:pointer;background:var(--white);margin-bottom:14px;" id="avatar-upload-zone-a">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="14" height="14" rx="2.5" stroke="var(--blue)" stroke-width="1.2"/><circle cx="5.5" cy="6" r="1.5" stroke="var(--blue)" stroke-width="1"/><path d="M1 11l4-3 3 3 2-2 5 4" stroke="var(--blue)" stroke-width="1" stroke-linejoin="round" fill="none"/></svg>
+          <span style="font-size:12px;color:var(--blue);flex:1;" id="avatar-upload-label-1">Upload your presenter photo</span>
+          <input type="file" style="display:none;" accept="image/*" onchange="handleAvatarUpload('a',this)">
+        </label>
+        <div style="font-size:11px;color:var(--muted);margin-top:-10px;margin-bottom:14px;padding:6px 10px;background:var(--blue-pale);border-radius:6px;">Scene 1 uses this photo to establish the look. All other scenes automatically match Scene 1.</div>
         <div class="section-label">Character style</div>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:14px;" id="char-style-grid">
           <div class="d-opt on" onclick="pickCharStyle(this,'realistic')" style="font-size:11px;padding:7px 4px;">Realistic</div>
@@ -864,7 +871,7 @@ footer{padding:28px 48px;border-top:0.5px solid var(--bdr);display:flex;align-it
       <div class="section-label">Output format</div>
       <div style="margin-bottom:14px;"><div class="o-opt on" onclick="pickOutputFormat(this,'16:9')"><div class="o-dot" style="border-color:var(--blue);background:var(--blue);"></div><div class="o-txt">16:9 — YouTube / LinkedIn</div></div><div class="o-opt" onclick="pickOutputFormat(this,'9:16')"><div class="o-dot"></div><div class="o-txt">9:16 — TikTok / Reels</div></div><div class="o-opt" onclick="pickOutputFormat(this,'1:1')"><div class="o-dot"></div><div class="o-txt">1:1 — Instagram / Facebook</div></div></div>
       <button class="full-btn" onclick="showCostEstimate()">Estimate cost &amp; render →</button>
-      <button class="full-btn outline" style="margin-top:8px;" onclick="nav('scenes-pg')">← Back to scenes</button>
+      <button class="full-btn" style="margin-top:8px;background:var(--teal);border-color:var(--teal);" onclick="saveStudioAndGenerate()">✦ Save & generate scene images →</button><button class="full-btn outline" style="margin-top:6px;" onclick="nav('scenes-pg')">← Back to scenes without generating</button>
     </div>
     <div style="flex:1;overflow-y:auto;" class="pad">
       <div class="page-title">Studio setup</div><div class="page-sub">Configure your production before rendering.</div>
@@ -1589,6 +1596,31 @@ function launchLiveFromScenes(){if(APP_SCENES.data&&APP_SCENES.data.discussions)
 // ── STUDIO ────────────────────────────────────────────────────────────────────
 var STUDIO={mode:'ai',avatarA:'alex',avatarB:'priya',avatarAImage:null,avatarBImage:null,bgId:'news',bgPrompt:'Modern news studio anchor desk blue ambient lighting multiple screens professional broadcast',bgImage:null,voiceId:'EXAVITQu4vr4xnSDxMaL',stability:0.5,similarityBoost:0.75,musicMode:'none',musicAudioBase64:null,musicVol:30,musicDuck:15,sidechain:true,outputFormat:'16:9'};
 var AVATARS={alex:{name:'Alex',voice:'pNInz6obpgDQGcFmaJgB'},maya:{name:'Maya',voice:'EXAVITQu4vr4xnSDxMaL'},marcus:{name:'Marcus',voice:'TxGEqnHWrfWFTfGW9XjX'},sophia:{name:'Sophia',voice:'MF3mGyEYCl7XYWbV9V6O'},james:{name:'James',voice:'VR6AewLTigWG4xSOukaG'},priya:{name:'Priya',voice:'AZnzlk1XvdvUeBnXmlld'}};
+function saveStudioAndGenerate() {
+  // Save all studio settings
+  var voiceEl = document.getElementById('studio-voice');
+  var stabEl = document.getElementById('studio-stab');
+  var simEl = document.getElementById('studio-sim');
+  if (voiceEl) STUDIO.voiceId = voiceEl.value;
+  if (stabEl) STUDIO.stability = stabEl.value / 100;
+  if (simEl) STUDIO.similarityBoost = simEl.value / 100;
+
+  // Check if avatar photo uploaded
+  if (!STUDIO.avatarAImage) {
+    showToast('Upload a presenter photo first for consistent images', 'warning');
+    // Still navigate back but warn them
+  } else {
+    showToast('Studio saved — generating scene images with your photo...', 'success');
+  }
+
+  // Navigate to scenes and trigger image generation
+  nav('scenes-pg');
+  // Small delay to let page render first
+  setTimeout(function() {
+    generateAllSceneImages();
+  }, 400);
+}
+
 function setStudioMode(m,el){STUDIO.mode=m;document.querySelectorAll('#studio-pg .pt-btn').forEach(function(b){b.classList.remove('on');});el.classList.add('on');['studio-ai-controls','studio-dual-controls','studio-documentary-controls','studio-human-controls'].forEach(function(id){var e=document.getElementById(id);if(e)e.style.display='none';});var show=m==='dual'?'studio-dual-controls':m==='documentary'?'studio-documentary-controls':m==='human'?'studio-human-controls':'studio-ai-controls';document.getElementById(show).style.display='block';var bg=document.getElementById('studio-bg-section'),vo=document.getElementById('studio-voice-section');if(bg)bg.style.display=m==='human'?'none':'block';if(vo)vo.style.display=m==='human'?'none':'block';}
 function selectAvatar(slot,el,id){var grid=el.parentElement;grid.querySelectorAll('.avatar-card').forEach(function(c){c.classList.remove('on');});el.classList.add('on');if(slot==='a'||slot==='da')STUDIO.avatarA=id;else if(slot==='db')STUDIO.avatarB=id;if((slot==='a'||slot==='da')&&AVATARS[id]){document.getElementById('studio-voice').value=AVATARS[id].voice;STUDIO.voiceId=AVATARS[id].voice;}}
 function handleAvatarUpload(slot,inp){if(!inp.files.length)return;var rd=new FileReader();rd.onload=function(e){var b64=e.target.result.split(',')[1];if(slot==='a'||slot==='1'){STUDIO.avatarAImage=b64;}else{STUDIO.avatarBImage=b64;}document.getElementById('avatar-upload-label-'+slot).textContent='✓ '+inp.files[0].name;};rd.readAsDataURL(inp.files[0]);}
