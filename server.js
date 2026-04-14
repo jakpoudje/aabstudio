@@ -1,3593 +1,431 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AABStudio.ai — Professional Teleprompter Video Studio</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-/* ── RESET & BASE ─────────────────────────────────────────────────────────── */
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-html,body{height:100%;font-family:'Sora',sans-serif;font-size:14px;line-height:1.6;}
-
-/* ── DESIGN TOKENS ────────────────────────────────────────────────────────── */
-:root{
-  --ink:#0d0f14;
-  --ink2:#1e2130;
-  --white:#ffffff;
-  --off:#f7f8fa;
-  --muted:#6b7280;
-  --muted2:#9ca3af;
-  --bdr:rgba(0,0,0,.08);
-  --bdr2:rgba(0,0,0,.12);
-
-  /* Studio palette — deep navy + electric accent */
-  --navy:#0a0e1a;
-  --navy2:#111827;
-  --navy3:#1a2235;
-  --navy4:#243044;
-
-  --accent:#00d4ff;        /* electric cyan */
-  --accent2:#0099cc;
-  --gold:#f59e0b;
-  --gold2:#d97706;
-  --green:#10b981;
-  --red:#ef4444;
-  --purple:#8b5cf6;
-
-  --radius:8px;
-  --radius-lg:12px;
-  --radius-xl:18px;
-
-  --shadow:0 1px 3px rgba(0,0,0,.08),0 4px 16px rgba(0,0,0,.06);
-  --shadow-lg:0 4px 24px rgba(0,0,0,.12),0 12px 48px rgba(0,0,0,.08);
-}
-
-/* ── TYPOGRAPHY ───────────────────────────────────────────────────────────── */
-h1{font-size:clamp(2.2rem,5vw,4rem);font-weight:700;line-height:1.1;letter-spacing:-.02em;}
-h2{font-size:clamp(1.6rem,3vw,2.4rem);font-weight:600;line-height:1.2;letter-spacing:-.015em;}
-h3{font-size:1.2rem;font-weight:600;line-height:1.3;}
-p{color:var(--muted);line-height:1.7;}
-
-/* ── LAYOUT ───────────────────────────────────────────────────────────────── */
-.pg{display:none;min-height:100vh;}
-.pg.on{display:block;}
-.pg-flex{display:none;height:100vh;overflow:hidden;}
-.pg-flex.on{display:flex;}
-.pad{padding:24px;}
-.center{display:flex;align-items:center;justify-content:center;}
-
-/* ── GLOBAL NAV ───────────────────────────────────────────────────────────── */
-.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,14,26,.92);backdrop-filter:blur(20px);border-bottom:0.5px solid rgba(255,255,255,.06);height:56px;display:flex;align-items:center;padding:0 28px;}
-.topnav-logo{font-size:1.1rem;font-weight:700;color:#fff;letter-spacing:-.02em;text-decoration:none;}
-.topnav-logo span{color:var(--accent);}
-.topnav-links{display:flex;align-items:center;gap:24px;margin-left:40px;}
-.topnav-links a{font-size:13px;color:rgba(255,255,255,.5);cursor:pointer;transition:color .15s;}
-.topnav-links a:hover{color:#fff;}
-.topnav-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
-.credits-badge{display:flex;align-items:center;gap:5px;padding:4px 12px;border-radius:20px;background:rgba(245,158,11,.1);border:0.5px solid rgba(245,158,11,.25);font-size:12px;color:var(--gold);font-weight:500;cursor:pointer;}
-
-/* ── BUTTONS ──────────────────────────────────────────────────────────────── */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:9px 20px;border-radius:var(--radius);font-size:13px;font-weight:500;cursor:pointer;border:none;transition:all .15s;font-family:'Sora',sans-serif;}
-.btn-primary{background:var(--accent);color:var(--navy);font-weight:600;}
-.btn-primary:hover{background:#33ddff;transform:translateY(-1px);}
-.btn-ghost{background:transparent;color:rgba(255,255,255,.6);border:0.5px solid rgba(255,255,255,.15);}
-.btn-ghost:hover{background:rgba(255,255,255,.06);color:#fff;}
-.btn-dark{background:var(--navy3);color:rgba(255,255,255,.8);border:0.5px solid rgba(255,255,255,.08);}
-.btn-dark:hover{background:var(--navy4);}
-.btn-danger{background:rgba(239,68,68,.12);color:var(--red);border:0.5px solid rgba(239,68,68,.2);}
-.btn-danger:hover{background:rgba(239,68,68,.2);}
-.btn-sm{padding:6px 14px;font-size:12px;}
-.btn-lg{padding:13px 28px;font-size:15px;}
-.btn-icon{padding:8px;border-radius:var(--radius);}
-.btn:disabled{opacity:.4;cursor:not-allowed;pointer-events:none;}
-
-/* ── INPUTS ───────────────────────────────────────────────────────────────── */
-.input{width:100%;padding:10px 14px;border-radius:var(--radius);border:0.5px solid var(--bdr2);background:var(--white);color:var(--ink);font-size:14px;font-family:'Sora',sans-serif;outline:none;transition:border-color .15s;}
-.input:focus{border-color:var(--accent);}
-.input-dark{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.1);color:#fff;}
-.input-dark::placeholder{color:rgba(255,255,255,.25);}
-.input-dark:focus{border-color:var(--accent);}
-.textarea{width:100%;padding:12px 14px;border-radius:var(--radius);border:0.5px solid var(--bdr2);background:var(--white);color:var(--ink);font-size:14px;font-family:'Sora',sans-serif;resize:vertical;min-height:120px;outline:none;line-height:1.65;}
-.textarea:focus{border-color:var(--accent);}
-
-/* ── CARDS ────────────────────────────────────────────────────────────────── */
-.card{background:var(--white);border:0.5px solid var(--bdr);border-radius:var(--radius-lg);padding:20px;}
-.card-dark{background:var(--navy3);border:0.5px solid rgba(255,255,255,.06);border-radius:var(--radius-lg);padding:20px;}
-
-/* ── TOASTS ───────────────────────────────────────────────────────────────── */
-#toast-root{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;}
-.toast{padding:10px 16px;border-radius:var(--radius);font-size:13px;font-weight:500;animation:toast-in .25s ease;max-width:340px;}
-.toast-success{background:var(--navy2);color:var(--green);border:0.5px solid rgba(16,185,129,.25);}
-.toast-error{background:var(--navy2);color:var(--red);border:0.5px solid rgba(239,68,68,.25);}
-.toast-info{background:var(--navy2);color:var(--accent);border:0.5px solid rgba(0,212,255,.2);}
-@keyframes toast-in{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
-
-/* ── SPINNER ──────────────────────────────────────────────────────────────── */
-.spin{width:16px;height:16px;border:2px solid rgba(255,255,255,.15);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0;}
-.spin-dark{border-color:rgba(0,0,0,.1);border-top-color:var(--accent);}
-@keyframes spin{to{transform:rotate(360deg);}}
-
-/* ── LOADING ROW ──────────────────────────────────────────────────────────── */
-.loading-row{display:flex;align-items:center;gap:10px;padding:20px;color:var(--muted);font-size:13px;}
-
-/* ── PROGRESS BAR ─────────────────────────────────────────────────────────── */
-.progress-track{height:3px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden;}
-.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--purple));border-radius:2px;transition:width .4s ease;}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* HOME PAGE                                                                  */
-/* ────────────────────────────────────────────────────────────────────────── */
-#home{background:var(--navy);color:#fff;padding-top:56px;}
-
-.hero-section{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:80px 24px 60px;position:relative;overflow:hidden;}
-.hero-bg{position:absolute;inset:0;background:radial-gradient(ellipse 80% 60% at 50% 20%,rgba(0,212,255,.06) 0%,transparent 70%),radial-gradient(ellipse 40% 40% at 80% 80%,rgba(139,92,246,.05) 0%,transparent 60%);pointer-events:none;}
-.hero-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.02) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.02) 1px,transparent 1px);background-size:60px 60px;pointer-events:none;}
-.hero-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 14px;border-radius:20px;background:rgba(0,212,255,.08);border:0.5px solid rgba(0,212,255,.2);font-size:12px;font-weight:500;color:var(--accent);margin-bottom:24px;letter-spacing:.02em;}
-.hero-badge-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse-dot 2s infinite;}
-@keyframes pulse-dot{0%,100%{opacity:1;}50%{opacity:.4;}}
-.hero-headline{color:#fff;margin-bottom:16px;max-width:820px;}
-.hero-headline em{font-style:normal;color:var(--accent);}
-.hero-sub{font-size:1.05rem;color:rgba(255,255,255,.5);max-width:560px;margin:0 auto 36px;line-height:1.7;}
-.hero-ctas{display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;margin-bottom:60px;}
-.hero-stats{display:flex;gap:40px;align-items:center;justify-content:center;flex-wrap:wrap;}
-.stat-item{text-align:center;}
-.stat-num{font-size:1.6rem;font-weight:700;color:#fff;letter-spacing:-.02em;}
-.stat-label{font-size:11px;color:rgba(255,255,255,.35);text-transform:uppercase;letter-spacing:.06em;margin-top:2px;}
-
-/* Studio preview mockup */
-.studio-preview{max-width:900px;margin:0 auto;padding:0 24px 80px;}
-.studio-mockup{background:var(--navy2);border:0.5px solid rgba(255,255,255,.08);border-radius:var(--radius-xl);overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.5);}
-.mockup-topbar{background:rgba(0,0,0,.4);padding:10px 16px;display:flex;align-items:center;gap:8px;border-bottom:0.5px solid rgba(255,255,255,.06);}
-.mockup-dot{width:10px;height:10px;border-radius:50%;}
-.mockup-body{display:grid;grid-template-columns:180px 1fr 200px;height:400px;}
-.mockup-left{background:rgba(0,0,0,.3);border-right:0.5px solid rgba(255,255,255,.06);padding:12px;}
-.mockup-centre{background:#000;position:relative;display:flex;flex-direction:column;}
-.mockup-cam{flex:1;background:linear-gradient(135deg,#1a2235 0%,#0d1420 100%);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;}
-.mockup-cam-person{width:120px;height:160px;background:linear-gradient(180deg,#2a3550 0%,#1a2235 100%);border-radius:60px 60px 0 0;margin-top:auto;}
-.mockup-tp{background:rgba(0,0,0,.85);padding:14px 18px;border-top:0.5px solid rgba(0,212,255,.15);}
-.mockup-tp-text{font-family:'JetBrains Mono',monospace;font-size:12px;color:rgba(255,255,255,.7);line-height:1.7;}
-.mockup-tp-active{color:#fff;font-weight:500;}
-.mockup-right{background:rgba(0,0,0,.2);border-left:0.5px solid rgba(255,255,255,.06);padding:12px;}
-.mockup-scene{padding:8px;border-radius:6px;margin-bottom:4px;cursor:pointer;}
-.mockup-scene.active{background:rgba(0,212,255,.08);border:0.5px solid rgba(0,212,255,.2);}
-.mockup-scene-num{font-size:9px;font-weight:600;color:var(--accent);letter-spacing:.04em;}
-.mockup-scene-text{font-size:10px;color:rgba(255,255,255,.4);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-
-/* Features grid */
-.features-section{padding:80px 24px;max-width:1100px;margin:0 auto;}
-.section-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:var(--accent);margin-bottom:12px;}
-.features-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:48px;}
-.feature-card{background:var(--navy3);border:0.5px solid rgba(255,255,255,.06);border-radius:var(--radius-lg);padding:24px;transition:border-color .2s,transform .2s;}
-.feature-card:hover{border-color:rgba(0,212,255,.2);transform:translateY(-2px);}
-.feature-icon{width:40px;height:40px;border-radius:10px;background:rgba(0,212,255,.08);display:flex;align-items:center;justify-content:center;margin-bottom:14px;font-size:18px;}
-.feature-title{font-size:14px;font-weight:600;color:#fff;margin-bottom:6px;}
-.feature-desc{font-size:13px;color:rgba(255,255,255,.4);line-height:1.6;}
-
-/* Workflow section */
-.workflow-section{padding:80px 24px;background:rgba(0,0,0,.2);}
-.workflow-inner{max-width:860px;margin:0 auto;}
-.workflow-steps{display:flex;flex-direction:column;gap:0;margin-top:48px;}
-.workflow-step{display:flex;gap:20px;padding:20px 0;position:relative;}
-.workflow-step:not(:last-child)::after{content:'';position:absolute;left:17px;top:52px;bottom:-4px;width:1px;background:rgba(255,255,255,.06);}
-.step-num{width:36px;height:36px;border-radius:50%;background:var(--navy3);border:0.5px solid rgba(0,212,255,.2);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:var(--accent);flex-shrink:0;}
-.step-body{padding-top:4px;}
-.step-title{font-size:15px;font-weight:600;color:#fff;margin-bottom:4px;}
-.step-desc{font-size:13px;color:rgba(255,255,255,.4);}
-
-/* Pricing */
-.pricing-section{padding:80px 24px;max-width:900px;margin:0 auto;}
-.pricing-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-top:48px;}
-.pricing-card{background:var(--navy3);border:0.5px solid rgba(255,255,255,.06);border-radius:var(--radius-xl);padding:28px;}
-.pricing-card.featured{border-color:rgba(0,212,255,.3);background:linear-gradient(135deg,rgba(0,212,255,.04) 0%,var(--navy3) 100%);}
-.price-name{font-size:13px;font-weight:600;color:rgba(255,255,255,.5);margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em;}
-.price-amount{font-size:2.2rem;font-weight:700;color:#fff;letter-spacing:-.02em;}
-.price-period{font-size:13px;color:rgba(255,255,255,.3);font-weight:400;}
-.price-features{margin:20px 0;display:flex;flex-direction:column;gap:8px;}
-.price-feature{font-size:13px;color:rgba(255,255,255,.5);display:flex;gap:8px;align-items:flex-start;}
-.price-feature::before{content:'✓';color:var(--accent);font-weight:600;flex-shrink:0;}
-
-/* CTA section */
-.cta-section{padding:100px 24px;text-align:center;background:linear-gradient(180deg,transparent 0%,rgba(0,212,255,.03) 100%);}
-.cta-section h2{color:#fff;margin-bottom:16px;}
-.cta-section p{margin-bottom:36px;font-size:1rem;}
-
-/* Footer */
-footer{background:rgba(0,0,0,.3);border-top:0.5px solid rgba(255,255,255,.06);padding:32px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;}
-.footer-logo{font-size:1rem;font-weight:700;color:#fff;}
-.footer-logo span{color:var(--accent);}
-.footer-links{display:flex;gap:20px;}
-.footer-links a{font-size:12px;color:rgba(255,255,255,.3);cursor:pointer;}
-.footer-copy{font-size:12px;color:rgba(255,255,255,.2);}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* AUTH PAGE                                                                  */
-/* ────────────────────────────────────────────────────────────────────────── */
-#auth-pg{background:var(--navy);color:#fff;}
-.auth-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;padding-top:80px;}
-.auth-box{background:var(--navy2);border:0.5px solid rgba(255,255,255,.08);border-radius:var(--radius-xl);padding:36px;width:100%;max-width:400px;}
-.auth-logo{font-size:1.3rem;font-weight:700;color:#fff;text-align:center;margin-bottom:8px;}
-.auth-logo span{color:var(--accent);}
-.auth-sub{font-size:13px;color:rgba(255,255,255,.4);text-align:center;margin-bottom:28px;}
-.auth-tabs{display:flex;gap:0;border-radius:var(--radius);overflow:hidden;border:0.5px solid rgba(255,255,255,.1);margin-bottom:24px;}
-.auth-tab{flex:1;padding:8px;font-size:13px;font-weight:500;cursor:pointer;background:transparent;border:none;color:rgba(255,255,255,.4);font-family:'Sora',sans-serif;transition:all .15s;}
-.auth-tab.on{background:rgba(0,212,255,.1);color:var(--accent);}
-.auth-field{margin-bottom:14px;}
-.auth-field label{display:block;font-size:12px;font-weight:500;color:rgba(255,255,255,.5);margin-bottom:5px;}
-.auth-err{font-size:12px;color:var(--red);padding:8px 12px;background:rgba(239,68,68,.08);border-radius:var(--radius);margin-bottom:12px;display:none;}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* DASHBOARD                                                                  */
-/* ────────────────────────────────────────────────────────────────────────── */
-#dashboard-pg{background:var(--off);color:var(--ink);}
-.dash-layout{min-height:100vh;padding-top:56px;display:flex;}
-.dash-sidebar{width:220px;flex-shrink:0;background:var(--navy);border-right:0.5px solid rgba(255,255,255,.06);padding:20px 12px;display:flex;flex-direction:column;}
-.dash-user{padding:12px;margin-bottom:12px;}
-.dash-avatar{width:40px;height:40px;border-radius:50%;background:rgba(0,212,255,.15);border:1.5px solid rgba(0,212,255,.3);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;color:var(--accent);margin-bottom:8px;}
-.dash-name{font-size:13px;font-weight:500;color:#fff;}
-.dash-email{font-size:11px;color:rgba(255,255,255,.3);}
-.dash-plan{display:inline-block;margin-top:5px;font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(245,158,11,.1);color:var(--gold);border:0.5px solid rgba(245,158,11,.2);}
-.sb-nav{display:flex;flex-direction:column;gap:2px;flex:1;}
-.sb-item{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:var(--radius);font-size:13px;color:rgba(255,255,255,.45);cursor:pointer;transition:all .15s;border:none;background:transparent;font-family:'Sora',sans-serif;text-align:left;}
-.sb-item:hover{background:rgba(255,255,255,.05);color:rgba(255,255,255,.7);}
-.sb-item.on{background:rgba(0,212,255,.08);color:var(--accent);border:0.5px solid rgba(0,212,255,.15);}
-.sb-item svg{flex-shrink:0;opacity:.6;}
-.sb-item.on svg{opacity:1;}
-.sb-divider{height:0.5px;background:rgba(255,255,255,.06);margin:8px 0;}
-.sb-item.danger{color:rgba(239,68,68,.6);}
-.sb-item.danger:hover{background:rgba(239,68,68,.06);color:var(--red);}
-.dash-main{flex:1;overflow-y:auto;padding:28px;}
-.dash-section{display:none;}
-.dash-section.on{display:block;}
-.dash-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;}
-.dash-title{font-size:1.4rem;font-weight:600;color:var(--ink);}
-.dash-sub{font-size:13px;color:var(--muted);margin-top:3px;}
-.project-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;}
-.project-card{background:var(--white);border:0.5px solid var(--bdr);border-radius:var(--radius-lg);padding:18px;cursor:pointer;transition:all .15s;}
-.project-card:hover{border-color:rgba(0,0,0,.15);box-shadow:var(--shadow);}
-.project-thumb{width:100%;height:120px;background:linear-gradient(135deg,var(--navy) 0%,var(--navy3) 100%);border-radius:var(--radius);margin-bottom:12px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;}
-.project-thumb-icon{font-size:28px;opacity:.4;}
-.project-status{position:absolute;top:8px;right:8px;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;}
-.status-draft{background:rgba(107,114,128,.15);color:var(--muted);}
-.status-recording{background:rgba(239,68,68,.12);color:var(--red);}
-.status-complete{background:rgba(16,185,129,.1);color:var(--green);}
-.project-name{font-size:14px;font-weight:500;color:var(--ink);margin-bottom:3px;}
-.project-meta{font-size:12px;color:var(--muted2);}
-.empty-state{text-align:center;padding:60px 20px;}
-.empty-icon{font-size:40px;margin-bottom:16px;}
-.empty-title{font-size:16px;font-weight:500;color:var(--ink);margin-bottom:6px;}
-.empty-sub{font-size:13px;color:var(--muted);margin-bottom:24px;}
-
-/* Credits */
-.credits-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;}
-.credits-card{background:var(--white);border:0.5px solid var(--bdr);border-radius:var(--radius-lg);padding:16px;text-align:center;}
-.credits-num{font-size:2rem;font-weight:600;color:var(--ink);}
-.credits-label{font-size:11px;color:var(--muted2);text-transform:uppercase;letter-spacing:.05em;margin-top:3px;}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* NEW PROJECT / SCRIPT STUDIO                                                */
-/* ────────────────────────────────────────────────────────────────────────── */
-#script-pg{background:var(--off);color:var(--ink);}
-.script-layout{min-height:100vh;padding-top:56px;display:grid;grid-template-columns:1fr 300px;gap:0;}
-.script-main{padding:32px;border-right:0.5px solid var(--bdr);}
-.script-sidebar{padding:24px;background:var(--white);}
-.script-title-input{width:100%;font-size:1.5rem;font-weight:600;color:var(--ink);border:none;background:transparent;outline:none;font-family:'Sora',sans-serif;padding:8px 0;border-bottom:2px solid var(--bdr);margin-bottom:20px;}
-.script-title-input::placeholder{color:var(--muted2);}
-.script-title-input:focus{border-color:var(--accent);}
-.upload-zone{border:1.5px dashed var(--bdr2);border-radius:var(--radius-lg);padding:32px;text-align:center;cursor:pointer;transition:all .15s;background:var(--white);}
-.upload-zone:hover{border-color:var(--accent);background:rgba(0,212,255,.02);}
-.upload-zone-icon{font-size:28px;margin-bottom:10px;}
-.upload-zone-text{font-size:14px;font-weight:500;color:var(--ink);margin-bottom:4px;}
-.upload-zone-sub{font-size:12px;color:var(--muted2);}
-.script-tabs{display:flex;gap:0;border-radius:var(--radius);overflow:hidden;border:0.5px solid var(--bdr2);margin-bottom:20px;background:var(--white);}
-.script-tab{flex:1;padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;background:transparent;border:none;color:var(--muted);font-family:'Sora',sans-serif;transition:all .15s;}
-.script-tab.on{background:var(--accent);color:var(--navy);}
-.section-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted2);margin-bottom:8px;}
-.pacing-opts{display:flex;flex-direction:column;gap:6px;margin-bottom:20px;}
-.pacing-opt{padding:10px 12px;border-radius:var(--radius);border:0.5px solid var(--bdr2);cursor:pointer;transition:all .15s;background:var(--white);}
-.pacing-opt.on{border-color:var(--accent);background:rgba(0,212,255,.04);}
-.pacing-opt-name{font-size:13px;font-weight:500;color:var(--ink);}
-.pacing-opt-detail{font-size:11px;color:var(--muted2);margin-top:2px;}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* SCENE PROCESSING                                                           */
-/* ────────────────────────────────────────────────────────────────────────── */
-#segment-pg{background:var(--navy);color:#fff;}
-.segment-wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;}
-.segment-anim{position:relative;width:180px;height:180px;margin-bottom:32px;}
-.segment-ring{position:absolute;inset:0;border-radius:50%;border:1px solid rgba(0,212,255,.1);animation:ring-pulse 3s infinite;}
-.segment-ring:nth-child(2){animation-delay:-1s;inset:-12px;}
-.segment-ring:nth-child(3){animation-delay:-2s;inset:-24px;}
-@keyframes ring-pulse{0%,100%{opacity:.1;transform:scale(1);}50%{opacity:.3;transform:scale(1.02);}}
-.segment-icon{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:48px;}
-.segment-h{font-size:1.5rem;font-weight:600;margin-bottom:8px;text-align:center;}
-.segment-sub{font-size:14px;color:rgba(255,255,255,.4);text-align:center;margin-bottom:32px;max-width:400px;}
-.segment-steps{width:100%;max-width:460px;display:flex;flex-direction:column;gap:5px;margin-bottom:24px;}
-.seg-step{padding:9px 14px;border-radius:var(--radius);font-size:13px;color:rgba(255,255,255,.25);background:rgba(255,255,255,.02);border:0.5px solid rgba(255,255,255,.04);display:flex;align-items:center;gap:9px;transition:all .3s;}
-.seg-step.run{color:var(--accent);background:rgba(0,212,255,.06);border-color:rgba(0,212,255,.2);}
-.seg-step.done{color:var(--green);background:rgba(16,185,129,.05);border-color:rgba(16,185,129,.15);}
-.seg-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0;}
-.seg-step.run .seg-dot{animation:pulse .9s infinite;}
-@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
-.seg-fact{background:rgba(255,255,255,.03);border:0.5px solid rgba(255,255,255,.06);border-radius:var(--radius-lg);padding:14px 18px;max-width:460px;width:100%;transition:opacity .3s;}
-.seg-fact-label{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.2);margin-bottom:4px;}
-.seg-fact-text{font-size:13px;color:rgba(255,255,255,.5);}
-.seg-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:460px;width:100%;margin-top:16px;}
-.seg-stat{background:rgba(255,255,255,.03);border-radius:var(--radius);padding:12px;text-align:center;}
-.seg-stat-num{font-size:1.3rem;font-weight:600;color:#fff;}
-.seg-stat-label{font-size:10px;color:rgba(255,255,255,.3);text-transform:uppercase;letter-spacing:.04em;margin-top:2px;}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* SCENE BOARD                                                                */
-/* ────────────────────────────────────────────────────────────────────────── */
-#scenes-pg{background:var(--off);color:var(--ink);}
-.scenes-layout{min-height:100vh;padding-top:56px;display:flex;flex-direction:column;}
-.scenes-topbar{background:var(--white);border-bottom:0.5px solid var(--bdr);padding:12px 24px;display:flex;align-items:center;gap:14px;flex-shrink:0;}
-.scenes-project-title{font-size:15px;font-weight:600;color:var(--ink);}
-.scenes-meta{font-size:12px;color:var(--muted2);}
-.scenes-actions{margin-left:auto;display:flex;gap:8px;}
-.scenes-body{display:flex;flex:1;overflow:hidden;}
-.scenes-list{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:8px;}
-.scene-card{background:var(--white);border:0.5px solid var(--bdr);border-radius:var(--radius-lg);overflow:hidden;transition:box-shadow .15s,border-color .15s;}
-.scene-card:hover{border-color:rgba(0,0,0,.12);box-shadow:var(--shadow);}
-.scene-card.selected{border-color:var(--accent);}
-.scene-header{display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;}
-.scene-num{font-size:10px;font-weight:700;color:var(--accent);background:rgba(0,212,255,.08);padding:3px 8px;border-radius:10px;letter-spacing:.04em;flex-shrink:0;}
-.scene-type-badge{font-size:10px;font-weight:600;padding:2px 7px;border-radius:6px;flex-shrink:0;}
-.type-INTRO,.type-INTRODUCTION{background:#ede9fe;color:#5b21b6;}
-.type-MAIN{background:#dbeafe;color:#1d4ed8;}
-.type-HOOK{background:#fef3c7;color:#92400e;}
-.type-EVIDENCE{background:#d1fae5;color:#065f46;}
-.type-TRANSITION{background:#e0f2fe;color:#0369a1;}
-.type-SUMMARY{background:#fce7f3;color:#9d174d;}
-.type-CONCLUSION{background:#f3f4f6;color:#374151;}
-.scene-narration{flex:1;font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.scene-duration{font-size:11px;color:var(--muted2);flex-shrink:0;}
-.scene-status-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
-.status-dot-draft{background:var(--muted2);}
-.status-dot-ready{background:var(--accent);}
-.status-dot-recorded{background:var(--green);}
-.status-dot-edited{background:var(--gold);}
-.scene-body{padding:0 16px 14px;border-top:0.5px solid var(--bdr);}
-.scene-full-narration{font-family:'JetBrains Mono',monospace;font-size:12.5px;color:var(--ink);line-height:1.7;padding:12px 0;white-space:pre-wrap;}
-.scene-assets-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:8px;}
-.asset-chip{display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;background:var(--off);border:0.5px solid var(--bdr2);font-size:11px;color:var(--muted);cursor:pointer;}
-.asset-chip img{width:16px;height:16px;border-radius:2px;object-fit:cover;}
-.add-asset-btn{padding:4px 10px;border-radius:20px;border:1px dashed var(--bdr2);font-size:11px;color:var(--muted2);cursor:pointer;background:transparent;font-family:'Sora',sans-serif;}
-.add-asset-btn:hover{border-color:var(--accent);color:var(--accent);}
-.scene-actions-row{display:flex;gap:6px;padding-top:10px;}
-
-/* Scenes sidebar — asset library */
-.scenes-sidebar{width:280px;flex-shrink:0;background:var(--white);border-left:0.5px solid var(--bdr);display:flex;flex-direction:column;overflow:hidden;}
-.sidebar-header{padding:14px 16px;border-bottom:0.5px solid var(--bdr);flex-shrink:0;}
-.sidebar-tabs{display:flex;gap:0;border-radius:var(--radius);overflow:hidden;border:0.5px solid var(--bdr2);margin-top:10px;}
-.sidebar-tab{flex:1;padding:6px;font-size:12px;font-weight:500;cursor:pointer;background:transparent;border:none;color:var(--muted);font-family:'Sora',sans-serif;transition:all .15s;}
-.sidebar-tab.on{background:var(--accent);color:var(--navy);}
-.sidebar-body{flex:1;overflow-y:auto;padding:12px;}
-.asset-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
-.asset-item{border-radius:var(--radius);overflow:hidden;border:0.5px solid var(--bdr);cursor:pointer;position:relative;}
-.asset-item img{width:100%;height:70px;object-fit:cover;display:block;}
-.asset-item-label{font-size:10px;color:var(--muted);padding:4px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* RECORDING STUDIO                                                           */
-/* ────────────────────────────────────────────────────────────────────────── */
-#record-pg{background:var(--navy);height:100vh;overflow:hidden;color:#fff;}
-.studio-layout{height:100%;display:flex;flex-direction:column;}
-
-/* Studio top bar */
-.studio-bar{height:48px;background:rgba(0,0,0,.5);border-bottom:0.5px solid rgba(255,255,255,.06);display:flex;align-items:center;padding:0 16px;gap:10px;flex-shrink:0;}
-.rec-status{display:flex;align-items:center;gap:6px;padding:3px 10px;border-radius:20px;}
-.rec-status.ready{background:rgba(107,114,128,.1);border:0.5px solid rgba(107,114,128,.2);}
-.rec-status.recording{background:rgba(239,68,68,.12);border:0.5px solid rgba(239,68,68,.25);}
-.rec-dot{width:6px;height:6px;border-radius:50%;}
-.rec-status.ready .rec-dot{background:var(--muted);}
-.rec-status.recording .rec-dot{background:var(--red);animation:pulse .9s infinite;}
-.rec-status-txt{font-size:11px;font-weight:600;letter-spacing:.04em;}
-.rec-status.ready .rec-status-txt{color:var(--muted2);}
-.rec-status.recording .rec-status-txt{color:var(--red);}
-.studio-scene-badge{font-size:11px;padding:3px 10px;border-radius:5px;background:rgba(255,255,255,.08);color:#fff;font-weight:500;}
-.studio-section-name{font-size:11px;color:rgba(255,255,255,.3);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-
-/* Studio main area */
-.studio-main{flex:1;display:flex;overflow:hidden;}
-
-/* Scene queue — left */
-.studio-queue{width:180px;flex-shrink:0;background:rgba(0,0,0,.35);border-right:0.5px solid rgba(255,255,255,.05);display:flex;flex-direction:column;overflow:hidden;}
-.studio-queue-header{padding:10px 12px;border-bottom:0.5px solid rgba(255,255,255,.05);font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.2);flex-shrink:0;}
-.studio-queue-list{flex:1;overflow-y:auto;padding:6px;}
-.sq-item{padding:8px 9px;border-radius:7px;margin-bottom:2px;cursor:pointer;transition:all .12s;}
-.sq-item:hover{background:rgba(255,255,255,.04);}
-.sq-item.active{background:rgba(0,212,255,.08);border:0.5px solid rgba(0,212,255,.15);}
-.sq-item-num{font-size:9px;font-weight:700;color:rgba(255,255,255,.3);margin-bottom:2px;}
-.sq-item.active .sq-item-num{color:var(--accent);}
-.sq-item-text{font-size:10px;color:rgba(255,255,255,.35);overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.4;}
-.sq-item.active .sq-item-text{color:rgba(255,255,255,.6);}
-.sq-item.done .sq-item-num{color:var(--green);}
-.sq-asset-dot{display:inline-block;width:4px;height:4px;border-radius:50%;background:var(--accent);margin-left:4px;vertical-align:middle;}
-.studio-queue-footer{padding:8px;border-top:0.5px solid rgba(255,255,255,.05);display:flex;gap:4px;flex-shrink:0;}
-
-/* Camera canvas — centre */
-.studio-canvas{flex:1;position:relative;background:#000;overflow:hidden;}
-.studio-cam{width:100%;height:100%;object-fit:cover;display:block;}
-.studio-bg-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;}
-.studio-overlay-area{position:absolute;inset:0;z-index:5;pointer-events:none;}
-.studio-annotation-canvas{position:absolute;inset:0;z-index:10;display:none;}
-.studio-rec-indicator{display:none;position:absolute;top:12px;left:12px;align-items:center;gap:6px;padding:4px 12px;background:rgba(192,57,43,.88);border-radius:20px;z-index:20;}
-.studio-rec-indicator.on{display:flex;}
-.studio-rec-indicator span{font-size:11px;color:#fff;font-weight:700;letter-spacing:.04em;}
-.studio-timer-top{font-family:'JetBrains Mono',monospace;font-size:11px;color:#fff;}
-.studio-audio-meter{position:absolute;top:12px;right:12px;z-index:20;display:flex;flex-direction:column;align-items:center;gap:2px;}
-.studio-audio-label{font-size:9px;color:rgba(255,255,255,.3);letter-spacing:.04em;}
-.studio-audio-bar{width:5px;height:50px;background:rgba(0,0,0,.4);border-radius:3px;overflow:hidden;display:flex;flex-direction:column-reverse;}
-.studio-audio-fill{width:100%;height:0%;background:linear-gradient(to top,var(--green),var(--gold),var(--red));transition:height .08s;}
-.studio-progress{position:absolute;top:0;left:0;right:0;height:2px;z-index:20;}
-.studio-progress-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--purple));transition:width .4s linear;}
-
-/* Teleprompter — bottom of canvas */
-.studio-teleprompter{position:absolute;bottom:0;left:0;right:0;z-index:15;background:linear-gradient(to top,rgba(0,0,0,.95) 0%,rgba(0,0,0,.8) 55%,transparent 100%);padding:20px 28px 82px;}
-.tp-prev{font-size:11px;color:rgba(255,255,255,.2);font-family:'JetBrains Mono',monospace;line-height:1.7;margin-bottom:8px;}
-.tp-current{font-size:clamp(18px,2.5vw,28px);font-weight:600;color:#fff;font-family:'JetBrains Mono',monospace;line-height:1.6;border-left:3px solid var(--accent);padding-left:16px;margin-bottom:8px;}
-.tp-next{font-size:11px;color:rgba(255,255,255,.18);font-family:'JetBrains Mono',monospace;line-height:1.7;}
-
-/* Studio control bar — floating bottom */
-.studio-controls{position:absolute;bottom:0;left:0;right:0;z-index:25;padding:8px 16px;background:rgba(0,0,0,.6);backdrop-filter:blur(12px);display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-.ctrl-group{display:flex;align-items:center;gap:5px;}
-.ctrl-divider{width:0.5px;height:22px;background:rgba(255,255,255,.1);}
-.studio-btn{display:flex;align-items:center;gap:5px;padding:7px 12px;border-radius:7px;font-size:12px;cursor:pointer;border:0.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:rgba(255,255,255,.7);font-family:'Sora',sans-serif;transition:all .12s;}
-.studio-btn:hover{background:rgba(255,255,255,.1);color:#fff;}
-.studio-btn.active{background:rgba(0,212,255,.1);border-color:rgba(0,212,255,.3);color:var(--accent);}
-.studio-btn.rec-btn{border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.12);color:#ff8888;}
-.studio-btn.rec-btn.recording{background:rgba(239,68,68,.4);border-color:var(--red);color:#fff;}
-.studio-btn.rec-btn svg{width:9px;height:9px;}
-.tp-speed-row{display:flex;align-items:center;gap:6px;}
-.tp-speed-label{font-size:10px;color:rgba(255,255,255,.3);text-transform:uppercase;letter-spacing:.04em;}
-.tp-speed-val{font-size:11px;font-weight:600;color:var(--gold);min-width:46px;}
-.studio-bg-opts{display:flex;gap:3px;}
-.bg-opt{padding:4px 8px;border-radius:5px;font-size:10px;cursor:pointer;border:0.5px solid rgba(255,255,255,.08);color:rgba(255,255,255,.35);background:transparent;font-family:'Sora',sans-serif;transition:all .12s;}
-.bg-opt:hover{color:rgba(255,255,255,.6);}
-.bg-opt.on{background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.2);}
-
-/* Studio right panel — assets */
-.studio-panel{width:200px;flex-shrink:0;background:rgba(0,0,0,.3);border-left:0.5px solid rgba(255,255,255,.05);display:flex;flex-direction:column;overflow:hidden;}
-.panel-section{padding:10px 12px;border-bottom:0.5px solid rgba(255,255,255,.05);flex-shrink:0;}
-.panel-section-title{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.2);margin-bottom:6px;}
-.panel-assets{flex:1;overflow-y:auto;padding:8px;}
-.panel-asset{margin-bottom:6px;border:0.5px solid rgba(255,255,255,.06);border-radius:7px;overflow:hidden;background:rgba(255,255,255,.02);}
-.panel-asset-thumb{width:100%;height:50px;object-fit:cover;display:block;}
-.panel-asset-doc{width:100%;height:40px;display:flex;align-items:center;justify-content:center;font-size:20px;background:rgba(255,255,255,.03);}
-.panel-asset-footer{display:flex;align-items:center;gap:4px;padding:4px 7px;}
-.panel-asset-name{font-size:10px;color:rgba(255,255,255,.35);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.panel-asset-show{padding:3px 7px;border-radius:4px;font-size:9px;cursor:pointer;border:0.5px solid rgba(0,212,255,.25);background:rgba(0,212,255,.06);color:var(--accent);font-family:'Sora',sans-serif;}
-.panel-upload-btn{width:100%;padding:8px;border-radius:var(--radius);border:1px dashed rgba(255,255,255,.1);background:transparent;color:rgba(255,255,255,.3);font-size:11px;cursor:pointer;font-family:'Sora',sans-serif;display:flex;align-items:center;justify-content:center;gap:5px;transition:all .15s;}
-.panel-upload-btn:hover{border-color:rgba(0,212,255,.3);color:var(--accent);}
-.panel-recordings{padding:8px;}
-.panel-clip{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:0.5px solid rgba(255,255,255,.04);}
-.panel-clip-name{font-size:10px;color:rgba(255,255,255,.35);}
-.panel-clip-dl{font-size:10px;color:var(--gold);cursor:pointer;text-decoration:none;}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* EDIT SUITE                                                                 */
-/* ────────────────────────────────────────────────────────────────────────── */
-#edit-pg{background:var(--navy);color:#fff;height:100vh;overflow:hidden;}
-.edit-layout{height:100%;display:flex;flex-direction:column;}
-.edit-topbar{height:48px;background:rgba(0,0,0,.5);border-bottom:0.5px solid rgba(255,255,255,.06);display:flex;align-items:center;padding:0 16px;gap:10px;flex-shrink:0;}
-.edit-body{flex:1;display:flex;overflow:hidden;}
-.edit-clips{width:200px;flex-shrink:0;background:rgba(0,0,0,.3);border-right:0.5px solid rgba(255,255,255,.05);display:flex;flex-direction:column;overflow:hidden;}
-.edit-clips-header{padding:10px 12px;border-bottom:0.5px solid rgba(255,255,255,.05);font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.2);flex-shrink:0;}
-.edit-clips-list{flex:1;overflow-y:auto;padding:6px;}
-.edit-clip{padding:8px;border-radius:7px;margin-bottom:4px;cursor:pointer;border:0.5px solid transparent;background:rgba(255,255,255,.02);}
-.edit-clip:hover{background:rgba(255,255,255,.04);}
-.edit-clip.selected{background:rgba(0,212,255,.06);border-color:rgba(0,212,255,.2);}
-.edit-clip-thumb{width:100%;height:50px;background:linear-gradient(135deg,var(--navy3),var(--navy2));border-radius:5px;margin-bottom:5px;display:flex;align-items:center;justify-content:center;font-size:18px;position:relative;overflow:hidden;}
-.edit-clip-thumb video{width:100%;height:100%;object-fit:cover;}
-.edit-clip-name{font-size:11px;color:rgba(255,255,255,.5);}
-.edit-clip-dur{font-size:10px;color:rgba(255,255,255,.2);}
-.edit-preview{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;background:#000;}
-.edit-preview-screen{width:100%;max-width:700px;aspect-ratio:16/9;background:#0a0a0a;border-radius:var(--radius-lg);overflow:hidden;position:relative;}
-.edit-preview-video{width:100%;height:100%;object-fit:contain;}
-.edit-preview-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.2);font-size:14px;}
-.edit-timeline{flex-shrink:0;background:rgba(0,0,0,.4);border-top:0.5px solid rgba(255,255,255,.06);padding:10px 16px;}
-.timeline-track{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
-.timeline-label{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:rgba(255,255,255,.2);width:44px;flex-shrink:0;text-align:right;}
-.timeline-rail{flex:1;height:32px;background:rgba(255,255,255,.03);border-radius:5px;border:0.5px solid rgba(255,255,255,.06);display:flex;align-items:center;overflow-x:auto;gap:2px;padding:2px;}
-.timeline-clip{height:26px;min-width:80px;border-radius:4px;background:rgba(0,212,255,.12);border:0.5px solid rgba(0,212,255,.2);display:flex;align-items:center;padding:0 8px;font-size:10px;color:var(--accent);cursor:pointer;flex-shrink:0;transition:background .12s;}
-.timeline-clip:hover{background:rgba(0,212,255,.2);}
-.timeline-music{height:20px;min-width:200px;border-radius:4px;background:rgba(245,158,11,.08);border:0.5px solid rgba(245,158,11,.15);font-size:10px;color:var(--gold);display:flex;align-items:center;padding:0 8px;flex-shrink:0;}
-.edit-controls-bar{display:flex;align-items:center;gap:8px;padding-top:8px;border-top:0.5px solid rgba(255,255,255,.05);}
-.edit-right{width:220px;flex-shrink:0;background:rgba(0,0,0,.2);border-left:0.5px solid rgba(255,255,255,.05);padding:12px;overflow-y:auto;}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* EXPORT PAGE                                                                */
-/* ────────────────────────────────────────────────────────────────────────── */
-#export-pg{background:var(--off);color:var(--ink);}
-.export-layout{min-height:100vh;padding-top:56px;}
-.export-inner{max-width:700px;margin:0 auto;padding:40px 24px;}
-.export-formats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:24px;}
-.format-opt{border:1.5px solid var(--bdr2);border-radius:var(--radius-lg);padding:16px;text-align:center;cursor:pointer;transition:all .15s;}
-.format-opt.on{border-color:var(--accent);background:rgba(0,212,255,.03);}
-.format-ratio{font-size:1.1rem;font-weight:700;color:var(--ink);margin-bottom:4px;}
-.format-label{font-size:11px;color:var(--muted2);}
-.platform-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:24px;}
-.platform-opt{border:0.5px solid var(--bdr2);border-radius:var(--radius);padding:12px;text-align:center;cursor:pointer;transition:all .15s;}
-.platform-opt.on{border-color:var(--accent);background:rgba(0,212,255,.03);}
-.platform-name{font-size:13px;font-weight:500;color:var(--ink);}
-.platform-spec{font-size:11px;color:var(--muted2);margin-top:2px;}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* MODAL                                                                      */
-/* ────────────────────────────────────────────────────────────────────────── */
-.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:500;display:none;align-items:center;justify-content:center;}
-.modal-backdrop.on{display:flex;}
-.modal-box{background:var(--white);border-radius:var(--radius-xl);padding:28px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;animation:modal-in .2s ease;}
-.modal-box-dark{background:var(--navy2);border:0.5px solid rgba(255,255,255,.08);}
-@keyframes modal-in{from{opacity:0;transform:scale(.96);}to{opacity:1;transform:scale(1);}}
-.modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}
-.modal-title{font-size:16px;font-weight:600;color:var(--ink);}
-.modal-title-dark{color:#fff;}
-.modal-close{background:none;border:none;cursor:pointer;font-size:20px;color:var(--muted);line-height:1;padding:2px;}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* PIPEBAR (breadcrumb)                                                        */
-/* ────────────────────────────────────────────────────────────────────────── */
-.pipebar{display:flex;align-items:center;gap:4px;padding:0 16px;background:rgba(0,0,0,.3);border-bottom:0.5px solid rgba(255,255,255,.06);height:36px;font-size:12px;color:rgba(255,255,255,.3);flex-shrink:0;}
-.pipe-step{display:flex;align-items:center;gap:4px;}
-.pipe-dot{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.2);}
-.pipe-step.active .pipe-dot{background:var(--accent);}
-.pipe-step.done .pipe-dot{background:var(--green);}
-.pipe-step.active{color:#fff;}
-.pipe-step.done{color:rgba(255,255,255,.45);}
-.pipe-step a{cursor:pointer;}
-.pipe-arr{color:rgba(255,255,255,.15);margin:0 2px;}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* AI PRESENTER MODAL                                                         */
-/* ────────────────────────────────────────────────────────────────────────── */
-.ai-scenes-grid{display:flex;flex-direction:column;gap:8px;max-height:300px;overflow-y:auto;}
-.ai-scene-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius);background:var(--off);border:0.5px solid var(--bdr);}
-.ai-scene-num{font-size:11px;font-weight:600;color:var(--accent);flex-shrink:0;width:60px;}
-.ai-scene-text{flex:1;font-size:12px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.ai-scene-status{font-size:11px;flex-shrink:0;}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* RESPONSIVE                                                                 */
-/* ────────────────────────────────────────────────────────────────────────── */
-@media(max-width:768px){
-  .script-layout{grid-template-columns:1fr;}
-  .script-sidebar{display:none;}
-  .scenes-sidebar{display:none;}
-  .studio-panel{display:none;}
-  .studio-queue{width:140px;}
-}
-
-/* ── UPGRADE CSS — animations, polish, missing states ──────────────────── */
-
-/* Page transitions */
-.pg { animation: none; }
-.pg.on { animation: pg-fade .2s ease; }
-@keyframes pg-fade { from { opacity: 0; } to { opacity: 1; } }
-
-/* Hero animations */
-.hero-badge { animation: slide-up .5s ease .1s both; }
-.hero-headline { animation: slide-up .5s ease .2s both; }
-.hero-sub { animation: slide-up .5s ease .3s both; }
-.hero-ctas { animation: slide-up .5s ease .4s both; }
-.hero-stats { animation: slide-up .5s ease .5s both; }
-@keyframes slide-up { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-
-/* Feature cards stagger */
-.feature-card:nth-child(1) { animation: slide-up .4s ease .1s both; }
-.feature-card:nth-child(2) { animation: slide-up .4s ease .15s both; }
-.feature-card:nth-child(3) { animation: slide-up .4s ease .2s both; }
-.feature-card:nth-child(4) { animation: slide-up .4s ease .25s both; }
-.feature-card:nth-child(5) { animation: slide-up .4s ease .3s both; }
-.feature-card:nth-child(6) { animation: slide-up .4s ease .35s both; }
-.feature-card:nth-child(7) { animation: slide-up .4s ease .4s both; }
-.feature-card:nth-child(8) { animation: slide-up .4s ease .45s both; }
-
-/* Studio mockup glow */
-.studio-mockup { box-shadow: 0 24px 80px rgba(0,0,0,.5), 0 0 0 0.5px rgba(0,212,255,.06), 0 0 60px rgba(0,212,255,.04); }
-
-/* Accent glow on active elements */
-.studio-btn.active { box-shadow: 0 0 8px rgba(0,212,255,.2); }
-.studio-btn.rec-btn.recording { box-shadow: 0 0 12px rgba(239,68,68,.3); animation: rec-pulse 2s infinite; }
-@keyframes rec-pulse { 0%,100% { box-shadow: 0 0 12px rgba(239,68,68,.3); } 50% { box-shadow: 0 0 20px rgba(239,68,68,.5); } }
-
-/* Scene card drag hover */
-.scene-card[draggable="true"] { cursor: grab; }
-.scene-card[draggable="true"]:active { cursor: grabbing; }
-
-/* Scene status colors */
-.scene-card.status-recorded { border-color: rgba(16,185,129,.2); }
-.scene-card.status-edited { border-color: rgba(245,158,11,.2); }
-
-/* Teleprompter text animation when scene changes */
-.tp-current { transition: opacity .2s ease; }
-
-/* Better scrollbars */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(0,0,0,.15); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,.25); }
-
-/* Dark scrollbars for studio */
-#record-pg ::-webkit-scrollbar-thumb, #edit-pg ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); }
-#record-pg ::-webkit-scrollbar-thumb:hover, #edit-pg ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.2); }
-
-/* Input focus rings */
-.input:focus, .textarea:focus { box-shadow: 0 0 0 3px rgba(0,212,255,.08); }
-.input-dark:focus { box-shadow: 0 0 0 3px rgba(0,212,255,.12); }
-
-/* Button loading state */
-.btn.loading { position: relative; color: transparent !important; pointer-events: none; }
-.btn.loading::after { content: ''; position: absolute; inset: 50% 50%; transform: translate(-50%,-50%); width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
-
-/* Scene search highlight */
-.scene-narration mark { background: rgba(0,212,255,.2); color: var(--ink); border-radius: 2px; }
-
-/* Pricing card hover */
-.pricing-card { transition: transform .2s, border-color .2s; }
-.pricing-card:hover { transform: translateY(-3px); }
-.pricing-card.featured:hover { border-color: rgba(0,212,255,.5); }
-
-/* Auth box glow */
-.auth-box { box-shadow: 0 24px 60px rgba(0,0,0,.4), 0 0 0 0.5px rgba(255,255,255,.06); }
-
-/* Project card hover */
-.project-card:hover { transform: translateY(-2px); }
-.project-card { transition: all .15s; }
-
-/* Timeline clip selected */
-.timeline-clip.selected { background: rgba(0,212,255,.25); border-color: var(--accent); }
-
-/* Edit clip selected */
-.edit-clip.selected .edit-clip-thumb { outline: 2px solid var(--accent); }
-
-/* Overlay position button active */
-#studio-pos-grid .bg-opt.on { background: rgba(0,212,255,.15); color: var(--accent); border-color: rgba(0,212,255,.3); }
-
-/* Asset panel hover */
-.panel-asset { transition: border-color .12s; }
-.panel-asset:hover { border-color: rgba(0,212,255,.2); }
-
-/* Sidebar item smooth */
-.sb-item { transition: all .12s; }
-
-/* Seg step transitions */
-.seg-step { transition: all .3s ease; }
-
-/* Pacing opt hover */
-.pacing-opt:hover { border-color: rgba(0,212,255,.2); }
-
-/* Format/platform opt hover */
-.format-opt:hover, .platform-opt:hover { border-color: rgba(0,0,0,.2); transform: translateY(-1px); }
-.format-opt, .platform-opt { transition: all .15s; }
-
-/* Empty state */
-.empty-state { animation: slide-up .4s ease; }
-
-/* Scene body expand animation */
-.scene-body { animation: expand-in .15s ease; }
-@keyframes expand-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
-
-/* Focus mode fade */
-.studio-queue, .studio-panel { transition: opacity .3s; }
-
-/* Tooltip on buttons */
-[title]:hover::after {
-  content: attr(title);
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0,0,0,.8);
-  color: #fff;
-  font-size: 10px;
-  padding: 3px 7px;
-  border-radius: 4px;
-  white-space: nowrap;
-  margin-bottom: 4px;
-  pointer-events: none;
-  z-index: 100;
-}
-.studio-btn { position: relative; }
-
-/* Scene queue scroll smoothing */
-.studio-queue-list, .scenes-list { scroll-behavior: smooth; }
-
-/* Responsive scene board */
-@media (max-width: 900px) {
-  .scenes-sidebar { display: none; }
-  .studio-queue { width: 130px; }
-  .studio-panel { display: none; }
-}
-
-/* Print styles for transcript */
-@media print {
-  .topnav, .scenes-topbar .scenes-actions, .scene-body .scene-actions-row { display: none !important; }
-  .scene-card { break-inside: avoid; }
-  .scene-full-narration { font-size: 14px; }
-}
-
-/* Code elements */
-code { font-family: 'JetBrains Mono', monospace; font-size: 0.9em; background: var(--off); padding: 1px 5px; border-radius: 4px; }
-
-/* Segmentation page pulse ring */
-.segment-ring { border-width: 1px; border-style: solid; }
-
-/* Auth error shake */
-.auth-err.shake { animation: shake .4s ease; }
-@keyframes shake { 0%,100% { transform: translateX(0); } 20%,60% { transform: translateX(-4px); } 40%,80% { transform: translateX(4px); } }
-
-/* Topnav background on scroll */
-.topnav { transition: background .2s; }
-
-/* Button press effect */
-.btn:active:not(:disabled) { transform: scale(.97) !important; }
-
-</style>
-</head>
-<body>
-
-<!-- ── TOAST ROOT ──────────────────────────────────────────────────────────── -->
-<div id="toast-root"></div>
-
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- GLOBAL NAV                                                                -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<nav class="topnav" id="topnav" style="display:none;">
-  <a class="topnav-logo" onclick="nav('home')">AAB<span>Studio</span>.ai</a>
-  <div class="topnav-links" id="nav-app-links" style="display:none;">
-    <a onclick="nav('dashboard-pg')">Dashboard</a>
-    <a onclick="nav('script-pg')">New project</a>
-  </div>
-  <div class="topnav-right">
-    <div class="credits-badge" id="credits-badge" style="display:none;" onclick="nav('dashboard-pg')">
-      <span>●</span><span id="credits-display">0 credits</span>
-    </div>
-    <button class="btn btn-ghost btn-sm" id="nav-signin" onclick="nav('auth-pg')" style="display:none;">Sign in</button>
-    <button class="btn btn-primary btn-sm" id="nav-start" onclick="nav('auth-pg')" style="display:none;">Start free</button>
-    <button class="btn btn-ghost btn-sm" id="nav-signout" onclick="doSignOut()" style="display:none;">Sign out</button>
-  </div>
-</nav>
-
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- HOME                                                                      -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<div id="home" class="pg on">
-  <!-- Hero -->
-  <section class="hero-section">
-    <div class="hero-bg"></div>
-    <div class="hero-grid"></div>
-    <div class="hero-badge"><span class="hero-badge-dot"></span>Professional Teleprompter Studio</div>
-    <h1 class="hero-headline">The most advanced<br>teleprompter video studio<br><em>ever built.</em></h1>
-    <p class="hero-sub">Turn scripts into professional videos using scene planning, teleprompter recording, visual overlays, and intelligent editing. One platform. Every format.</p>
-    <div class="hero-ctas">
-      <button class="btn btn-primary btn-lg" onclick="heroStart()">Start recording free</button>
-      <button class="btn btn-ghost btn-lg" onclick="scrollToDemo()">See how it works ↓</button>
-    </div>
-    <div class="hero-stats">
-      <div class="stat-item"><div class="stat-num">150<span style="font-size:1rem;">wpm</span></div><div class="stat-label">Default speaking pace</div></div>
-      <div class="stat-item"><div class="stat-num">6</div><div class="stat-label">Social platforms</div></div>
-      <div class="stat-item"><div class="stat-num">∞</div><div class="stat-label">Scene retakes</div></div>
-      <div class="stat-item"><div class="stat-num">AI</div><div class="stat-label">Adaptive teleprompter</div></div>
-    </div>
-  </section>
-
-  <!-- Studio preview mockup -->
-  <div class="studio-preview" id="demo-section">
-    <div class="studio-mockup">
-      <div class="mockup-topbar">
-        <div class="mockup-dot" style="background:#ef4444;"></div>
-        <div class="mockup-dot" style="background:#f59e0b;"></div>
-        <div class="mockup-dot" style="background:#10b981;"></div>
-        <div style="margin-left:12px;font-size:11px;color:rgba(255,255,255,.3);">AABStudio — Recording Studio</div>
-        <div style="margin-left:auto;display:flex;align-items:center;gap:6px;padding:3px 10px;border-radius:20px;background:rgba(239,68,68,.15);border:0.5px solid rgba(239,68,68,.3);">
-          <div style="width:6px;height:6px;border-radius:50%;background:#ef4444;animation:pulse .9s infinite;"></div>
-          <span style="font-size:10px;color:#ef4444;font-weight:700;">REC</span>
-        </div>
-      </div>
-      <div class="mockup-body">
-        <div class="mockup-left">
-          <div style="font-size:9px;color:rgba(255,255,255,.2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Scenes</div>
-          <div class="mockup-scene active">
-            <div class="mockup-scene-num">SCENE 001</div>
-            <div class="mockup-scene-text">Today we explore the most important...</div>
-          </div>
-          <div class="mockup-scene">
-            <div class="mockup-scene-num">SCENE 002</div>
-            <div class="mockup-scene-text">The key findings reveal three...</div>
-          </div>
-          <div class="mockup-scene">
-            <div class="mockup-scene-num">SCENE 003</div>
-            <div class="mockup-scene-text">Evidence from multiple sources...</div>
-          </div>
-          <div class="mockup-scene">
-            <div class="mockup-scene-num">SCENE 004</div>
-            <div class="mockup-scene-text">What this means for viewers...</div>
-          </div>
-          <div class="mockup-scene">
-            <div class="mockup-scene-num">SCENE 005</div>
-            <div class="mockup-scene-text">In conclusion, we have seen...</div>
-          </div>
-        </div>
-        <div class="mockup-centre">
-          <div class="mockup-cam">
-            <div style="position:absolute;inset:0;background:radial-gradient(circle at 50% 60%,rgba(0,212,255,.04) 0%,transparent 70%);"></div>
-            <div class="mockup-cam-person"></div>
-          </div>
-          <div class="mockup-tp">
-            <div style="font-size:10px;color:rgba(255,255,255,.2);font-family:'JetBrains Mono',monospace;margin-bottom:5px;">▸ Previous: Understanding the full context requires...</div>
-            <div class="mockup-tp-text"><span class="mockup-tp-active">Today we explore the most important developments in this field, examining the evidence that has shaped our current understanding.</span></div>
-            <div style="font-size:10px;color:rgba(255,255,255,.15);font-family:'JetBrains Mono',monospace;margin-top:5px;">▸ Next: The key findings reveal three distinct patterns...</div>
-          </div>
-        </div>
-        <div class="mockup-right">
-          <div style="font-size:9px;color:rgba(255,255,255,.2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Assets</div>
-          <div style="border:0.5px solid rgba(255,255,255,.06);border-radius:6px;overflow:hidden;margin-bottom:6px;">
-            <div style="height:44px;background:linear-gradient(135deg,#1a2235,#243044);display:flex;align-items:center;justify-content:center;font-size:16px;">📊</div>
-            <div style="padding:4px 6px;font-size:9px;color:rgba(255,255,255,.3);">chart-q4.png</div>
-          </div>
-          <div style="border:0.5px solid rgba(255,255,255,.06);border-radius:6px;overflow:hidden;margin-bottom:6px;">
-            <div style="height:44px;background:linear-gradient(135deg,#1a2235,#243044);display:flex;align-items:center;justify-content:center;font-size:16px;">🖼️</div>
-            <div style="padding:4px 6px;font-size:9px;color:rgba(255,255,255,.3);">slide-01.jpg</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Features -->
-  <div class="features-section">
-    <div class="section-label">Platform features</div>
-    <h2 style="color:#fff;max-width:500px;">Everything you need.<br>Nothing you don't.</h2>
-    <div class="features-grid">
-      <div class="feature-card">
-        <div class="feature-icon">🎯</div>
-        <div class="feature-title">Adaptive Teleprompter</div>
-        <div class="feature-desc">Speech recognition adjusts scroll speed in real time. If you pause, the text pauses. If you speed up, it keeps up.</div>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">🎬</div>
-        <div class="feature-title">Scene Retake System</div>
-        <div class="feature-desc">Re-record any individual scene without redoing the entire video. Perfect take, every time.</div>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">🖼️</div>
-        <div class="feature-title">Automatic Asset Sync</div>
-        <div class="feature-desc">Assign images, charts, and videos to scenes. They appear automatically when each scene plays.</div>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">✏️</div>
-        <div class="feature-title">Live Annotation Tools</div>
-        <div class="feature-desc">Draw arrows, highlight, circle, and zoom on any visual while recording. No editing needed.</div>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">🤖</div>
-        <div class="feature-title">AI Presenter Mode</div>
-        <div class="feature-desc">Generate a professional AI presenter video from your script. Consistent look across all scenes.</div>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">📤</div>
-        <div class="feature-title">Multi-Format Export</div>
-        <div class="feature-desc">Record once. Export for YouTube, TikTok, Instagram, LinkedIn, X, and Facebook — all formats.</div>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">⚡</div>
-        <div class="feature-title">Scene Timing Intelligence</div>
-        <div class="feature-desc">AI segments your script at natural speech boundaries. No more awkward mid-sentence cuts.</div>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">📊</div>
-        <div class="feature-title">Presenter Performance Monitor</div>
-        <div class="feature-desc">Real-time pacing, filler word detection, and eye-contact indicators while you record.</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Workflow -->
-  <div class="workflow-section">
-    <div class="workflow-inner">
-      <div class="section-label" style="color:var(--accent);">How it works</div>
-      <h2 style="color:#fff;">Script to professional video<br>in minutes.</h2>
-      <div class="workflow-steps">
-        <div class="workflow-step">
-          <div class="step-num">1</div>
-          <div class="step-body">
-            <div class="step-title">Write or upload your script</div>
-            <div class="step-desc">Paste text, write inside the editor, or upload a TXT, DOCX, or PDF. Your words, your voice.</div>
-          </div>
-        </div>
-        <div class="workflow-step">
-          <div class="step-num">2</div>
-          <div class="step-body">
-            <div class="step-title">AI segments into scenes</div>
-            <div class="step-desc">Smart scene segmentation splits your script at natural speech boundaries based on your speaking speed and scene duration.</div>
-          </div>
-        </div>
-        <div class="workflow-step">
-          <div class="step-num">3</div>
-          <div class="step-body">
-            <div class="step-title">Plan your scene board</div>
-            <div class="step-desc">Assign images, charts, and videos to each scene. Reorder, merge, or split scenes. Add notes.</div>
-          </div>
-        </div>
-        <div class="workflow-step">
-          <div class="step-num">4</div>
-          <div class="step-body">
-            <div class="step-title">Record with teleprompter OR use AI presenter</div>
-            <div class="step-desc">Professional teleprompter with adaptive scroll. Or generate an AI presenter avatar from your script.</div>
-          </div>
-        </div>
-        <div class="workflow-step">
-          <div class="step-num">5</div>
-          <div class="step-body">
-            <div class="step-title">Edit scene by scene</div>
-            <div class="step-desc">Trim, replace, or re-record individual scenes. Add background music, adjust audio, arrange timeline.</div>
-          </div>
-        </div>
-        <div class="workflow-step">
-          <div class="step-num" style="border-color:rgba(16,185,129,.3);color:var(--green);">6</div>
-          <div class="step-body">
-            <div class="step-title">Export for every platform</div>
-            <div class="step-desc">16:9, 9:16, 1:1, or 4:5. Optimised presets for YouTube, TikTok, Instagram, LinkedIn, X, and Facebook.</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Pricing -->
-  <div class="pricing-section">
-    <div class="section-label" style="color:var(--accent);">Pricing</div>
-    <h2 style="color:#fff;">Start free. Scale when ready.</h2>
-    <div class="pricing-grid">
-      <div class="pricing-card">
-        <div class="price-name">Free</div>
-        <div><span class="price-amount">£0</span></div>
-        <div style="font-size:12px;color:rgba(255,255,255,.3);margin:8px 0 16px;">Forever free</div>
-        <div class="price-features">
-          <div class="price-feature">3 projects</div>
-          <div class="price-feature">Teleprompter recording</div>
-          <div class="price-feature">720p export</div>
-          <div class="price-feature">5 scenes per project</div>
-        </div>
-        <button class="btn btn-ghost" style="width:100%;margin-top:20px;" onclick="heroStart()">Get started free</button>
-      </div>
-      <div class="pricing-card featured">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-          <div class="price-name" style="color:var(--accent);">Creator</div>
-          <div style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(0,212,255,.1);color:var(--accent);border:0.5px solid rgba(0,212,255,.2);">Most popular</div>
-        </div>
-        <div><span class="price-amount">£19</span><span class="price-period">/mo</span></div>
-        <div style="font-size:12px;color:rgba(255,255,255,.3);margin:8px 0 16px;">Billed monthly</div>
-        <div class="price-features">
-          <div class="price-feature">Unlimited projects</div>
-          <div class="price-feature">Adaptive teleprompter</div>
-          <div class="price-feature">1080p export</div>
-          <div class="price-feature">Unlimited scenes</div>
-          <div class="price-feature">AI presenter (20 scenes/mo)</div>
-          <div class="price-feature">All export formats</div>
-        </div>
-        <button class="btn btn-primary" style="width:100%;margin-top:20px;" onclick="heroStart()">Start 7-day free trial</button>
-      </div>
-      <div class="pricing-card">
-        <div class="price-name">Studio</div>
-        <div><span class="price-amount">£49</span><span class="price-period">/mo</span></div>
-        <div style="font-size:12px;color:rgba(255,255,255,.3);margin:8px 0 16px;">Billed monthly</div>
-        <div class="price-features">
-          <div class="price-feature">Everything in Creator</div>
-          <div class="price-feature">4K export</div>
-          <div class="price-feature">AI presenter (100 scenes/mo)</div>
-          <div class="price-feature">Team workspace</div>
-          <div class="price-feature">Priority rendering</div>
-          <div class="price-feature">Custom studio backgrounds</div>
-        </div>
-        <button class="btn btn-dark" style="width:100%;margin-top:20px;" onclick="heroStart()">Get Studio</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- CTA -->
-  <div class="cta-section">
-    <h2 style="color:#fff;">Ready to produce professional videos?</h2>
-    <p style="font-size:1rem;">Start free. No credit card required.</p>
-    <button class="btn btn-primary btn-lg" onclick="heroStart()">Open the studio →</button>
-  </div>
-
-  <!-- Footer -->
-  <footer>
-    <div class="footer-logo">AAB<span>Studio</span>.ai</div>
-    <div class="footer-links">
-      <a onclick="nav('pricing-pg')">Pricing</a>
-      <a>Privacy</a>
-      <a>Terms</a>
-      <a>Contact</a>
-    </div>
-    <div class="footer-copy">© 2026 AABStudio.ai</div>
-  </footer>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- AUTH PAGE                                                                 -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<div id="auth-pg" class="pg">
-  <div class="auth-wrap">
-    <div class="auth-box">
-      <div class="auth-logo">AAB<span>Studio</span>.ai</div>
-      <div class="auth-sub">Professional Teleprompter Video Studio</div>
-      <div class="auth-tabs">
-        <button class="auth-tab on" id="tab-signin" onclick="switchAuthTab('signin')">Sign in</button>
-        <button class="auth-tab" id="tab-signup" onclick="switchAuthTab('signup')">Create account</button>
-      </div>
-      <!-- Sign in -->
-      <div id="signin-form">
-        <div class="auth-field"><label>Email</label><input class="input input-dark" type="email" id="si-email" placeholder="you@example.com"></div>
-        <div class="auth-field"><label>Password</label><input class="input input-dark" type="password" id="si-pass" placeholder="••••••••"></div>
-        <div class="auth-err" id="auth-err"></div>
-        <button class="btn btn-primary" style="width:100%;margin-top:4px;" id="signin-btn" onclick="doSignIn()">Sign in</button>
-      </div>
-      <!-- Sign up -->
-      <div id="signup-form" style="display:none;">
-        <div class="auth-field"><label>Name</label><input class="input input-dark" type="text" id="su-name" placeholder="Your name"></div>
-        <div class="auth-field"><label>Email</label><input class="input input-dark" type="email" id="su-email" placeholder="you@example.com"></div>
-        <div class="auth-field"><label>Password</label><input class="input input-dark" type="password" id="su-pass" placeholder="Min 8 characters"></div>
-        <div class="auth-err" id="auth-err2"></div>
-        <button class="btn btn-primary" style="width:100%;margin-top:4px;" id="signup-btn" onclick="doSignUp()">Create free account</button>
-      </div>
-      <div style="text-align:center;margin-top:16px;">
-        <a onclick="nav('home')" style="font-size:12px;color:rgba(255,255,255,.3);cursor:pointer;">← Back to home</a>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- DASHBOARD                                                                 -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<div id="dashboard-pg" class="pg">
-  <div class="dash-layout">
-    <div class="dash-sidebar">
-      <div class="dash-user">
-        <div class="dash-avatar" id="dash-av">?</div>
-        <div class="dash-name" id="dash-name">—</div>
-        <div class="dash-email" id="dash-email">—</div>
-        <div class="dash-plan" id="dash-plan">Free</div>
-      </div>
-      <div class="sb-nav">
-        <button class="sb-item on" onclick="dashNav('projects',this)">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M3 5h8M3 7h6M3 9h4" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
-          My projects
-        </button>
-        <button class="sb-item" onclick="dashNav('recordings',this)">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="3" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M9 5.5l4-2v7l-4-2V5.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
-          Recordings
-        </button>
-        <button class="sb-item" onclick="nav('script-pg')">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M7 4v3l2 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-          New project
-        </button>
-        <div class="sb-divider"></div>
-        <button class="sb-item" onclick="dashNav('account',this)">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="5" r="3" stroke="currentColor" stroke-width="1.2"/><path d="M2 13c0-2.8 2.2-5 5-5s5 2.2 5 5" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg>
-          Account
-        </button>
-        <div style="flex:1;"></div>
-        <button class="sb-item danger" onclick="doSignOut()">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 2H2a1 1 0 00-1 1v8a1 1 0 001 1h3M9 10l3-3-3-3M6 7h6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          Sign out
-        </button>
-      </div>
-    </div>
-    <div class="dash-main">
-      <!-- Projects -->
-      <div class="dash-section on" id="dash-projects">
-        <div class="dash-header">
-          <div><div class="dash-title">My projects</div><div class="dash-sub">Your video productions</div></div>
-          <button class="btn btn-primary" onclick="nav('script-pg')">+ New project</button>
-        </div>
-        <div id="projects-list"><div class="loading-row"><div class="spin spin-dark"></div>Loading projects...</div></div>
-      </div>
-      <!-- Recordings -->
-      <div class="dash-section" id="dash-recordings">
-        <div class="dash-header">
-          <div><div class="dash-title">Recordings</div><div class="dash-sub">Your recorded video clips</div></div>
-        </div>
-        <div id="recordings-list"><div class="empty-state"><div class="empty-icon">📹</div><div class="empty-title">No recordings yet</div><div class="empty-sub">Record a project to see your clips here.</div><button class="btn btn-primary" onclick="nav('script-pg')">Start a project</button></div></div>
-      </div>
-      <!-- Account -->
-      <div class="dash-section" id="dash-account">
-        <div class="dash-header"><div class="dash-title">Account & Credits</div></div>
-        <div class="credits-grid">
-          <div class="credits-card"><div class="credits-num" id="acc-credits-rem">0</div><div class="credits-label">Credits remaining</div></div>
-          <div class="credits-card"><div class="credits-num" id="acc-credits-used">0</div><div class="credits-label">Credits used</div></div>
-          <div class="credits-card"><div class="credits-num" id="acc-credits-total">0</div><div class="credits-label">Total credits</div></div>
-        </div>
-        <button class="btn btn-primary" onclick="nav('pricing-pg')">Buy more credits</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- SCRIPT STUDIO                                                             -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<div id="script-pg" class="pg">
-  <div class="script-layout">
-    <div class="script-main" style="padding-top:80px;">
-      <input class="script-title-input" id="project-title" placeholder="Project title..." value="My Video">
-      <div class="script-tabs">
-        <button class="script-tab on" onclick="switchScriptTab('write',this)">Write</button>
-        <button class="script-tab" onclick="switchScriptTab('paste',this)">Paste</button>
-        <button class="script-tab" onclick="switchScriptTab('upload',this)">Upload file</button>
-      </div>
-      <!-- Write tab — visible by default -->
-      <div id="script-write-tab" style="display:block;">
-        <textarea class="textarea" id="script-editor" style="min-height:400px;" placeholder="Write your script here...
-
-Start with an introduction that hooks your audience.
-Each paragraph will become a separate scene.
-
-Tips:
-• Use clear, conversational language
-• Keep sentences short for easier reading
-• Add [SCENE BREAK] on its own line to force a scene split
-• Your natural speaking pace will guide the segmentation"></textarea>
-      </div>
-      <!-- Paste tab -->
-      <div id="script-paste-tab" style="display:none;">
-        <textarea class="textarea" id="script-paste" style="min-height:400px;" placeholder="Paste your script here..."></textarea>
-      </div>
-      <!-- Upload tab -->
-      <div id="script-upload-tab" style="display:none;">
-        <div class="upload-zone" onclick="document.getElementById('script-file').click()">
-          <div class="upload-zone-icon">📄</div>
-          <div class="upload-zone-text" id="upload-zone-text">Drop your script file here</div>
-          <div class="upload-zone-sub">TXT, DOCX, or PDF — text will be extracted automatically</div>
-          <input type="file" id="script-file" style="display:none;" accept=".txt,.docx,.pdf" onchange="handleScriptFile(this)">
-        </div>
-        <div id="upload-status" style="margin-top:12px;"></div>
-        <textarea class="textarea" id="script-extracted" style="min-height:280px;margin-top:16px;display:none;" placeholder="Extracted text will appear here — you can edit it before segmenting"></textarea>
-      </div>
-      <div style="margin-top:20px;display:flex;gap:10px;align-items:center;">
-        <button class="btn btn-primary" onclick="startSegmentation()">Split into scenes →</button>
-        <div style="font-size:12px;color:var(--muted2);" id="script-word-count">0 words</div>
-      </div>
-    </div>
-    <div class="script-sidebar" style="padding-top:80px;">
-      <div class="section-label">Speaking pace</div>
-      <div class="pacing-opts" id="pacing-opts">
-        <div class="pacing-opt" data-wpm="110" data-dur="8" onclick="pickPacing(this)">
-          <div class="pacing-opt-name">Slow</div>
-          <div class="pacing-opt-detail">110 WPM · ~14 words / 8s scene</div>
-        </div>
-        <div class="pacing-opt on" data-wpm="150" data-dur="8" onclick="pickPacing(this)">
-          <div class="pacing-opt-name">Normal</div>
-          <div class="pacing-opt-detail">150 WPM · ~20 words / 8s scene</div>
-        </div>
-        <div class="pacing-opt" data-wpm="180" data-dur="8" onclick="pickPacing(this)">
-          <div class="pacing-opt-name">Fast</div>
-          <div class="pacing-opt-detail">180 WPM · ~24 words / 8s scene</div>
-        </div>
-      </div>
-      <div class="section-label" style="margin-top:20px;">Scene duration</div>
-      <div class="pacing-opts" id="dur-opts">
-        <div class="pacing-opt" data-dur="5" onclick="pickDuration(this)">
-          <div class="pacing-opt-name">5 seconds</div>
-          <div class="pacing-opt-detail">Short, punchy — great for social</div>
-        </div>
-        <div class="pacing-opt on" data-dur="8" onclick="pickDuration(this)">
-          <div class="pacing-opt-name">8 seconds</div>
-          <div class="pacing-opt-detail">Balanced — good default</div>
-        </div>
-        <div class="pacing-opt" data-dur="10" onclick="pickDuration(this)">
-          <div class="pacing-opt-name">10 seconds</div>
-          <div class="pacing-opt-detail">Longer — detailed explanations</div>
-        </div>
-      </div>
-      <div style="margin-top:20px;padding:12px;background:var(--off);border-radius:var(--radius);font-size:12px;color:var(--muted);">
-        <div style="font-weight:600;color:var(--ink);margin-bottom:4px;">How segmentation works</div>
-        AI splits your script at natural speech boundaries — sentence endings, paragraph breaks, and natural pauses. Not mid-sentence. Never.
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- SCENE SEGMENTATION PROCESSING                                             -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<div id="segment-pg" class="pg" style="padding-top:56px;">
-  <div class="segment-wrap">
-    <div class="segment-anim">
-      <div class="segment-ring"></div>
-      <div class="segment-ring"></div>
-      <div class="segment-ring"></div>
-      <div class="segment-icon">✂️</div>
-    </div>
-    <h2 class="segment-h">Segmenting your script</h2>
-    <p class="segment-sub">AI is splitting your script into scenes based on speech rhythm and natural boundaries.</p>
-    <div class="progress-track" style="width:100%;max-width:460px;margin-bottom:16px;">
-      <div class="progress-fill" id="seg-progress" style="width:0%;"></div>
-    </div>
-    <div class="segment-steps">
-      <div class="seg-step" id="seg-s1"><span class="seg-dot"></span>Parsing script structure</div>
-      <div class="seg-step" id="seg-s2"><span class="seg-dot"></span>Detecting speech boundaries</div>
-      <div class="seg-step" id="seg-s3"><span class="seg-dot"></span>Calculating scene timing</div>
-      <div class="seg-step" id="seg-s4"><span class="seg-dot"></span>Writing scene narration</div>
-      <div class="seg-step" id="seg-s5"><span class="seg-dot"></span>Finalising scene board</div>
-    </div>
-    <div class="seg-stats">
-      <div class="seg-stat"><div class="seg-stat-num" id="seg-scenes">—</div><div class="seg-stat-label">Scenes</div></div>
-      <div class="seg-stat"><div class="seg-stat-num" id="seg-duration">—</div><div class="seg-stat-label">Duration</div></div>
-      <div class="seg-stat"><div class="seg-stat-num" id="seg-wpm">150</div><div class="seg-stat-label">WPM</div></div>
-    </div>
-    <div class="seg-fact" style="margin-top:16px;">
-      <div class="seg-fact-label">Did you know</div>
-      <div class="seg-fact-text" id="seg-fact-text">The best teleprompter readers speak at 150 words per minute — the same speed as natural conversation.</div>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- SCENE BOARD                                                               -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<div id="scenes-pg" class="pg" style="padding-top:56px;">
-  <div class="scenes-layout">
-    <div class="scenes-topbar">
-      <div>
-        <div class="scenes-project-title" id="scenes-project-title">My Video</div>
-        <div class="scenes-meta" id="scenes-meta">0 scenes · 0:00</div>
-      </div>
-      <div class="scenes-actions">
-        <button class="btn btn-dark btn-sm" onclick="nav('script-pg')">← Edit script</button>
-        <button class="btn btn-dark btn-sm" id="ai-presenter-btn" onclick="openAIPresenter()">🤖 AI presenter</button>
-        <button class="btn btn-primary btn-sm" onclick="openRecordingStudio()">🎙️ Record →</button>
-      </div>
-    </div>
-    <div class="scenes-body">
-      <div class="scenes-list" id="scenes-list">
-        <div class="loading-row"><div class="spin spin-dark"></div>Loading scenes...</div>
-      </div>
-      <div class="scenes-sidebar">
-        <div class="sidebar-header">
-          <div style="font-size:13px;font-weight:600;color:var(--ink);">Assets</div>
-          <div class="sidebar-tabs">
-            <button class="sidebar-tab on" onclick="sidebarTab('library',this)">Library</button>
-            <button class="sidebar-tab" onclick="sidebarTab('upload',this)">Upload</button>
-          </div>
-        </div>
-        <div class="sidebar-body">
-          <div id="asset-library-panel">
-            <div style="text-align:center;padding:20px;color:var(--muted2);font-size:12px;">
-              <div style="font-size:24px;margin-bottom:8px;">🖼️</div>
-              No assets yet.<br>Upload images, videos, or charts to assign to scenes.
-            </div>
-          </div>
-          <div id="asset-upload-panel" style="display:none;">
-            <div class="upload-zone" style="margin-bottom:12px;" onclick="document.getElementById('asset-file').click()">
-              <div class="upload-zone-icon" style="font-size:20px;">+</div>
-              <div class="upload-zone-text" style="font-size:13px;">Upload assets</div>
-              <div class="upload-zone-sub">Images, videos, charts, documents</div>
-              <input type="file" id="asset-file" style="display:none;" multiple accept="image/*,video/*,.pdf" onchange="uploadAssets(this)">
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- RECORDING STUDIO                                                          -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<div id="record-pg" class="pg-flex" style="flex-direction:column;">
-  <div class="studio-layout">
-    <!-- Top bar -->
-    <div class="studio-bar">
-      <div class="rec-status ready" id="rec-status">
-        <div class="rec-dot"></div>
-        <div class="rec-status-txt" id="rec-status-txt">READY</div>
-      </div>
-      <div class="studio-scene-badge" id="studio-scene-badge">Scene 1</div>
-      <div class="studio-section-name" id="studio-section-name"></div>
-      <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
-        <div style="font-size:11px;color:rgba(255,255,255,.25);">ELAPSED</div>
-        <div style="font-size:12px;font-weight:600;color:var(--gold);font-family:'JetBrains Mono',monospace;" id="studio-elapsed">0:00</div>
-        <div style="font-size:11px;color:rgba(255,255,255,.25);margin-left:8px;">SCENE</div>
-        <div style="font-size:12px;font-weight:600;color:#fff;" id="studio-scene-count">1/1</div>
-        <button class="btn btn-ghost btn-sm" style="margin-left:8px;" onclick="endStudioSession()">End session</button>
-      </div>
-    </div>
-
-    <!-- Main studio area -->
-    <div class="studio-main">
-      <!-- Scene queue left -->
-      <div class="studio-queue">
-        <div class="studio-queue-header">Scenes</div>
-        <div class="studio-queue-list" id="studio-queue-list"></div>
-        <div class="studio-queue-footer">
-          <button class="studio-btn" style="flex:1;" onclick="studioPrev()">← Prev</button>
-          <button class="studio-btn" style="flex:1;" onclick="studioNext()">Next →</button>
-        </div>
-      </div>
-
-      <!-- Camera canvas -->
-      <div class="studio-canvas" id="studio-canvas">
-        <video id="studio-cam" class="studio-cam" autoplay muted playsinline></video>
-        <img id="studio-bg-img" class="studio-bg-img" style="display:none;">
-        <div class="studio-overlay-area" id="studio-overlay-area"></div>
-        <canvas id="studio-annotation-canvas" class="studio-annotation-canvas"></canvas>
-
-        <!-- Recording indicator -->
-        <div class="studio-rec-indicator" id="studio-rec-indicator">
-          <div style="width:7px;height:7px;border-radius:50%;background:#fff;animation:pulse .9s infinite;"></div>
-          <span>REC</span>
-          <span class="studio-timer-top" id="studio-rec-timer">0:00</span>
-        </div>
-
-        <!-- Audio meter -->
-        <div class="studio-audio-meter">
-          <div class="studio-audio-label">MIC</div>
-          <div class="studio-audio-bar"><div class="studio-audio-fill" id="studio-audio-fill"></div></div>
-        </div>
-
-        <!-- Progress bar -->
-        <div class="studio-progress"><div class="studio-progress-fill" id="studio-scene-prog"></div></div>
-
-        <!-- Teleprompter -->
-        <div class="studio-teleprompter" id="studio-teleprompter">
-          <div class="tp-prev" id="tp-prev"></div>
-          <div class="tp-current" id="tp-current">Select a scene to begin</div>
-          <div class="tp-next" id="tp-next"></div>
-        </div>
-
-        <!-- Control bar -->
-        <div class="studio-controls">
-          <!-- Camera -->
-          <div class="ctrl-group">
-            <button class="studio-btn" id="cam-toggle" onclick="toggleStudioCamera()">
-              <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="1" y="3" width="8" height="8" rx="1.5" stroke="white" stroke-width="1.2"/><path d="M9 5.5l4-2v7l-4-2V5.5z" stroke="white" stroke-width="1.2" stroke-linejoin="round"/></svg>
-              Camera
-            </button>
-            <button class="studio-btn" id="mic-toggle" onclick="toggleStudioMic()">
-              <svg width="11" height="13" viewBox="0 0 12 14" fill="none"><rect x="3" y="1" width="6" height="8" rx="3" stroke="white" stroke-width="1.2"/><path d="M1 7c0 3 2 5 5 5s5-2 5-5" stroke="white" stroke-width="1.2" stroke-linecap="round"/><line x1="6" y1="12" x2="6" y2="14" stroke="white" stroke-width="1.2"/></svg>
-              Mic
-            </button>
-          </div>
-          <div class="ctrl-divider"></div>
-          <!-- Record -->
-          <button class="studio-btn rec-btn" id="studio-rec-btn" onclick="toggleStudioRecording()">
-            <svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.5" fill="var(--red)"/></svg>
-            REC
-          </button>
-          <button class="studio-btn" id="retake-btn" style="display:none;" onclick="retakeScene()">↺ Retake</button>
-          <div class="ctrl-divider"></div>
-          <!-- Teleprompter speed -->
-          <div class="tp-speed-row">
-            <span class="tp-speed-label">Speed</span>
-            <input type="range" min="30" max="200" value="80" id="tp-speed" oninput="setTpSpeed(this.value)" style="width:65px;accent-color:var(--gold);">
-            <span class="tp-speed-val" id="tp-speed-val">80</span>
-          </div>
-          <!-- Auto scroll -->
-          <button class="studio-btn" id="tp-auto-btn" onclick="toggleTpAuto()">Auto: off</button>
-          <!-- Adaptive TP -->
-          <button class="studio-btn" id="adaptive-btn" onclick="toggleAdaptiveTp()" title="Adaptive teleprompter — speech sync">
-            🎤 Adaptive: off
-          </button>
-          <!-- Next -->
-          <button class="studio-btn" style="margin-left:auto;" onclick="studioNext()">Next scene →</button>
-          <!-- Backgrounds -->
-          <div class="ctrl-divider"></div>
-          <div class="studio-bg-opts">
-            <button class="bg-opt on" data-bg="none" onclick="setStudioBg(this)">Live</button>
-            <button class="bg-opt" data-bg="news" onclick="setStudioBg(this)">News</button>
-            <button class="bg-opt" data-bg="dark" onclick="setStudioBg(this)">Dark</button>
-            <button class="bg-opt" data-bg="library" onclick="setStudioBg(this)">Library</button>
-            <button class="bg-opt" data-bg="office" onclick="setStudioBg(this)">Office</button>
-          </div>
-          <!-- Draw -->
-          <div class="ctrl-divider"></div>
-          <button class="studio-btn" id="draw-btn" onclick="toggleDrawMode()" title="Draw on screen">✏️</button>
-          <button class="studio-btn" onclick="clearDrawing()" title="Clear drawing">🗑</button>
-          <select id="draw-mode" onchange="setDrawMode(this.value)" style="background:rgba(255,255,255,.06);border:0.5px solid rgba(255,255,255,.12);color:rgba(255,255,255,.7);border-radius:6px;padding:5px 7px;font-size:11px;font-family:'Sora',sans-serif;cursor:pointer;">
-            <option value="pen">Pen</option>
-            <option value="arrow">Arrow</option>
-            <option value="circle">Circle</option>
-            <option value="rect">Box</option>
-            <option value="highlight">Highlight</option>
-          </select>
-          <input type="color" value="#00d4ff" id="draw-color" onchange="setDrawColor(this.value)" style="width:26px;height:26px;border:none;border-radius:4px;cursor:pointer;background:none;" title="Drawing colour">
-        </div>
-      </div>
-
-      <!-- Right panel — assets -->
-      <div class="studio-panel">
-        <div class="panel-section">
-          <div class="panel-section-title">Asset library</div>
-          <label class="panel-upload-btn">
-            <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><rect x=".5" y=".5" width="11" height="11" rx="2" stroke="rgba(255,255,255,.4)" stroke-width="1"/><path d="M6 3v6M3 6h6" stroke="rgba(255,255,255,.4)" stroke-width="1.2" stroke-linecap="round"/></svg>
-            Upload asset
-            <input type="file" style="display:none;" multiple accept="image/*,.pdf" onchange="uploadStudioAssets(this)">
-          </label>
-        </div>
-        <div class="panel-assets" id="studio-panel-assets">
-          <div style="font-size:11px;color:rgba(255,255,255,.2);text-align:center;padding:16px;">No assets yet</div>
-        </div>
-        <div class="panel-section" style="border-top:0.5px solid rgba(255,255,255,.05);">
-          <div class="panel-section-title">Overlay position</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;" id="studio-pos-grid">
-            <button class="bg-opt on" data-pos="pip-right" onclick="setOverlayPos(this)">PiP right</button>
-            <button class="bg-opt" data-pos="pip-left" onclick="setOverlayPos(this)">PiP left</button>
-            <button class="bg-opt" data-pos="full" onclick="setOverlayPos(this)">Full</button>
-            <button class="bg-opt" data-pos="lower-third" onclick="setOverlayPos(this)">L/3</button>
-          </div>
-        </div>
-        <div class="panel-section" style="border-top:0.5px solid rgba(255,255,255,.05);flex:1;display:flex;flex-direction:column;">
-          <div class="panel-section-title">Recordings</div>
-          <div class="panel-recordings" id="studio-clips-list" style="flex:1;overflow-y:auto;">
-            <div style="font-size:11px;color:rgba(255,255,255,.2);">No clips yet</div>
-          </div>
-          <button class="panel-upload-btn" onclick="exportAllClips()" style="margin-top:6px;">↓ Export all clips</button>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- EDIT SUITE                                                                -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<div id="edit-pg" class="pg-flex" style="flex-direction:column;">
-  <div class="edit-layout">
-    <div class="edit-topbar">
-      <button class="studio-btn" onclick="nav('scenes-pg')">← Scenes</button>
-      <div style="font-size:13px;font-weight:500;color:#fff;margin-left:8px;" id="edit-project-title">Edit — My Video</div>
-      <div style="margin-left:auto;display:flex;gap:8px;">
-        <button class="studio-btn" onclick="exportTranscript()">📄 Transcript</button>
-        <button class="studio-btn" onclick="exportYTChapters()">▶ Chapters</button>
-        <button class="btn btn-primary btn-sm" onclick="nav('export-pg')">Export video →</button>
-      </div>
-    </div>
-    <div class="edit-body">
-      <div class="edit-clips">
-        <div class="edit-clips-header">Clips</div>
-        <div class="edit-clips-list" id="edit-clips-list">
-          <div style="font-size:11px;color:rgba(255,255,255,.2);padding:12px;">No clips recorded yet</div>
-        </div>
-      </div>
-      <div class="edit-preview">
-        <div class="edit-preview-screen">
-          <video id="edit-preview-video" class="edit-preview-video" controls></video>
-          <div class="edit-preview-empty" id="edit-preview-empty">Select a clip to preview</div>
-        </div>
-      </div>
-      <div class="edit-timeline">
-        <div class="timeline-track">
-          <div class="timeline-label">VIDEO</div>
-          <div class="timeline-rail" id="timeline-rail">
-            <div style="font-size:10px;color:rgba(255,255,255,.2);padding:0 8px;">Record scenes to see clips here</div>
-          </div>
-        </div>
-        <div class="timeline-track">
-          <div class="timeline-label">MUSIC</div>
-          <div class="timeline-rail" style="background:rgba(245,158,11,.03);border-color:rgba(245,158,11,.08);">
-            <label style="cursor:pointer;display:flex;align-items:center;gap:5px;padding:0 8px;font-size:10px;color:rgba(245,158,11,.4);">
-              + Add background music
-              <input type="file" style="display:none;" accept="audio/*" onchange="loadBgMusic(this)">
-            </label>
-          </div>
-        </div>
-        <div class="edit-controls-bar">
-          <button class="studio-btn btn-sm" onclick="mergeSelectedClips()">Merge</button>
-          <button class="studio-btn btn-sm" onclick="trimSelectedClip()">Trim</button>
-          <button class="studio-btn btn-danger btn-sm" onclick="deleteSelectedClip()">Remove</button>
-          <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="exportAllClips()">↓ Export clips</button>
-        </div>
-      </div>
-      <div class="edit-right">
-        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.2);margin-bottom:10px;">Scene info</div>
-        <div id="edit-scene-info" style="font-size:12px;color:rgba(255,255,255,.3);">Select a clip to see details</div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- EXPORT PAGE                                                               -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<div id="export-pg" class="pg">
-  <div class="export-layout">
-    <div class="export-inner" style="padding-top:80px;">
-      <h2 style="margin-bottom:6px;">Export your video</h2>
-      <p style="margin-bottom:32px;">Choose your format and platform. Your clips will be stitched and optimised automatically.</p>
-      <div class="section-label">Format</div>
-      <div class="export-formats" style="margin-bottom:24px;">
-        <div class="format-opt on" data-ratio="16:9" onclick="pickFormat(this)"><div class="format-ratio">16:9</div><div class="format-label">YouTube / LinkedIn</div></div>
-        <div class="format-opt" data-ratio="9:16" onclick="pickFormat(this)"><div class="format-ratio">9:16</div><div class="format-label">TikTok / Reels</div></div>
-        <div class="format-opt" data-ratio="1:1" onclick="pickFormat(this)"><div class="format-ratio">1:1</div><div class="format-label">Instagram / Facebook</div></div>
-        <div class="format-opt" data-ratio="4:5" onclick="pickFormat(this)"><div class="format-ratio">4:5</div><div class="format-label">Instagram Portrait</div></div>
-      </div>
-      <div class="section-label">Platform</div>
-      <div class="platform-grid" style="margin-bottom:32px;">
-        <div class="platform-opt on" data-platform="youtube" onclick="pickPlatform(this)"><div class="platform-name">YouTube</div><div class="platform-spec">1080p, 16:9</div></div>
-        <div class="platform-opt" data-platform="tiktok" onclick="pickPlatform(this)"><div class="platform-name">TikTok</div><div class="platform-spec">1080p, 9:16</div></div>
-        <div class="platform-opt" data-platform="instagram" onclick="pickPlatform(this)"><div class="platform-name">Instagram</div><div class="platform-spec">1080p, 1:1 or 4:5</div></div>
-        <div class="platform-opt" data-platform="linkedin" onclick="pickPlatform(this)"><div class="platform-name">LinkedIn</div><div class="platform-spec">1080p, 16:9</div></div>
-        <div class="platform-opt" data-platform="x" onclick="pickPlatform(this)"><div class="platform-name">X (Twitter)</div><div class="platform-spec">720p, 16:9</div></div>
-        <div class="platform-opt" data-platform="facebook" onclick="pickPlatform(this)"><div class="platform-name">Facebook</div><div class="platform-spec">1080p, 16:9</div></div>
-      </div>
-      <button class="btn btn-primary btn-lg" onclick="doExport()">Export video →</button>
-      <button class="btn btn-dark btn-sm" style="margin-left:12px;" onclick="nav('edit-pg')">← Back to edit</button>
-      <div id="export-status" style="margin-top:16px;"></div>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- AI PRESENTER MODAL                                                        -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<div class="modal-backdrop" id="ai-presenter-modal">
-  <div class="modal-box modal-box-dark" style="max-width:560px;">
-    <div class="modal-header">
-      <div class="modal-title modal-title-dark">🤖 AI Presenter</div>
-      <button class="modal-close" onclick="closeModal('ai-presenter-modal')" style="color:rgba(255,255,255,.4);">×</button>
-    </div>
-    <p style="font-size:13px;color:rgba(255,255,255,.4);margin-bottom:20px;">Generate an AI presenter video from your scenes. Upload a reference photo to maintain consistent appearance across all scenes.</p>
-    <div style="margin-bottom:16px;">
-      <div class="section-label" style="color:rgba(255,255,255,.3);">Reference photo (optional)</div>
-      <label style="display:flex;align-items:center;gap:8px;padding:10px 14px;border:0.5px dashed rgba(255,255,255,.15);border-radius:var(--radius);cursor:pointer;background:rgba(255,255,255,.02);margin-top:6px;">
-        <span style="font-size:12px;color:rgba(255,255,255,.4);" id="ai-photo-label">Upload presenter photo</span>
-        <input type="file" style="display:none;" accept="image/*" onchange="loadAIPhoto(this)">
-      </label>
-    </div>
-    <div style="margin-bottom:16px;">
-      <div class="section-label" style="color:rgba(255,255,255,.3);">Voice</div>
-      <select id="ai-voice" class="input input-dark" style="margin-top:6px;">
-        <option value="EXAVITQu4vr4xnSDxMaL">Sarah — Clear & Professional</option>
-        <option value="TxGEqnHWrfWFTfGW9XjX">Josh — Deep & Authoritative</option>
-        <option value="21m00Tcm4TlvDq8ikWAM">Rachel — Warm & Engaging</option>
-        <option value="AZnzlk1XvdvUeBnXmlld">Domi — Strong & Confident</option>
-        <option value="pNInz6obpgDQGcFmaJgB">Adam — Professional & Clear</option>
-      </select>
-    </div>
-    <div class="ai-scenes-grid" id="ai-scenes-grid" style="margin-bottom:20px;">
-    </div>
-    <button class="btn btn-primary" style="width:100%;" onclick="startAIPresenter()">Generate AI presenter video</button>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- PRICING PAGE                                                              -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<div id="pricing-pg" class="pg" style="background:var(--navy);color:#fff;padding-top:56px;">
-  <div style="max-width:900px;margin:0 auto;padding:60px 24px;">
-    <div style="text-align:center;margin-bottom:48px;">
-      <h2 style="color:#fff;margin-bottom:8px;">Simple, transparent pricing</h2>
-      <p>Start free. Upgrade when you need more power.</p>
-    </div>
-    <div class="pricing-grid">
-      <div class="pricing-card">
-        <div class="price-name">Free</div>
-        <div><span class="price-amount">£0</span></div>
-        <div style="font-size:12px;color:rgba(255,255,255,.3);margin:8px 0 16px;">Forever free</div>
-        <div class="price-features">
-          <div class="price-feature">3 projects</div>
-          <div class="price-feature">5 scenes per project</div>
-          <div class="price-feature">Teleprompter recording</div>
-          <div class="price-feature">720p export</div>
-        </div>
-        <button class="btn btn-ghost" style="width:100%;margin-top:20px;" onclick="heroStart()">Get started free</button>
-      </div>
-      <div class="pricing-card featured">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div class="price-name" style="color:var(--accent);">Creator</div>
-          <div style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(0,212,255,.1);color:var(--accent);border:0.5px solid rgba(0,212,255,.2);">Most popular</div>
-        </div>
-        <div style="margin-top:4px;"><span class="price-amount">£19</span><span class="price-period">/mo</span></div>
-        <div style="font-size:12px;color:rgba(255,255,255,.3);margin:8px 0 16px;">or £182/yr (save 20%)</div>
-        <div class="price-features">
-          <div class="price-feature">Unlimited projects & scenes</div>
-          <div class="price-feature">Adaptive teleprompter</div>
-          <div class="price-feature">1080p export, all formats</div>
-          <div class="price-feature">AI presenter (20 scenes/mo)</div>
-          <div class="price-feature">Asset library</div>
-          <div class="price-feature">Annotation tools</div>
-        </div>
-        <button class="btn btn-primary" style="width:100%;margin-top:20px;" onclick="heroStart()">Start 7-day free trial</button>
-      </div>
-      <div class="pricing-card">
-        <div class="price-name">Studio</div>
-        <div><span class="price-amount">£49</span><span class="price-period">/mo</span></div>
-        <div style="font-size:12px;color:rgba(255,255,255,.3);margin:8px 0 16px;">or £470/yr (save 20%)</div>
-        <div class="price-features">
-          <div class="price-feature">Everything in Creator</div>
-          <div class="price-feature">4K export</div>
-          <div class="price-feature">AI presenter (100 scenes/mo)</div>
-          <div class="price-feature">Team collaboration</div>
-          <div class="price-feature">Custom backgrounds</div>
-          <div class="price-feature">Priority support</div>
-        </div>
-        <button class="btn btn-dark" style="width:100%;margin-top:20px;" onclick="heroStart()">Get Studio</button>
-      </div>
-    </div>
-    <div style="text-align:center;margin-top:32px;">
-      <button class="btn btn-ghost" onclick="nav('home')">← Back to home</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- SUPABASE + JAVASCRIPT                                                     -->
-<!-- ══════════════════════════════════════════════════════════════════════════ -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
-'use strict';
-
-// ── CONSTANTS ─────────────────────────────────────────────────────────────────
-const API = 'https://aabstudio-production.up.railway.app';
-const SUPA_URL = 'https://phjlxkyloafogznhyyig.supabase.co';
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBoamx4a3lsb2Fmb2d6bmh5eWlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNTcxNDgsImV4cCI6MjA5MDYzMzE0OH0.wI9E9CIHwwFN6d_lgJXwO0_G7J3aq4zesp7eU6TCDiI';
-
-const BG_URLS = {
-  news: 'https://images.unsplash.com/photo-1585776245991-cf89dd7fc73a?w=1400',
-  dark: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=1400',
-  library: 'https://images.unsplash.com/photo-1507842217343-583bb7270b66?w=1400',
-  office: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=1400'
-};
-
-const FACTS = [
-  'The best teleprompter readers speak at 150 words per minute — the same as natural conversation.',
-  'Scene-by-scene recording lets you perfect each part without retaking the whole video.',
-  'Adaptive teleprompter sync reduces eye movement and makes presenters look more natural.',
-  'Most professional news anchors use teleprompters at 160–180 WPM.',
-  'Breaking your script into scenes makes editing up to 3x faster than editing a single long take.'
-];
-
-// ── APP STATE ─────────────────────────────────────────────────────────────────
-let APP = {
-  user: null,
-  credits: 0,
-  projects: []
-};
-
-let PROJECT = {
-  id: null,
-  title: 'My Video',
-  script: '',
-  wpm: 150,
-  sceneDuration: 8,
-  scenes: [],
-  assets: [],
-  clips: {}
-};
-
-let STUDIO = {
-  stream: null,
-  mediaRecorder: null,
-  chunks: [],
-  recording: false,
-  cameraOn: false,
-  micOn: false,
-  recTimer: null,
-  recSeconds: 0,
-  analyser: null,
-  currentScene: 0,
-  tpAuto: false,
-  tpSpeed: 80,
-  adaptiveTp: false,
-  recognition: null,
-  overlayPos: 'pip-right',
-  drawActive: false,
-  drawMode: 'pen',
-  drawColor: '#00d4ff',
-  drawCtx: null,
-  isDrawing: false,
-  drawStartX: 0,
-  drawStartY: 0,
-  drawSnapshot: null,
-  assets: [],
-  elapsedTimer: null,
-  elapsed: 0
-};
-
-let AI_PRESENTER = {
-  photoBase64: null,
-  voice: 'EXAVITQu4vr4xnSDxMaL',
-  generating: false,
-  scene1Image: null
-};
-
-let EXPORT_STATE = { ratio: '16:9', platform: 'youtube' };
-
-// ── SUPABASE ───────────────────────────────────────────────────────────────────
-let _supa = null;
-function getSupa() {
-  if (!_supa && window.supabase) _supa = window.supabase.createClient(SUPA_URL, SUPA_KEY);
-  return _supa;
-}
-
-// ── NAVIGATION ─────────────────────────────────────────────────────────────────
-function nav(pg) {
-  document.querySelectorAll('.pg,.pg-flex').forEach(p => p.classList.remove('on'));
-  const el = document.getElementById(pg);
-  if (el) el.classList.add('on');
-  // Show/hide topnav
-  const topnav = document.getElementById('topnav');
-  const studioPages = ['record-pg','edit-pg'];
-  if (topnav) topnav.style.display = studioPages.includes(pg) ? 'none' : 'flex';
-  // Update nav buttons
-  updateNavState();
-  if (pg === 'dashboard-pg') loadDashboard();
-  if (pg === 'scenes-pg') renderSceneBoard();
-  if (pg === 'edit-pg') renderEditSuite();
-  if (pg === 'record-pg') initStudio();
-  window.scrollTo(0, 0);
-}
-
-function updateNavState() {
-  const li = !!APP.user;
-  document.getElementById('nav-signin').style.display = li ? 'none' : '';
-  document.getElementById('nav-start').style.display = li ? 'none' : '';
-  document.getElementById('nav-signout').style.display = li ? '' : 'none';
-  document.getElementById('nav-app-links').style.display = li ? '' : 'none';
-  document.getElementById('credits-badge').style.display = li ? '' : 'none';
-  if (li) {
-    const ini = (APP.user.name || APP.user.email || 'U').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
-    const av = document.getElementById('dash-av'); if (av) av.textContent = ini;
-    const dn = document.getElementById('dash-name'); if (dn) dn.textContent = APP.user.name || APP.user.email;
-    const de = document.getElementById('dash-email'); if (de) de.textContent = APP.user.email;
-    const cb = document.getElementById('credits-display'); if (cb) cb.textContent = APP.credits + ' credits';
-  }
-}
-
-function heroStart() {
-  if (APP.user) nav('dashboard-pg');
-  else nav('auth-pg');
-}
-
-function scrollToDemo() {
-  document.getElementById('demo-section')?.scrollIntoView({ behavior: 'smooth' });
-}
-
-// ── TOAST ──────────────────────────────────────────────────────────────────────
-function toast(msg, type = 'info') {
-  const el = document.createElement('div');
-  el.className = 'toast toast-' + type;
-  el.textContent = msg;
-  document.getElementById('toast-root').appendChild(el);
-  setTimeout(() => el.remove(), 4000);
-}
-
-// ── AUTH ───────────────────────────────────────────────────────────────────────
-function switchAuthTab(tab) {
-  document.getElementById('tab-signin').classList.toggle('on', tab === 'signin');
-  document.getElementById('tab-signup').classList.toggle('on', tab === 'signup');
-  document.getElementById('signin-form').style.display = tab === 'signin' ? '' : 'none';
-  document.getElementById('signup-form').style.display = tab === 'signup' ? '' : 'none';
-}
-
-function showAuthErr(id, msg) {
-  const el = document.getElementById(id);
-  if (el) { el.textContent = msg; el.style.display = 'block'; }
-}
-
-async function doSignIn() {
-  const email = document.getElementById('si-email').value.trim();
-  const pass = document.getElementById('si-pass').value;
-  if (!email || !pass) return showAuthErr('auth-err', 'Please fill in all fields.');
-  const btn = document.getElementById('signin-btn');
-  btn.textContent = 'Signing in...'; btn.disabled = true;
+/*
+===============================================================================
+AABStudio.ai — Advanced Teleprompter Video Production Studio
+Server — Clean Rebuild
+===============================================================================
+*/
+const express = require('express');
+const cors = require('cors');
+const Anthropic = require('@anthropic-ai/sdk');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!webhookSecret) return res.json({ received: true });
   try {
-    const { data, error } = await getSupa().auth.signInWithPassword({ email, password: pass });
-    if (error) throw error;
-    const u = data.user;
-    APP.user = { id: u.id, name: u.user_metadata?.name || email.split('@')[0], email: u.email };
-    updateNavState();
-    nav('dashboard-pg');
-  } catch (e) {
-    showAuthErr('auth-err', e.message);
-  }
-  btn.textContent = 'Sign in'; btn.disabled = false;
-}
-
-async function doSignUp() {
-  const name = document.getElementById('su-name').value.trim();
-  const email = document.getElementById('su-email').value.trim();
-  const pass = document.getElementById('su-pass').value;
-  if (!name || !email || !pass) return showAuthErr('auth-err2', 'Please fill in all fields.');
-  if (pass.length < 8) return showAuthErr('auth-err2', 'Password must be at least 8 characters.');
-  const btn = document.getElementById('signup-btn');
-  btn.textContent = 'Creating...'; btn.disabled = true;
-  try {
-    const { data, error } = await getSupa().auth.signUp({ email, password: pass, options: { data: { name }, emailRedirectTo: 'https://aabstudio.ai' } });
-    if (error) throw error;
-    if (data.session) {
-      APP.user = { id: data.user.id, name, email };
-      updateNavState();
-      toast('Welcome to AABStudio!', 'success');
-      nav('dashboard-pg');
-    } else {
-      toast('Check your email to confirm, then sign in.', 'success');
-      switchAuthTab('signin');
+    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+    const event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+    if (event.type === 'checkout.session.completed') {
+      console.log('Payment completed:', event.data.object.customer_email);
     }
-  } catch (e) {
-    showAuthErr('auth-err2', e.message);
+    res.json({ received: true });
+  } catch (err) {
+    res.status(400).send('Webhook Error: ' + err.message);
   }
-  btn.textContent = 'Create free account'; btn.disabled = false;
-}
+});
 
-async function doSignOut() {
-  await getSupa().auth.signOut();
-  APP.user = null;
-  updateNavState();
-  nav('home');
-}
+// CORS must be before all routes including preflight OPTIONS
+app.use(cors({
+  origin: '*',
+  methods: ['GET','POST','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization']
+}));
+app.options('*', cors()); // Handle preflight for all routes
 
-// ── DASHBOARD ──────────────────────────────────────────────────────────────────
-function dashNav(section, el) {
-  document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('on'));
-  el.classList.add('on');
-  document.querySelectorAll('.dash-section').forEach(s => s.classList.remove('on'));
-  const sec = document.getElementById('dash-' + section);
-  if (sec) sec.classList.add('on');
-}
+app.use(express.json({ limit: '30mb' }));
 
-function loadDashboard() {
-  const list = document.getElementById('projects-list');
-  const saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
-  APP.projects = saved;
-  if (!saved.length) {
-    list.innerHTML = '<div class="empty-state"><div class="empty-icon">🎬</div><div class="empty-title">No projects yet</div><div class="empty-sub">Create your first video project.</div><button class="btn btn-primary" onclick="nav(\'script-pg\')">+ New project</button></div>';
-    return;
-  }
-  list.innerHTML = '<div class="project-grid">' + saved.map((p, i) => `
-    <div class="project-card" onclick="loadProject(${i})">
-      <div class="project-thumb">
-        <div class="project-thumb-icon">🎬</div>
-        <div class="project-status status-${p.status || 'draft'}">${p.status || 'Draft'}</div>
-      </div>
-      <div class="project-name">${p.title || 'Untitled'}</div>
-      <div class="project-meta">${(p.scenes || []).length} scenes · ${p.date || 'Today'}</div>
-    </div>
-  `).join('') + '</div>';
-}
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const ELEVENLABS_KEY = process.env.ELEVENLABS_API_KEY;
+const HEYGEN_KEY = process.env.HEYGEN_API_KEY;
+const DALLE_KEY = process.env.OPENAI_API_KEY;
+const CREATOMATE_KEY = process.env.CREATOMATE_API_KEY;
+const STRIPE_KEY = process.env.STRIPE_SECRET_KEY;
 
-function loadProject(idx) {
-  const p = APP.projects[idx];
-  if (!p) return;
-  PROJECT = { ...PROJECT, ...p };
-  nav('scenes-pg');
-}
-
-function saveProject() {
-  PROJECT.date = new Date().toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
-  const saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
-  const existing = saved.findIndex(p => p.id === PROJECT.id);
-  if (existing > -1) saved[existing] = PROJECT;
-  else saved.unshift(PROJECT);
-  localStorage.setItem('aab_projects', JSON.stringify(saved.slice(0, 50)));
-  APP.projects = saved;
-}
-
-// ── SCRIPT STUDIO ─────────────────────────────────────────────────────────────
-function switchScriptTab(tab, el) {
-  document.querySelectorAll('.script-tab').forEach(t => t.classList.remove('on'));
-  if (el) el.classList.add('on');
-  document.getElementById('script-write-tab').style.display = tab === 'write' ? '' : 'none';
-  document.getElementById('script-paste-tab').style.display = tab === 'paste' ? '' : 'none';
-  document.getElementById('script-upload-tab').style.display = tab === 'upload' ? '' : 'none';
-  updateWordCount();
-}
-
-function pickPacing(el) {
-  document.querySelectorAll('.pacing-opt').forEach(o => o.classList.remove('on'));
-  el.classList.add('on');
-  PROJECT.wpm = parseInt(el.dataset.wpm) || 150;
-}
-
-function pickDuration(el) {
-  document.querySelectorAll('#dur-opts .pacing-opt').forEach(o => o.classList.remove('on'));
-  el.classList.add('on');
-  PROJECT.sceneDuration = parseInt(el.dataset.dur) || 8;
-}
-
-// Update word count live
-document.addEventListener('DOMContentLoaded', () => {
-  ['script-editor','script-paste','script-extracted'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('input', updateWordCount);
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    platform: 'AABStudio.ai — Teleprompter Video Studio',
+    version: '2.0',
+    anthropic: !!process.env.ANTHROPIC_API_KEY,
+    elevenlabs: !!ELEVENLABS_KEY,
+    heygen: !!HEYGEN_KEY,
+    openai: !!DALLE_KEY,
+    creatomate: !!CREATOMATE_KEY,
+    stripe: !!STRIPE_KEY
   });
 });
 
-function updateWordCount() {
-  const text = getScriptText();
-  const wc = text.trim() ? text.trim().split(/\s+/).length : 0;
-  const el = document.getElementById('script-word-count');
-  if (el) {
-    const wpm = PROJECT.wpm || 150;
-    const mins = Math.round(wc / wpm);
-    el.textContent = wc.toLocaleString() + ' words' + (wc > 10 ? ' · ~' + (mins || '<1') + ' min' : '');
-  }
-}
-
-function getScriptText() {
-  // Check which tab is visible
-  const writeTab = document.getElementById('script-write-tab');
-  const pasteTab = document.getElementById('script-paste-tab');
-  const uploadTab = document.getElementById('script-upload-tab');
-
-  if (uploadTab && uploadTab.style.display !== 'none') {
-    return document.getElementById('script-extracted')?.value || '';
-  }
-  if (pasteTab && pasteTab.style.display !== 'none') {
-    return document.getElementById('script-paste')?.value || '';
-  }
-  // Default: write tab
-  return document.getElementById('script-editor')?.value || '';
-}
-
-async function handleScriptFile(inp) {
-  if (!inp.files.length) return;
-  const file = inp.files[0];
-  document.getElementById('upload-zone-text').textContent = '✓ ' + file.name;
-  document.getElementById('upload-status').innerHTML = '<div class="loading-row"><div class="spin spin-dark"></div>Extracting text...</div>';
+function extractTextFromBase64(base64, mimeType, fileName) {
   try {
-    const b64 = await fileToBase64(file);
-    const r = await fetch(API + '/api/extract-text', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileBase64: b64.split(',')[1], mimeType: file.type, fileName: file.name })
-    });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
-    const ext = document.getElementById('script-extracted');
-    ext.value = d.text;
-    ext.style.display = '';
-    document.getElementById('upload-status').innerHTML = '<div style="font-size:12px;color:var(--green);">✓ Text extracted — you can edit it above</div>';
-    updateWordCount();
-  } catch (e) {
-    document.getElementById('upload-status').innerHTML = '<div style="font-size:12px;color:var(--red);">Failed: ' + e.message + '</div>';
-  }
+    const buf = Buffer.from(base64, 'base64');
+    if (mimeType === 'text/plain' || (fileName && fileName.endsWith('.txt'))) {
+      return buf.toString('utf8');
+    }
+    if (mimeType && mimeType.includes('wordprocessingml')) {
+      const text = buf.toString('utf8');
+      const matches = text.match(/<w:t[^>]*>([^<]+)<\/w:t>/g) || [];
+      return matches.map(m => m.replace(/<[^>]+>/g, '')).join(' ');
+    }
+    return '';
+  } catch (e) { return ''; }
 }
 
-async function startSegmentation() {
-  const title = (document.getElementById('project-title')?.value || 'My Video').trim();
-  const script = getScriptText().trim();
 
-  if (!script || script.length < 20) {
-    toast('Please write or paste your script first — minimum 20 characters.', 'error');
-    return;
-  }
-
-  PROJECT.id = PROJECT.id || ('proj_' + Date.now());
-  PROJECT.title = title;
-  PROJECT.script = script;
-
-  nav('segment-pg');
-
-  // Reset step states
-  ['seg-s1','seg-s2','seg-s3','seg-s4','seg-s5'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) { el.classList.remove('run','done'); }
-  });
-  const progEl = document.getElementById('seg-progress');
-  if (progEl) progEl.style.width = '0%';
-  const wpmEl = document.getElementById('seg-wpm');
-  if (wpmEl) wpmEl.textContent = PROJECT.wpm || 150;
-
-  // Animate steps
-  const steps = ['seg-s1','seg-s2','seg-s3','seg-s4','seg-s5'];
-  const progs = [20,40,60,80,95];
-  let si = 0;
-  let stepTimer = null;
-
-  function advanceStep() {
-    if (si > 0) {
-      const prev = document.getElementById(steps[si-1]);
-      if (prev) { prev.classList.remove('run'); prev.classList.add('done'); }
-    }
-    if (si >= steps.length) return;
-    const el = document.getElementById(steps[si]);
-    if (el) el.classList.add('run');
-    const pf = document.getElementById('seg-progress');
-    if (pf) pf.style.width = progs[si] + '%';
-    si++;
-  }
-
-  stepTimer = setInterval(advanceStep, 800);
-  advanceStep();
-
-  // Cycle facts
-  let factIdx = 0;
-  const factTimer = setInterval(() => {
-    factIdx = (factIdx + 1) % FACTS.length;
-    const el = document.getElementById('seg-fact-text');
-    if (el) {
-      el.style.opacity = '0';
-      setTimeout(() => { if (el) { el.textContent = FACTS[factIdx]; el.style.opacity = '1'; } }, 300);
-    }
-  }, 4000);
-
+// ── EXTRACT TEXT FROM FILE ─────────────────────────────────────────────────────
+// Used when user uploads a script file — extracts raw text only, no analysis
+app.post('/api/extract-text', async (req, res) => {
   try {
-    const r = await fetch(API + '/api/segment', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        script: script,
-        wpm: PROJECT.wpm || 150,
-        sceneDuration: PROJECT.sceneDuration || 8,
-        title: title
-      })
-    });
+    const { fileBase64, mimeType, fileName } = req.body;
+    if (!fileBase64) return res.status(400).json({ error: 'No file provided.' });
 
-    clearInterval(stepTimer);
-    clearInterval(factTimer);
+    const isPDF = mimeType === 'application/pdf';
 
-    if (!r.ok) {
-      const errData = await r.json().catch(() => ({}));
-      throw new Error(errData.error || 'Server error ' + r.status);
+    if (isPDF) {
+      // Use Claude to extract text from PDF - handles large documents well
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 8000,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileBase64 } },
+            { type: 'text', text: 'Extract all text from this document. Return the raw text only — no commentary, no formatting, no analysis. Preserve paragraph breaks with double newlines.' }
+          ]
+        }]
+      });
+      const text = response.content.map(c => c.text || '').join('').trim();
+      return res.json({ text, chars: text.length, words: text.split(/\s+/).length });
     }
 
-    const data = await r.json();
-    if (data.error) throw new Error(data.error);
-    if (!data.scenes || !data.scenes.length) throw new Error('No scenes returned — try a longer script');
-
-    // Mark all steps done
-    steps.forEach(id => {
-      const el = document.getElementById(id);
-      if (el) { el.classList.remove('run'); el.classList.add('done'); }
-    });
-    const pf = document.getElementById('seg-progress');
-    if (pf) pf.style.width = '100%';
-
-    PROJECT.scenes = data.scenes;
-    PROJECT.title = data.title || title;
-
-    const ss = document.getElementById('seg-scenes');
-    if (ss) ss.textContent = data.totalScenes || data.scenes.length;
-    const sd = document.getElementById('seg-duration');
-    if (sd) sd.textContent = data.estimatedDuration || '—';
-
-    saveProject();
-    setTimeout(() => nav('scenes-pg'), 700);
-
-  } catch (e) {
-    clearInterval(stepTimer);
-    clearInterval(factTimer);
-    console.error('Segmentation error:', e);
-    toast('Segmentation failed: ' + e.message, 'error');
-    nav('script-pg');
-  }
-}
-
-// ── SCENE BOARD ───────────────────────────────────────────────────────────────
-let SELECTED_SCENE = null;
-
-function renderSceneBoard() {
-  const titleEl = document.getElementById('scenes-project-title');
-  if (titleEl) titleEl.textContent = PROJECT.title;
-  const metaEl = document.getElementById('scenes-meta');
-  if (metaEl) {
-    const total = PROJECT.scenes.length;
-    const recorded = PROJECT.scenes.filter(s => ['recorded','edited'].includes(s.status)).length;
-    const dur = PROJECT.scenes.reduce((t, s) => t + (s.duration || 8), 0);
-    const m = Math.floor(dur/60), s = dur%60;
-    metaEl.innerHTML = total + ' scenes · ' + m + ':' + String(s).padStart(2,'0') +
-      (recorded ? ' · <span style="color:var(--green);">' + recorded + ' recorded</span>' : '');
-  }
-
-  const list = document.getElementById('scenes-list');
-  if (!PROJECT.scenes.length) {
-    list.innerHTML = '<div class="empty-state"><div class="empty-icon">✂️</div><div class="empty-title">No scenes yet</div><div class="empty-sub">Add a script and segment it to create your scene board.</div><button class="btn btn-primary" onclick="nav(\'script-pg\')">Add script</button></div>';
-    return;
-  }
-
-  list.innerHTML = PROJECT.scenes.map((scene, i) => {
-    const statusDot = { draft:'status-dot-draft', ready:'status-dot-ready', recorded:'status-dot-recorded', edited:'status-dot-edited' }[scene.status || 'draft'] || 'status-dot-draft';
-    const assetChips = (scene.assets || []).map(a => `<div class="asset-chip">${a.type === 'image' ? `<img src="${a.dataUrl}" alt="">` : '📄'} ${a.name.slice(0,12)}</div>`).join('');
-    return `
-    <div class="scene-card${scene.status === 'recorded' ? ' status-recorded' : scene.status === 'edited' ? ' status-edited' : ''}" id="scene-card-${scene.id}" onclick="selectScene(${i})" draggable="true">
-      <div class="scene-header">
-        <div class="scene-num">SCENE ${String(i+1).padStart(3,'0')}</div>
-        <div class="scene-type-badge type-${(scene.type || 'MAIN').toUpperCase()}">${scene.type || 'MAIN'}</div>
-        <div class="scene-narration">${scene.narration || '<em style="opacity:.4">No narration</em>'}</div>
-        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-          ${(scene.assets||[]).length ? '<span style="font-size:10px;background:rgba(0,212,255,.08);color:var(--accent);padding:1px 6px;border-radius:8px;border:0.5px solid rgba(0,212,255,.2);">📎 '+(scene.assets||[]).length+'</span>' : ''}
-          <div class="scene-duration">${scene.duration || 8}s</div>
-          <div class="scene-status-dot ${statusDot}" title="${scene.status || 'draft'}"></div>
-        </div>
-      </div>
-      <div class="scene-body" id="scene-body-${scene.id}" style="display:none;">
-        <div class="scene-full-narration" id="narration-${scene.id}">${(scene.narration || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
-        ${scene.notes ? '<div style="font-size:11px;color:var(--muted);padding:6px 0;border-top:0.5px solid var(--bdr);margin-top:4px;">📝 '+scene.notes+'</div>' : ''}
-        <div class="scene-assets-row">
-          ${assetChips}
-          <button class="add-asset-btn" onclick="openAssetAssign(${i},event)">+ Assign asset</button>
-        </div>
-        <div class="scene-actions-row">
-          <button class="btn btn-dark btn-sm" onclick="copySceneText(${i},event)" title="Copy to clipboard">Copy</button>
-          <button class="btn btn-dark btn-sm" onclick="editSceneNotes(${i},event)">Notes</button>
-          <button class="btn btn-dark btn-sm" onclick="duplicateScene(${i},event)">Duplicate</button>
-          <button class="btn btn-dark btn-sm" onclick="splitScene(${i},event)">Split</button>
-          <button class="btn btn-danger btn-sm" style="margin-left:auto;" onclick="deleteScene(${i},event)">Delete</button>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
-  setTimeout(_afterRenderSceneBoard, 10);
-}
-
-// Called at end of renderSceneBoard
-function _afterRenderSceneBoard() {
-  document.querySelectorAll('.scene-card').forEach(card => {
-    card.setAttribute('draggable', 'true');
-  });
-  initSceneDragDrop();
-  setTimeout(upgradeSceneTopbar, 50);
-}
-
-function selectScene(idx) {
-  if (SELECTED_SCENE === idx) {
-    // Toggle collapse
-    SELECTED_SCENE = null;
-    document.querySelectorAll('.scene-body').forEach(b => b.style.display = 'none');
-    document.querySelectorAll('.scene-card').forEach(c => c.classList.remove('selected'));
-    return;
-  }
-  SELECTED_SCENE = idx;
-  document.querySelectorAll('.scene-body').forEach(b => b.style.display = 'none');
-  document.querySelectorAll('.scene-card').forEach(c => c.classList.remove('selected'));
-  const scene = PROJECT.scenes[idx];
-  if (!scene) return;
-  const body = document.getElementById('scene-body-' + scene.id);
-  const card = document.getElementById('scene-card-' + scene.id);
-  if (body) body.style.display = '';
-  if (card) card.classList.add('selected');
-}
-
-function sidebarTab(tab, el) {
-  document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('on'));
-  el.classList.add('on');
-  document.getElementById('asset-library-panel').style.display = tab === 'library' ? '' : 'none';
-  document.getElementById('asset-upload-panel').style.display = tab === 'upload' ? '' : 'none';
-}
-
-function openAssetAssign(sceneIdx, e) {
-  e && e.stopPropagation();
-  if (!PROJECT.assets.length) {
-    toast('Upload assets first in the sidebar →', 'info');
-    return;
-  }
-  // Simple picker — show asset list and assign selected
-  const scene = PROJECT.scenes[sceneIdx];
-  if (!scene) return;
-  const asset = PROJECT.assets[0]; // TODO: proper picker modal
-  if (!scene.assets) scene.assets = [];
-  scene.assets.push(asset);
-  saveProject();
-  renderSceneBoard();
-  toast('Asset assigned to scene ' + (sceneIdx + 1), 'success');
-}
-
-function uploadAssets(inp) {
-  if (!inp.files.length) return;
-  let count = 0;
-  Array.from(inp.files).forEach(file => {
-    const rd = new FileReader();
-    rd.onload = e => {
-      PROJECT.assets.push({ id: Date.now() + Math.random(), name: file.name, dataUrl: e.target.result, type: file.type.startsWith('image/') ? 'image' : 'document' });
-      count++;
-      if (count === inp.files.length) {
-        saveProject();
-        renderAssetLibrary();
-        toast(count + ' asset' + (count > 1 ? 's' : '') + ' uploaded', 'success');
-        sidebarTab('library', document.querySelector('.sidebar-tab'));
+    // TXT / DOCX — decode base64 directly
+    try {
+      const buf = Buffer.from(fileBase64, 'base64');
+      let text = '';
+      
+      if (mimeType === 'text/plain' || (fileName && fileName.endsWith('.txt'))) {
+        text = buf.toString('utf8');
+      } else if (mimeType && mimeType.includes('wordprocessingml') || (fileName && fileName.endsWith('.docx'))) {
+        // Basic DOCX text extraction
+        const raw = buf.toString('utf8');
+        const matches = raw.match(/<w:t[^>]*>([^<]+)<\/w:t>/g) || [];
+        text = matches.map(m => m.replace(/<[^>]+>/g, '')).join(' ');
+      } else {
+        // Try UTF-8 decode as fallback
+        text = buf.toString('utf8').replace(/[^\x20-\x7E\n\r\t]/g, ' ').replace(/\s{3,}/g, '\n\n').trim();
       }
-    };
-    rd.readAsDataURL(file);
-  });
-}
 
-function renderAssetLibrary() {
-  const el = document.getElementById('asset-library-panel');
-  if (!el) return;
-  if (!PROJECT.assets.length) {
-    el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted2);font-size:12px;"><div style="font-size:24px;margin-bottom:8px;">🖼️</div>No assets yet.<br>Upload to assign to scenes.</div>';
-    return;
+      if (text.length > 20) {
+        return res.json({ text: text.trim(), chars: text.length, words: text.trim().split(/\s+/).length });
+      }
+    } catch (e) {
+      console.warn('Direct decode failed:', e.message);
+    }
+
+    return res.status(400).json({ error: 'Could not extract text. Try uploading a PDF or TXT file, or paste your script directly.' });
+
+  } catch (e) {
+    console.error('Extract-text error:', e.message);
+    res.status(500).json({ error: e.message });
   }
-  el.innerHTML = '<div class="asset-grid">' + PROJECT.assets.map((a, i) => `
-    <div class="asset-item" onclick="assignAssetToSelectedScene(${i})">
-      ${a.type === 'image' ? `<img src="${a.dataUrl}" alt="${a.name}">` : '<div class="asset-item" style="height:70px;display:flex;align-items:center;justify-content:center;font-size:24px;">📄</div>'}
-      <div class="asset-item-label">${a.name}</div>
-    </div>`).join('') + '</div>';
-}
+});
 
-function assignAssetToSelectedScene(assetIdx) {
-  if (SELECTED_SCENE === null) { toast('Select a scene first', 'info'); return; }
-  const scene = PROJECT.scenes[SELECTED_SCENE];
-  const asset = PROJECT.assets[assetIdx];
-  if (!scene || !asset) return;
-  if (!scene.assets) scene.assets = [];
-  if (!scene.assets.find(a => a.id === asset.id)) scene.assets.push(asset);
-  saveProject();
-  renderSceneBoard();
-  toast('Assigned to Scene ' + (SELECTED_SCENE + 1), 'success');
-}
+// ── SCENE SEGMENTATION — the core AI feature ──────────────────────────────────
+app.post('/api/segment', async (req, res) => {
+  try {
+    const { script, scriptText, fileBase64, mimeType, fileName, wpm = 150, sceneDuration = 8, title } = req.body;
+    let text = script || scriptText || '';
 
-function duplicateScene(idx, e) { e && e.stopPropagation(); const s = {...PROJECT.scenes[idx], id: 's_'+Date.now(), status:'draft'}; PROJECT.scenes.splice(idx+1,0,s); saveProject(); renderSceneBoard(); }
-function deleteScene(idx, e) { e && e.stopPropagation(); PROJECT.scenes.splice(idx,1); saveProject(); renderSceneBoard(); }
-function editSceneNarration(idx, e) {
-  e && e.stopPropagation();
-  const scene = PROJECT.scenes[idx];
-  const newText = prompt('Edit scene narration:', scene.narration || '');
-  if (newText !== null) { scene.narration = newText; saveProject(); renderSceneBoard(); }
-}
-function splitScene(idx, e) {
-  e && e.stopPropagation();
-  const scene = PROJECT.scenes[idx];
-  const words = (scene.narration || '').split(/\s+/);
-  const mid = Math.floor(words.length / 2);
-  const a = { ...scene, id: 's_' + Date.now(), narration: words.slice(0, mid).join(' '), wordCount: mid };
-  const b = { ...scene, id: 's_' + (Date.now()+1), narration: words.slice(mid).join(' '), wordCount: words.length - mid };
-  PROJECT.scenes.splice(idx, 1, a, b);
-  saveProject();
-  renderSceneBoard();
-}
+    if (!text && fileBase64) {
+      if (mimeType === 'application/pdf') {
+        const response = await anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 8000,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileBase64 } },
+              { type: 'text', text: 'Extract all text from this document. Return only the raw text, no commentary.' }
+            ]
+          }]
+        });
+        text = response.content.map(c => c.text || '').join('').trim();
+      } else {
+        text = extractTextFromBase64(fileBase64, mimeType, fileName);
+      }
+    }
 
-function openRecordingStudio() {
-  if (!PROJECT.scenes.length) { toast('Add scenes first', 'error'); return; }
-  nav('record-pg');
-}
+    if (!text || text.trim().length < 10) {
+      return res.status(400).json({ error: 'No script text found.' });
+    }
+
+    const wordsPerScene = Math.round((wpm / 60) * sceneDuration);
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 12000,
+      system: `You are a scene segmentation engine for a professional teleprompter video studio.
+Your ONLY job: split script text into timed presenter scenes.
+Do NOT analyse, critique, or modify content. Preserve exact wording.
+
+RULES:
+- Each scene = ${wordsPerScene} words (target ${sceneDuration}s at ${wpm} WPM)
+- Split at natural sentence or clause boundaries only
+- Never cut mid-sentence
+- Detect section headings as scene group titles
+- Assign a concise scene title (3-5 words)
+- Suggest a brief visual prompt per scene
+
+OUTPUT — valid JSON only, flat scenes array:
+{"title":"project title","totalScenes":0,"scenes":[{"id":"s_1","sceneNumber":1,"type":"INTRO","narration":"exact words from script","wordCount":0,"duration":${sceneDuration},"notes":"","status":"draft"}]}`,
+      messages: [{
+        role: 'user',
+        content: `Segment this script into ${wordsPerScene}-word scenes:\n\n${text.slice(0, 60000)}\n\nReturn ONLY valid JSON.`
+      }]
+    });
+
+    const raw = response.content.map(c => c.text || '').join('').trim();
+    const j = raw.indexOf('{'), k = raw.lastIndexOf('}');
+    if (j === -1) throw new Error('AI returned no valid JSON. Try a shorter script.');
+    const result = JSON.parse(raw.slice(j, k + 1));
+
+    // Flatten sections into scenes array (frontend expects flat scenes[])
+    let scenes = [];
+    let sceneCounter = 1;
+    if (result.scenes && result.scenes.length) {
+      // Already flat
+      scenes = result.scenes.map((s, i) => ({
+        id: 's_' + (i + 1),
+        sceneNumber: i + 1,
+        type: s.type || 'MAIN',
+        narration: s.narration || s.text || '',
+        wordCount: s.wordCount || (s.narration || '').split(/\s+/).length,
+        duration: s.duration || sceneDuration,
+        notes: s.notes || '',
+        assets: [],
+        status: 'draft'
+      }));
+    } else if (result.sections && result.sections.length) {
+      // Nested sections — flatten
+      result.sections.forEach(section => {
+        (section.scenes || []).forEach(s => {
+          scenes.push({
+            id: 's_' + sceneCounter,
+            sceneNumber: sceneCounter,
+            type: s.type || 'MAIN',
+            narration: s.narration || s.text || '',
+            wordCount: s.wordCount || (s.narration || '').split(/\s+/).length,
+            duration: s.duration || sceneDuration,
+            notes: s.notes || '',
+            sectionTitle: section.sectionTitle || '',
+            assets: [],
+            status: 'draft'
+          });
+          sceneCounter++;
+        });
+      });
+    }
+
+    const totalScenes = scenes.length;
+    const totalSecs = totalScenes * sceneDuration;
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    const estimatedDuration = mins + ':' + String(secs).padStart(2, '0');
+
+    res.json({
+      title: result.title || title || 'My Video',
+      totalScenes,
+      estimatedDuration,
+      wpm,
+      sceneDuration,
+      scenes
+    });
+  } catch (e) {
+    console.error('Segment error:', e.message, e.stack);
+    res.status(500).json({ 
+      error: e.message,
+      hint: !process.env.ANTHROPIC_API_KEY ? 'ANTHROPIC_API_KEY is not set in Railway environment variables' : 'Check Railway deployment logs for details'
+    });
+  }
+});
+
+// ── VOICE ─────────────────────────────────────────────────────────────────────
+app.post('/api/voice', async (req, res) => {
+  try {
+    const { text, voiceId = 'EXAVITQu4vr4xnSDxMaL', stability = 0.5, similarityBoost = 0.75 } = req.body;
+    if (!text) return res.status(400).json({ error: 'No text' });
+    if (!ELEVENLABS_KEY) return res.status(503).json({ error: 'ElevenLabs not configured' });
+    const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: 'POST',
+      headers: { 'xi-api-key': ELEVENLABS_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, model_id: 'eleven_monolingual_v1', voice_settings: { stability, similarity_boost: similarityBoost } })
+    });
+    if (!r.ok) throw new Error('ElevenLabs HTTP ' + r.status);
+    const buf = await r.arrayBuffer();
+    res.json({ audio: Buffer.from(buf).toString('base64') });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── SCENE IMAGE ───────────────────────────────────────────────────────────────
+app.post('/api/image', async (req, res) => {
+  try {
+    const { prompt, referenceImageBase64, isFirstScene, style = 'photorealistic professional' } = req.body;
+    if (!DALLE_KEY) return res.status(503).json({ error: 'OpenAI not configured' });
+    const fullPrompt = `${prompt}. ${style}. Broadcast quality, 4K, no text.`.slice(0, 1000);
+
+    if (referenceImageBase64) {
+      try {
+        const buf = Buffer.from(referenceImageBase64, 'base64');
+        const fd = new FormData();
+        fd.append('image', new File([buf], 'ref.png', { type: 'image/png' }));
+        fd.append('prompt', (isFirstScene ? 'Same person from reference: ' : 'IDENTICAL to reference: ') + fullPrompt);
+        fd.append('model', 'gpt-image-1');
+        fd.append('n', '1');
+        fd.append('size', '1024x1024');
+        const er = await fetch('https://api.openai.com/v1/images/edits', { method: 'POST', headers: { 'Authorization': 'Bearer ' + DALLE_KEY }, body: fd });
+        if (er.ok) {
+          const ed = await er.json();
+          if (ed.data?.[0]?.b64_json) return res.json({ imageBase64: ed.data[0].b64_json, provider: 'gpt-image-1' });
+        }
+      } catch (e2) { console.warn('Image edit failed:', e2.message); }
+    }
+
+    const r = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + DALLE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'dall-e-3', prompt: fullPrompt, n: 1, size: '1024x1024', quality: 'hd', response_format: 'b64_json' })
+    });
+    if (!r.ok) throw new Error('DALL-E HTTP ' + r.status);
+    const data = await r.json();
+    res.json({ imageBase64: data.data?.[0]?.b64_json, provider: 'dalle-3' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // ── AI PRESENTER ──────────────────────────────────────────────────────────────
-function openAIPresenter() {
-  const grid = document.getElementById('ai-scenes-grid');
-  if (grid) {
-    grid.innerHTML = PROJECT.scenes.map((s, i) => `
-      <div class="ai-scene-row">
-        <div class="ai-scene-num">SCENE ${String(i+1).padStart(3,'0')}</div>
-        <div class="ai-scene-text">${(s.narration || '').slice(0, 55)}${s.narration?.length > 55 ? '...' : ''}</div>
-        <div class="ai-scene-status" id="ai-status-${i}">⏳</div>
-      </div>`).join('');
-  }
-  openModal('ai-presenter-modal');
-}
-
-function loadAIPhoto(inp) {
-  if (!inp.files.length) return;
-  const rd = new FileReader();
-  rd.onload = e => {
-    AI_PRESENTER.photoBase64 = e.target.result.split(',')[1];
-    document.getElementById('ai-photo-label').textContent = '✓ ' + inp.files[0].name;
-  };
-  rd.readAsDataURL(inp.files[0]);
-}
-
-async function startAIPresenter() {
-  if (AI_PRESENTER.generating) return;
-  AI_PRESENTER.generating = true;
-  AI_PRESENTER.voice = document.getElementById('ai-voice').value;
-  toast('Generating AI presenter — this takes a moment...', 'info');
-
-  for (let i = 0; i < PROJECT.scenes.length; i++) {
-    const scene = PROJECT.scenes[i];
-    const statusEl = document.getElementById('ai-status-' + i);
-    if (statusEl) statusEl.textContent = '⏳';
-
-    try {
-      // Generate voice
-      const vr = await fetch(API + '/api/voice', {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ text: scene.narration, voiceId: AI_PRESENTER.voice })
-      });
-      const vd = await vr.json();
-      if (vd.error) throw new Error(vd.error);
-
-      // Generate image
-      const ir = await fetch(API + '/api/presenter-image', {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({
-          sceneNarration: scene.narration, sceneNumber: i+1,
-          referenceImageBase64: i === 0 ? AI_PRESENTER.photoBase64 : AI_PRESENTER.scene1Image,
-          isFirstScene: i === 0
-        })
-      });
-      const id2 = await ir.json();
-      if (i === 0 && id2.imageBase64) AI_PRESENTER.scene1Image = id2.imageBase64;
-
-      scene.aiVoice = vd.audio;
-      scene.aiImage = id2.imageBase64;
-      if (statusEl) statusEl.textContent = '✓';
-
-    } catch (e) {
-      if (statusEl) statusEl.textContent = '✗';
-      console.warn('Scene ' + (i+1) + ' AI failed:', e.message);
-    }
-  }
-
-  AI_PRESENTER.generating = false;
-  saveProject();
-  toast('AI presenter generated for ' + PROJECT.scenes.filter(s => s.aiVoice).length + ' scenes', 'success');
-}
-
-// ── RECORDING STUDIO ──────────────────────────────────────────────────────────
-function initStudio() {
-  STUDIO.currentScene = 0;
-  STUDIO.elapsed = 0;
-  renderStudioQueue();
-  updateStudioTP();
-  startCamera();
-  startElapsedTimer();
-
-  // Init annotation canvas
-  setTimeout(() => {
-    const canvas = document.getElementById('studio-annotation-canvas');
-    const studioCanvas = document.getElementById('studio-canvas');
-    if (canvas && studioCanvas) {
-      canvas.width = studioCanvas.offsetWidth;
-      canvas.height = studioCanvas.offsetHeight;
-      STUDIO.drawCtx = canvas.getContext('2d');
-      initDrawEvents(canvas);
-    }
-  }, 300);
-}
-
-function startElapsedTimer() {
-  if (STUDIO.elapsedTimer) clearInterval(STUDIO.elapsedTimer);
-  STUDIO.elapsedTimer = setInterval(() => {
-    STUDIO.elapsed++;
-    const m = Math.floor(STUDIO.elapsed/60), s = STUDIO.elapsed%60;
-    const el = document.getElementById('studio-elapsed');
-    if (el) el.textContent = m + ':' + String(s).padStart(2,'0');
-  }, 1000);
-}
-
-function endStudioSession() {
-  if (STUDIO.recording) stopRecording();
-  if (STUDIO.stream) { STUDIO.stream.getTracks().forEach(t => t.stop()); STUDIO.stream = null; }
-  if (STUDIO.elapsedTimer) clearInterval(STUDIO.elapsedTimer);
-  if (STUDIO.recognition) { try { STUDIO.recognition.stop(); } catch(e) {} }
-  // Save recordings to project
-  PROJECT.clips = STUDIO.clips;
-  saveProject();
-  nav('edit-pg');
-}
-
-async function startCamera() {
+app.post('/api/presenter', async (req, res) => {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { width:1280, height:720 }, audio: true });
-    STUDIO.stream = stream;
-    const vid = document.getElementById('studio-cam');
-    if (vid) { vid.srcObject = stream; }
-    STUDIO.cameraOn = true;
-    STUDIO.micOn = true;
-    updateCameraBtn();
-    initAudioMeter(stream);
-    const recBtn = document.getElementById('studio-rec-btn');
-    if (recBtn) recBtn.disabled = false;
+    const { referenceImageBase64, audioBase64, ratio = '16:9' } = req.body;
+    if (!HEYGEN_KEY) return res.status(503).json({ error: 'HeyGen not configured' });
+    const ur = await fetch('https://upload.heygen.com/v1/talking_photo', {
+      method: 'POST',
+      headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: referenceImageBase64 })
+    });
+    if (!ur.ok) throw new Error('HeyGen upload HTTP ' + ur.status);
+    const ud = await ur.json();
+    const tpId = ud.data?.talking_photo_id;
+    if (!tpId) throw new Error('No talking_photo_id');
+    const vr = await fetch('https://api.heygen.com/v2/video/generate', {
+      method: 'POST',
+      headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        video_inputs: [{
+          character: { type: 'talking_photo', talking_photo_id: tpId, talking_style: 'expressive', expression: 'happy', movement_amplitude: 'auto' },
+          voice: audioBase64 ? { type: 'audio', audio_base64: audioBase64 } : { type: 'text', input_text: 'Hello.', voice_id: '2d5b0e6cf36f460aa7fc47e3eee4ba54' },
+          background: { type: 'color', value: '#1a3a5c' }
+        }],
+        aspect_ratio: ratio
+      })
+    });
+    if (!vr.ok) throw new Error('HeyGen video HTTP ' + vr.status);
+    const vd = await vr.json();
+    const vid = vd.data?.video_id;
+    if (!vid) throw new Error('No video_id');
+    res.json({ taskId: 'heygen-' + vid });
   } catch (e) {
-    toast('Camera access denied. Check browser permissions.', 'error');
+    res.status(500).json({ error: e.message });
   }
-}
+});
 
-function initAudioMeter(stream) {
+app.get('/api/presenter/status/:taskId', async (req, res) => {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const src = ctx.createMediaStreamSource(stream);
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 128;
-    src.connect(analyser);
-    STUDIO.analyser = analyser;
-    const buf = new Uint8Array(analyser.frequencyBinCount);
-    function tick() {
-      if (!STUDIO.analyser) return;
-      analyser.getByteFrequencyData(buf);
-      const avg = buf.reduce((a,b)=>a+b,0)/buf.length;
-      const el = document.getElementById('studio-audio-fill');
-      if (el) el.style.height = Math.min(100, avg * 2.5) + '%';
-      requestAnimationFrame(tick);
-    }
-    tick();
-  } catch(e) {}
-}
-
-function toggleStudioCamera() {
-  if (!STUDIO.stream) { startCamera(); return; }
-  STUDIO.cameraOn = !STUDIO.cameraOn;
-  STUDIO.stream.getVideoTracks().forEach(t => t.enabled = STUDIO.cameraOn);
-  updateCameraBtn();
-}
-
-function toggleStudioMic() {
-  if (!STUDIO.stream) return;
-  STUDIO.micOn = !STUDIO.micOn;
-  STUDIO.stream.getAudioTracks().forEach(t => t.enabled = STUDIO.micOn);
-  const btn = document.getElementById('mic-toggle');
-  if (btn) btn.style.color = STUDIO.micOn ? 'rgba(255,255,255,.7)' : 'var(--red)';
-}
-
-function updateCameraBtn() {
-  const btn = document.getElementById('cam-toggle');
-  if (btn) btn.style.color = STUDIO.cameraOn ? 'rgba(255,255,255,.7)' : 'var(--red)';
-}
-
-// Recording
-function toggleStudioRecording() {
-  if (!STUDIO.stream) { startCamera(); setTimeout(toggleStudioRecording, 1200); return; }
-  STUDIO.recording ? stopRecording() : startRecording();
-}
-
-function startRecording() {
-  STUDIO.chunks = [];
-  const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') ? 'video/webm;codecs=vp9,opus' : 'video/webm';
-  const mr = new MediaRecorder(STUDIO.stream, { mimeType: mime });
-  mr.ondataavailable = e => { if (e.data.size > 0) STUDIO.chunks.push(e.data); };
-  mr.onstop = () => {
-    const blob = new Blob(STUDIO.chunks, { type: 'video/webm' });
-    const url = URL.createObjectURL(blob);
-    const sceneId = PROJECT.scenes[STUDIO.currentScene]?.id || ('clip_' + Date.now());
-    STUDIO.clips[sceneId] = { url, sceneIdx: STUDIO.currentScene, duration: STUDIO.recSeconds };
-    updateStudioClipsList();
-    toast('Scene ' + (STUDIO.currentScene + 1) + ' recorded — ' + STUDIO.recSeconds + 's', 'success');
-    // Mark scene as recorded
-    if (PROJECT.scenes[STUDIO.currentScene]) PROJECT.scenes[STUDIO.currentScene].status = 'recorded';
-    renderStudioQueue();
-    // Show retake button
-    const rb = document.getElementById('retake-btn');
-    if (rb) rb.style.display = '';
-  };
-  mr.start(200);
-  STUDIO.mediaRecorder = mr;
-  STUDIO.recording = true;
-  STUDIO.recSeconds = 0;
-
-  // UI
-  const btn = document.getElementById('studio-rec-btn');
-  if (btn) { btn.classList.add('recording'); btn.innerHTML = '<svg viewBox="0 0 10 10" width="9" height="9"><rect x="2" y="2" width="6" height="6" rx="1" fill="#fff"/></svg> STOP'; }
-  const ind = document.getElementById('studio-rec-indicator');
-  if (ind) ind.classList.add('on');
-  const status = document.getElementById('rec-status');
-  if (status) { status.className = 'rec-status recording'; }
-  const statusTxt = document.getElementById('rec-status-txt');
-  if (statusTxt) statusTxt.textContent = 'RECORDING';
-
-  STUDIO.recTimer = setInterval(() => {
-    STUDIO.recSeconds++;
-    const m = Math.floor(STUDIO.recSeconds/60), s = STUDIO.recSeconds%60;
-    const el = document.getElementById('studio-rec-timer');
-    if (el) el.textContent = m + ':' + String(s).padStart(2,'0');
-  }, 1000);
-}
-
-function stopRecording() {
-  if (STUDIO.mediaRecorder && STUDIO.mediaRecorder.state !== 'inactive') STUDIO.mediaRecorder.stop();
-  STUDIO.recording = false;
-  clearInterval(STUDIO.recTimer);
-  const btn = document.getElementById('studio-rec-btn');
-  if (btn) { btn.classList.remove('recording'); btn.innerHTML = '<svg viewBox="0 0 10 10" width="9" height="9"><circle cx="5" cy="5" r="4.5" fill="var(--red)"/></svg> REC'; }
-  const ind = document.getElementById('studio-rec-indicator');
-  if (ind) ind.classList.remove('on');
-  const status = document.getElementById('rec-status');
-  if (status) status.className = 'rec-status ready';
-  const statusTxt = document.getElementById('rec-status-txt');
-  if (statusTxt) statusTxt.textContent = 'READY';
-}
-
-function retakeScene() {
-  const sceneId = PROJECT.scenes[STUDIO.currentScene]?.id;
-  if (sceneId && STUDIO.clips[sceneId]) delete STUDIO.clips[sceneId];
-  if (PROJECT.scenes[STUDIO.currentScene]) PROJECT.scenes[STUDIO.currentScene].status = 'draft';
-  document.getElementById('retake-btn').style.display = 'none';
-  updateStudioClipsList();
-  renderStudioQueue();
-  toast('Ready to retake Scene ' + (STUDIO.currentScene + 1), 'info');
-}
-
-function updateStudioClipsList() {
-  const el = document.getElementById('studio-clips-list');
-  if (!el) return;
-  const clips = Object.values(STUDIO.clips);
-  if (!clips.length) { el.innerHTML = '<div style="font-size:11px;color:rgba(255,255,255,.2);">No clips yet</div>'; return; }
-  el.innerHTML = clips.map((c, i) => `
-    <div class="panel-clip">
-      <span class="panel-clip-name">Scene ${c.sceneIdx+1} (${c.duration}s)</span>
-      <a href="${c.url}" download="scene-${c.sceneIdx+1}.webm" class="panel-clip-dl">↓</a>
-    </div>`).join('');
-}
-
-function exportAllClips() {
-  const clips = Object.values(STUDIO.clips);
-  if (!clips.length) { toast('No clips to export', 'error'); return; }
-  clips.forEach((c, i) => setTimeout(() => {
-    const a = document.createElement('a'); a.href = c.url; a.download = 'scene-' + (c.sceneIdx+1) + '.webm'; a.click();
-  }, i * 700));
-  toast('Downloading ' + clips.length + ' clip' + (clips.length > 1 ? 's' : ''), 'success');
-}
-
-// Teleprompter
-function renderStudioQueue() {
-  const el = document.getElementById('studio-queue-list');
-  if (!el) return;
-  el.innerHTML = PROJECT.scenes.map((s, i) => {
-    const cur = i === STUDIO.currentScene;
-    const done = !!STUDIO.clips[s.id];
-    const hasAsset = (s.assets || []).length > 0;
-    return `<div class="sq-item${cur?' active':''}${done?' done':''}" onclick="jumpToScene(${i})">
-      <div class="sq-item-num">SCENE ${i+1}${hasAsset ? '<span class="sq-asset-dot"></span>' : ''}</div>
-      <div class="sq-item-text">${s.narration || ''}</div>
-    </div>`;
-  }).join('');
-  const badge = document.getElementById('studio-scene-badge');
-  if (badge) badge.textContent = 'Scene ' + (STUDIO.currentScene + 1);
-  const count = document.getElementById('studio-scene-count');
-  if (count) count.textContent = (STUDIO.currentScene + 1) + '/' + PROJECT.scenes.length;
-}
-
-function updateStudioTP() {
-  const scenes = PROJECT.scenes;
-  const cur = scenes[STUDIO.currentScene];
-  const prev = scenes[STUDIO.currentScene - 1];
-  const next = scenes[STUDIO.currentScene + 1];
-  const tp_prev = document.getElementById('tp-prev');
-  const tp_cur = document.getElementById('tp-current');
-  const tp_next = document.getElementById('tp-next');
-  if (tp_prev) tp_prev.textContent = prev ? prev.narration : '';
-  if (tp_cur) tp_cur.textContent = cur ? cur.narration : 'Select a scene to begin';
-  if (tp_next) tp_next.textContent = next ? next.narration : '';
-  // Show scene overlay assets
-  if (cur && cur.assets && cur.assets.length) showSceneOverlay(cur.assets[0]);
-  const sn = document.getElementById('studio-section-name');
-  if (sn) sn.textContent = cur?.notes || '';
-  renderStudioQueue();
-}
-
-function jumpToScene(idx) {
-  if (STUDIO.recording) stopRecording();
-  STUDIO.currentScene = idx;
-  updateStudioTP();
-}
-
-function studioPrev() { if (STUDIO.currentScene > 0) { STUDIO.currentScene--; updateStudioTP(); } }
-function studioNext() {
-  if (STUDIO.currentScene < PROJECT.scenes.length - 1) {
-    STUDIO.currentScene++;
-    updateStudioTP();
-  }
-}
-
-// Teleprompter controls
-function setTpSpeed(v) {
-  STUDIO.tpSpeed = parseInt(v);
-  const el = document.getElementById('tp-speed-val');
-  if (el) el.textContent = v;
-}
-
-let _tpScrollTimer = null;
-function toggleTpAuto() {
-  STUDIO.tpAuto = !STUDIO.tpAuto;
-  const btn = document.getElementById('tp-auto-btn');
-  if (btn) { btn.textContent = 'Auto: ' + (STUDIO.tpAuto ? 'on' : 'off'); btn.classList.toggle('active', STUDIO.tpAuto); }
-  if (STUDIO.tpAuto) {
-    const tp = document.getElementById('studio-teleprompter');
-    if (!tp) return;
-    let pos = 0;
-    _tpScrollTimer = setInterval(() => {
-      if (!STUDIO.tpAuto) return;
-      pos += STUDIO.tpSpeed / 100;
-      tp.scrollTop = pos;
-    }, 50);
-  } else {
-    clearInterval(_tpScrollTimer);
-  }
-}
-
-// Adaptive teleprompter (speech recognition)
-function toggleAdaptiveTp() {
-  STUDIO.adaptiveTp = !STUDIO.adaptiveTp;
-  const btn = document.getElementById('adaptive-btn');
-  if (btn) { btn.textContent = '🎤 Adaptive: ' + (STUDIO.adaptiveTp ? 'on' : 'off'); btn.classList.toggle('active', STUDIO.adaptiveTp); }
-  if (STUDIO.adaptiveTp && ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    STUDIO.recognition = new SR();
-    STUDIO.recognition.continuous = true;
-    STUDIO.recognition.interimResults = true;
-    let lastWordCount = 0;
-    STUDIO.recognition.onresult = e => {
-      let transcript = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) transcript += e.results[i][0].transcript;
-      const words = transcript.trim().split(/\s+/).length;
-      if (words > lastWordCount) {
-        // Scroll teleprompter proportionally
-        const scene = PROJECT.scenes[STUDIO.currentScene];
-        const totalWords = scene ? (scene.narration || '').split(/\s+/).length : 1;
-        const progress = Math.min(words / totalWords, 1);
-        const tp = document.getElementById('studio-teleprompter');
-        if (tp) tp.scrollTop = progress * tp.scrollHeight;
-        // Auto-advance when scene complete
-        if (progress > 0.92 && STUDIO.tpAuto) {
-          setTimeout(() => studioNext(), 800);
-          lastWordCount = 0;
-        } else { lastWordCount = words; }
-      }
-    };
-    STUDIO.recognition.start();
-    toast('Adaptive teleprompter active — speak to scroll', 'success');
-  } else {
-    if (STUDIO.recognition) { try { STUDIO.recognition.stop(); } catch(e) {} STUDIO.recognition = null; }
-    if (!STUDIO.adaptiveTp) return;
-    toast('Speech recognition not available in this browser', 'error');
-    STUDIO.adaptiveTp = false;
-    if (btn) { btn.textContent = '🎤 Adaptive: off'; btn.classList.remove('active'); }
-  }
-}
-
-// Virtual backgrounds
-function setStudioBg(el) {
-  document.querySelectorAll('.bg-opt').forEach(b => b.classList.remove('on'));
-  el.classList.add('on');
-  const bg = el.dataset.bg;
-  const vid = document.getElementById('studio-cam');
-  const bgImg = document.getElementById('studio-bg-img');
-  if (bg === 'none') {
-    if (bgImg) bgImg.style.display = 'none';
-    if (vid) vid.style.opacity = '1';
-  } else {
-    if (bgImg) { bgImg.src = BG_URLS[bg]; bgImg.style.display = 'block'; }
-    if (vid) vid.style.opacity = '0.85';
-  }
-}
-
-// Scene overlays
-function showSceneOverlay(asset) {
-  const area = document.getElementById('studio-overlay-area');
-  if (!area) return;
-  area.innerHTML = '';
-  if (!asset) return;
-  const el = document.createElement('div');
-  const posMap = {
-    'pip-right': 'position:absolute;top:50%;right:12px;transform:translateY(-50%);width:28%;z-index:6;',
-    'pip-left': 'position:absolute;top:50%;left:12px;transform:translateY(-50%);width:28%;z-index:6;',
-    'full': 'position:absolute;inset:0;z-index:6;',
-    'lower-third': 'position:absolute;bottom:90px;left:0;right:0;height:22%;z-index:6;'
-  };
-  el.style.cssText = (posMap[STUDIO.overlayPos] || posMap['pip-right']) + 'opacity:0;transition:opacity .4s;border-radius:8px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.5);';
-  if (asset.type === 'image') {
-    el.innerHTML = '<img src="' + asset.dataUrl + '" style="width:100%;height:100%;object-fit:contain;background:rgba(0,0,0,.7);">';
-  }
-  el.onclick = () => { el.style.opacity = '0'; setTimeout(() => el.remove(), 400); };
-  area.appendChild(el);
-  requestAnimationFrame(() => requestAnimationFrame(() => { el.style.opacity = '1'; }));
-}
-
-function setOverlayPos(el) {
-  document.querySelectorAll('#studio-pos-grid .bg-opt').forEach(b => b.classList.remove('on'));
-  el.classList.add('on');
-  STUDIO.overlayPos = el.dataset.pos;
-}
-
-// Upload assets to studio
-function uploadStudioAssets(inp) {
-  if (!inp.files.length) return;
-  Array.from(inp.files).forEach(file => {
-    const rd = new FileReader();
-    rd.onload = e => {
-      const asset = { id: Date.now() + Math.random(), name: file.name, dataUrl: e.target.result, type: file.type.startsWith('image/') ? 'image' : 'document' };
-      STUDIO.assets.push(asset);
-      PROJECT.assets.push(asset);
-      renderStudioPanelAssets();
-      toast(file.name + ' uploaded', 'success');
-    };
-    rd.readAsDataURL(file);
-  });
-}
-
-function renderStudioPanelAssets() {
-  const el = document.getElementById('studio-panel-assets');
-  if (!el) return;
-  const assets = [...PROJECT.assets, ...STUDIO.assets.filter(a => !PROJECT.assets.find(b => b.id === a.id))];
-  if (!assets.length) { el.innerHTML = '<div style="font-size:11px;color:rgba(255,255,255,.2);text-align:center;padding:16px;">No assets yet</div>'; return; }
-  el.innerHTML = assets.map(a => `
-    <div class="panel-asset">
-      ${a.type === 'image' ? `<img src="${a.dataUrl}" class="panel-asset-thumb" alt="${a.name}">` : `<div class="panel-asset-doc">📄</div>`}
-      <div class="panel-asset-footer">
-        <span class="panel-asset-name">${a.name}</span>
-        <button class="panel-asset-show" onclick="showSceneOverlay(${JSON.stringify(a).replace(/"/g,'&quot;')})">Show</button>
-      </div>
-    </div>`).join('');
-}
-
-// Drawing system
-function initDrawEvents(canvas) {
-  let startX, startY, isDown = false, snap;
-  function getPos(e) {
-    const r = canvas.getBoundingClientRect();
-    const touch = e.touches ? e.touches[0] : e;
-    return { x: touch.clientX - r.left, y: touch.clientY - r.top };
-  }
-  ['mousedown','touchstart'].forEach(ev => canvas.addEventListener(ev, e => {
-    if (!STUDIO.drawActive) return;
-    e.preventDefault();
-    const {x, y} = getPos(e);
-    startX = x; startY = y; isDown = true;
-    if (STUDIO.drawMode !== 'pen') snap = STUDIO.drawCtx.getImageData(0, 0, canvas.width, canvas.height);
-  }, { passive: false }));
-  ['mousemove','touchmove'].forEach(ev => canvas.addEventListener(ev, e => {
-    if (!isDown || !STUDIO.drawActive || !STUDIO.drawCtx) return;
-    e.preventDefault();
-    const {x, y} = getPos(e);
-    const ctx = STUDIO.drawCtx;
-    ctx.strokeStyle = STUDIO.drawColor;
-    ctx.lineWidth = STUDIO.drawMode === 'highlight' ? 14 : 3;
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    ctx.globalAlpha = STUDIO.drawMode === 'highlight' ? 0.35 : 1;
-    if (STUDIO.drawMode === 'pen' || STUDIO.drawMode === 'highlight') {
-      ctx.beginPath(); ctx.moveTo(startX, startY); ctx.lineTo(x, y); ctx.stroke();
-      startX = x; startY = y;
-    } else {
-      ctx.putImageData(snap, 0, 0);
-      ctx.beginPath();
-      if (STUDIO.drawMode === 'circle') { const rx=(x-startX)/2,ry=(y-startY)/2; ctx.ellipse(startX+rx,startY+ry,Math.abs(rx),Math.abs(ry),0,0,Math.PI*2); ctx.stroke(); }
-      else if (STUDIO.drawMode === 'rect') { ctx.rect(startX,startY,x-startX,y-startY); ctx.stroke(); }
-      else if (STUDIO.drawMode === 'arrow') {
-        ctx.moveTo(startX,startY); ctx.lineTo(x,y); ctx.stroke();
-        const angle = Math.atan2(y-startY,x-startX), ah=16;
-        ctx.beginPath(); ctx.moveTo(x,y);
-        ctx.lineTo(x-ah*Math.cos(angle-Math.PI/7),y-ah*Math.sin(angle-Math.PI/7));
-        ctx.lineTo(x-ah*Math.cos(angle+Math.PI/7),y-ah*Math.sin(angle+Math.PI/7));
-        ctx.closePath(); ctx.fillStyle=STUDIO.drawColor; ctx.globalAlpha=1; ctx.fill();
-      }
-    }
-    ctx.globalAlpha = 1;
-  }, { passive: false }));
-  ['mouseup','touchend'].forEach(ev => canvas.addEventListener(ev, () => { isDown = false; }));
-}
-
-function toggleDrawMode() {
-  STUDIO.drawActive = !STUDIO.drawActive;
-  const canvas = document.getElementById('studio-annotation-canvas');
-  const btn = document.getElementById('draw-btn');
-  if (canvas) canvas.style.display = STUDIO.drawActive ? 'block' : 'none';
-  if (btn) btn.classList.toggle('active', STUDIO.drawActive);
-}
-function clearDrawing() { if (STUDIO.drawCtx) { const c = document.getElementById('studio-annotation-canvas'); if(c) STUDIO.drawCtx.clearRect(0,0,c.width,c.height); } }
-function setDrawMode(m) { STUDIO.drawMode = m; }
-function setDrawColor(c) { STUDIO.drawColor = c; }
-
-// ── EDIT SUITE ────────────────────────────────────────────────────────────────
-let EDIT_SELECTED = null;
-let BG_MUSIC = null;
-
-function renderEditSuite() {
-  const titleEl = document.getElementById('edit-project-title');
-  if (titleEl) titleEl.textContent = 'Edit — ' + PROJECT.title;
-  renderEditClipsList();
-  renderEditTimeline();
-}
-
-function renderEditClipsList() {
-  const el = document.getElementById('edit-clips-list');
-  if (!el) return;
-  const clips = Object.entries(STUDIO.clips);
-  if (!clips.length) { el.innerHTML = '<div style="font-size:11px;color:rgba(255,255,255,.2);padding:12px;">No clips recorded yet</div>'; return; }
-  el.innerHTML = clips.map(([id, c], i) => `
-    <div class="edit-clip${EDIT_SELECTED === id ? ' selected' : ''}" onclick="selectClip('${id}')">
-      <div class="edit-clip-thumb">
-        <video src="${c.url}" style="width:100%;height:100%;object-fit:cover;"></video>
-      </div>
-      <div class="edit-clip-name">Scene ${c.sceneIdx+1}</div>
-      <div class="edit-clip-dur">${c.duration}s</div>
-    </div>`).join('');
-}
-
-function selectClip(id) {
-  EDIT_SELECTED = id;
-  renderEditClipsList();
-  const clip = STUDIO.clips[id];
-  if (!clip) return;
-  const vid = document.getElementById('edit-preview-video');
-  const empty = document.getElementById('edit-preview-empty');
-  if (vid) { vid.src = clip.url; vid.style.display = 'block'; }
-  if (empty) empty.style.display = 'none';
-  const info = document.getElementById('edit-scene-info');
-  if (info) info.innerHTML = `<div>Scene ${clip.sceneIdx+1}</div><div style="color:rgba(255,255,255,.4);margin-top:4px;">${clip.duration}s recorded</div>`;
-}
-
-function renderEditTimeline() {
-  const rail = document.getElementById('timeline-rail');
-  if (!rail) return;
-  const clips = Object.entries(STUDIO.clips);
-  if (!clips.length) { rail.innerHTML = '<div style="font-size:10px;color:rgba(255,255,255,.2);padding:0 8px;">Record scenes to see clips here</div>'; return; }
-  rail.innerHTML = clips.map(([id, c]) => `<div class="timeline-clip" onclick="selectClip('${id}')">Scene ${c.sceneIdx+1} · ${c.duration}s</div>`).join('');
-}
-
-function deleteSelectedClip() {
-  if (!EDIT_SELECTED) { toast('Select a clip first', 'error'); return; }
-  delete STUDIO.clips[EDIT_SELECTED];
-  EDIT_SELECTED = null;
-  renderEditSuite();
-  toast('Clip deleted', 'success');
-}
-
-function mergeSelectedClips() { toast('Merge: Export all clips and merge in video editor', 'info'); }
-function trimSelectedClip() {
-  if (!EDIT_SELECTED) { toast('Select a clip first', 'error'); return; }
-  const clip = STUDIO.clips[EDIT_SELECTED];
-  const vid = document.getElementById('edit-preview-video');
-  if (!vid || !clip) return;
-  toast('Use the video controls to find your trim point. Full trim editor coming soon.', 'info');
-}
-
-function loadBgMusic(inp) {
-  if (!inp.files.length) return;
-  const url = URL.createObjectURL(inp.files[0]);
-  BG_MUSIC = url;
-  const rail = document.getElementById('timeline-rail').parentElement.nextElementSibling;
-  if (rail) {
-    const musicRail = rail.querySelector('.timeline-rail');
-    if (musicRail) musicRail.innerHTML = `<div class="timeline-music">${inp.files[0].name}</div>`;
-  }
-  toast('Background music loaded', 'success');
-}
-
-function exportTranscript() {
-  if (!PROJECT.scenes.length) { toast('No scenes to export', 'error'); return; }
-  const lines = ['# ' + PROJECT.title, ''];
-  let t = 0;
-  PROJECT.scenes.forEach((s, i) => {
-    const m = Math.floor(t/60), sec = t%60;
-    lines.push(`[${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}] Scene ${i+1}`);
-    lines.push(s.narration || '');
-    lines.push('');
-    t += s.duration || 8;
-  });
-  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-  a.download = PROJECT.title.replace(/[^a-z0-9]/gi,'-') + '-transcript.txt'; a.click();
-  toast('Transcript downloaded', 'success');
-}
-
-function exportYTChapters() {
-  if (!PROJECT.scenes.length) { toast('No scenes', 'error'); return; }
-  const lines = ['0:00 Introduction'];
-  let t = 0;
-  PROJECT.scenes.forEach((s, i) => {
-    if (i > 0) {
-      const m = Math.floor(t/60), sec = t%60;
-      lines.push(`${m}:${String(sec).padStart(2,'0')} Scene ${i+1}`);
-    }
-    t += s.duration || 8;
-  });
-  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-  a.download = 'youtube-chapters.txt'; a.click();
-  toast('Chapter markers downloaded', 'success');
-}
-
-// ── EXPORT ────────────────────────────────────────────────────────────────────
-function pickFormat(el) {
-  document.querySelectorAll('.format-opt').forEach(o => o.classList.remove('on'));
-  el.classList.add('on');
-  EXPORT_STATE.ratio = el.dataset.ratio;
-}
-function pickPlatform(el) {
-  document.querySelectorAll('.platform-opt').forEach(o => o.classList.remove('on'));
-  el.classList.add('on');
-  EXPORT_STATE.platform = el.dataset.platform;
-}
-
-function doExport() {
-  const clips = Object.values(STUDIO.clips);
-  if (!clips.length) { toast('No clips to export. Record your scenes first.', 'error'); return; }
-  const statusEl = document.getElementById('export-status');
-  if (statusEl) statusEl.innerHTML = '<div style="font-size:13px;color:var(--muted);">Downloading ' + clips.length + ' clip' + (clips.length > 1 ? 's' : '') + ' for ' + EXPORT_STATE.platform + ' (' + EXPORT_STATE.ratio + ')...</div>';
-  clips.forEach((c, i) => setTimeout(() => {
-    const a = document.createElement('a');
-    a.href = c.url;
-    a.download = PROJECT.title.replace(/[^a-z0-9]/gi,'-') + '-scene-' + (c.sceneIdx+1) + '-' + EXPORT_STATE.platform + '.webm';
-    a.click();
-  }, i * 700));
-  setTimeout(() => {
-    if (statusEl) statusEl.innerHTML = '<div style="font-size:13px;color:var(--green);">✓ ' + clips.length + ' clip' + (clips.length > 1 ? 's' : '') + ' downloaded. Import into your video editor to stitch and add the ' + EXPORT_STATE.ratio + ' frame.</div>';
-  }, clips.length * 700 + 500);
-}
-
-// ── MODAL UTILS ───────────────────────────────────────────────────────────────
-function openModal(id) { const m = document.getElementById(id); if (m) m.classList.add('on'); }
-function closeModal(id) { const m = document.getElementById(id); if (m) m.classList.remove('on'); }
-
-// ── UTILITIES ─────────────────────────────────────────────────────────────────
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const rd = new FileReader();
-    rd.onload = e => resolve(e.target.result);
-    rd.onerror = reject;
-    rd.readAsDataURL(file);
-  });
-}
-
-// Word count live update
-document.addEventListener('input', e => {
-  if (['script-editor','script-paste','script-extracted'].includes(e.target.id)) updateWordCount();
+    const id = req.params.taskId.replace('heygen-', '');
+    const r = await fetch(`https://api.heygen.com/v1/video_status.get?video_id=${id}`, { headers: { 'X-Api-Key': HEYGEN_KEY } });
+    const data = await r.json();
+    const s = data.data?.status;
+    res.json({ status: s === 'completed' ? 'SUCCEEDED' : s === 'failed' ? 'FAILED' : 'PROCESSING', videoUrl: data.data?.video_url, progress: s === 'completed' ? 1 : 0.5 });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── SESSION INIT ──────────────────────────────────────────────────────────────
-window.addEventListener('load', () => {
-  // Show topnav
-  document.getElementById('topnav').style.display = 'flex';
-
-  const supa = getSupa();
-  if (!supa) return;
-  supa.auth.getSession().then(({ data }) => {
-    if (data?.session) {
-      const u = data.session.user;
-      APP.user = { id: u.id, name: u.user_metadata?.name || u.email.split('@')[0], email: u.email };
-      updateNavState();
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('checkout') === 'success') {
-        history.replaceState(null, '', '/');
-        nav('dashboard-pg');
-        setTimeout(() => toast('Payment successful! Credits added.', 'success'), 600);
-      } else {
-        nav('dashboard-pg');
-      }
-    } else {
-      updateNavState();
-    }
-  });
-
-  supa.auth.onAuthStateChange((event, session) => {
-    if (event === 'SIGNED_IN' && session) {
-      const u = session.user;
-      APP.user = { id: u.id, name: u.user_metadata?.name || u.email.split('@')[0], email: u.email };
-      updateNavState();
-    }
-    if (event === 'SIGNED_OUT') {
-      APP.user = null;
-      updateNavState();
-    }
-  });
-});
-
-
-// ── KEYBOARD SHORTCUTS ────────────────────────────────────────────────────────
-document.addEventListener('keydown', e => {
-  const pg = document.querySelector('.pg.on, .pg-flex.on');
-  if (!pg) return;
-  const pgId = pg.id;
-  const tag = document.activeElement.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-
-  if (pgId === 'record-pg') {
-    if (e.code === 'Space') { e.preventDefault(); toggleStudioRecording(); }
-    if (e.code === 'ArrowRight') studioNext();
-    if (e.code === 'ArrowLeft') studioPrev();
-    if (e.code === 'KeyA') toggleTpAuto();
-    if (e.code === 'KeyD') toggleDrawMode();
-    if (e.code === 'KeyC') clearDrawing();
-    if (e.code === 'Escape') { if (STUDIO.drawActive) toggleDrawMode(); }
-  }
-  if (pgId === 'scenes-pg') {
-    if (e.code === 'KeyR') openRecordingStudio();
-  }
-});
-
-// ── PRESENTER PERFORMANCE MONITOR ────────────────────────────────────────────
-let PERF = { fillerWords: 0, wordCount: 0, wpm: 0, eyeContact: 0, startTime: null, timer: null };
-const FILLER_WORDS = ['um','uh','er','ah','like','you know','basically','literally','actually','so','right','okay','well'];
-
-function startPerfMonitor() {
-  PERF.fillerWords = 0;
-  PERF.wordCount = 0;
-  PERF.startTime = Date.now();
-  PERF.timer = setInterval(updatePerfDisplay, 1000);
-  // Hook into recognition if available
-  if (STUDIO.recognition) {
-    const orig = STUDIO.recognition.onresult;
-    STUDIO.recognition.onresult = (e) => {
-      if (orig) orig(e);
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript.toLowerCase();
-        FILLER_WORDS.forEach(w => { const matches = (t.match(new RegExp('\\b'+w+'\\b','gi'))||[]).length; PERF.fillerWords += matches; });
-        PERF.wordCount += t.split(/\s+/).length;
-      }
-    };
-  }
-}
-
-function updatePerfDisplay() {
-  const elapsed = (Date.now() - PERF.startTime) / 60000;
-  if (elapsed > 0) PERF.wpm = Math.round(PERF.wordCount / elapsed);
-  const el = document.getElementById('perf-display');
-  if (el) {
-    el.innerHTML = '<span style="color:var(--accent);">' + PERF.wpm + ' wpm</span>' +
-      (PERF.fillerWords > 0 ? ' · <span style="color:var(--gold);">' + PERF.fillerWords + ' fillers</span>' : ' · <span style="color:var(--green);">clean</span>');
-  }
-}
-
-function stopPerfMonitor() {
-  clearInterval(PERF.timer);
-}
-
-// ── AUTO SUBTITLE GENERATION ──────────────────────────────────────────────────
-function generateSubtitles() {
-  if (!PROJECT.scenes.length) { toast('No scenes to generate subtitles from', 'error'); return; }
-  let srt = '', idx = 1, time = 0;
-  PROJECT.scenes.forEach(s => {
-    const dur = s.duration || 8;
-    const start = formatSRTTime(time);
-    const end = formatSRTTime(time + dur);
-    const words = (s.narration || '').trim();
-    if (words) {
-      // Split into ~2-line chunks
-      const parts = chunkSubtitle(words, 80);
-      const chunkDur = dur / parts.length;
-      parts.forEach((part, pi) => {
-        const cs = formatSRTTime(time + pi * chunkDur);
-        const ce = formatSRTTime(time + (pi + 1) * chunkDur);
-        srt += idx + '\n' + cs + ' --> ' + ce + '\n' + part + '\n\n';
-        idx++;
-      });
-    }
-    time += dur;
-  });
-  const blob = new Blob([srt], { type: 'text/plain' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = (PROJECT.title || 'video').replace(/[^a-z0-9]/gi, '-') + '.srt';
-  a.click();
-  toast('Subtitles exported as .SRT', 'success');
-}
-
-function chunkSubtitle(text, maxLen) {
-  if (text.length <= maxLen) return [text];
-  const words = text.split(' ');
-  const chunks = [];
-  let cur = '';
-  words.forEach(w => {
-    if ((cur + ' ' + w).length > maxLen) { if (cur) chunks.push(cur.trim()); cur = w; }
-    else cur += (cur ? ' ' : '') + w;
-  });
-  if (cur) chunks.push(cur.trim());
-  return chunks;
-}
-
-function formatSRTTime(s) {
-  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60), ms = Math.round((s % 1) * 1000);
-  return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0') + ',' + String(ms).padStart(3,'0');
-}
-
-// ── SCENE DRAG AND DROP ───────────────────────────────────────────────────────
-let dragIdx = null;
-
-function initSceneDragDrop() {
-  const list = document.getElementById('scenes-list');
-  if (!list) return;
-  list.addEventListener('dragstart', e => {
-    const card = e.target.closest('.scene-card');
-    if (!card) return;
-    dragIdx = Array.from(list.children).indexOf(card);
-    card.style.opacity = '0.4';
-    e.dataTransfer.effectAllowed = 'move';
-  });
-  list.addEventListener('dragend', e => {
-    const card = e.target.closest('.scene-card');
-    if (card) card.style.opacity = '1';
-  });
-  list.addEventListener('dragover', e => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    const card = e.target.closest('.scene-card');
-    if (!card || dragIdx === null) return;
-    const overIdx = Array.from(list.children).indexOf(card);
-    if (overIdx !== dragIdx) {
-      card.style.borderColor = 'var(--accent)';
-    }
-  });
-  list.addEventListener('dragleave', e => {
-    const card = e.target.closest('.scene-card');
-    if (card) card.style.borderColor = '';
-  });
-  list.addEventListener('drop', e => {
-    e.preventDefault();
-    const card = e.target.closest('.scene-card');
-    if (!card || dragIdx === null) return;
-    const dropIdx = Array.from(list.children).indexOf(card);
-    card.style.borderColor = '';
-    if (dropIdx !== dragIdx && dropIdx >= 0) {
-      const moved = PROJECT.scenes.splice(dragIdx, 1)[0];
-      PROJECT.scenes.splice(dropIdx, 0, moved);
-      saveProject();
-      renderSceneBoard();
-      toast('Scene reordered', 'success');
-    }
-    dragIdx = null;
-  });
-}
-
-// drag-drop init happens inside renderSceneBoard directly
-
-// ── SCENE NOTES EDITOR ────────────────────────────────────────────────────────
-function editSceneNotes(idx, e) {
-  if (e) e.stopPropagation();
-  const scene = PROJECT.scenes[idx];
-  if (!scene) return;
-  const note = prompt('Scene notes (director\'s notes, reminders):', scene.notes || '');
-  if (note !== null) { scene.notes = note; saveProject(); toast('Notes saved', 'success'); }
-}
-
-// ── SCRIPT WORD COUNT LIVE ────────────────────────────────────────────────────
-function liveWordCount(el) {
-  const text = el.value || '';
-  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-  const wc = document.getElementById('script-word-count');
-  if (wc) {
-    const wpm = PROJECT.wpm || 150;
-    const mins = Math.round(words / wpm);
-    wc.textContent = words.toLocaleString() + ' words · ~' + mins + ' min read';
-  }
-}
-
-// Word count updates handled by main input listener
-
-// ── ONBOARDING FLOW ───────────────────────────────────────────────────────────
-function checkOnboarding() {
-  const seen = localStorage.getItem('aab_onboarded');
-  if (!seen && APP.user) {
-    // Show welcome tip on first dashboard visit
-    setTimeout(() => {
-      toast('Welcome! Start by creating a new project → add a script → record.', 'info');
-      localStorage.setItem('aab_onboarded', '1');
-    }, 800);
-  }
-}
-
-// ── SCENE STATUS UPDATES ──────────────────────────────────────────────────────
-function updateSceneStatus(idx, status) {
-  if (PROJECT.scenes[idx]) {
-    PROJECT.scenes[idx].status = status;
-    saveProject();
-    renderStudioQueue();
-  }
-}
-
-// ── PROJECT RENAME ────────────────────────────────────────────────────────────
-function renameProject() {
-  const title = prompt('Project title:', PROJECT.title);
-  if (title && title.trim()) {
-    PROJECT.title = title.trim();
-    saveProject();
-    const el = document.getElementById('scenes-project-title');
-    if (el) el.textContent = PROJECT.title;
-    toast('Project renamed', 'success');
-  }
-}
-
-// ── DELETE PROJECT ────────────────────────────────────────────────────────────
-function deleteProject(idx, e) {
-  if (e) e.stopPropagation();
-  if (!confirm('Delete this project? This cannot be undone.')) return;
-  const saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
-  saved.splice(idx, 1);
-  localStorage.setItem('aab_projects', JSON.stringify(saved));
-  APP.projects = saved;
-  loadDashboard();
-  toast('Project deleted', 'success');
-}
-
-// ── IMPROVED LOAD DASHBOARD ───────────────────────────────────────────────────
-const origLoadDashboard = loadDashboard;
-loadDashboard = function() {
-  checkOnboarding();
-  const list = document.getElementById('projects-list');
-  const saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
-  APP.projects = saved;
-  if (!saved.length) {
-    list.innerHTML = '<div class="empty-state"><div class="empty-icon">🎬</div><div class="empty-title">No projects yet</div><div class="empty-sub">Create your first teleprompter video production.</div><button class="btn btn-primary" onclick="nav(\'script-pg\')">+ Create first project</button></div>';
-    return;
-  }
-  list.innerHTML = '<div class="project-grid">' + saved.map((p, i) => {
-    const scenes = (p.scenes || []).length;
-    const clips = Object.keys(p.clips || {}).length;
-    const statusClass = clips > 0 ? 'status-complete' : scenes > 0 ? 'status-recording' : 'status-draft';
-    const statusLabel = clips > 0 ? 'Recorded' : scenes > 0 ? 'Planning' : 'Draft';
-    return '<div class="project-card" onclick="loadProject(' + i + ')">' +
-      '<div class="project-thumb">' +
-      '<div class="project-thumb-icon">🎬</div>' +
-      '<div class="project-status ' + statusClass + '">' + statusLabel + '</div>' +
-      '</div>' +
-      '<div class="project-name">' + (p.title || 'Untitled') + '</div>' +
-      '<div class="project-meta">' + scenes + ' scene' + (scenes !== 1 ? 's' : '') + (clips ? ' · ' + clips + ' clip' + (clips !== 1 ? 's' : '') : '') + ' · ' + (p.date || 'Today') + '</div>' +
-      '<div style="display:flex;gap:6px;margin-top:10px;" onclick="event.stopPropagation();">' +
-      '<button class="btn btn-dark btn-sm" style="flex:1;" onclick="loadProject(' + i + ')">Open</button>' +
-      '<button class="btn btn-danger btn-sm" onclick="deleteProject(' + i + ', event)">Delete</button>' +
-      '</div></div>';
-  }).join('') + '</div>';
-};
-
-// ── IMPROVED STUDIO WITH PERF MONITOR ─────────────────────────────────────────
-const origStartRecording = startRecording;
-startRecording = function() {
-  origStartRecording();
-  startPerfMonitor();
-};
-
-const origStopRecording = stopRecording;
-stopRecording = function() {
-  origStopRecording();
-  stopPerfMonitor();
-};
-
-// ── SCENE SEARCH ──────────────────────────────────────────────────────────────
-function searchScenes(query) {
-  const q = query.toLowerCase();
-  document.querySelectorAll('.scene-card').forEach((card, i) => {
-    const scene = PROJECT.scenes[i];
-    const match = !q || (scene && (scene.narration || '').toLowerCase().includes(q));
-    card.style.display = match ? '' : 'none';
-  });
-}
-
-// ── COPY SCENE TEXT ───────────────────────────────────────────────────────────
-function copySceneText(idx, e) {
-  if (e) e.stopPropagation();
-  const scene = PROJECT.scenes[idx];
-  if (!scene || !scene.narration) return;
-  navigator.clipboard.writeText(scene.narration).then(() => toast('Scene text copied', 'success')).catch(() => toast('Copy failed', 'error'));
-}
-
-// ── FULL SCRIPT EXPORT ────────────────────────────────────────────────────────
-function exportFullScript() {
-  if (!PROJECT.scenes.length) { toast('No scenes to export', 'error'); return; }
-  const lines = ['# ' + PROJECT.title, '# AABStudio Script Export', '# ' + new Date().toLocaleDateString(), ''];
-  PROJECT.scenes.forEach((s, i) => {
-    lines.push('== SCENE ' + String(i+1).padStart(3,'0') + ' [' + (s.type||'MAIN') + '] ' + (s.duration||8) + 's ==');
-    lines.push(s.narration || '');
-    if (s.notes) lines.push('// NOTE: ' + s.notes);
-    lines.push('');
-  });
-  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = (PROJECT.title || 'script').replace(/[^a-z0-9]/gi,'-') + '-script.txt';
-  a.click();
-  toast('Script exported', 'success');
-}
-
-// ── PROJECT DUPLICATION ───────────────────────────────────────────────────────
-function duplicateProject(idx, e) {
-  if (e) e.stopPropagation();
-  const p = APP.projects[idx];
-  if (!p) return;
-  const copy = JSON.parse(JSON.stringify(p));
-  copy.id = 'proj_' + Date.now();
-  copy.title = copy.title + ' (copy)';
-  copy.date = new Date().toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'});
-  copy.clips = {};
-  copy.scenes = copy.scenes.map(s => ({...s, status:'draft'}));
-  const saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
-  saved.unshift(copy);
-  localStorage.setItem('aab_projects', JSON.stringify(saved));
-  APP.projects = saved;
-  loadDashboard();
-  toast('Project duplicated', 'success');
-}
-
-// ── STUDIO COUNTDOWN BEFORE RECORDING ─────────────────────────────────────────
-function startRecordingWithCountdown() {
-  if (!STUDIO.stream) { startCamera(); setTimeout(startRecordingWithCountdown, 1200); return; }
-  if (STUDIO.recording) { stopRecording(); return; }
-  // 3-second countdown overlay
-  const canvas = document.getElementById('studio-canvas');
-  if (!canvas) { toggleStudioRecording(); return; }
-  let count = 3;
-  const overlay = document.createElement('div');
-  overlay.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:50;font-size:6rem;font-weight:700;color:#fff;font-family:Sora,sans-serif;';
-  overlay.textContent = count;
-  canvas.appendChild(overlay);
-  const timer = setInterval(() => {
-    count--;
-    if (count <= 0) {
-      clearInterval(timer);
-      overlay.remove();
-      startRecording();
-    } else {
-      overlay.textContent = count;
-      overlay.style.color = count === 1 ? 'var(--red)' : '#fff';
-    }
-  }, 1000);
-}
-
-// Override the REC button to use countdown
-document.addEventListener('DOMContentLoaded', () => {
-  const recBtn = document.getElementById('studio-rec-btn');
-  if (recBtn) {
-    recBtn.onclick = null;
-    recBtn.addEventListener('click', () => {
-      if (STUDIO.recording) stopRecording();
-      else startRecordingWithCountdown();
+// ── ASSEMBLY ──────────────────────────────────────────────────────────────────
+app.post('/api/assemble', async (req, res) => {
+  try {
+    const { scenes, format = '16:9' } = req.body;
+    if (!CREATOMATE_KEY) return res.status(503).json({ error: 'Creatomate not configured' });
+    const sizeMap = { '16:9': [1920,1080], '9:16': [1080,1920], '1:1': [1080,1080], '4:5': [1080,1350] };
+    const [w, h] = sizeMap[format] || [1920, 1080];
+    const elements = (scenes || []).filter(s => s.videoUrl || s.imageUrl).map(s => ({
+      type: s.videoUrl ? 'video' : 'image', source: s.videoUrl || s.imageUrl, duration: s.duration || 8
+    }));
+    const r = await fetch('https://api.creatomate.com/v1/renders', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + CREATOMATE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: { output_format: 'mp4', width: w, height: h, elements } })
     });
-  }
+    if (!r.ok) throw new Error('Creatomate HTTP ' + r.status);
+    const data = await r.json();
+    res.json({ renderId: data[0]?.id, status: data[0]?.status });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── TELEPROMPTER FONT SIZE CONTROL ────────────────────────────────────────────
-let TP_FONT_SIZE = 26;
-function increaseTpFont() {
-  TP_FONT_SIZE = Math.min(TP_FONT_SIZE + 2, 48);
-  const el = document.getElementById('tp-current');
-  if (el) el.style.fontSize = TP_FONT_SIZE + 'px';
-}
-function decreaseTpFont() {
-  TP_FONT_SIZE = Math.max(TP_FONT_SIZE - 2, 14);
-  const el = document.getElementById('tp-current');
-  if (el) el.style.fontSize = TP_FONT_SIZE + 'px';
-}
-
-// ── MIRROR TELEPROMPTER ───────────────────────────────────────────────────────
-let TP_MIRRORED = false;
-function toggleTpMirror() {
-  TP_MIRRORED = !TP_MIRRORED;
-  const tp = document.getElementById('studio-teleprompter');
-  if (tp) tp.style.transform = TP_MIRRORED ? 'scaleX(-1)' : '';
-  toast('Teleprompter ' + (TP_MIRRORED ? 'mirrored' : 'normal'), 'info');
-}
-
-// ── FOCUS MODE ────────────────────────────────────────────────────────────────
-let FOCUS_MODE = false;
-function toggleFocusMode() {
-  FOCUS_MODE = !FOCUS_MODE;
-  const queue = document.querySelector('.studio-queue');
-  const panel = document.querySelector('.studio-panel');
-  if (queue) queue.style.display = FOCUS_MODE ? 'none' : '';
-  if (panel) panel.style.display = FOCUS_MODE ? 'none' : '';
-  const tp = document.getElementById('studio-teleprompter');
-  if (tp) {
-    tp.style.fontSize = FOCUS_MODE ? '2rem' : '';
-    tp.style.paddingBottom = FOCUS_MODE ? '40px' : '';
-  }
-  toast(FOCUS_MODE ? 'Focus mode on — press F to exit' : 'Focus mode off', 'info');
-}
-
-// F key for focus mode
-document.addEventListener('keydown', e => {
-  if (e.key === 'f' || e.key === 'F') {
-    const pg = document.querySelector('.pg-flex.on');
-    if (pg && pg.id === 'record-pg') {
-      const tag = document.activeElement.tagName;
-      if (tag !== 'INPUT' && tag !== 'TEXTAREA') toggleFocusMode();
-    }
-  }
-  if (e.key === '+' || e.key === '=') {
-    const pg = document.querySelector('.pg-flex.on');
-    if (pg && pg.id === 'record-pg') increaseTpFont();
-  }
-  if (e.key === '-') {
-    const pg = document.querySelector('.pg-flex.on');
-    if (pg && pg.id === 'record-pg') decreaseTpFont();
-  }
-  if (e.key === 'm' || e.key === 'M') {
-    const pg = document.querySelector('.pg-flex.on');
-    if (pg && pg.id === 'record-pg') {
-      const tag = document.activeElement.tagName;
-      if (tag !== 'INPUT' && tag !== 'TEXTAREA') toggleTpMirror();
-    }
-  }
+app.get('/api/assemble/status/:id', async (req, res) => {
+  try {
+    const r = await fetch(`https://api.creatomate.com/v1/renders/${req.params.id}`, { headers: { 'Authorization': 'Bearer ' + CREATOMATE_KEY } });
+    const data = await r.json();
+    res.json({ status: data.status, url: data.url, progress: data.progress || 0 });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── KEYBOARD SHORTCUTS HELP ───────────────────────────────────────────────────
-function showShortcutsHelp() {
-  const shortcuts = [
-    ['Space', 'Start / Stop recording'],
-    ['→ / ←', 'Next / Previous scene'],
-    ['A', 'Toggle auto-scroll'],
-    ['D', 'Toggle draw mode'],
-    ['C', 'Clear drawing'],
-    ['F', 'Toggle focus mode'],
-    ['M', 'Mirror teleprompter'],
-    ['+ / -', 'Increase / decrease font size'],
-    ['Escape', 'Exit draw mode'],
-  ];
-  const msg = shortcuts.map(([k, v]) => k.padEnd(12) + v).join('\n');
-  alert('Studio keyboard shortcuts:\n\n' + msg);
-}
-
-// ── SCENE COMPLETION PROGRESS ─────────────────────────────────────────────────
-function getProjectProgress() {
-  if (!PROJECT.scenes.length) return 0;
-  const recorded = PROJECT.scenes.filter(s => s.status === 'recorded' || s.status === 'edited').length;
-  return Math.round((recorded / PROJECT.scenes.length) * 100);
-}
-
-// ── AUTO-SAVE INDICATOR ───────────────────────────────────────────────────────
-let _saveIndicatorTimer = null;
-const origSaveProject = saveProject;
-saveProject = function() {
-  origSaveProject();
-  // Flash save indicator
-  const el = document.getElementById('scenes-meta');
-  if (el) {
-    const orig = el.textContent;
-    el.textContent = '✓ Saved';
-    el.style.color = 'var(--green)';
-    clearTimeout(_saveIndicatorTimer);
-    _saveIndicatorTimer = setTimeout(() => {
-      const total = PROJECT.scenes.length;
-      const dur = PROJECT.scenes.reduce((t, s) => t + (s.duration || 8), 0);
-      const m = Math.floor(dur/60), s = dur%60;
-      el.textContent = total + ' scenes · ' + m + ':' + String(s).padStart(2,'0');
-      el.style.color = '';
-    }, 1500);
-  }
-};
-
-// ── UPGRADE SCENES PAGE topbar ────────────────────────────────────────────────
-// Add search + export + subtitle buttons after page loads
-function upgradeSceneTopbar() {
-  const actions = document.querySelector('.scenes-actions');
-  if (!actions || document.getElementById('scene-search-input')) return;
-  
-  // Add search input before existing buttons
-  const searchWrap = document.createElement('div');
-  searchWrap.style.cssText = 'position:relative;';
-  searchWrap.innerHTML = '<input id="scene-search-input" placeholder="Search scenes..." ' +
-    'style="padding:6px 12px 6px 30px;border-radius:var(--radius);border:0.5px solid var(--bdr2);background:var(--white);font-size:12px;font-family:Sora,sans-serif;color:var(--ink);outline:none;width:180px;" ' +
-    'oninput="searchScenes(this.value)">' +
-    '<svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);opacity:.35;" width="12" height="12" viewBox="0 0 12 12" fill="none">' +
-    '<circle cx="5" cy="5" r="4" stroke="currentColor" stroke-width="1.2"/>' +
-    '<path d="M8.5 8.5l2 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>';
-  actions.insertBefore(searchWrap, actions.firstChild);
-  
-  // Add export script button
-  const expBtn = document.createElement('button');
-  expBtn.className = 'btn btn-dark btn-sm';
-  expBtn.textContent = '↓ Script';
-  expBtn.onclick = exportFullScript;
-  actions.insertBefore(expBtn, actions.children[1]);
-  
-  // Add subtitles button
-  const subBtn = document.createElement('button');
-  subBtn.className = 'btn btn-dark btn-sm';
-  subBtn.textContent = '↓ .SRT';
-  subBtn.title = 'Export subtitles';
-  subBtn.onclick = generateSubtitles;
-  actions.insertBefore(subBtn, actions.children[2]);
-}
-
-// upgradeSceneTopbar called directly from renderSceneBoard
-
-// ── UPGRADE EDIT SUITE WITH MORE TOOLS ────────────────────────────────────────
-const origRenderEditSuite = renderEditSuite;
-renderEditSuite = function() {
-  origRenderEditSuite();
-  // Add subtitle export to toolbar
-  const toolbar = document.querySelector('.edit-topbar');
-  if (toolbar && !document.getElementById('srt-export-btn')) {
-    const btn = document.createElement('button');
-    btn.id = 'srt-export-btn';
-    btn.className = 'studio-btn';
-    btn.textContent = '📋 Subtitles (.SRT)';
-    btn.onclick = generateSubtitles;
-    const exportBtn = toolbar.querySelector('.btn-primary');
-    if (exportBtn) toolbar.insertBefore(btn, exportBtn);
-  }
-};
-
-// ── UPGRADE STUDIO CONTROLS WITH MORE OPTIONS ─────────────────────────────────
-function upgradeStudioControls() {
-  const controls = document.querySelector('.studio-controls');
-  if (!controls || document.getElementById('studio-extra-controls')) return;
-  
-  const extra = document.createElement('div');
-  extra.id = 'studio-extra-controls';
-  extra.style.cssText = 'display:flex;align-items:center;gap:5px;margin-left:4px;';
-  extra.innerHTML = 
-    '<button class="studio-btn" onclick="toggleTpMirror()" title="Mirror teleprompter (M)">↔</button>' +
-    '<button class="studio-btn" onclick="toggleFocusMode()" title="Focus mode (F)">⛶</button>' +
-    '<button class="studio-btn" onclick="increaseTpFont()" title="Larger text (+)">A+</button>' +
-    '<button class="studio-btn" onclick="decreaseTpFont()" title="Smaller text (-)">A-</button>' +
-    '<button class="studio-btn" onclick="showShortcutsHelp()" title="Keyboard shortcuts">⌨</button>';
-  
-  // Add perf display
-  const perf = document.createElement('div');
-  perf.id = 'perf-display';
-  perf.style.cssText = 'font-size:10px;color:rgba(255,255,255,.35);padding:0 8px;font-family:JetBrains Mono,monospace;';
-  perf.textContent = '—';
-  
-  controls.appendChild(extra);
-  controls.appendChild(perf);
-}
-
-// Hook into initStudio
-const origInitStudio = initStudio;
-initStudio = function() {
-  origInitStudio();
-  setTimeout(upgradeStudioControls, 200);
-};
-
-// ── IMPROVED SCENE CARDS WITH PROGRESS COLORING ───────────────────────────────
-// Add progress bar to scenes topbar
-function renderSceneProgress() {
-  const meta = document.getElementById('scenes-meta');
-  if (!meta) return;
-  const total = PROJECT.scenes.length;
-  const recorded = PROJECT.scenes.filter(s => ['recorded','edited'].includes(s.status)).length;
-  const dur = PROJECT.scenes.reduce((t, s) => t + (s.duration || 8), 0);
-  const m = Math.floor(dur/60), s = dur%60;
-  const pct = total ? Math.round((recorded/total)*100) : 0;
-  meta.innerHTML = total + ' scenes · ' + m + ':' + String(s).padStart(2,'0') +
-    (recorded ? ' · <span style="color:var(--green);">' + recorded + '/' + total + ' recorded</span>' : '');
-}
-
-// ── WELCOME SHORTCUT IN NAV ───────────────────────────────────────────────────
-// Add hotkey hint in script page
-function addScriptHints() {
-  const sidebar = document.querySelector('.script-sidebar');
-  if (!sidebar || document.getElementById('script-hints')) return;
-  const hints = document.createElement('div');
-  hints.id = 'script-hints';
-  hints.style.cssText = 'margin-top:20px;padding:12px;background:rgba(0,212,255,.04);border:0.5px solid rgba(0,212,255,.12);border-radius:var(--radius);font-size:12px;color:var(--muted);';
-  hints.innerHTML = '<div style="font-weight:600;color:var(--ink);margin-bottom:6px;">💡 Script tips</div>' +
-    '<div style="margin-bottom:4px;">• Type <code style="background:var(--off);padding:1px 5px;border-radius:3px;font-size:11px;">[SCENE BREAK]</code> to force a split</div>' +
-    '<div style="margin-bottom:4px;">• New paragraphs become natural scene breaks</div>' +
-    '<div>• Short sentences read better on teleprompter</div>';
-  sidebar.appendChild(hints);
-}
-
-setTimeout(() => {
-  const scriptPg = document.getElementById('script-pg');
-  if (scriptPg) {
-    const obs = new MutationObserver(() => {
-      if (scriptPg.classList.contains('on')) addScriptHints();
+// ── MUSIC ─────────────────────────────────────────────────────────────────────
+app.post('/api/music', async (req, res) => {
+  try {
+    const { prompt = 'calm professional background, no vocals', duration = 30 } = req.body;
+    if (!ELEVENLABS_KEY) return res.status(503).json({ error: 'ElevenLabs not configured' });
+    const r = await fetch('https://api.elevenlabs.io/v1/sound-generation', {
+      method: 'POST',
+      headers: { 'xi-api-key': ELEVENLABS_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: prompt, duration_seconds: duration, prompt_influence: 0.3 })
     });
-    obs.observe(scriptPg, { attributes: true, attributeFilter: ['class'] });
-  }
-}, 500);
-
-console.log('AABStudio fully loaded ✓');
-
-// Inline scene narration editing (contenteditable)
-function saveSceneEdit(idx, text) {
-  if (PROJECT.scenes[idx] && text.trim()) {
-    PROJECT.scenes[idx].narration = text.trim();
-    saveProject();
-  }
-}
-
-// Scroll to current scene in queue
-function scrollQueueToCurrentScene() {
-  const list = document.getElementById('studio-queue-list');
-  if (!list) return;
-  const active = list.querySelector('.sq-item.active');
-  if (active) active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-}
-
-// Override studioNext/Prev to also scroll queue
-const _origStudioNext = studioNext;
-studioNext = function() {
-  _origStudioNext();
-  setTimeout(scrollQueueToCurrentScene, 50);
-};
-const _origStudioPrev = studioPrev;
-studioPrev = function() {
-  _origStudioPrev();
-  setTimeout(scrollQueueToCurrentScene, 50);
-};
-
-// Auto-save project on page visibility change (navigating away)
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') {
-    if (PROJECT.scenes.length) saveProject();
-  }
+    if (!r.ok) throw new Error('Music HTTP ' + r.status);
+    const buf = await r.arrayBuffer();
+    res.json({ audio: Buffer.from(buf).toString('base64') });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Topnav background on scroll
-window.addEventListener('scroll', () => {
-  const nav = document.getElementById('topnav');
-  if (nav) {
-    nav.style.background = window.scrollY > 20 
-      ? 'rgba(10,14,26,.98)' 
-      : 'rgba(10,14,26,.92)';
-  }
-}, { passive: true });
-</script>
-</body>
-</html>
+// ── STRIPE ────────────────────────────────────────────────────────────────────
+app.post('/api/stripe/checkout', async (req, res) => {
+  try {
+    if (!STRIPE_KEY) return res.status(503).json({ error: 'Stripe not configured' });
+    const stripe = require('stripe')(STRIPE_KEY);
+    const { priceId, mode = 'subscription', customerEmail } = req.body;
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [{ price: priceId, quantity: 1 }],
+      mode, customer_email: customerEmail,
+      success_url: 'https://aabstudio.ai?checkout=success',
+      cancel_url: 'https://aabstudio.ai?checkout=cancelled'
+    });
+    res.json({ url: session.url });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── AI HELPERS ────────────────────────────────────────────────────────────────
+app.post('/api/script/improve', async (req, res) => {
+  try {
+    const { text } = req.body;
+    const r = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6', max_tokens: 2000,
+      system: 'Improve this script for spoken video delivery. Keep all content intact. Improve flow and natural speech patterns only.',
+      messages: [{ role: 'user', content: text }]
+    });
+    res.json({ improved: r.content[0]?.text?.trim() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.listen(PORT, () => console.log(`AABStudio v2 — Teleprompter Studio — port ${PORT}`));
