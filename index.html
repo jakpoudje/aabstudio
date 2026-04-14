@@ -1122,8 +1122,8 @@ code { font-family: 'JetBrains Mono', monospace; font-size: 0.9em; background: v
         <button class="script-tab" onclick="switchScriptTab('paste',this)">Paste</button>
         <button class="script-tab" onclick="switchScriptTab('upload',this)">Upload file</button>
       </div>
-      <!-- Write tab -->
-      <div id="script-write-tab">
+      <!-- Write tab — visible by default -->
+      <div id="script-write-tab" style="display:block;">
         <textarea class="textarea" id="script-editor" style="min-height:400px;" placeholder="Write your script here...
 
 Start with an introduction that hooks your audience.
@@ -1877,6 +1877,7 @@ function switchScriptTab(tab, el) {
   document.getElementById('script-write-tab').style.display = tab === 'write' ? '' : 'none';
   document.getElementById('script-paste-tab').style.display = tab === 'paste' ? '' : 'none';
   document.getElementById('script-upload-tab').style.display = tab === 'upload' ? '' : 'none';
+  updateWordCount();
 }
 
 function pickPacing(el) {
@@ -1903,109 +1904,183 @@ function updateWordCount() {
   const text = getScriptText();
   const wc = text.trim() ? text.trim().split(/\s+/).length : 0;
   const el = document.getElementById('script-word-count');
-  if (el) el.textContent = wc.toLocaleString() + ' words';
+  if (el) {
+    const wpm = PROJECT.wpm || 150;
+    const mins = Math.round(wc / wpm);
+    el.textContent = wc.toLocaleString() + ' words' + (wc > 10 ? ' · ~' + (mins || '<1') + ' min' : '');
+  }
 }
 
 function getScriptText() {
-  const writeText = document.getElementById('script-editor')?.value || '';
-  const pasteText = document.getElementById('script-paste')?.value || '';
-  const extractedText = document.getElementById('script-extracted')?.value || '';
-  return writeText || pasteText || extractedText;
+  // Check which tab is visible
+  const writeTab = document.getElementById('script-write-tab');
+  const pasteTab = document.getElementById('script-paste-tab');
+  const uploadTab = document.getElementById('script-upload-tab');
+
+  if (uploadTab && uploadTab.style.display !== 'none') {
+    return document.getElementById('script-extracted')?.value || '';
+  }
+  if (pasteTab && pasteTab.style.display !== 'none') {
+    return document.getElementById('script-paste')?.value || '';
+  }
+  // Default: write tab
+  return document.getElementById('script-editor')?.value || '';
 }
 
 async function handleScriptFile(inp) {
   if (!inp.files.length) return;
   const file = inp.files[0];
-  document.getElementById('upload-zone-text').textContent = '✓ ' + file.name;
-  document.getElementById('upload-status').innerHTML = '<div class="loading-row"><div class="spin spin-dark"></div>Extracting text...</div>';
+  const statusEl = document.getElementById('upload-status');
+  const zoneText = document.getElementById('upload-zone-text');
+  const extEl = document.getElementById('script-extracted');
+
+  if (zoneText) zoneText.textContent = '✓ ' + file.name;
+  if (statusEl) statusEl.innerHTML = '<div class="loading-row"><div class="spin spin-dark"></div>Extracting text from ' + file.name + '...</div>';
+
   try {
     const b64 = await fileToBase64(file);
+    const base64Data = b64.split(',')[1];
+
+    // For TXT files, decode directly without server round-trip
+    if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
+      const text = atob(base64Data);
+      if (extEl) { extEl.value = text; extEl.style.display = ''; }
+      if (statusEl) statusEl.innerHTML = '<div style="font-size:12px;color:var(--green);">✓ ' + text.split(/\s+/).length.toLocaleString() + ' words loaded</div>';
+      updateWordCount();
+      return;
+    }
+
+    // For PDF and DOCX, call server
     const r = await fetch(API + '/api/extract-text', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileBase64: b64.split(',')[1], mimeType: file.type, fileName: file.name })
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileBase64: base64Data, mimeType: file.type, fileName: file.name })
     });
+
+    if (!r.ok) {
+      throw new Error('Server error ' + r.status + ' — try pasting your script directly in the Paste tab');
+    }
+
     const d = await r.json();
     if (d.error) throw new Error(d.error);
-    const ext = document.getElementById('script-extracted');
-    ext.value = d.text;
-    ext.style.display = '';
-    document.getElementById('upload-status').innerHTML = '<div style="font-size:12px;color:var(--green);">✓ Text extracted — you can edit it above</div>';
+
+    if (extEl) { extEl.value = d.text; extEl.style.display = ''; }
+    if (statusEl) statusEl.innerHTML = '<div style="font-size:12px;color:var(--green);">✓ ' + (d.words || 0).toLocaleString() + ' words extracted — edit above if needed, then click Split into scenes</div>';
     updateWordCount();
+
   } catch (e) {
-    document.getElementById('upload-status').innerHTML = '<div style="font-size:12px;color:var(--red);">Failed: ' + e.message + '</div>';
+    console.error('File extraction error:', e);
+    if (statusEl) statusEl.innerHTML = '<div style="font-size:12px;color:var(--red);">⚠ ' + e.message + '</div><div style="font-size:12px;color:var(--muted);margin-top:6px;">Tip: Copy text from your PDF and use the Paste tab instead.</div>';
+    // Show empty textarea so user can paste manually
+    if (extEl) { extEl.placeholder = 'Paste your script text here as a fallback...'; extEl.style.display = ''; }
   }
 }
 
 async function startSegmentation() {
-  const title = document.getElementById('project-title')?.value || 'My Video';
+  const title = (document.getElementById('project-title')?.value || 'My Video').trim();
   const script = getScriptText().trim();
+
   if (!script || script.length < 20) {
-    toast('Please write or upload your script first.', 'error');
+    toast('Please write or paste your script first — minimum 20 characters.', 'error');
     return;
   }
+
   PROJECT.id = PROJECT.id || ('proj_' + Date.now());
   PROJECT.title = title;
   PROJECT.script = script;
 
   nav('segment-pg');
 
-  // Animated steps
+  // Reset step states
+  ['seg-s1','seg-s2','seg-s3','seg-s4','seg-s5'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.classList.remove('run','done'); }
+  });
+  const progEl = document.getElementById('seg-progress');
+  if (progEl) progEl.style.width = '0%';
+  const wpmEl = document.getElementById('seg-wpm');
+  if (wpmEl) wpmEl.textContent = PROJECT.wpm || 150;
+
+  // Animate steps
   const steps = ['seg-s1','seg-s2','seg-s3','seg-s4','seg-s5'];
   const progs = [20,40,60,80,95];
   let si = 0;
-  const segFacts = [...FACTS];
-  let factIdx = 0;
-  const factTimer = setInterval(() => {
-    factIdx = (factIdx + 1) % segFacts.length;
-    const el = document.getElementById('seg-fact-text');
-    if (el) { el.style.opacity = '0'; setTimeout(() => { if(el){ el.textContent = segFacts[factIdx]; el.style.opacity = '1'; }}, 300); }
-  }, 4000);
-
-  const segWpm = document.getElementById('seg-wpm');
-  if (segWpm) segWpm.textContent = PROJECT.wpm;
+  let stepTimer = null;
 
   function advanceStep() {
-    if (si > 0) { const prev = document.getElementById(steps[si-1]); if(prev){ prev.classList.remove('run'); prev.classList.add('done'); }}
+    if (si > 0) {
+      const prev = document.getElementById(steps[si-1]);
+      if (prev) { prev.classList.remove('run'); prev.classList.add('done'); }
+    }
     if (si >= steps.length) return;
     const el = document.getElementById(steps[si]);
-    if (el) { el.classList.remove('done'); el.classList.add('run'); }
+    if (el) el.classList.add('run');
     const pf = document.getElementById('seg-progress');
     if (pf) pf.style.width = progs[si] + '%';
     si++;
   }
 
-  const stepTimer = setInterval(advanceStep, 900);
+  stepTimer = setInterval(advanceStep, 800);
   advanceStep();
+
+  // Cycle facts
+  let factIdx = 0;
+  const factTimer = setInterval(() => {
+    factIdx = (factIdx + 1) % FACTS.length;
+    const el = document.getElementById('seg-fact-text');
+    if (el) {
+      el.style.opacity = '0';
+      setTimeout(() => { if (el) { el.textContent = FACTS[factIdx]; el.style.opacity = '1'; } }, 300);
+    }
+  }, 4000);
 
   try {
     const r = await fetch(API + '/api/segment', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ script, wpm: PROJECT.wpm, sceneDuration: PROJECT.sceneDuration, title })
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        script: script,
+        wpm: PROJECT.wpm || 150,
+        sceneDuration: PROJECT.sceneDuration || 8,
+        title: title
+      })
     });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const data = await r.json();
-    if (data.error) throw new Error(data.error);
 
     clearInterval(stepTimer);
     clearInterval(factTimer);
 
-    // Mark all done
-    steps.forEach(id => { const el = document.getElementById(id); if(el){ el.classList.remove('run'); el.classList.add('done'); }});
+    if (!r.ok) {
+      const errData = await r.json().catch(() => ({}));
+      throw new Error(errData.error || 'Server error ' + r.status);
+    }
+
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+    if (!data.scenes || !data.scenes.length) throw new Error('No scenes returned — try a longer script');
+
+    // Mark all steps done
+    steps.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.classList.remove('run'); el.classList.add('done'); }
+    });
     const pf = document.getElementById('seg-progress');
     if (pf) pf.style.width = '100%';
 
-    PROJECT.scenes = data.scenes || [];
+    PROJECT.scenes = data.scenes;
     PROJECT.title = data.title || title;
 
-    const ss = document.getElementById('seg-scenes'); if (ss) ss.textContent = data.totalScenes;
-    const sd = document.getElementById('seg-duration'); if (sd) sd.textContent = data.estimatedDuration;
+    const ss = document.getElementById('seg-scenes');
+    if (ss) ss.textContent = data.totalScenes || data.scenes.length;
+    const sd = document.getElementById('seg-duration');
+    if (sd) sd.textContent = data.estimatedDuration || '—';
 
     saveProject();
+    setTimeout(() => nav('scenes-pg'), 700);
 
-    setTimeout(() => nav('scenes-pg'), 800);
   } catch (e) {
     clearInterval(stepTimer);
     clearInterval(factTimer);
+    console.error('Segmentation error:', e);
     toast('Segmentation failed: ' + e.message, 'error');
     nav('script-pg');
   }
@@ -2020,9 +2095,11 @@ function renderSceneBoard() {
   const metaEl = document.getElementById('scenes-meta');
   if (metaEl) {
     const total = PROJECT.scenes.length;
+    const recorded = PROJECT.scenes.filter(s => ['recorded','edited'].includes(s.status)).length;
     const dur = PROJECT.scenes.reduce((t, s) => t + (s.duration || 8), 0);
     const m = Math.floor(dur/60), s = dur%60;
-    metaEl.textContent = total + ' scenes · ' + m + ':' + String(s).padStart(2,'0');
+    metaEl.innerHTML = total + ' scenes · ' + m + ':' + String(s).padStart(2,'0') +
+      (recorded ? ' · <span style="color:var(--green);">' + recorded + ' recorded</span>' : '');
   }
 
   const list = document.getElementById('scenes-list');
@@ -2047,7 +2124,7 @@ function renderSceneBoard() {
         </div>
       </div>
       <div class="scene-body" id="scene-body-${scene.id}" style="display:none;">
-        <div class="scene-full-narration" contenteditable="true" onblur="saveSceneEdit(${i}, this.textContent)">${scene.narration || ''}</div>
+        <div class="scene-full-narration" id="narration-${scene.id}">${(scene.narration || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
         ${scene.notes ? '<div style="font-size:11px;color:var(--muted);padding:6px 0;border-top:0.5px solid var(--bdr);margin-top:4px;">📝 '+scene.notes+'</div>' : ''}
         <div class="scene-assets-row">
           ${assetChips}
@@ -2063,6 +2140,16 @@ function renderSceneBoard() {
       </div>
     </div>`;
   }).join('');
+  setTimeout(_afterRenderSceneBoard, 10);
+}
+
+// Called at end of renderSceneBoard
+function _afterRenderSceneBoard() {
+  document.querySelectorAll('.scene-card').forEach(card => {
+    card.setAttribute('draggable', 'true');
+  });
+  initSceneDragDrop();
+  setTimeout(upgradeSceneTopbar, 50);
 }
 
 function selectScene(idx) {
@@ -3043,16 +3130,7 @@ function initSceneDragDrop() {
   });
 }
 
-// Enable dragging on scene cards
-const origRenderSceneBoard = renderSceneBoard;
-renderSceneBoard = function() {
-  origRenderSceneBoard();
-  // Make cards draggable
-  document.querySelectorAll('.scene-card').forEach(card => {
-    card.setAttribute('draggable', 'true');
-  });
-  initSceneDragDrop();
-};
+// drag-drop init happens inside renderSceneBoard directly
 
 // ── SCENE NOTES EDITOR ────────────────────────────────────────────────────────
 function editSceneNotes(idx, e) {
@@ -3075,13 +3153,7 @@ function liveWordCount(el) {
   }
 }
 
-// Attach live counters
-setTimeout(() => {
-  ['script-editor','script-paste','script-extracted'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('input', () => liveWordCount(el));
-  });
-}, 500);
+// Word count updates handled by main input listener
 
 // ── ONBOARDING FLOW ───────────────────────────────────────────────────────────
 function checkOnboarding() {
@@ -3406,12 +3478,7 @@ function upgradeSceneTopbar() {
   actions.insertBefore(subBtn, actions.children[2]);
 }
 
-// Hook into renderSceneBoard
-const _prevRenderSceneBoard = renderSceneBoard;
-renderSceneBoard = function() {
-  _prevRenderSceneBoard();
-  setTimeout(upgradeSceneTopbar, 50);
-};
+// upgradeSceneTopbar called directly from renderSceneBoard
 
 // ── UPGRADE EDIT SUITE WITH MORE TOOLS ────────────────────────────────────────
 const origRenderEditSuite = renderEditSuite;
