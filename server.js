@@ -177,8 +177,11 @@ OUTPUT — valid JSON only, flat scenes array:
       scenes
     });
   } catch (e) {
-    console.error('Segment error:', e.message);
-    res.status(500).json({ error: e.message });
+    console.error('Segment error:', e.message, e.stack);
+    res.status(500).json({ 
+      error: e.message,
+      hint: !process.env.ANTHROPIC_API_KEY ? 'ANTHROPIC_API_KEY is not set in Railway environment variables' : 'Check Railway deployment logs for details'
+    });
   }
 });
 
