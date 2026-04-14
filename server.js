@@ -69,8 +69,8 @@ function extractTextFromBase64(base64, mimeType, fileName) {
 // ── SCENE SEGMENTATION — the core AI feature ──────────────────────────────────
 app.post('/api/segment', async (req, res) => {
   try {
-    const { scriptText, fileBase64, mimeType, fileName, wpm = 150, sceneDuration = 8 } = req.body;
-    let text = scriptText || '';
+    const { script, scriptText, fileBase64, mimeType, fileName, wpm = 150, sceneDuration = 8, title } = req.body;
+    let text = script || scriptText || '';
 
     if (!text && fileBase64) {
       if (mimeType === 'application/pdf') {
@@ -112,8 +112,8 @@ RULES:
 - Assign a concise scene title (3-5 words)
 - Suggest a brief visual prompt per scene
 
-OUTPUT — valid JSON only:
-{"title":"project title","totalScenes":0,"totalDuration":0,"wpm":${wpm},"sceneDuration":${sceneDuration},"sections":[{"sectionTitle":"section name","scenes":[{"sceneNumber":1,"title":"scene title","narration":"exact words","wordCount":0,"duration":${sceneDuration},"visualPrompt":"brief visual description","notes":"","status":"draft"}]}]}`,
+OUTPUT — valid JSON only, flat scenes array:
+{"title":"project title","totalScenes":0,"scenes":[{"id":"s_1","sceneNumber":1,"type":"INTRO","narration":"exact words from script","wordCount":0,"duration":${sceneDuration},"notes":"","status":"draft"}]}`,
       messages: [{
         role: 'user',
         content: `Segment this script into ${wordsPerScene}-word scenes:\n\n${text.slice(0, 60000)}\n\nReturn ONLY valid JSON.`
@@ -122,13 +122,60 @@ OUTPUT — valid JSON only:
 
     const raw = response.content.map(c => c.text || '').join('').trim();
     const j = raw.indexOf('{'), k = raw.lastIndexOf('}');
-    if (j === -1) throw new Error('Segmentation failed');
+    if (j === -1) throw new Error('AI returned no valid JSON. Try a shorter script.');
     const result = JSON.parse(raw.slice(j, k + 1));
-    let total = 0;
-    (result.sections || []).forEach(s => { total += (s.scenes || []).length; });
-    result.totalScenes = total;
-    result.totalDuration = total * sceneDuration;
-    res.json(result);
+
+    // Flatten sections into scenes array (frontend expects flat scenes[])
+    let scenes = [];
+    let sceneCounter = 1;
+    if (result.scenes && result.scenes.length) {
+      // Already flat
+      scenes = result.scenes.map((s, i) => ({
+        id: 's_' + (i + 1),
+        sceneNumber: i + 1,
+        type: s.type || 'MAIN',
+        narration: s.narration || s.text || '',
+        wordCount: s.wordCount || (s.narration || '').split(/\s+/).length,
+        duration: s.duration || sceneDuration,
+        notes: s.notes || '',
+        assets: [],
+        status: 'draft'
+      }));
+    } else if (result.sections && result.sections.length) {
+      // Nested sections — flatten
+      result.sections.forEach(section => {
+        (section.scenes || []).forEach(s => {
+          scenes.push({
+            id: 's_' + sceneCounter,
+            sceneNumber: sceneCounter,
+            type: s.type || 'MAIN',
+            narration: s.narration || s.text || '',
+            wordCount: s.wordCount || (s.narration || '').split(/\s+/).length,
+            duration: s.duration || sceneDuration,
+            notes: s.notes || '',
+            sectionTitle: section.sectionTitle || '',
+            assets: [],
+            status: 'draft'
+          });
+          sceneCounter++;
+        });
+      });
+    }
+
+    const totalScenes = scenes.length;
+    const totalSecs = totalScenes * sceneDuration;
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    const estimatedDuration = mins + ':' + String(secs).padStart(2, '0');
+
+    res.json({
+      title: result.title || title || 'My Video',
+      totalScenes,
+      estimatedDuration,
+      wpm,
+      sceneDuration,
+      scenes
+    });
   } catch (e) {
     console.error('Segment error:', e.message);
     res.status(500).json({ error: e.message });
