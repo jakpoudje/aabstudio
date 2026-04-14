@@ -75,7 +75,7 @@ app.post('/api/segment', async (req, res) => {
     if (!text && fileBase64) {
       if (mimeType === 'application/pdf') {
         const response = await anthropic.messages.create({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 8000,
           messages: [{
             role: 'user',
@@ -98,7 +98,7 @@ app.post('/api/segment', async (req, res) => {
     const wordsPerScene = Math.round((wpm / 60) * sceneDuration);
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 12000,
       system: `You are a scene segmentation engine for a professional teleprompter video studio.
 Your ONLY job: split script text into timed presenter scenes.
@@ -354,7 +354,7 @@ app.post('/api/script/improve', async (req, res) => {
   try {
     const { text } = req.body;
     const r = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514', max_tokens: 2000,
+      model: 'claude-sonnet-4-6', max_tokens: 2000,
       system: 'Improve this script for spoken video delivery. Keep all content intact. Improve flow and natural speech patterns only.',
       messages: [{ role: 'user', content: text }]
     });
