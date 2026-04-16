@@ -1918,12 +1918,56 @@ function loadProject(idx) {
 
 function saveProject() {
   PROJECT.date = new Date().toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
-  const saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
-  const existing = saved.findIndex(p => p.id === PROJECT.id);
-  if (existing > -1) saved[existing] = PROJECT;
-  else saved.unshift(PROJECT);
-  localStorage.setItem('aab_projects', JSON.stringify(saved.slice(0, 50)));
-  APP.projects = saved;
+
+  // Strip large binary data before saving to localStorage (5MB limit)
+  // Keep only metadata — dataUrls live in memory only during the session
+  var lightweight = JSON.parse(JSON.stringify(PROJECT));
+  // Strip asset dataUrls — keep id, name, type for display
+  if (lightweight.assets) {
+    lightweight.assets = lightweight.assets.map(function(a) {
+      return { id: a.id, name: a.name, type: a.type, size: a.size || 0 };
+    });
+  }
+  // Strip scene asset dataUrls too
+  if (lightweight.scenes) {
+    lightweight.scenes = lightweight.scenes.map(function(s) {
+      var sc = Object.assign({}, s);
+      if (sc.assets) {
+        sc.assets = sc.assets.map(function(a) {
+          return { id: a.id, name: a.name, type: a.type };
+        });
+      }
+      // Strip AI-generated audio/image (very large)
+      delete sc.aiVoice;
+      delete sc.aiImage;
+      return sc;
+    });
+  }
+  // Strip clips (blob URLs don't survive reload anyway)
+  delete lightweight.clips;
+
+  try {
+    var saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+    var existing = saved.findIndex(function(p) { return p.id === lightweight.id; });
+    if (existing > -1) saved[existing] = lightweight;
+    else saved.unshift(lightweight);
+    localStorage.setItem('aab_projects', JSON.stringify(saved.slice(0, 30)));
+    APP.projects = saved;
+  } catch(e) {
+    console.warn('saveProject localStorage failed:', e.message);
+    // If still failing, save only title/date/id/scenes without assets
+    try {
+      var minimal = { id: lightweight.id, title: lightweight.title, date: lightweight.date, scenes: lightweight.scenes, status: lightweight.status };
+      var saved2 = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+      var ex2 = saved2.findIndex(function(p) { return p.id === minimal.id; });
+      if (ex2 > -1) saved2[ex2] = minimal;
+      else saved2.unshift(minimal);
+      localStorage.setItem('aab_projects', JSON.stringify(saved2.slice(0, 20)));
+      APP.projects = saved2;
+    } catch(e2) {
+      console.error('saveProject failed completely:', e2.message);
+    }
+  }
 }
 
 // ── SCRIPT STUDIO ─────────────────────────────────────────────────────────────
@@ -2286,18 +2330,31 @@ function openAssetAssign(sceneIdx, e) {
 
 function uploadAssets(inp) {
   if (!inp.files.length) return;
-  let count = 0;
-  Array.from(inp.files).forEach(file => {
-    const rd = new FileReader();
-    rd.onload = e => {
-      PROJECT.assets.push({ id: Date.now() + Math.random(), name: file.name, dataUrl: e.target.result, type: file.type.startsWith('image/') ? 'image' : 'document' });
+  var count = 0;
+  var total = inp.files.length;
+  Array.from(inp.files).forEach(function(file) {
+    var rd = new FileReader();
+    rd.onload = function(e) {
+      var asset = {
+        id: 'a_' + Date.now() + '_' + Math.floor(Math.random()*9999),
+        name: file.name,
+        dataUrl: e.target.result,   // kept in memory only
+        type: file.type.startsWith('image/') ? 'image' : 'document',
+        size: file.size
+      };
+      PROJECT.assets.push(asset);
       count++;
-      if (count === inp.files.length) {
-        saveProject();
+      if (count === total) {
+        saveProject();   // saves metadata only, not dataUrls
         renderAssetLibrary();
         toast(count + ' asset' + (count > 1 ? 's' : '') + ' uploaded', 'success');
-        sidebarTab('library', document.querySelector('.sidebar-tab'));
+        var libTab = document.querySelector('.sidebar-tab');
+        if (libTab) sidebarTab('library', libTab);
       }
+    };
+    rd.onerror = function() {
+      count++;
+      toast('Failed to read ' + file.name, 'error');
     };
     rd.readAsDataURL(file);
   });
@@ -2904,12 +2961,21 @@ function setOverlayPos(el) {
 // Upload assets to studio
 function uploadStudioAssets(inp) {
   if (!inp.files.length) return;
-  Array.from(inp.files).forEach(file => {
-    const rd = new FileReader();
-    rd.onload = e => {
-      const asset = { id: Date.now() + Math.random(), name: file.name, dataUrl: e.target.result, type: file.type.startsWith('image/') ? 'image' : 'document' };
+  Array.from(inp.files).forEach(function(file) {
+    var rd = new FileReader();
+    rd.onload = function(e) {
+      var asset = {
+        id: 'a_' + Date.now() + '_' + Math.floor(Math.random()*9999),
+        name: file.name,
+        dataUrl: e.target.result,
+        type: file.type.startsWith('image/') ? 'image' : 'document',
+        size: file.size
+      };
       STUDIO.assets.push(asset);
-      PROJECT.assets.push(asset);
+      // Merge into PROJECT.assets if not already there
+      if (!PROJECT.assets.find(function(a){ return a.id === asset.id; })) {
+        PROJECT.assets.push(asset);
+      }
       renderStudioPanelAssets();
       toast(file.name + ' uploaded', 'success');
     };
@@ -3148,6 +3214,15 @@ document.addEventListener('input', e => {
 
 // ── SESSION INIT ──────────────────────────────────────────────────────────────
 window.addEventListener('load', () => {
+  // Clear any old oversized localStorage entries that may have caused quota errors
+  try {
+    var stored = localStorage.getItem('aab_projects');
+    if (stored && stored.length > 1000000) {
+      console.warn('Clearing oversized project storage');
+      localStorage.removeItem('aab_projects');
+    }
+  } catch(e) {}
+
   // Show topnav
   document.getElementById('topnav').style.display = 'flex';
 
