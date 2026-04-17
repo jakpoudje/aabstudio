@@ -497,6 +497,63 @@ button,input,select,textarea{font-family:inherit;}
   .studio-q{width:130px;}
   .hero-cards{flex-direction:column;align-items:center;}
 }
+
+/* ══ STUDIO CONTROLS GROUPS ══════════════════════════════════════════════ */
+.studio-ctrl{
+  display:flex;align-items:center;gap:0;
+  background:#050810;
+  border-top:.5px solid rgba(255,255,255,.06);
+  padding:0;
+  overflow-x:auto;
+  flex-shrink:0;
+}
+.ctrl-group{
+  display:flex;align-items:center;gap:4px;
+  padding:6px 10px;
+  position:relative;
+  flex-shrink:0;
+}
+.ctrl-group-label{
+  font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
+  color:rgba(255,255,255,.18);
+  position:absolute;top:3px;left:10px;
+  pointer-events:none;
+}
+.ctrl-group{padding-top:16px !important;}
+.ctrl-div{width:.5px;height:40px;background:rgba(255,255,255,.06);flex-shrink:0;}
+
+/* Group colour themes */
+.ctrl-group-blue{background:rgba(59,130,246,.05);}
+.ctrl-group-red{background:rgba(239,68,68,.05);}
+.ctrl-group-purple{background:rgba(139,92,246,.05);}
+.ctrl-group-gold{background:rgba(245,158,11,.05);}
+.ctrl-group-teal{background:rgba(0,212,255,.05);}
+.ctrl-group-amber{background:rgba(251,146,60,.05);}
+.ctrl-group-green{background:rgba(16,185,129,.05);}
+
+/* Group-coloured buttons */
+.s-btn-blue{border-color:rgba(59,130,246,.25) !important;color:rgba(147,197,253,.8) !important;}
+.s-btn-blue:hover,.s-btn-blue.on{background:rgba(59,130,246,.15) !important;border-color:rgba(59,130,246,.4) !important;color:#93c5fd !important;}
+.s-btn-red{border-color:rgba(239,68,68,.25) !important;color:rgba(252,165,165,.8) !important;}
+.s-btn-red:hover,.s-btn-red.on{background:rgba(239,68,68,.15) !important;border-color:rgba(239,68,68,.4) !important;color:#fca5a5 !important;}
+.s-btn-red.on{animation:rec-pulse 1.5s infinite;}
+@keyframes rec-pulse{0%,100%{background:rgba(239,68,68,.15);}50%{background:rgba(239,68,68,.28);}}
+.s-btn-purple{border-color:rgba(139,92,246,.25) !important;color:rgba(196,181,253,.8) !important;}
+.s-btn-purple:hover{background:rgba(139,92,246,.15) !important;color:#c4b5fd !important;}
+.s-btn-gold{border-color:rgba(245,158,11,.25) !important;color:rgba(253,230,138,.8) !important;}
+.s-btn-gold:hover,.s-btn-gold.on{background:rgba(245,158,11,.15) !important;color:#fde68a !important;}
+.s-btn-teal{border-color:rgba(0,212,255,.25) !important;color:rgba(103,232,249,.8) !important;}
+.s-btn-teal:hover{background:rgba(0,212,255,.12) !important;color:#67e8f9 !important;}
+.s-btn-green{border-color:rgba(16,185,129,.25) !important;color:rgba(110,231,183,.8) !important;}
+.s-btn-green:hover,.s-btn-green.on{background:rgba(16,185,129,.15) !important;color:#6ee7b7 !important;}
+
+/* Mic level in controls */
+.mic-level-wrap{width:4px;height:22px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden;position:relative;}
+.mic-level-fill{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(to top,#10b981,#f59e0b);border-radius:2px;height:0%;transition:height .08s;}
+
+/* Scene editor panel styles */
+.sce-dur-btn.on{background:rgba(0,212,255,.08) !important;border-color:var(--accent) !important;color:var(--accent) !important;}
+
 </style>
 </head>
 <body>
@@ -832,7 +889,69 @@ button,input,select,textarea{font-family:inherit;}
 
 <!-- ══ SCENE BOARD ══════════════════════════════════════════════════════════════ -->
 <div id="scenes-pg" class="pg" style="background:var(--off);padding-top:52px;min-height:100vh;">
-  <div class="scenes-layout">
+  <div class="scenes-layout" style="position:relative;">
+  <!-- Scene Editor Panel (slide in from right) -->
+  <div id="scene-editor-panel" style="display:none;position:fixed;top:54px;right:0;bottom:0;width:420px;background:var(--white);border-left:.5px solid var(--bdr);z-index:80;flex-direction:column;box-shadow:-4px 0 20px rgba(0,0,0,.08);overflow-y:auto;">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:.5px solid var(--bdr);flex-shrink:0;">
+      <div style="flex:1;">
+        <div style="font-size:13px;font-weight:600;color:var(--ink);" id="sce-num">Scene 1</div>
+        <div style="font-size:11px;color:var(--muted2);" id="sce-type">MAIN</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="scenePrev()">← Prev</button>
+      <button class="btn btn-ghost btn-sm" onclick="sceneNext()">Next →</button>
+      <button class="btn btn-ghost btn-sm" onclick="saveSceneEditorAndClose()">Save ✓</button>
+      <button style="width:26px;height:26px;border-radius:50%;background:var(--off2);border:none;font-size:14px;color:var(--muted);cursor:pointer;" onclick="closeSceneEditor()">×</button>
+    </div>
+
+    <div style="padding:16px;flex:1;">
+      <!-- Narration -->
+      <div style="margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+          <span class="label" style="margin:0;">Narration</span>
+          <span id="sce-wc" style="font-size:11px;color:var(--muted2);">0 words</span>
+        </div>
+        <textarea id="sce-narr" class="textarea" style="min-height:130px;font-family:JetBrains Mono,monospace;font-size:13px;line-height:1.7;" oninput="updateSceNarrWC()"></textarea>
+      </div>
+
+      <!-- Duration -->
+      <div style="margin-bottom:14px;">
+        <span class="label">Duration</span>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-ghost btn-sm sce-dur-btn" data-dur="5" onclick="setSceneDurFromEditor(5,this)">5s</button>
+          <button class="btn btn-ghost btn-sm sce-dur-btn on" data-dur="8" onclick="setSceneDurFromEditor(8,this)">8s</button>
+          <button class="btn btn-ghost btn-sm sce-dur-btn" data-dur="10" onclick="setSceneDurFromEditor(10,this)">10s</button>
+        </div>
+      </div>
+
+      <!-- Notes -->
+      <div style="margin-bottom:16px;">
+        <span class="label">Notes / cues</span>
+        <input id="sce-notes" class="input" placeholder="Director cues, reminders...">
+      </div>
+
+      <!-- Assets section -->
+      <div style="margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <span class="label" style="margin:0;">Scene assets</span>
+          <label class="btn btn-primary btn-sm" style="cursor:pointer;">
+            + Upload
+            <input type="file" style="display:none;" multiple accept="image/*,video/*" onchange="uploadSceneAsset(this)">
+          </label>
+        </div>
+        <!-- Assigned assets list -->
+        <div id="sce-assets-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        <!-- Asset from library -->
+        <div id="sce-library-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px;max-height:160px;overflow-y:auto;"></div>
+      </div>
+    </div>
+
+    <!-- Delete scene -->
+    <div style="padding:12px 16px;border-top:.5px solid var(--bdr);flex-shrink:0;">
+      <button class="btn btn-danger btn-sm" style="width:100%;" onclick="deleteSceneFromEditor()">Delete this scene</button>
+    </div>
+  </div>
+
     <div class="scenes-topbar">
       <div><div class="scenes-title" id="scenes-title">My Video</div><div class="scenes-meta" id="scenes-meta">0 scenes</div></div>
       <div class="scenes-actions">
@@ -930,58 +1049,103 @@ button,input,select,textarea{font-family:inherit;}
           <div class="tp-cur-txt" id="tp-cur">Select a scene to begin</div>
           <div class="tp-next-txt" id="tp-next"></div>
         </div>
-        <!-- Controls -->
+        <!-- Controls Bar — grouped and colour-coded -->
         <div class="studio-ctrl">
-          <button class="s-btn" id="btn-cam" onclick="toggleCamera()">📷 Camera</button>
-          <button class="s-btn" id="btn-mic" onclick="toggleMic()">🎙 Mic</button>
-          <div class="ctrl-div"></div>
-          <button class="s-btn rec" id="btn-rec" onclick="toggleRecording()">● REC</button>
-          <button class="s-btn" id="btn-retake" style="display:none;" onclick="retakeScene()">↺ Retake</button>
-          <div class="ctrl-div"></div>
-          <div class="tp-spd-row">
-            <span class="tp-spd-label">Speed</span>
-            <input type="range" min="20" max="220" value="80" id="tp-spd-range" oninput="setTpSpd(this.value)" style="width:65px;accent-color:var(--gold);">
-            <span class="tp-spd-val" id="tp-spd-val">80 wpm</span>
+
+          <!-- GROUP 1: CAMERA & MIC — Blue -->
+          <div class="ctrl-group ctrl-group-blue">
+            <div class="ctrl-group-label">INPUT</div>
+            <button class="s-btn s-btn-blue" id="btn-cam" onclick="toggleCamera()">📷 Cam</button>
+            <button class="s-btn s-btn-blue" id="btn-mic" onclick="toggleMic()">🎙 Mic</button>
+            <div class="mic-level-wrap"><div class="mic-level-fill" id="mic-level-fill"></div></div>
           </div>
-          <button class="s-btn" id="btn-auto" onclick="toggleTpAuto()">Auto: off</button>
-          <button class="s-btn" id="btn-adaptive" onclick="toggleAdaptiveTp()">🎤 Adaptive: off</button>
+
           <div class="ctrl-div"></div>
-          <button class="s-btn" onclick="studioNext()">Next scene →</button>
-          <div class="ctrl-div"></div>
-          <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
-            <button class="bg-btn on" data-bg="none" onclick="setBg(this)">Live</button>
-            <button class="bg-btn" data-bg="blur" onclick="setBg(this)">Blur</button>
-            <button class="bg-btn" data-bg="dark" onclick="setBg(this)">Dark</button>
-            <button class="bg-btn" data-bg="news" onclick="setBg(this)">News</button>
-            <button class="bg-btn" data-bg="office" onclick="setBg(this)">Office</button>
-            <button class="bg-btn" data-bg="library" onclick="setBg(this)">Library</button>
-            <button class="bg-btn" data-bg="green" onclick="setBg(this)">Green</button>
-            <label class="bg-btn" style="cursor:pointer;">📸 Upload<input type="file" style="display:none;" accept="image/*,video/*" onchange="uploadCustomBg(this)"></label>
-            <button class="bg-btn" onclick="openBgDesigner()">🎨 Design</button>
+
+          <!-- GROUP 2: RECORD — Red -->
+          <div class="ctrl-group ctrl-group-red">
+            <div class="ctrl-group-label">RECORD</div>
+            <button class="s-btn s-btn-red" id="btn-rec" onclick="toggleRecording()">⏺ REC</button>
+            <button class="s-btn s-btn-red" id="btn-retake" style="display:none;" onclick="retakeScene()">↺ Retake</button>
+            <div id="rec-timer" style="font-size:10px;font-family:'JetBrains Mono',monospace;color:rgba(239,68,68,.7);min-width:32px;text-align:center;">—</div>
           </div>
-          <!-- Lighting -->
-          <div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:5px;">
-            <span style="font-size:9px;color:rgba(255,255,255,.2);padding:4px 0;width:100%;">LIGHTING</span>
-            <button class="bg-btn on" data-light="none" onclick="setLighting('none',this)">Off</button>
-            <button class="bg-btn" data-light="natural" onclick="setLighting('natural',this)">Natural</button>
-            <button class="bg-btn" data-light="warm" onclick="setLighting('warm',this)">Warm</button>
-            <button class="bg-btn" data-light="cool" onclick="setLighting('cool',this)">Cool</button>
-            <button class="bg-btn" data-light="dramatic" onclick="setLighting('dramatic',this)">Dramatic</button>
-          </div>
+
           <div class="ctrl-div"></div>
-          <button class="s-btn" id="btn-draw" onclick="toggleDraw()" title="Draw (D)">✏️</button>
-          <button class="s-btn" onclick="clearDraw()" title="Clear drawing">🗑</button>
-          <select id="draw-mode-sel" onchange="setDrawMode(this.value)" style="background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);color:rgba(255,255,255,.7);border-radius:6px;padding:4px 7px;font-size:11px;font-family:'Sora',sans-serif;cursor:pointer;">
-            <option value="pen">Pen</option>
-            <option value="arrow">Arrow</option>
-            <option value="circle">Circle</option>
-            <option value="rect">Box</option>
-            <option value="highlight">Highlight</option>
-          </select>
-          <input type="color" value="#00d4ff" id="draw-color-inp" onchange="setDrawColor(this.value)" style="width:24px;height:24px;border:none;border-radius:4px;cursor:pointer;background:none;" title="Colour">
-          <button class="s-btn" onclick="toggleMirror()" title="Mirror (M)">↔</button>
-          <button class="s-btn" onclick="toggleFocus()" title="Focus mode (F)">⛶</button>
-          <button class="s-btn" onclick="showKbHelp()">⌨</button>
+
+          <!-- GROUP 3: SCENES — Purple -->
+          <div class="ctrl-group ctrl-group-purple">
+            <div class="ctrl-group-label">SCENE</div>
+            <button class="s-btn s-btn-purple" onclick="studioPrev()">← Prev</button>
+            <div style="font-size:10px;font-weight:600;color:rgba(139,92,246,.8);min-width:36px;text-align:center;" id="studio-scene-counter">1/1</div>
+            <button class="s-btn s-btn-purple" onclick="studioNext()">Next →</button>
+          </div>
+
+          <div class="ctrl-div"></div>
+
+          <!-- GROUP 4: TELEPROMPTER — Gold -->
+          <div class="ctrl-group ctrl-group-gold">
+            <div class="ctrl-group-label">PROMPTER</div>
+            <input type="range" min="20" max="220" value="80" id="tp-spd-range" oninput="setTpSpd(this.value)" style="width:62px;accent-color:var(--gold);">
+            <span id="tp-spd-val" style="font-size:10px;font-weight:600;color:var(--gold);min-width:36px;">80wpm</span>
+            <button class="s-btn s-btn-gold" id="btn-auto" onclick="toggleTpAuto()">⏱ Auto</button>
+            <button class="s-btn s-btn-gold" id="btn-adaptive" onclick="toggleAdaptiveTp()">🎤 Adapt</button>
+          </div>
+
+          <div class="ctrl-div"></div>
+
+          <!-- GROUP 5: BACKGROUND — Teal -->
+          <div class="ctrl-group ctrl-group-teal">
+            <div class="ctrl-group-label">BACKGROUND</div>
+            <button class="bg-btn s-btn on" data-bg="none" onclick="setBg(this)">Live</button>
+            <button class="bg-btn s-btn" data-bg="blur" onclick="setBg(this)">Blur</button>
+            <button class="bg-btn s-btn" data-bg="dark" onclick="setBg(this)">Dark</button>
+            <button class="bg-btn s-btn" data-bg="news" onclick="setBg(this)">News</button>
+            <button class="bg-btn s-btn" data-bg="office" onclick="setBg(this)">Office</button>
+            <button class="bg-btn s-btn" data-bg="green" onclick="setBg(this)">Green</button>
+            <label class="s-btn s-btn-teal" style="cursor:pointer;">📸<input type="file" style="display:none;" accept="image/*,video/*" onchange="uploadCustomBg(this)"></label>
+            <button class="s-btn s-btn-teal" onclick="openBgDesigner()">🎨</button>
+          </div>
+
+          <div class="ctrl-div"></div>
+
+          <!-- GROUP 6: LIGHTING — Amber -->
+          <div class="ctrl-group ctrl-group-amber">
+            <div class="ctrl-group-label">LIGHTING</div>
+            <button class="bg-btn s-btn on" data-light="none" onclick="setLighting('none',this)">Off</button>
+            <button class="bg-btn s-btn" data-light="natural" onclick="setLighting('natural',this)">Natural</button>
+            <button class="bg-btn s-btn" data-light="warm" onclick="setLighting('warm',this)">Warm</button>
+            <button class="bg-btn s-btn" data-light="cool" onclick="setLighting('cool',this)">Cool</button>
+            <button class="bg-btn s-btn" data-light="dramatic" onclick="setLighting('dramatic',this)">Drama</button>
+          </div>
+
+          <div class="ctrl-div"></div>
+
+          <!-- GROUP 7: ANNOTATION — Green -->
+          <div class="ctrl-group ctrl-group-green">
+            <div class="ctrl-group-label">DRAW</div>
+            <button class="s-btn s-btn-green" id="btn-draw" onclick="toggleDraw()">✏️</button>
+            <button class="s-btn s-btn-green" onclick="clearDraw()">🗑</button>
+            <select id="draw-mode-sel" onchange="setDrawMode(this.value)" style="background:rgba(16,185,129,.08);border:.5px solid rgba(16,185,129,.2);color:rgba(255,255,255,.7);border-radius:6px;padding:3px 5px;font-size:10px;font-family:'Sora',sans-serif;cursor:pointer;height:26px;">
+              <option value="pen">Pen</option>
+              <option value="arrow">Arrow</option>
+              <option value="circle">Circle</option>
+              <option value="rect">Box</option>
+              <option value="highlight">Hi-lite</option>
+            </select>
+            <input type="color" value="#00d4ff" id="draw-color-inp" onchange="setDrawColor(this.value)" style="width:24px;height:24px;border:none;border-radius:4px;cursor:pointer;background:none;">
+          </div>
+
+          <div class="ctrl-div"></div>
+
+          <!-- GROUP 8: VIEW -->
+          <div class="ctrl-group">
+            <div class="ctrl-group-label">VIEW</div>
+            <button class="s-btn" onclick="toggleMirror()" title="Mirror (M)">↔</button>
+            <button class="s-btn" onclick="toggleFocus()" title="Focus (F)">⛶</button>
+            <button class="s-btn" onclick="increaseTpFont()" title="Font +">A+</button>
+            <button class="s-btn" onclick="decreaseTpFont()" title="Font -">A-</button>
+          </div>
+
         </div>
       </div>
       <!-- Right panel -->
@@ -1617,17 +1781,306 @@ function renderSceneBoard() {
   list.querySelectorAll('.scene-card').forEach(function(card){card.setAttribute('draggable','true');});
   initSceneDrag();
 }
-function selectScene(idx) {
-  if(SELECTED_SCENE===idx){SELECTED_SCENE=null;document.querySelectorAll('.scene-body').forEach(function(b){b.style.display='none';});document.querySelectorAll('.scene-card').forEach(function(c){c.classList.remove('selected');});renderAssetLibrary();return;}
-  SELECTED_SCENE=idx;
-  document.querySelectorAll('.scene-body').forEach(function(b){b.style.display='none';});
+function selectScene(idx){
+  var scene = PROJECT.scenes[idx];
+  if(!scene) return;
+  openSceneEditor(idx);
+}
+
+var _sceneEditorIdx = null;
+
+function openSceneEditor(idx){
+  _sceneEditorIdx = idx;
+  var scene = PROJECT.scenes[idx];
+  if(!scene) return;
+
+  // Show scene editor panel
+  var panel = document.getElementById('scene-editor-panel');
+  if(!panel) return;
+  panel.style.display = 'flex';
+
+  // Populate fields
+  document.getElementById('sce-num').textContent   = 'Scene ' + (idx+1) + ' of ' + PROJECT.scenes.length;
+  document.getElementById('sce-type').textContent  = scene.type || 'MAIN';
+  document.getElementById('sce-narr').value        = scene.narration || '';
+  document.getElementById('sce-notes').value       = scene.notes || '';
+  document.getElementById('sce-wc').textContent    = (scene.narration||'').trim().split(/\s+/).filter(Boolean).length + ' words';
+
+  // Duration buttons
+  document.querySelectorAll('.sce-dur-btn').forEach(function(b){
+    b.classList.toggle('on', parseInt(b.dataset.dur) === (scene.duration||8));
+  });
+
+  // Render assigned assets
+  renderSceneEditorAssets(idx);
+
+  // Highlight active scene card
+  document.querySelectorAll('.scene-card').forEach(function(c, i){
+    c.classList.toggle('selected', i === idx);
+  });
+}
+
+function closeSceneEditor(){
+  var panel = document.getElementById('scene-editor-panel');
+  if(panel) panel.style.display = 'none';
+  _sceneEditorIdx = null;
   document.querySelectorAll('.scene-card').forEach(function(c){c.classList.remove('selected');});
-  var scene=PROJECT.scenes[idx];if(!scene)return;
-  var body=document.getElementById('sb-'+scene.id);if(body)body.style.display='';
-  var card=document.getElementById('sc-'+scene.id);if(card)card.classList.add('selected');
-  var hint=document.getElementById('asset-target-hint');if(hint)hint.textContent='Assigning to Scene '+(idx+1);
-  var libTab=document.querySelector('.sb-tab');if(libTab)sidebarTab('library',libTab);
-  renderAssetLibrary();
+}
+
+function scenePrev(){
+  if(_sceneEditorIdx === null || _sceneEditorIdx <= 0) return;
+  saveSceneEditorFields();
+  openSceneEditor(_sceneEditorIdx - 1);
+}
+
+function sceneNext(){
+  if(_sceneEditorIdx === null || _sceneEditorIdx >= PROJECT.scenes.length - 1) return;
+  saveSceneEditorFields();
+  openSceneEditor(_sceneEditorIdx + 1);
+}
+
+function saveSceneEditorFields(){
+  if(_sceneEditorIdx === null) return;
+  var scene = PROJECT.scenes[_sceneEditorIdx];
+  if(!scene) return;
+  var narr = document.getElementById('sce-narr')?.value;
+  var notes = document.getElementById('sce-notes')?.value;
+  if(narr !== undefined) scene.narration = narr;
+  if(notes !== undefined) scene.notes = notes;
+  saveProject();
+  renderScenesMetaOnly();
+}
+
+function saveSceneEditorAndClose(){
+  saveSceneEditorFields();
+  closeSceneEditor();
+  renderSceneBoard();
+  toast('Scene saved', 'ok');
+}
+
+function setSceneDurFromEditor(dur, el){
+  if(_sceneEditorIdx === null) return;
+  PROJECT.scenes[_sceneEditorIdx].duration = dur;
+  document.querySelectorAll('.sce-dur-btn').forEach(function(b){
+    b.classList.toggle('on', parseInt(b.dataset.dur) === dur);
+  });
+  saveProject();
+}
+
+function deleteSceneFromEditor(){
+  if(_sceneEditorIdx === null) return;
+  if(!confirm('Delete Scene ' + (_sceneEditorIdx+1) + '?')) return;
+  PROJECT.scenes.splice(_sceneEditorIdx, 1);
+  saveProject();
+  closeSceneEditor();
+  renderSceneBoard();
+  toast('Scene deleted', 'ok');
+}
+
+
+function updateSceNarrWC(){
+  var narr = document.getElementById('sce-narr')?.value || '';
+  var wc = narr.trim().split(/\s+/).filter(Boolean).length;
+  var el = document.getElementById('sce-wc');
+  if(el) el.textContent = wc + ' words · ~' + Math.round(wc/(PROJECT.wpm||150)*60) + 's';
+}
+
+function uploadSceneAsset(inp){
+  if(!inp.files.length || _sceneEditorIdx === null) return;
+  var scene = PROJECT.scenes[_sceneEditorIdx];
+  if(!scene) return;
+  if(!scene.assets) scene.assets = [];
+  Array.from(inp.files).forEach(function(file){
+    var rd = new FileReader();
+    rd.onload = function(e){
+      var asset = {
+        id: 'a_'+Date.now()+'_'+Math.floor(Math.random()*9999),
+        name: file.name,
+        dataUrl: e.target.result,
+        type: file.type.startsWith('image/') ? 'image' : 'video',
+        size: file.size,
+        position: 'bot-right',
+        sizePercent: 35,
+        animation: 'fade'
+      };
+      scene.assets.push(asset);
+      PROJECT.assets.push(asset);
+      saveProject();
+      renderSceneEditorAssets(_sceneEditorIdx);
+      toast(file.name + ' added', 'ok');
+    };
+    rd.readAsDataURL(file);
+  });
+}
+
+function renderSceneEditorAssets(idx){
+  var scene = PROJECT.scenes[idx];
+  if(!scene) return;
+  var list = document.getElementById('sce-assets-list');
+  if(!list) return;
+
+  if(!(scene.assets||[]).length){
+    list.innerHTML = '<div style="font-size:12px;color:var(--muted2);text-align:center;padding:10px;">No assets assigned — upload above or pick from library</div>';
+  } else {
+    list.innerHTML = '';
+    (scene.assets||[]).forEach(function(asset, ai){
+      var wrap = document.createElement('div');
+      wrap.style.cssText = 'background:var(--off);border:.5px solid var(--bdr2);border-radius:10px;padding:10px;';
+
+      // Thumbnail + name
+      var top = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">';
+      if(asset.dataUrl && asset.type === 'image') {
+        top += '<img src="'+asset.dataUrl+'" style="width:44px;height:30px;object-fit:cover;border-radius:5px;flex-shrink:0;">';
+      } else {
+        top += '<div style="width:44px;height:30px;border-radius:5px;background:var(--off2);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">🎬</div>';
+      }
+      top += '<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+asset.name.slice(0,22)+'</div></div>';
+      top += '<button data-ai="'+ai+'" onclick="removeSceneAsset('+idx+','+ai+')" style="background:transparent;border:none;color:var(--muted2);cursor:pointer;font-size:16px;padding:0 4px;">×</button>';
+      top += '</div>';
+
+      // Position grid (3x3)
+      var positions = ['top-left','top-center','top-right','mid-left','center','mid-right','bot-left','bot-center','bot-right'];
+      var posLabels = ['↖','↑','↗','←','⊙','→','↙','↓','↘'];
+      positions.forEach(function(pos, pi){
+        var isOn = (asset.position||'bot-right') === pos;
+        // position button built via DOM
+      });
+
+// size slider built via DOM above
+
+// animation row built via DOM above
+
+      // Build wrap using DOM to avoid quote collisions
+      var topDiv = document.createElement('div');
+      topDiv.innerHTML = top;
+      wrap.appendChild(topDiv);
+      wrap.appendChild(posGridWrap);
+
+      // Size slider
+      var sizeWrap = document.createElement('div');
+      sizeWrap.style.cssText = 'margin-bottom:6px;display:flex;align-items:center;gap:8px;';
+      var sizeLabel = document.createElement('span');
+      sizeLabel.style.cssText = 'font-size:10px;color:var(--muted2);white-space:nowrap;';
+      sizeLabel.textContent = 'SIZE';
+      sizeWrap.appendChild(sizeLabel);
+      var sizeInp = document.createElement('input');
+      sizeInp.type='range'; sizeInp.min='10'; sizeInp.max='100'; sizeInp.value=String(asset.sizePercent||35);
+      sizeInp.dataset.ai = String(ai); sizeInp.dataset.si = String(idx);
+      sizeInp.style.cssText='flex:1;accent-color:var(--accent);';
+      var sizeValSpan = document.createElement('span');
+      sizeValSpan.id = 'sce-asset-size-'+ai;
+      sizeValSpan.style.cssText='font-size:10px;color:var(--muted);min-width:30px;';
+      sizeValSpan.textContent=(asset.sizePercent||35)+'%';
+      sizeInp.oninput = function(){ setAssetSizeInEditor(parseInt(this.dataset.si),parseInt(this.dataset.ai),this.value); };
+      sizeWrap.appendChild(sizeInp);
+      sizeWrap.appendChild(sizeValSpan);
+      wrap.appendChild(sizeWrap);
+
+      // Animation row
+      var animWrap = document.createElement('div');
+      var animTitle = document.createElement('div');
+      animTitle.style.cssText='font-size:10px;color:var(--muted2);margin-bottom:4px;';
+      animTitle.textContent='ENTRY';
+      animWrap.appendChild(animTitle);
+      var animBtnsRow = document.createElement('div');
+      animBtnsRow.style.cssText='display:flex;gap:4px;flex-wrap:wrap;';
+      var anims = ['fade','slide-left','slide-right','slide-up','zoom','none'];
+      anims.forEach(function(a){
+        var isAnimOn = (asset.animation||'fade')===a;
+        var ab = document.createElement('button');
+        ab.dataset.anim=a; ab.dataset.ai=String(ai); ab.dataset.si=String(idx);
+        ab.style.cssText='padding:2px 7px;border-radius:4px;font-size:10px;border:.5px solid '+(isAnimOn?'var(--accent)':'var(--bdr2)')+';background:'+(isAnimOn?'rgba(0,212,255,.06)':'transparent')+';cursor:pointer;color:'+(isAnimOn?'var(--accent)':'var(--muted2)')+';';
+        ab.textContent=a;
+        ab.onclick=function(){ setAssetAnimInEditor(parseInt(this.dataset.si),parseInt(this.dataset.ai),this.dataset.anim); };
+        animBtnsRow.appendChild(ab);
+      });
+      animWrap.appendChild(animBtnsRow);
+      wrap.appendChild(animWrap);
+      list.appendChild(wrap);
+    });
+  }
+
+  // Library picker
+  renderSceneLibraryPicker(idx);
+}
+
+function renderSceneLibraryPicker(idx){
+  var grid = document.getElementById('sce-library-grid');
+  if(!grid) return;
+  var scene = PROJECT.scenes[idx];
+  var assignedIds = (scene?.assets||[]).map(function(a){return a.id;});
+  if(!PROJECT.assets.length){
+    grid.innerHTML = '';
+    return;
+  }
+  grid.innerHTML = '<div style="grid-column:1/-1;font-size:10px;color:var(--muted2);margin-bottom:4px;">From library — click to assign:</div>';
+  PROJECT.assets.forEach(function(asset){
+    if(assignedIds.includes(asset.id)) return; // skip already assigned
+    var d = document.createElement('div');
+    d.style.cssText = 'border-radius:7px;overflow:hidden;border:.5px solid var(--bdr2);cursor:pointer;transition:all .12s;';
+    d.title = asset.name;
+    d.onmouseenter = function(){ this.style.borderColor='var(--accent)'; };
+    d.onmouseleave = function(){ this.style.borderColor='var(--bdr2)'; };
+    if(asset.dataUrl && asset.type === 'image'){
+      d.innerHTML = '<img src="'+asset.dataUrl+'" style="width:100%;height:50px;object-fit:cover;display:block;"><div style="padding:2px 4px;font-size:9px;color:var(--muted2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+asset.name.slice(0,12)+'</div>';
+    } else {
+      d.innerHTML = '<div style="height:50px;background:var(--off2);display:flex;align-items:center;justify-content:center;font-size:18px;">🎬</div><div style="padding:2px 4px;font-size:9px;color:var(--muted2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+asset.name.slice(0,12)+'</div>';
+    }
+    d.onclick = function(){
+      if(!scene.assets) scene.assets = [];
+      var copy = JSON.parse(JSON.stringify(asset));
+      copy.position  = 'bot-right';
+      copy.sizePercent = 35;
+      copy.animation   = 'fade';
+      scene.assets.push(copy);
+      saveProject();
+      renderSceneEditorAssets(idx);
+      toast(asset.name + ' assigned', 'ok');
+    };
+    grid.appendChild(d);
+  });
+}
+
+function removeSceneAsset(sceneIdx, assetIdx){
+  var scene = PROJECT.scenes[sceneIdx];
+  if(!scene||!scene.assets) return;
+  scene.assets.splice(assetIdx, 1);
+  saveProject();
+  renderSceneEditorAssets(sceneIdx);
+  toast('Asset removed', 'ok');
+}
+
+function setAssetPosInEditor(sceneIdx, assetIdx, pos){
+  var asset = PROJECT.scenes[sceneIdx]?.assets?.[assetIdx];
+  if(!asset) return;
+  asset.position = pos;
+  saveProject();
+  renderSceneEditorAssets(sceneIdx);
+}
+
+function setAssetSizeInEditor(sceneIdx, assetIdx, val){
+  var asset = PROJECT.scenes[sceneIdx]?.assets?.[assetIdx];
+  if(!asset) return;
+  asset.sizePercent = parseInt(val);
+  var label = document.getElementById('sce-asset-size-'+assetIdx);
+  if(label) label.textContent = val + '%';
+  saveProject();
+}
+
+function setAssetAnimInEditor(sceneIdx, assetIdx, anim){
+  var asset = PROJECT.scenes[sceneIdx]?.assets?.[assetIdx];
+  if(!asset) return;
+  asset.animation = anim;
+  saveProject();
+  renderSceneEditorAssets(sceneIdx);
+}
+
+function renderScenesMetaOnly(){
+  var total = PROJECT.scenes.length;
+  var dur   = PROJECT.scenes.reduce(function(t,s){return t+(s.duration||8);}, 0);
+  var m = Math.floor(dur/60), s = dur%60;
+  var el = document.getElementById('scenes-meta');
+  if(el) el.textContent = total + ' scenes · ' + m + ':' + String(s).padStart(2,'0');
 }
 function searchScenes(q) {
   document.querySelectorAll('.scene-card').forEach(function(card,i){
@@ -1730,13 +2183,26 @@ function initStudio() {
 }
 function startElapsedTimer(){if(STUDIO.elTimer)clearInterval(STUDIO.elTimer);STUDIO.elapsed=0;STUDIO.elTimer=setInterval(function(){STUDIO.elapsed++;var m=Math.floor(STUDIO.elapsed/60),s=STUDIO.elapsed%60;var el=document.getElementById('st-elapsed');if(el)el.textContent=m+':'+(s<10?'0':'')+s;},1000);}
 async function startCamera() {
-  try {
-    var stream=await navigator.mediaDevices.getUserMedia({video:{width:1280,height:720},audio:true});
-    STUDIO.stream=stream; STUDIO.camOn=true; STUDIO.micOn=true;
-    var vid=document.getElementById('studio-cam');if(vid){vid.srcObject=stream;}
-    updateCamBtn(); updateMicBtn();
+  var noCamera = document.getElementById('studio-no-camera');
+  if(noCamera) noCamera.innerHTML = '<div style="font-size:13px;color:rgba(255,255,255,.4);">Starting camera...</div>';
+  navigator.mediaDevices.getUserMedia({
+    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+    audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 44100 }
+  }).then(function(stream) {
+    STUDIO.stream  = stream;
+    STUDIO.camOn   = true;
+    STUDIO.micOn   = true;
+    var vid = document.getElementById('studio-cam');
+    if(vid) { vid.srcObject = stream; vid.style.display = 'block'; }
+    if(noCamera) noCamera.style.display = 'none';
+    updateCamBtn();
+    updateMicBtn();
     initAudioMeter(stream);
-  } catch(e) { toast('Camera denied: '+e.message,'err'); }
+    toast('Camera ready', 'ok');
+  }).catch(function(e) {
+    if(noCamera) noCamera.innerHTML = '<div style="font-size:13px;color:var(--red);">Camera denied — ' + e.message + '</div><button class="studio-btn" style="margin-top:10px;" onclick="startCamera()">Retry</button>';
+    toast('Camera error: ' + e.message, 'error');
+  });
 }
 function initAudioMeter(stream){try{var ctx=new (window.AudioContext||window.webkitAudioContext)(),src=ctx.createMediaStreamSource(stream),an=ctx.createAnalyser();an.fftSize=128;src.connect(an);STUDIO.analyser=an;var buf=new Uint8Array(an.frequencyBinCount);function tick(){if(!STUDIO.analyser)return;an.getByteFrequencyData(buf);var avg=buf.reduce(function(a,b){return a+b;},0)/buf.length;var el=document.getElementById('audio-fill');if(el)el.style.height=Math.min(100,avg*2.5)+'%';requestAnimationFrame(tick);}tick();}catch(e){}}
 function toggleCamera(){if(!STUDIO.stream){startCamera();return;}STUDIO.camOn=!STUDIO.camOn;STUDIO.stream.getVideoTracks().forEach(function(t){t.enabled=STUDIO.camOn;});updateCamBtn();}
@@ -1896,38 +2362,95 @@ function renderBgLayer(){
   var bgCanvas = document.getElementById('studio-bg-canvas');
   var bgImg    = document.getElementById('studio-bg-img');
   var bgVid    = document.getElementById('studio-bg-vid');
-  var cam      = document.getElementById('studio-cam');
   if(!bgCanvas) return;
 
-  // Camera always fully visible on top - never change its opacity or z-index
-  if(cam){ cam.style.opacity='1'; cam.style.zIndex='2'; }
-
   if(_currentBg === 'none'){
-    // Pure camera — hide all bg layers
-    bgCanvas.style.display='none';
-    if(bgImg) bgImg.style.display='none';
-    if(bgVid) bgVid.style.display='none';
+    bgCanvas.style.display = 'none';
+    if(bgImg) bgImg.style.display = 'none';
+    if(bgVid) bgVid.style.display = 'none';
+    // Remove any CSS filter from canvas wrap
+    var wrap = document.getElementById('studio-canvas');
+    if(wrap) wrap.style.filter = '';
     return;
   }
 
-  // Custom uploaded bg (image or video) handled separately in uploadCustomBg
-  if(_currentBg === 'custom-img'){ bgCanvas.style.display='none'; if(bgImg){bgImg.style.display='block';} return; }
-  if(_currentBg === 'custom-vid'){ bgCanvas.style.display='none'; if(bgImg)bgImg.style.display='none'; if(bgVid)bgVid.style.display='block'; return; }
+  if(_currentBg === 'custom-img') {
+    bgCanvas.style.display = 'none';
+    if(bgImg) bgImg.style.display = 'block';
+    if(bgVid) bgVid.style.display = 'none';
+    applyLightingFilter();
+    return;
+  }
+  if(_currentBg === 'custom-vid') {
+    bgCanvas.style.display = 'none';
+    if(bgImg) bgImg.style.display = 'none';
+    if(bgVid) bgVid.style.display = 'block';
+    applyLightingFilter();
+    return;
+  }
 
-  // Preset — render onto canvas
-  if(bgImg) bgImg.style.display='none';
-  if(bgVid) bgVid.style.display='none';
-  bgCanvas.style.display='block';
+  // Preset backgrounds rendered to canvas
+  if(bgImg) bgImg.style.display = 'none';
+  if(bgVid) bgVid.style.display = 'none';
+  bgCanvas.style.display = 'block';
 
-  var w = bgCanvas.offsetWidth || 1280;
-  var h = bgCanvas.offsetHeight || 720;
-  bgCanvas.width = w; bgCanvas.height = h;
+  // Must set dimensions from layout size each render
+  var wrap = document.getElementById('studio-canvas');
+  var w = wrap ? wrap.offsetWidth : 1280;
+  var h = wrap ? wrap.offsetHeight : 720;
+  if(w < 10 || h < 10) { w = 1280; h = 720; }
+  bgCanvas.width  = w;
+  bgCanvas.height = h;
+  bgCanvas.style.width  = '100%';
+  bgCanvas.style.height = '100%';
+
   var ctx = bgCanvas.getContext('2d');
-  ctx.clearRect(0,0,w,h);
+  ctx.clearRect(0, 0, w, h);
 
   var preset = BG_PRESETS[_currentBg];
   if(preset) preset(ctx, w, h);
-  applyLighting(ctx, w, h, _currentLight);
+
+  // Apply lighting as overlay
+  applyLightingToCtx(ctx, w, h);
+}
+
+function applyLightingToCtx(ctx, w, h){
+  if(!_currentLight || _currentLight === 'none') return;
+  ctx.save();
+  if(_currentLight === 'warm'){
+    ctx.fillStyle = 'rgba(255,140,50,.18)';
+    ctx.fillRect(0,0,w,h);
+  } else if(_currentLight === 'cool'){
+    ctx.fillStyle = 'rgba(80,150,255,.15)';
+    ctx.fillRect(0,0,w,h);
+  } else if(_currentLight === 'natural'){
+    var g = ctx.createRadialGradient(w*.35, h*.1, 0, w*.35, h*.1, w*.7);
+    g.addColorStop(0,'rgba(255,245,210,.12)');
+    g.addColorStop(1,'transparent');
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,w,h);
+  } else if(_currentLight === 'dramatic'){
+    var g2 = ctx.createRadialGradient(w*.5, h*.35, 0, w*.5, h*.35, w*.55);
+    g2.addColorStop(0,'rgba(255,255,255,.06)');
+    g2.addColorStop(.5,'transparent');
+    g2.addColorStop(1,'rgba(0,0,0,.45)');
+    ctx.fillStyle = g2;
+    ctx.fillRect(0,0,w,h);
+  }
+  ctx.restore();
+}
+
+function applyLightingFilter(){
+  // For custom image/video backgrounds, use CSS filter on the bg element
+  var bgImg = document.getElementById('studio-bg-img');
+  var bgVid = document.getElementById('studio-bg-vid');
+  var filter = '';
+  if(_currentLight === 'warm')     filter = 'sepia(0.3) saturate(1.4) brightness(1.05)';
+  if(_currentLight === 'cool')     filter = 'hue-rotate(20deg) saturate(1.2) brightness(1.02)';
+  if(_currentLight === 'natural')  filter = 'brightness(1.08) saturate(1.1)';
+  if(_currentLight === 'dramatic') filter = 'contrast(1.15) brightness(0.92)';
+  if(bgImg) bgImg.style.filter = filter;
+  if(bgVid) bgVid.style.filter = filter;
 }
 
 function uploadCustomBg(inp){
