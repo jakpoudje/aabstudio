@@ -1528,15 +1528,21 @@ function authTab(t) {
 function showErr(id,msg){ var e=document.getElementById(id); if(e){e.textContent=msg;e.style.display='block';} }
 
 async function doSignIn() {
-  var email=document.getElementById('si-email').value.trim(), pass=document.getElementById('si-pass').value;
-  if (!email||!pass) return showErr('err-in','Please fill in all fields.');
-  var btn=document.getElementById('btn-in'); btn.textContent='Signing in...'; btn.disabled=true;
+  var email = document.getElementById('si-email').value.trim();
+  var pass  = document.getElementById('si-pass').value;
+  if (!email || !pass) return showErr('err-in','Please fill in all fields.');
+  var btn = document.getElementById('btn-in');
+  btn.textContent = 'Signing in...'; btn.disabled = true;
   try {
-    var r=getSupa().auth.signInWithPassword({email,password:pass});
+    var r = await getSupa().auth.signInWithPassword({ email: email, password: pass });
     if (r.error) throw r.error;
-    setUser(r.data.user); nav('dashboard-pg');
-  } catch(e) { showErr('err-in',e.message); }
-  btn.textContent='Sign in'; btn.disabled=false;
+    if (!r.data || !r.data.user) throw new Error('Sign in failed — please try again.');
+    setUser(r.data.user);
+    nav('dashboard-pg');
+  } catch(e) {
+    showErr('err-in', e.message || 'Sign in failed.');
+  }
+  btn.textContent = 'Sign in'; btn.disabled = false;
 }
 async function doSignUp() {
   var name=document.getElementById('su-name').value.trim(), email=document.getElementById('su-email').value.trim(), pass=document.getElementById('su-pass').value;
@@ -1552,7 +1558,7 @@ async function doSignUp() {
   btn.textContent='Create free account'; btn.disabled=false;
 }
 async function doSignOut() { await getSupa().auth.signOut(); APP.user=null; updateNavState(); nav('home'); }
-function setUser(u) { APP.user={id:u.id,name:u.user_metadata?.name||u.email.split('@')[0],email:u.email}; updateNavState(); }
+function setUser(u) { APP.user={id:u.id,name:(u.user_metadata&&u.user_metadata.name)||u.email.split('@')[0],email:u.email}; updateNavState(); }
 
 // ══════════════════════════════════════════════════════════════════════════════
 // DASHBOARD
@@ -2849,7 +2855,7 @@ window.addEventListener('load',function(){
   // Check Supabase session
   var supa=getSupa();if(!supa){updateNavState();return;}
   supa.auth.getSession().then(function(r){
-    if(r.data?.session){setUser(r.data.session.user);var params=new URLSearchParams(window.location.search);if(params.get('checkout')==='success'){history.replaceState(null,'','/');nav('dashboard-pg');setTimeout(function(){toast('Payment successful! Credits added.','ok');},600);}else nav('dashboard-pg');}
+    if(r.data && r.data.session){setUser(r.data.session.user);var params=new URLSearchParams(window.location.search);if(params.get('checkout')==='success'){history.replaceState(null,'','/');nav('dashboard-pg');setTimeout(function(){toast('Payment successful! Credits added.','ok');},600);}else nav('dashboard-pg');}
     else updateNavState();
   });
   supa.auth.onAuthStateChange(function(event,session){
