@@ -28,6 +28,8 @@ button,input,select,textarea{font-family:inherit;}
 .pg{display:none;min-height:100vh;}
 .pg.on{display:block;}
 .pg-full{display:none;height:100vh;overflow:hidden;}
+.pg-flex{display:none;}
+.pg-flex.on{display:flex;flex-direction:column;}
 .pg-full.on{display:flex;flex-direction:column;}
 
 /* ── TOPNAV ──────────────────────────────────────────────────────────────────── */
@@ -1015,10 +1017,10 @@ button,input,select,textarea{font-family:inherit;}
       <!-- Camera canvas -->
       <div class="studio-canvas" id="studio-canvas">
         <!-- Layer 1: Background (image, video, gradient, or custom) -->
-        <div id="studio-bg-layer" style="position:absolute;inset:0;z-index:1;overflow:hidden;">
+        <div id="studio-bg-layer" style="position:absolute;inset:0;z-index:1;overflow:hidden;pointer-events:none;">
           <img id="studio-bg-img" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;" alt="">
           <video id="studio-bg-vid" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;" autoplay loop muted></video>
-          <canvas id="studio-bg-canvas" style="position:absolute;inset:0;width:100%;height:100%;display:none;"></canvas>
+          <canvas id="studio-bg-canvas" style="position:absolute;top:0;left:0;width:100%;height:100%;display:none;"></canvas>
         </div>
         <!-- Layer 2: Camera video (always above background) -->
         <video id="studio-cam" autoplay muted playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:2;"></video>
@@ -1690,6 +1692,42 @@ async function handleScriptUpload(inp) {
 }
 function fileToB64(file){return new Promise(function(res,rej){var rd=new FileReader();rd.onload=function(e){res(e.target.result);};rd.onerror=rej;rd.readAsDataURL(file);});}
 
+async function newProject(){
+  if(!APP.user){ nav('auth-pg'); return; }
+  // Reset project
+  PROJECT = {
+    id: 'proj_' + Date.now(),
+    title: 'My Video',
+    mode: null,
+    script: '',
+    scenes: [],
+    assets: [],
+    clips: {},
+    wpm: 150,
+    sceneDuration: 8,
+    date: new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})
+  };
+  // Show mode picker
+  openModal('mode-picker-modal');
+}
+
+function confirmMode(){
+  if(!PROJECT.mode){ toast('Please choose a mode','info'); return; }
+  closeModal('mode-picker-modal');
+  if(PROJECT.mode === 'teleprompter'){
+    openTeleprompter();
+  } else {
+    nav('script-pg');
+    document.getElementById('project-title').value = PROJECT.title;
+  }
+}
+
+function selectMode(mode){
+  PROJECT.mode = mode;
+  document.querySelectorAll('.mode-card').forEach(function(c){ c.classList.toggle('selected', c.dataset.mode === mode); });
+  document.getElementById('mode-confirm-btn').disabled = false;
+}
+
 async function startSegmentation() {
   var title=(document.getElementById('proj-title')||{}).value||'My Video';
   var script=getScript().trim();
@@ -2221,6 +2259,8 @@ function startRecWithCountdown(){
 function startRec(){
   STUDIO.chunks=[];
   var mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')?'video/webm;codecs=vp9,opus':'video/webm';
+  if(!STUDIO.stream){ toast('Camera not started — click the 📷 Camera button first','error'); return; }
+  if(!STUDIO.currentScene && STUDIO.currentScene !== 0){ toast('Select a scene first','info'); return; }
   var mr=new MediaRecorder(STUDIO.stream,{mimeType:mime});
   mr.ondataavailable=function(e){if(e.data.size>0)STUDIO.chunks.push(e.data);};
   mr.onstop=function(){
@@ -2510,45 +2550,120 @@ function renderStudioAssets(){
 function showAssetNow(assetId){var a=PROJECT.assets.find(function(x){return x.id===assetId;});if(a)showSceneOverlay(a);}
 
 // Drawing
-function initDrawEvents(canvas){
-  var sp=false;
-  function gp(e){var r=canvas.getBoundingClientRect(),t=e.touches?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top};}
-  ['mousedown','touchstart'].forEach(function(ev){canvas.addEventListener(ev,function(e){if(!STUDIO.drawActive)return;e.preventDefault();var p=gp(e);STUDIO.sx=p.x;STUDIO.sy=p.y;sp=true;if(STUDIO.drawMode!=='pen'&&STUDIO.drawMode!=='highlight')STUDIO.snap=STUDIO.drawCtx.getImageData(0,0,canvas.width,canvas.height);},{passive:false});});
-  ['mousemove','touchmove'].forEach(function(ev){canvas.addEventListener(ev,function(e){if(!sp||!STUDIO.drawActive||!STUDIO.drawCtx)return;e.preventDefault();var p=gp(e),ctx=STUDIO.drawCtx;ctx.strokeStyle=STUDIO.drawColor;ctx.lineWidth=STUDIO.drawMode==='highlight'?14:2.5;ctx.lineCap='round';ctx.lineJoin='round';ctx.globalAlpha=STUDIO.drawMode==='highlight'?0.35:1;if(STUDIO.drawMode==='pen'||STUDIO.drawMode==='highlight'){ctx.beginPath();ctx.moveTo(STUDIO.sx,STUDIO.sy);ctx.lineTo(p.x,p.y);ctx.stroke();STUDIO.sx=p.x;STUDIO.sy=p.y;}else{ctx.putImageData(STUDIO.snap,0,0);ctx.beginPath();if(STUDIO.drawMode==='circle'){var rx=(p.x-STUDIO.sx)/2,ry=(p.y-STUDIO.sy)/2;ctx.ellipse(STUDIO.sx+rx,STUDIO.sy+ry,Math.abs(rx),Math.abs(ry),0,0,Math.PI*2);ctx.stroke();}else if(STUDIO.drawMode==='rect'){ctx.rect(STUDIO.sx,STUDIO.sy,p.x-STUDIO.sx,p.y-STUDIO.sy);ctx.stroke();}else if(STUDIO.drawMode==='arrow'){ctx.moveTo(STUDIO.sx,STUDIO.sy);ctx.lineTo(p.x,p.y);ctx.stroke();var a=Math.atan2(p.y-STUDIO.sy,p.x-STUDIO.sx),ah=16;ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x-ah*Math.cos(a-Math.PI/7),p.y-ah*Math.sin(a-Math.PI/7));ctx.lineTo(p.x-ah*Math.cos(a+Math.PI/7),p.y-ah*Math.sin(a+Math.PI/7));ctx.closePath();ctx.fillStyle=STUDIO.drawColor;ctx.globalAlpha=1;ctx.fill();}}ctx.globalAlpha=1;},{passive:false});});
-  ['mouseup','touchend'].forEach(function(ev){canvas.addEventListener(ev,function(){sp=false;});});
-}
-function toggleDraw(){STUDIO.drawActive=!STUDIO.drawActive;var c=document.getElementById('studio-ann-canvas'),btn=document.getElementById('btn-draw');if(c)c.style.display=STUDIO.drawActive?'block':'none';if(btn)btn.classList.toggle('active',STUDIO.drawActive);}
-function clearDraw(){if(STUDIO.drawCtx){var c=document.getElementById('studio-ann-canvas');if(c)STUDIO.drawCtx.clearRect(0,0,c.width,c.height);}}
-function setDrawMode(m){STUDIO.drawMode=m;}
-function setDrawColor(c){STUDIO.drawColor=c;}
-function toggleMirror(){STUDIO.mirrored=!STUDIO.mirrored;var cam=document.getElementById('studio-cam');if(cam)cam.style.transform=STUDIO.mirrored?'scaleX(-1)':'';toast('Mirror '+(STUDIO.mirrored?'on':'off'),'info');}
-function toggleFocus(){STUDIO.focusMode=!STUDIO.focusMode;var q=document.getElementById('studio-q-list')?.closest('.studio-q'),p=document.getElementById('studio-panel');if(q)q.style.display=STUDIO.focusMode?'none':'';if(p)p.style.display=STUDIO.focusMode?'none':'';toast('Focus mode '+(STUDIO.focusMode?'on (F to exit)':'off'),'info');}
-function showKbHelp(){alert('Studio keyboard shortcuts:\n\nSpace      Start / Stop recording\n→ / ←      Next / Previous scene\nA          Toggle auto-scroll\nD          Toggle draw mode\nC          Clear drawing\nF          Toggle focus mode\nM          Mirror camera\n+ / -      Increase / decrease font\nEsc        Exit draw mode');}
+function initDrawEvents(){
+  var canvas = document.getElementById('studio-ann-canvas');
+  if(!canvas) return;
 
-// Studio keyboard shortcuts
-document.addEventListener('keydown',function(e){
-  var pg=document.querySelector('.pg-full.on');if(!pg||pg.id!=='record-pg')return;
-  var tag=document.activeElement.tagName;if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;
-  if(e.code==='Space'){e.preventDefault();toggleRecording();}
-  if(e.code==='ArrowRight')studioNext();
-  if(e.code==='ArrowLeft')studioPrev();
-  if(e.key==='a'||e.key==='A')toggleTpAuto();
-  if(e.key==='d'||e.key==='D')toggleDraw();
-  if(e.key==='c'||e.key==='C')clearDraw();
-  if(e.key==='f'||e.key==='F')toggleFocus();
-  if(e.key==='m'||e.key==='M')toggleMirror();
-  if(e.key==='Escape'){if(STUDIO.drawActive)toggleDraw();}
-});
+  var ctx = null;
+  var drawing = false;
+  var lastX = 0, lastY = 0;
+  var startX = 0, startY = 0;
+  var snapshot = null;
 
-// ══════════════════════════════════════════════════════════════════════════════
-// EDIT SUITE
-// ══════════════════════════════════════════════════════════════════════════════
-function renderEditSuite(){
-  var t=document.getElementById('edit-title');if(t)t.textContent='Edit — '+PROJECT.title;
-  renderEditClips();
-  renderEditTimeline();
+  function getPos(e){
+    var r = canvas.getBoundingClientRect();
+    var scaleX = canvas.width / r.width;
+    var scaleY = canvas.height / r.height;
+    var clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    var clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x:(clientX-r.left)*scaleX, y:(clientY-r.top)*scaleY };
+  }
+
+  function getCtx(){
+    if(!ctx) ctx = canvas.getContext('2d');
+    return ctx;
+  }
+
+  function onDown(e){
+    if(!STUDIO.drawActive) return;
+    e.preventDefault();
+    drawing = true;
+    var pos = getPos(e);
+    lastX = startX = pos.x; lastY = startY = pos.y;
+    var c = getCtx();
+    c.strokeStyle = STUDIO.drawColor || '#00d4ff';
+    c.lineWidth   = STUDIO.drawMode === 'highlight' ? 14 : 2.5;
+    c.lineCap     = 'round';
+    c.lineJoin    = 'round';
+    c.globalAlpha = STUDIO.drawMode === 'highlight' ? 0.35 : 1;
+    snapshot = c.getImageData(0, 0, canvas.width, canvas.height);
+    if(STUDIO.drawMode === 'pen' || STUDIO.drawMode === 'highlight'){
+      c.beginPath(); c.moveTo(lastX, lastY);
+    }
+  }
+
+  function onMove(e){
+    if(!drawing || !STUDIO.drawActive) return;
+    e.preventDefault();
+    var pos = getPos(e);
+    var c   = getCtx();
+    c.strokeStyle = STUDIO.drawColor || '#00d4ff';
+    c.lineWidth   = STUDIO.drawMode === 'highlight' ? 14 : 2.5;
+    c.globalAlpha = STUDIO.drawMode === 'highlight' ? 0.35 : 1;
+
+    if(STUDIO.drawMode === 'pen' || STUDIO.drawMode === 'highlight'){
+      c.lineTo(pos.x, pos.y); c.stroke();
+    } else {
+      // Shape modes — restore snapshot each move for clean preview
+      if(snapshot) c.putImageData(snapshot, 0, 0);
+      c.globalAlpha = 1;
+      c.beginPath();
+      c.strokeStyle = STUDIO.drawColor || '#00d4ff';
+      c.lineWidth = 2.5;
+      if(STUDIO.drawMode === 'arrow'){
+        drawArrow(c, startX, startY, pos.x, pos.y);
+      } else if(STUDIO.drawMode === 'circle'){
+        var rx = (pos.x-startX)/2, ry = (pos.y-startY)/2;
+        c.ellipse(startX+rx, startY+ry, Math.abs(rx), Math.abs(ry), 0, 0, Math.PI*2);
+        c.stroke();
+      } else if(STUDIO.drawMode === 'rect'){
+        c.strokeRect(startX, startY, pos.x-startX, pos.y-startY);
+      }
+    }
+    lastX = pos.x; lastY = pos.y;
+  }
+
+  function onUp(e){
+    drawing = false; snapshot = null;
+    var c = getCtx();
+    c.globalAlpha = 1;
+  }
+
+  canvas.addEventListener('mousedown',  onDown,  {passive:false});
+  canvas.addEventListener('mousemove',  onMove,  {passive:false});
+  canvas.addEventListener('mouseup',    onUp);
+  canvas.addEventListener('mouseleave', onUp);
+  canvas.addEventListener('touchstart', onDown,  {passive:false});
+  canvas.addEventListener('touchmove',  onMove,  {passive:false});
+  canvas.addEventListener('touchend',   onUp);
 }
-function renderEditClips(){
+
+function drawArrow(ctx, x1, y1, x2, y2){
+  var angle = Math.atan2(y2-y1, x2-x1);
+  var len   = 14;
+  ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - len*Math.cos(angle-0.45), y2 - len*Math.sin(angle-0.45));
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - len*Math.cos(angle+0.45), y2 - len*Math.sin(angle+0.45));
+  ctx.stroke();
+}function toggleDraw(){
+  STUDIO.drawActive = !STUDIO.drawActive;
+  var c   = document.getElementById('studio-ann-canvas');
+  var btn = document.getElementById('btn-draw');
+  if(c){
+    c.style.display        = STUDIO.drawActive ? 'block' : 'none';
+    c.style.pointerEvents  = STUDIO.drawActive ? 'auto'  : 'none';
+    c.style.cursor         = STUDIO.drawActive ? 'crosshair' : 'default';
+    // Ensure canvas has correct pixel dimensions
+    var wrap = document.getElementById('studio-canvas');
+    if(wrap){ c.width = wrap.offsetWidth; c.height = wrap.offsetHeight; }
+  }
+  if(btn) btn.classList.toggle('s-btn-green', STUDIO.drawActive);
+  if(!STUDIO.drawEventsInit){ initDrawEvents(); STUDIO.drawEventsInit = true; }
+  toast(STUDIO.drawActive ? 'Draw mode ON — draw on screen' : 'Draw mode OFF', 'info');
+}function renderEditClips(){
   var el=document.getElementById('edit-clips-list');if(!el)return;
   var clips=Object.entries(PROJECT.clips||{});
   if(!clips.length){el.innerHTML='<div style="font-size:11px;color:rgba(255,255,255,.2);padding:10px;">No clips recorded yet</div>';return;}
@@ -2816,19 +2931,27 @@ function updateBgDesign(){
 function applyBgDesign(){
   var designCanvas = document.getElementById('bg-design-canvas');
   if(!designCanvas) return;
+
+  // Re-render at full 1280x720 before exporting so we get a crisp image
+  designCanvas.width  = 1280;
+  designCanvas.height = 720;
+  updateBgDesign(); // re-render at new size
+
+  var dataUrl = designCanvas.toDataURL('image/png');
+
+  // Apply to the studio bg layer
   var bgImg = document.getElementById('studio-bg-img');
-  if(bgImg){
-    bgImg.src = designCanvas.toDataURL('image/png');
-    bgImg.style.display = 'block';
-  }
+  if(bgImg){ bgImg.src = dataUrl; bgImg.style.display = 'block'; }
+
   var bgCanvas = document.getElementById('studio-bg-canvas');
   if(bgCanvas) bgCanvas.style.display = 'none';
   var bgVid = document.getElementById('studio-bg-vid');
   if(bgVid) bgVid.style.display = 'none';
+
   _currentBg = 'custom-img';
   document.querySelectorAll('.bg-btn[data-bg]').forEach(function(b){b.classList.remove('on');});
   closeModal('bg-designer-modal');
-  toast('Custom background applied', 'ok');
+  toast('Custom background applied to studio', 'ok');
 }
 
 // ── FULL TIMELINE / EDIT TOOLS ─────────────────────────────────────────────────
