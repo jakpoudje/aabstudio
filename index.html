@@ -576,7 +576,7 @@ button,input,select,textarea{font-family:inherit;}
   <a class="nav-logo" onclick="nav('home')">AAB<span>Studio</span>.ai</a>
   <div class="nav-links" id="nav-app-links" style="display:none;">
     <a onclick="nav('dashboard-pg')">Dashboard</a>
-    <a onclick="nav('script-pg')">New project</a>
+    <a onclick="newProject()">New project</a>
     <a onclick="openTeleprompter()">Teleprompter</a>
   </div>
   <div class="nav-right">
@@ -1532,7 +1532,7 @@ async function doSignIn() {
   if (!email||!pass) return showErr('err-in','Please fill in all fields.');
   var btn=document.getElementById('btn-in'); btn.textContent='Signing in...'; btn.disabled=true;
   try {
-    var r=await getSupa().auth.signInWithPassword({email,password:pass});
+    var r=getSupa().auth.signInWithPassword({email,password:pass});
     if (r.error) throw r.error;
     setUser(r.data.user); nav('dashboard-pg');
   } catch(e) { showErr('err-in',e.message); }
@@ -1727,7 +1727,7 @@ function confirmMode(){
     openTeleprompter();
   } else {
     nav('script-pg');
-    document.getElementById('project-title').value = PROJECT.title;
+    document.getElementById('proj-title').value = PROJECT.title;
   }
 }
 
@@ -2250,7 +2250,7 @@ async function startCamera() {
     initAudioMeter(stream);
     toast('Camera ready', 'ok');
   }).catch(function(e) {
-    if(noCamera) noCamera.innerHTML = '<div style="font-size:13px;color:var(--red);">Camera denied — ' + e.message + '</div><button class="studio-btn" style="margin-top:10px;" onclick="startCamera()">Retry</button>';
+    if(noCamera) noCamera.innerHTML = '<div id="studio-no-camera" style="font-size:13px;color:var(--red);">Camera denied — ' + e.message + '</div><button class="studio-btn" style="margin-top:10px;" onclick="startCamera()">Retry</button>';
     toast('Camera error: ' + e.message, 'error');
   });
 }
@@ -2681,7 +2681,7 @@ function drawArrow(ctx, x1, y1, x2, y2){
   if(!clips.length){el.innerHTML='<div style="font-size:11px;color:rgba(255,255,255,.2);padding:10px;">No clips recorded yet</div>';return;}
   el.innerHTML=clips.map(function(entry){var id=entry[0],c=entry[1];return'<div class="edit-clip'+(EDIT_SELECTED===id?' selected':'')+'" onclick="selectClip(\''+id+'\')">'+'<div class="edit-clip-thumb"><video src="'+c.url+'" preload="metadata"></video></div>'+'<div class="edit-clip-name">Scene '+(c.sceneIdx+1)+'</div>'+'<div class="edit-clip-dur">'+c.duration+'s</div></div>';}).join('');
 }
-function selectClip(id){EDIT_SELECTED=id;renderEditClips();var clip=PROJECT.clips[id];if(!clip)return;var v=document.getElementById('edit-preview-vid'),e=document.getElementById('edit-preview-empty');if(v){v.src=clip.url;v.style.display='block';}if(e)e.style.display='none';var info=document.getElementById('edit-scene-info');if(info)info.innerHTML='<div style="color:#fff;font-size:13px;margin-bottom:5px;">Scene '+(clip.sceneIdx+1)+'</div><div style="color:rgba(255,255,255,.4);font-size:12px;">'+clip.duration+'s recorded</div>';}
+function selectClip(id){EDIT_SELECTED=id;renderEditClips();var clip=PROJECT.clips[id];if(!clip)return;var v=document.getElementById('edit-video'),e=document.getElementById('edit-no-clips');if(v){v.src=clip.url;v.style.display='block';}if(e)e.style.display='none';var info=document.getElementById('edit-scene-info');if(info)info.innerHTML='<div style="color:#fff;font-size:13px;margin-bottom:5px;">Scene '+(clip.sceneIdx+1)+'</div><div style="color:rgba(255,255,255,.4);font-size:12px;">'+clip.duration+'s recorded</div>';}
 function renderEditTimeline(){var rail=document.getElementById('tl-video-rail');if(!rail)return;var clips=Object.entries(PROJECT.clips||{});if(!clips.length){rail.innerHTML='<div style="font-size:10px;color:rgba(255,255,255,.2);padding:0 8px;">Record scenes to build timeline</div>';return;}rail.innerHTML=clips.map(function(entry){var id=entry[0],c=entry[1];return'<div class="tl-clip'+(EDIT_SELECTED===id?' selected':'')+'" onclick="selectClip(\''+id+'\')">Scene '+(c.sceneIdx+1)+' · '+c.duration+'s</div>';}).join('');}
 function deleteClip(){if(!EDIT_SELECTED){toast('Select a clip first','err');return;}delete PROJECT.clips[EDIT_SELECTED];EDIT_SELECTED=null;saveProject();renderEditSuite();toast('Clip deleted','ok');}
 function mergeClips(){toast('Export all clips and merge in your video editor (Premiere, DaVinci, iMovie).','info');}
@@ -2712,7 +2712,7 @@ function openAIPresenter(){
   if(grid)grid.innerHTML=PROJECT.scenes.map(function(s,i){return'<div class="ai-scene-row"><div class="ai-scene-num">SCENE '+String(i+1).padStart(3,'0')+'</div><div class="ai-scene-txt">'+(s.narration||'').slice(0,55)+(s.narration?.length>55?'...':'')+'</div><div class="ai-scene-st" id="ai-st-'+i+'">⏳</div></div>';}).join('');
   openModal('ai-modal');
 }
-function loadAIPhoto(inp){if(!inp.files.length)return;var rd=new FileReader();rd.onload=function(e){AI_PHOTO_B64=e.target.result.split(',')[1];var lbl=document.getElementById('ai-photo-lbl');if(lbl)lbl.textContent='✓ '+inp.files[0].name;};rd.readAsDataURL(inp.files[0]);}
+async function loadAIPhoto(inp){if(!inp.files.length)return;var rd=new FileReader();rd.onload=function(e){AI_PHOTO_B64=e.target.result.split(',')[1];var lbl=document.getElementById('ai-photo-lbl');if(lbl)lbl.textContent='✓ '+inp.files[0].name;};rd.readAsDataURL(inp.files[0]);}
 async function startAIPresenter(){
   var voice=document.getElementById('ai-voice-sel').value;
   toast('Generating AI presenter — this may take a few minutes...','info');
@@ -3245,8 +3245,8 @@ document.addEventListener('keydown', function(e){
   }
 });
 
-function tpFastUp(){STUDIO_TP.speed=Math.min(300,STUDIO_TP.speed+10);var sl=document.getElementById('tp-solo-speed');if(sl){sl.value=STUDIO_TP.speed;document.getElementById('tp-solo-speed-val').textContent=STUDIO_TP.speed;}}
-function tpFastDown(){STUDIO_TP.speed=Math.max(10,STUDIO_TP.speed-10);var sl=document.getElementById('tp-solo-speed');if(sl){sl.value=STUDIO_TP.speed;document.getElementById('tp-solo-speed-val').textContent=STUDIO_TP.speed;}}
+function tpFastUp(){STUDIO_TP.speed=Math.min(300,STUDIO_TP.speed+10);var sl=document.getElementById('tp-spd-range');if(sl){sl.value=STUDIO_TP.speed;document.getElementById('tp-spd-val').textContent=STUDIO_TP.speed;}}
+function tpFastDown(){STUDIO_TP.speed=Math.max(10,STUDIO_TP.speed-10);var sl=document.getElementById('tp-spd-range');if(sl){sl.value=STUDIO_TP.speed;document.getElementById('tp-spd-val').textContent=STUDIO_TP.speed;}}
 
 console.log('AABStudio fully loaded ✓');
 </script>
@@ -3320,7 +3320,7 @@ console.log('AABStudio fully loaded ✓');
     </div>
     <div style="display:flex;justify-content:flex-end;gap:10px;align-items:center;">
       <button onclick="closeModal('mode-picker-modal')" style="padding:9px 18px;border-radius:8px;border:.5px solid var(--bdr2);background:transparent;font-size:13px;cursor:pointer;font-family:Sora,sans-serif;color:var(--muted);">Cancel</button>
-      <button id="mode-confirm-btn" onclick="confirmMode()" disabled style="padding:9px 22px;border-radius:8px;background:var(--accent);color:var(--navy);font-size:13px;font-weight:600;border:none;cursor:pointer;font-family:Sora,sans-serif;opacity:.45;transition:opacity .15s;">Continue →</button>
+      <button id="mode-confirm-btn" id="mode-confirm-btn" onclick="confirmMode()" disabled style="padding:9px 22px;border-radius:8px;background:var(--accent);color:var(--navy);font-size:13px;font-weight:600;border:none;cursor:pointer;font-family:Sora,sans-serif;opacity:.45;transition:opacity .15s;">Continue →</button>
     </div>
   </div>
 </div>
