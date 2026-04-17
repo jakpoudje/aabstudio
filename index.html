@@ -556,6 +556,15 @@ button,input,select,textarea{font-family:inherit;}
 /* Scene editor panel styles */
 .sce-dur-btn.on{background:rgba(0,212,255,.08) !important;border-color:var(--accent) !important;color:var(--accent) !important;}
 
+
+/* ── MODALS ──────────────────────────────────────────────────────────────── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(6px);z-index:500;align-items:center;justify-content:center;padding:20px;}
+.modal-overlay.on{display:flex;}
+.modal-box{background:#fff;border-radius:20px;padding:32px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,.2);max-height:90vh;overflow-y:auto;}
+.mode-card-opt{border:2px solid var(--bdr2);border-radius:14px;padding:22px;cursor:pointer;transition:all .15s;}
+.mode-card-opt:hover{border-color:rgba(0,212,255,.3);background:rgba(0,212,255,.02);}
+.mode-card-opt.selected{border-color:var(--accent);background:rgba(0,212,255,.04);}
+
 </style>
 </head>
 <body>
@@ -1474,7 +1483,7 @@ function getSupa() { if (!_supa && window.supabase) _supa = window.supabase.crea
 // NAVIGATION
 // ══════════════════════════════════════════════════════════════════════════════
 function nav(pg) {
-  document.querySelectorAll('.pg,.pg-full').forEach(function(p){ p.classList.remove('on'); });
+  document.querySelectorAll('.pg,.pg-flex,.pg-full').forEach(function(p){ p.classList.remove('on'); });
   var el = document.getElementById(pg);
   if (el) el.classList.add('on');
   var tn = document.getElementById('topnav');
@@ -1724,8 +1733,11 @@ function confirmMode(){
 
 function selectMode(mode){
   PROJECT.mode = mode;
-  document.querySelectorAll('.mode-card').forEach(function(c){ c.classList.toggle('selected', c.dataset.mode === mode); });
-  document.getElementById('mode-confirm-btn').disabled = false;
+  document.querySelectorAll('.mode-card-opt').forEach(function(c){
+    c.classList.toggle('selected', c.dataset.mode === mode);
+  });
+  var btn = document.getElementById('mode-confirm-btn');
+  if(btn){ btn.disabled = false; btn.style.opacity = '1'; }
 }
 
 async function startSegmentation() {
@@ -3276,5 +3288,42 @@ console.log('AABStudio fully loaded ✓');
     </div>
   </div>
 </div>
+
+<!-- MODE PICKER MODAL -->
+<div class="modal-overlay" id="mode-picker-modal">
+  <div class="modal-box" style="max-width:600px;">
+    <div style="font-size:18px;font-weight:700;color:var(--ink);margin-bottom:6px;">Choose your mode</div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:22px;">How do you want to use this project?</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:22px;">
+      <div class="mode-card-opt" id="mode-card-studio" data-mode="studio" onclick="selectMode('studio')">
+        <div style="font-size:28px;margin-bottom:10px;">🎬</div>
+        <div style="font-size:15px;font-weight:600;color:var(--ink);margin-bottom:6px;">Full Studio</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:12px;">Script → AI scenes → record → edit → export</div>
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <div style="font-size:11px;color:var(--muted2);">✓ AI scene segmentation</div>
+          <div style="font-size:11px;color:var(--muted2);">✓ Teleprompter + recording</div>
+          <div style="font-size:11px;color:var(--muted2);">✓ Asset overlays &amp; drawing</div>
+          <div style="font-size:11px;color:var(--muted2);">✓ Multi-platform export</div>
+        </div>
+      </div>
+      <div class="mode-card-opt" id="mode-card-teleprompter" data-mode="teleprompter" onclick="selectMode('teleprompter')">
+        <div style="font-size:28px;margin-bottom:10px;">📺</div>
+        <div style="font-size:15px;font-weight:600;color:var(--ink);margin-bottom:6px;">Teleprompter Only</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:12px;">Paste script → full-screen teleprompter → phone remote</div>
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <div style="font-size:11px;color:var(--muted2);">✓ Word-by-word highlight</div>
+          <div style="font-size:11px;color:var(--muted2);">✓ Phone remote via QR</div>
+          <div style="font-size:11px;color:var(--muted2);">✓ Adaptive speech sync</div>
+          <div style="font-size:11px;color:var(--muted2);">✓ Mirror &amp; fullscreen</div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:10px;align-items:center;">
+      <button onclick="closeModal('mode-picker-modal')" style="padding:9px 18px;border-radius:8px;border:.5px solid var(--bdr2);background:transparent;font-size:13px;cursor:pointer;font-family:Sora,sans-serif;color:var(--muted);">Cancel</button>
+      <button id="mode-confirm-btn" onclick="confirmMode()" disabled style="padding:9px 22px;border-radius:8px;background:var(--accent);color:var(--navy);font-size:13px;font-weight:600;border:none;cursor:pointer;font-family:Sora,sans-serif;opacity:.45;transition:opacity .15s;">Continue →</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
