@@ -1530,17 +1530,19 @@ function showErr(id,msg){ var e=document.getElementById(id); if(e){e.textContent
 async function doSignIn() {
   var email = document.getElementById('si-email').value.trim();
   var pass  = document.getElementById('si-pass').value;
-  if (!email || !pass) return showErr('err-in','Please fill in all fields.');
+  if (!email || !pass) return showErr('err-in', 'Please fill in all fields.');
   var btn = document.getElementById('btn-in');
   btn.textContent = 'Signing in...'; btn.disabled = true;
   try {
-    var r = await getSupa().auth.signInWithPassword({ email: email, password: pass });
-    if (r.error) throw r.error;
-    if (!r.data || !r.data.user) throw new Error('Sign in failed — please try again.');
-    setUser(r.data.user);
+    var result = await getSupa().auth.signInWithPassword({ email: email, password: pass });
+    // Supabase v2: error can be in result.error OR user can be null with no error
+    if (result.error) throw new Error(result.error.message);
+    var user = result.data && result.data.user;
+    if (!user) throw new Error('Email not confirmed or account not found. Check your inbox.');
+    setUser(user);
     nav('dashboard-pg');
   } catch(e) {
-    showErr('err-in', e.message || 'Sign in failed.');
+    showErr('err-in', e.message || 'Sign in failed. Please try again.');
   }
   btn.textContent = 'Sign in'; btn.disabled = false;
 }
@@ -1550,11 +1552,19 @@ async function doSignUp() {
   if (pass.length<8) return showErr('err-up','Password must be at least 8 characters.');
   var btn=document.getElementById('btn-up'); btn.textContent='Creating...'; btn.disabled=true;
   try {
-    var r=await getSupa().auth.signUp({email,password:pass,options:{data:{name},emailRedirectTo:'https://aabstudio.ai'}});
-    if (r.error) throw r.error;
-    if (r.data.session) { setUser(r.data.user); toast('Welcome to AABStudio!','ok'); nav('dashboard-pg'); }
-    else { toast('Check your email to confirm, then sign in.','ok'); authTab('in'); }
-  } catch(e) { showErr('err-up',e.message); }
+    var r = await getSupa().auth.signUp({ email: email, password: pass, options: { data: { name: name }, emailRedirectTo: 'https://aabstudio.ai' } });
+    if (r.error) throw new Error(r.error.message);
+    var session = r.data && r.data.session;
+    var user    = r.data && r.data.user;
+    if (session && user) {
+      setUser(user);
+      toast('Welcome to AABStudio!', 'ok');
+      nav('dashboard-pg');
+    } else {
+      toast('Account created! Check your email to confirm, then sign in.', 'ok');
+      authTab('in');
+    }
+  } catch(e) { showErr('err-up', e.message || 'Sign up failed.'); }
   btn.textContent='Create free account'; btn.disabled=false;
 }
 async function doSignOut() { await getSupa().auth.signOut(); APP.user=null; updateNavState(); nav('home'); }
