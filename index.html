@@ -2536,20 +2536,27 @@ function startRec(){
 
   STUDIO.chunks = [];
 
-  // Record raw camera+mic stream — works in all browsers, no CORS issues
-  var mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-    ? 'video/webm;codecs=vp9,opus'
-    : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
-    ? 'video/webm;codecs=vp8,opus'
-    : 'video/webm';
-
+  // Pick best supported mime — Safari needs mp4, Chrome/Firefox prefer webm
+  var mime = '';
+  var candidates = [
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm',
+    'video/mp4;codecs=avc1,mp4a.40.2',
+    'video/mp4'
+  ];
+  for(var ci=0; ci<candidates.length; ci++){
+    if(MediaRecorder.isTypeSupported(candidates[ci])){ mime=candidates[ci]; break; }
+  }
+  console.log('Recording with mime:', mime || 'browser default');
   var mrOpts = mime ? { mimeType: mime, videoBitsPerSecond: 4000000 } : { videoBitsPerSecond: 4000000 };
   var mr = new MediaRecorder(STUDIO.stream, mrOpts);
 
   mr.ondataavailable = function(e){ if(e.data.size > 0) STUDIO.chunks.push(e.data); };
 
   mr.onstop = function(){
-    var blob = new Blob(STUDIO.chunks, { type: 'video/webm' });
+    var blobType = mime || 'video/webm';
+    var blob = new Blob(STUDIO.chunks, { type: blobType });
     var url  = URL.createObjectURL(blob);
     var scene = PROJECT.scenes[STUDIO.currentScene];
     var sid   = (scene && scene.id) || ('clip_' + Date.now());
@@ -2564,6 +2571,7 @@ function startRec(){
     console.log('Clip saved:', sid, Math.round(blob.size/1024)+'KB');
   };
 
+  STUDIO._mime = mime;
   mr.start(100);
   STUDIO.mr = mr;
   STUDIO.recording = true;
