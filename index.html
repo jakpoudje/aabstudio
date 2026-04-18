@@ -2473,195 +2473,37 @@ function startRec(){
 
   STUDIO.chunks = [];
 
-  // ── SET UP COMPOSITE CANVAS ──────────────────────────────────────────────
-  // We record a canvas that composites: background + camera (PIP or full) + assets
-  var compCanvas = document.getElementById('studio-composite-canvas');
-  var wrap       = document.getElementById('studio-canvas');
-  var camVid     = document.getElementById('studio-cam');
-  var bgCanvas   = document.getElementById('studio-bg-canvas');
-  var bgImg      = document.getElementById('studio-bg-img');
+  // ── RECORDING STRATEGY ─────────────────────────────────────────────────────
+  // Record the raw camera+mic stream directly — guaranteed to work in all browsers.
+  // Background is shown as live preview on screen (works perfectly).
+  // Canvas compositing is shown live but not recorded (avoids CORS/taint issues).
+  // This matches how StreamYard, Zoom, Teams all work.
 
-  if(!compCanvas || !wrap){ toast('Studio not ready','error'); return; }
-
-  // Match composite canvas to display size
-  var W = wrap.offsetWidth  || 1280;
-  var H = wrap.offsetHeight || 720;
-  if(W < 100) W = 1280; // safety — if layout not settled
-  if(H < 100) H = 720;
-  compCanvas.width  = W;
-  compCanvas.height = H;
-  compCanvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:6;display:block;pointer-events:none;';
-
-  var ctx = compCanvas.getContext('2d');
-  var bgMode = _currentBg || 'none';
-
-  // Determine camera rect — PIP if bg active, full if live
-  var camRect = bgMode === 'none'
-    ? { x: 0, y: 0, w: W, h: H }
-    : { x: W - 252, y: H - 147, w: 240, h: 135 };
-
-  // ── COMPOSITOR LOOP — runs at ~30fps ────────────────────────────────────
-  function drawFrame(){
-    if(!STUDIO.recording){ return; }
-
-    ctx.clearRect(0, 0, W, H);
-
-    // 1. Background
-    if(bgMode === 'none'){
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, W, H);
-    } else if(bgMode === 'custom-img' && bgImg && bgImg.src){
-      try { ctx.drawImage(bgImg, 0, 0, W, H); } catch(e){}
-    } else {
-      // Try photo cache first (Unsplash images)
-      var variant2  = BG_VARIANT[bgMode] || 0;
-      var cKey2     = bgMode + '_' + variant2;
-      var cachedBg  = BG_IMG_CACHE[cKey2];
-      if(cachedBg){
-        var sc2 = Math.max(W/cachedBg.width, H/cachedBg.height);
-        var dw2 = cachedBg.width*sc2, dh2 = cachedBg.height*sc2;
-        try { ctx.drawImage(cachedBg, (W-dw2)/2, (H-dh2)/2, dw2, dh2); } catch(e){}
-      } else if(bgCanvas && bgCanvas.width > 0){
-        // Use the already-rendered bg canvas (gradient fallback)
-        try { ctx.drawImage(bgCanvas, 0, 0, W, H); } catch(e){}
-      } else {
-        var fbPreset = BG_PRESETS[bgMode];
-        if(fbPreset) fbPreset(ctx, W, H);
-      }
-    }
-
-    // Apply lighting overlay
-    applyLightingToCtx(ctx, W, H);
-
-    // 2. Camera — full or PIP
-    if(camVid && camVid.srcObject && (camVid.readyState >= 2 || camVid.videoWidth > 0)){
-      if(bgMode !== 'none'){
-        // PIP: rounded rectangle clip
-        ctx.save();
-        var r = 10, cx = camRect.x, cy = camRect.y, cw = camRect.w, ch = camRect.h;
-        ctx.beginPath();
-        ctx.moveTo(cx+r, cy);
-        ctx.lineTo(cx+cw-r, cy);
-        ctx.quadraticCurveTo(cx+cw, cy, cx+cw, cy+r);
-        ctx.lineTo(cx+cw, cy+ch-r);
-        ctx.quadraticCurveTo(cx+cw, cy+ch, cx+cw-r, cy+ch);
-        ctx.lineTo(cx+r, cy+ch);
-        ctx.quadraticCurveTo(cx, cy+ch, cx, cy+ch-r);
-        ctx.lineTo(cx, cy+r);
-        ctx.quadraticCurveTo(cx, cy, cx+r, cy);
-        ctx.closePath();
-        ctx.clip();
-        ctx.drawImage(camVid, cx, cy, cw, ch);
-        ctx.restore();
-        // PIP border
-        ctx.strokeStyle = 'rgba(255,255,255,.25)';
-        ctx.lineWidth   = 2;
-        ctx.beginPath();
-        ctx.moveTo(cx+r, cy);
-        ctx.lineTo(cx+cw-r, cy);
-        ctx.quadraticCurveTo(cx+cw, cy, cx+cw, cy+r);
-        ctx.lineTo(cx+cw, cy+ch-r);
-        ctx.quadraticCurveTo(cx+cw, cy+ch, cx+cw-r, cy+ch);
-        ctx.lineTo(cx+r, cy+ch);
-        ctx.quadraticCurveTo(cx, cy+ch, cx, cy+ch-r);
-        ctx.lineTo(cx, cy+r);
-        ctx.quadraticCurveTo(cx, cy, cx+r, cy);
-        ctx.closePath();
-        ctx.stroke();
-      } else {
-        ctx.drawImage(camVid, 0, 0, W, H);
-      }
-    }
-
-    // 3. Asset overlays
-    var assets = (PROJECT.scenes[STUDIO.currentScene] || {}).assets || [];
-    assets.forEach(function(asset){
-      if(!asset.dataUrl || asset.type !== 'image') return;
-      var img = STUDIO._assetImgCache && STUDIO._assetImgCache[asset.id];
-      if(!img){ return; } // Image not cached yet
-      var pct  = (asset.sizePercent || 35) / 100;
-      var aw   = W * pct;
-      var ah   = aw * (img.naturalHeight / img.naturalWidth || 0.5625);
-      var pos  = asset.position || 'bot-right';
-      var ax   = pos.includes('left')   ? 16 : pos.includes('right')  ? W - aw - 16 : (W - aw) / 2;
-      var ay   = pos.includes('top')    ? 16 : pos.includes('bot')    ? H - ah - 16 : (H - ah) / 2;
-      ctx.drawImage(img, ax, ay, aw, ah);
-    });
-
-    // 4. Recording indicator (red dot top-left)
-    ctx.fillStyle = 'rgba(239,68,68,.9)';
-    ctx.beginPath();
-    ctx.arc(20, 20, 7, 0, Math.PI*2);
-    ctx.fill();
-
-    STUDIO._compFrame = requestAnimationFrame(drawFrame);
-  }
-
-  // Pre-load asset images into cache
-  STUDIO._assetImgCache = {};
-  var assets = (PROJECT.scenes[STUDIO.currentScene] || {}).assets || [];
-  assets.forEach(function(asset){
-    if(asset.dataUrl && asset.type === 'image'){
-      var img = new Image();
-      img.onload = function(){ STUDIO._assetImgCache[asset.id] = img; };
-      img.src = asset.dataUrl;
-    }
-  });
-
-  // ── START RECORDING THE COMPOSITE CANVAS ────────────────────────────────
-  var fps  = 30;
   var mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
     ? 'video/webm;codecs=vp9,opus'
-    : MediaRecorder.isTypeSupported('video/webm')
-    ? 'video/webm' : '';
+    : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
+    ? 'video/webm;codecs=vp8,opus'
+    : 'video/webm';
 
-  var recordStream;
-  try {
-    // Preferred: record composited canvas (bg + camera + assets)
-    recordStream = compCanvas.captureStream(fps);
-    // Add microphone audio from camera stream
-    STUDIO.stream.getAudioTracks().forEach(function(t){ recordStream.addTrack(t); });
-  } catch(e) {
-    // Fallback (e.g. older Safari): record raw camera stream
-    console.warn('captureStream failed, falling back to camera stream:', e.message);
-    recordStream = STUDIO.stream;
-    compCanvas.style.display = 'none'; // hide composite canvas
-  }
-
-  var mrOpts = mime ? { mimeType: mime, videoBitsPerSecond: 5000000 } : {};
-  var mr = new MediaRecorder(recordStream, mrOpts);
+  var mrOpts = mime ? { mimeType: mime, videoBitsPerSecond: 4000000 } : { videoBitsPerSecond: 4000000 };
+  var mr = new MediaRecorder(STUDIO.stream, mrOpts);
 
   mr.ondataavailable = function(e){ if(e.data.size > 0) STUDIO.chunks.push(e.data); };
 
   mr.onstop = function(){
-    // Stop compositor loop
-    if(STUDIO._compFrame) cancelAnimationFrame(STUDIO._compFrame);
-    compCanvas.style.display = 'none';
-
-    // Check which recording is better — composite (with bg) or raw camera
-    var compBlob = new Blob(STUDIO.chunks, { type: 'video/webm' });
-    var rawBlob  = STUDIO._rawBackup;
-    var blob;
-    var compSize = compBlob.size;
-    var rawSize  = rawBlob ? rawBlob.size : 0;
-    console.log('Composite size:', compSize, 'Raw size:', rawSize);
-    if(compSize > 80000){
-      // Composite recorded something — use it (has background + PIP)
-      blob = compBlob;
-      console.log('Using composite recording (with background)');
-    } else if(rawBlob && rawSize > 10000){
-      // Composite failed — use raw camera
-      blob = rawBlob;
-      console.warn('Composite blank, using raw camera recording');
-    } else {
-      blob = compBlob; // last resort
-    }
+    var blob = new Blob(STUDIO.chunks, { type: 'video/webm' });
     var url  = URL.createObjectURL(blob);
     var scene = PROJECT.scenes[STUDIO.currentScene];
     var sid   = (scene && scene.id) || ('clip_' + Date.now());
 
     if(!PROJECT.clips) PROJECT.clips = {};
-    PROJECT.clips[sid] = { url: url, sceneIdx: STUDIO.currentScene, duration: STUDIO.recSecs, size: blob.size };
+    PROJECT.clips[sid] = {
+      url:      url,
+      sceneIdx: STUDIO.currentScene,
+      duration: STUDIO.recSecs,
+      size:     blob.size,
+      sceneName: (scene && scene.type) || 'SCENE'
+    };
 
     updateStudioClips();
     if(scene) scene.status = 'recorded';
@@ -2669,79 +2511,49 @@ function startRec(){
     renderStudioQueue();
 
     var rb = document.getElementById('btn-retake'); if(rb) rb.style.display = '';
-    toast('Scene ' + (STUDIO.currentScene + 1) + ' recorded ✓  ' + STUDIO.recSecs + 's', 'ok');
+    toast('✓ Scene '+(STUDIO.currentScene+1)+' saved — '+STUDIO.recSecs+'s ('+Math.round(blob.size/1024)+'KB)', 'ok');
+    console.log('Clip saved:', sid, blob.size, 'bytes');
   };
 
-  // Start compositor and recorder
-  drawFrame();
-  mr.start(200);
-  STUDIO.mr = mr;
-
-  // Also record raw camera as backup (in case composite is blank)
-  try {
-    var rawMime = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/webm';
-    var rawMr   = new MediaRecorder(STUDIO.stream, { mimeType: rawMime });
-    var rawChunks = [];
-    rawMr.ondataavailable = function(e){ if(e.data.size>0) rawChunks.push(e.data); };
-    rawMr.onstop = function(){
-      STUDIO._rawBackup = new Blob(rawChunks, {type:'video/webm'});
-    };
-    rawMr.start(200);
-    STUDIO._rawMr = rawMr;
-  } catch(e){ STUDIO._rawMr = null; }
+  mr.start(100);
+  STUDIO.mr        = mr;
   STUDIO.recording = true;
   STUDIO.recSecs   = 0;
 
-  // REC → STOP button
+  // ── UPDATE UI ──────────────────────────────────────────────────────────────
   var rb = document.getElementById('btn-rec');
   if(rb){
     rb.textContent       = '■ STOP';
-    rb.style.background  = 'rgba(239,68,68,.35)';
+    rb.style.background  = '#ef4444';
     rb.style.borderColor = '#ef4444';
     rb.style.color       = '#fff';
     rb.style.fontWeight  = '700';
-    rb.style.animation   = 'rec-pulse 1.5s infinite';
   }
   var sb = document.getElementById('rec-badge'); if(sb) sb.className = 'rec-badge recording';
   var rt = document.getElementById('rec-txt');   if(rt) rt.textContent = 'REC';
-  // If Sync REC mode is ON, start teleprompter automatically
-  if(STUDIO.tpAuto){
-    studioTpStart();
-  }
 
-  // Recording timer
   STUDIO.recTimer = setInterval(function(){
     STUDIO.recSecs++;
-    var m = Math.floor(STUDIO.recSecs / 60), s = STUDIO.recSecs % 60;
+    var m = Math.floor(STUDIO.recSecs/60), s = STUDIO.recSecs%60;
     var el = document.getElementById('rec-timer-display');
-    if(el) el.textContent = m + ':' + (s < 10 ? '0' : '') + s;
+    if(el) el.textContent = m+':'+(s<10?'0':'')+s;
   }, 1000);
-}
-function stopRec(){
+
+  // Start teleprompter if Sync REC is on
+  if(STUDIO.tpAuto){ studioTpStart(); }
+}function stopRec(){
   STUDIO.recording = false;
   clearInterval(STUDIO.recTimer);
-  // Stop compositor animation loop
-  if(STUDIO._compFrame){ cancelAnimationFrame(STUDIO._compFrame); STUDIO._compFrame = null; }
-  // Stop raw backup recorder
-  if(STUDIO._rawMr && STUDIO._rawMr.state !== 'inactive') STUDIO._rawMr.stop();
-  // Stop main MediaRecorder (triggers onstop → saves clip)
   if(STUDIO.mr && STUDIO.mr.state !== 'inactive') STUDIO.mr.stop();
-  // Reset REC button
   var rb = document.getElementById('btn-rec');
   if(rb){
-    rb.textContent      = '⏺ REC';
-    rb.style.background = '';
-    rb.style.borderColor= '';
-    rb.style.color      = '';
-    rb.style.fontWeight = '';
-    rb.style.animation  = '';
+    rb.textContent='⏺ REC';
+    rb.style.background='';rb.style.borderColor='';rb.style.color='';rb.style.fontWeight='';rb.style.animation='';
   }
-  var sb = document.getElementById('rec-badge'); if(sb) sb.className = 'rec-badge ready';
-  var rt = document.getElementById('rec-txt');   if(rt) rt.textContent = 'READY';
-  // Always stop teleprompter when recording stops
+  var sb=document.getElementById('rec-badge');if(sb)sb.className='rec-badge ready';
+  var rt=document.getElementById('rec-txt');if(rt)rt.textContent='READY';
   studioTpStop();
-}
-function retakeScene(){var sid=PROJECT.scenes[STUDIO.currentScene]?.id;if(sid&&PROJECT.clips[sid]){delete PROJECT.clips[sid];delete STUDIO.clips?.[sid];}if(PROJECT.scenes[STUDIO.currentScene])PROJECT.scenes[STUDIO.currentScene].status='draft';var rb=document.getElementById('btn-retake');if(rb)rb.style.display='none';updateStudioClips();renderStudioQueue();toast('Ready to retake Scene '+(STUDIO.currentScene+1),'info');}
+}function retakeScene(){var sid=PROJECT.scenes[STUDIO.currentScene]?.id;if(sid&&PROJECT.clips[sid]){delete PROJECT.clips[sid];delete STUDIO.clips?.[sid];}if(PROJECT.scenes[STUDIO.currentScene])PROJECT.scenes[STUDIO.currentScene].status='draft';var rb=document.getElementById('btn-retake');if(rb)rb.style.display='none';updateStudioClips();renderStudioQueue();toast('Ready to retake Scene '+(STUDIO.currentScene+1),'info');}
 function endStudioSession(){if(STUDIO.recording)stopRec();clearInterval(STUDIO.elTimer);clearInterval(_tpAutoTimer);if(STUDIO.recognition)try{STUDIO.recognition.stop();}catch(e){}if(STUDIO.stream){STUDIO.stream.getTracks().forEach(function(t){t.stop();});STUDIO.stream=null;}STUDIO.analyser=null;saveProject();nav('edit-pg');}
 function updateStudioClips(){
   var el=document.getElementById('sp-clips');if(!el)return;
