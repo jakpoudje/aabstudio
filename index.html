@@ -1322,7 +1322,7 @@ button,input,select,textarea{font-family:inherit;}
           <div style="font-size:13px;">Record your scenes to start editing</div>
           <button class="studio-btn" style="margin-top:12px;" onclick="nav('record-pg')">← Go to studio</button>
         </div>
-        <video id="edit-video" controls style="display:none;width:100%;height:100%;max-width:100%;max-height:100%;border-radius:4px;background:#000;object-fit:contain;"></video>
+        <video id="edit-video" controls preload="auto" style="display:none;width:100%;height:100%;max-width:100%;max-height:100%;border-radius:4px;background:#000;object-fit:contain;"></video>
         <!-- Playback controls overlay -->
         <div style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:6px;background:rgba(0,0,0,.6);padding:6px 12px;border-radius:20px;" id="edit-playback-controls">
           <button class="studio-btn" onclick="editSeek(-10)">«10s</button>
@@ -2418,25 +2418,36 @@ function initStudio() {
 }
 function startElapsedTimer(){if(STUDIO.elTimer)clearInterval(STUDIO.elTimer);STUDIO.elapsed=0;STUDIO.elTimer=setInterval(function(){STUDIO.elapsed++;var m=Math.floor(STUDIO.elapsed/60),s=STUDIO.elapsed%60;var el=document.getElementById('st-elapsed');if(el)el.textContent=m+':'+(s<10?'0':'')+s;},1000);}
 function startCamera() {
+  var vid      = document.getElementById('studio-cam');
   var noCamera = document.getElementById('studio-no-camera');
-  if(noCamera) noCamera.innerHTML = '<div style="font-size:13px;color:rgba(255,255,255,.4);">Starting camera...</div>';
+
+  // If stream already active (returning to studio), just re-attach
+  if(STUDIO.stream && STUDIO.stream.active) {
+    if(vid){ vid.srcObject = STUDIO.stream; vid.style.display = 'block'; }
+    if(noCamera) noCamera.style.display = 'none';
+    STUDIO.camOn = true; STUDIO.micOn = true;
+    updateCamBtn(); updateMicBtn();
+    return;
+  }
+
+  if(noCamera) noCamera.style.display = 'flex';
+  if(vid) vid.style.display = 'none';
+
   navigator.mediaDevices.getUserMedia({
-    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-    audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 44100 }
+    video: { width:{ideal:1280}, height:{ideal:720}, facingMode:'user' },
+    audio: { echoCancellation:true, noiseSuppression:true, sampleRate:44100 }
   }).then(function(stream) {
-    STUDIO.stream  = stream;
-    STUDIO.camOn   = true;
-    STUDIO.micOn   = true;
-    var vid = document.getElementById('studio-cam');
-    if(vid) { vid.srcObject = stream; vid.style.display = 'block'; }
+    STUDIO.stream = stream;
+    STUDIO.camOn  = true;
+    STUDIO.micOn  = true;
+    if(vid){ vid.srcObject = stream; vid.style.display = 'block'; }
     if(noCamera) noCamera.style.display = 'none';
     updateCamBtn();
     updateMicBtn();
     initAudioMeter(stream);
-    toast('Camera ready', 'ok');
   }).catch(function(e) {
-    if(noCamera) noCamera.innerHTML = '<div id="studio-no-camera" style="font-size:13px;color:var(--red);">Camera denied — ' + e.message + '</div><button class="studio-btn" style="margin-top:10px;" onclick="startCamera()">Retry</button>';
-    toast('Camera error: ' + e.message, 'error');
+    if(noCamera) noCamera.innerHTML = '<div style="color:var(--red);font-size:13px;padding:16px;">Camera denied — '+e.message+'</div><button class="s-btn" style="margin-top:8px;" onclick="startCamera()">Retry</button>';
+    toast('Camera: '+e.message,'error');
   });
 }
 function initAudioMeter(stream){try{var ctx=new (window.AudioContext||window.webkitAudioContext)(),src=ctx.createMediaStreamSource(stream),an=ctx.createAnalyser();an.fftSize=128;src.connect(an);STUDIO.analyser=an;var buf=new Uint8Array(an.frequencyBinCount);function tick(){if(!STUDIO.analyser)return;an.getByteFrequencyData(buf);var avg=buf.reduce(function(a,b){return a+b;},0)/buf.length;var el=document.getElementById('audio-fill');if(el)el.style.height=Math.min(100,avg*2.5)+'%';requestAnimationFrame(tick);}tick();}catch(e){}}
@@ -2474,10 +2485,11 @@ function startRec(){
   // Match composite canvas to display size
   var W = wrap.offsetWidth  || 1280;
   var H = wrap.offsetHeight || 720;
+  if(W < 100) W = 1280; // safety — if layout not settled
+  if(H < 100) H = 720;
   compCanvas.width  = W;
   compCanvas.height = H;
-  compCanvas.style.display = 'block';
-  compCanvas.style.zIndex  = '6'; // above everything for preview
+  compCanvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:6;display:block;pointer-events:none;';
 
   var ctx = compCanvas.getContext('2d');
   var bgMode = _currentBg || 'none';
@@ -2512,7 +2524,7 @@ function startRec(){
     applyLightingToCtx(ctx, W, H);
 
     // 2. Camera — full or PIP
-    if(camVid && camVid.readyState >= 2){
+    if(camVid && camVid.srcObject && (camVid.readyState >= 2 || camVid.videoWidth > 0)){
       if(bgMode !== 'none'){
         // PIP: rounded rectangle clip
         ctx.save();
@@ -2616,7 +2628,13 @@ function startRec(){
     if(STUDIO._compFrame) cancelAnimationFrame(STUDIO._compFrame);
     compCanvas.style.display = 'none';
 
-    var blob = new Blob(STUDIO.chunks, { type: 'video/webm' });
+    // Use composite recording; if tiny (likely blank), use raw camera backup
+    var compBlob = new Blob(STUDIO.chunks, { type: 'video/webm' });
+    var blob = compBlob;
+    if(compBlob.size < 50000 && STUDIO._rawBackup && STUDIO._rawBackup.size > compBlob.size){
+      blob = STUDIO._rawBackup;
+      console.warn('Composite was too small ('+compBlob.size+' bytes), using raw camera recording');
+    }
     var url  = URL.createObjectURL(blob);
     var scene = PROJECT.scenes[STUDIO.currentScene];
     var sid   = (scene && scene.id) || ('clip_' + Date.now());
@@ -2636,7 +2654,20 @@ function startRec(){
   // Start compositor and recorder
   drawFrame();
   mr.start(200);
-  STUDIO.mr        = mr;
+  STUDIO.mr = mr;
+
+  // Also record raw camera as backup (in case composite is blank)
+  try {
+    var rawMime = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/webm';
+    var rawMr   = new MediaRecorder(STUDIO.stream, { mimeType: rawMime });
+    var rawChunks = [];
+    rawMr.ondataavailable = function(e){ if(e.data.size>0) rawChunks.push(e.data); };
+    rawMr.onstop = function(){
+      STUDIO._rawBackup = new Blob(rawChunks, {type:'video/webm'});
+    };
+    rawMr.start(200);
+    STUDIO._rawMr = rawMr;
+  } catch(e){ STUDIO._rawMr = null; }
   STUDIO.recording = true;
   STUDIO.recSecs   = 0;
 
@@ -2666,7 +2697,9 @@ function stopRec(){
   clearInterval(STUDIO.recTimer);
   // Stop compositor animation loop
   if(STUDIO._compFrame){ cancelAnimationFrame(STUDIO._compFrame); STUDIO._compFrame = null; }
-  // Stop MediaRecorder (triggers onstop → saves clip)
+  // Stop raw backup recorder
+  if(STUDIO._rawMr && STUDIO._rawMr.state !== 'inactive') STUDIO._rawMr.stop();
+  // Stop main MediaRecorder (triggers onstop → saves clip)
   if(STUDIO.mr && STUDIO.mr.state !== 'inactive') STUDIO.mr.stop();
   // Reset REC button
   var rb = document.getElementById('btn-rec');
@@ -3100,8 +3133,16 @@ function selectClip(id){
     v.style.maxHeight = '100%';
     // Auto-play first frame so user sees content not black
     v.onloadeddata = function(){
-      v.currentTime = 0.1;
-      startEditTimecode();
+      // Force first frame render
+      v.currentTime = 0.01;
+      setTimeout(function(){
+        v.currentTime = 0.1;
+        startEditTimecode();
+      }, 100);
+    };
+    v.onerror = function(e){
+      console.error('Video load error:', e);
+      toast('Could not load clip preview — the recording may be corrupt. Try re-recording.','error');
     };
   }
   if(e) e.style.display = 'none';
