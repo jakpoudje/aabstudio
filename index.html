@@ -2654,9 +2654,7 @@ function updateTP(){
   }
   if(tp_next)tp_next.textContent=next?(next.narration||'').slice(0,90)+'...':'';
   clearInterval(_tpAutoTimer);
-  STUDIO_TP.running=false;
-  var btn=document.getElementById('btn-tp-start');
-  if(btn){btn.textContent='▶ Prompter';btn.style.background='';btn.style.borderColor='';}
+  // Don't reset STUDIO_TP.running here — studioTpStart handles restart after scene change
   var overlayArea=document.getElementById('studio-overlay-area');if(overlayArea)overlayArea.innerHTML='';
   if(cur&&cur.assets&&cur.assets.length)setTimeout(function(){showAssetNow(cur.assets[0].id);},200);
   var pill=document.getElementById('st-scene-pill');if(pill)pill.textContent='Scene '+(STUDIO.currentScene+1);
@@ -2694,8 +2692,24 @@ function startTpAutoTimer(){
     words.forEach(function(_,i){var s=document.getElementById('tw'+i);if(s)s.style.color=i<wi?'rgba(255,255,255,.2)':i===wi?'var(--gold)':'#fff';});
     var pf=document.getElementById('scene-prog-fill');if(pf)pf.style.width=(progress*100)+'%';
     if(progress>=0.95){
-      clearInterval(_tpAutoTimer);STUDIO_TP.running=false;
-      var btn=document.getElementById('btn-tp-start');if(btn){btn.textContent='▶ Prompter';btn.style.background='';btn.style.borderColor='';}
+      clearInterval(_tpAutoTimer);
+      var hasNext = STUDIO.currentScene < PROJECT.scenes.length - 1;
+      if(hasNext){
+        // Capture whether TP was running BEFORE studioNext resets it
+        var wasRunning = STUDIO_TP.running;
+        var wasSynced  = STUDIO.tpAuto;
+        setTimeout(function(){
+          studioNext(); // advances scene, calls updateTP which clears running state
+          if(wasRunning || wasSynced){
+            setTimeout(function(){ studioTpStart(); }, 400); // restart for new scene
+          }
+        }, 500);
+      } else {
+        STUDIO_TP.running = false;
+        var btn = document.getElementById('btn-tp-start');
+        if(btn){btn.textContent='▶ Prompter';btn.style.background='';btn.style.borderColor='';}
+        toast('✓ All scenes complete','ok');
+      }
     }
   },80);
 }
