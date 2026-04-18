@@ -1131,6 +1131,11 @@ button,input,select,textarea{font-family:inherit;}
           <video id="studio-bg-vid" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;" autoplay loop muted></video>
           <canvas id="studio-bg-canvas" style="position:absolute;top:0;left:0;width:100%;height:100%;display:none;"></canvas>
         </div>
+        <!-- Layer 2: Camera placeholder (shown while camera loads) -->
+        <div id="studio-no-camera" style="position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.7);">
+          <div style="font-size:32px;margin-bottom:10px;">📷</div>
+          <div style="font-size:13px;color:rgba(255,255,255,.5);">Click <strong style="color:#fff;">Cam</strong> to start camera</div>
+        </div>
         <!-- Layer 2: Camera video (always above background) -->
         <video id="studio-cam" autoplay muted playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:2;"></video>
         <!-- Layer 3: Hidden video for recording (captures camera only) -->
@@ -2438,7 +2443,8 @@ function startCamera() {
     return;
   }
 
-  if(noCamera) noCamera.style.display = 'flex';
+  // Show placeholder, hide video while requesting permission
+  if(noCamera){ noCamera.style.display = 'flex'; noCamera.querySelector('div:last-child') && (noCamera.querySelector('div:last-child').textContent='Requesting camera...'); }
   if(vid) vid.style.display = 'none';
 
   navigator.mediaDevices.getUserMedia({
@@ -2450,21 +2456,71 @@ function startCamera() {
     STUDIO.micOn  = true;
     if(vid){ vid.srcObject = stream; vid.style.display = 'block'; }
     if(noCamera) noCamera.style.display = 'none';
+    // Set camera to full view by default (no background selected)
+    if(vid && _currentBg === 'none'){
+      vid.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;';
+    }
     updateCamBtn();
     updateMicBtn();
     initAudioMeter(stream);
+    toast('Camera ready','ok');
   }).catch(function(e) {
     if(noCamera) noCamera.innerHTML = '<div style="color:var(--red);font-size:13px;padding:16px;">Camera denied — '+e.message+'</div><button class="s-btn" style="margin-top:8px;" onclick="startCamera()">Retry</button>';
     toast('Camera: '+e.message,'error');
   });
 }
-function initAudioMeter(stream){try{var ctx=new (window.AudioContext||window.webkitAudioContext)(),src=ctx.createMediaStreamSource(stream),an=ctx.createAnalyser();an.fftSize=128;src.connect(an);STUDIO.analyser=an;var buf=new Uint8Array(an.frequencyBinCount);function tick(){if(!STUDIO.analyser)return;an.getByteFrequencyData(buf);var avg=buf.reduce(function(a,b){return a+b;},0)/buf.length;var el=document.getElementById('audio-fill');if(el)el.style.height=Math.min(100,avg*2.5)+'%';requestAnimationFrame(tick);}tick();}catch(e){}}
+function initAudioMeter(stream){
+  try{
+    var actx=new (window.AudioContext||window.webkitAudioContext)();
+    var src=actx.createMediaStreamSource(stream);
+    var an=actx.createAnalyser();
+    an.fftSize=128;src.connect(an);STUDIO.analyser=an;
+    var buf=new Uint8Array(an.frequencyBinCount);
+    function tick(){
+      if(!STUDIO.stream||!STUDIO.stream.active)return;
+      an.getByteFrequencyData(buf);
+      var avg=buf.reduce(function(a,b){return a+b;},0)/buf.length;
+      var pct=Math.min(100,avg*2.5)+'%';
+      // Update both possible element IDs
+      var e1=document.getElementById('audio-fill');if(e1)e1.style.height=pct;
+      var e2=document.getElementById('mic-level-fill');if(e2)e2.style.height=pct;
+      requestAnimationFrame(tick);
+    }
+    tick();
+  }catch(e){console.warn('Audio meter:',e);}
+}
 function toggleCamera(){if(!STUDIO.stream){startCamera();return;}STUDIO.camOn=!STUDIO.camOn;STUDIO.stream.getVideoTracks().forEach(function(t){t.enabled=STUDIO.camOn;});updateCamBtn();}
 function toggleMic(){if(!STUDIO.stream)return;STUDIO.micOn=!STUDIO.micOn;STUDIO.stream.getAudioTracks().forEach(function(t){t.enabled=STUDIO.micOn;});updateMicBtn();}
-function updateCamBtn(){var b=document.getElementById('btn-cam');if(b)b.style.color=STUDIO.camOn?'rgba(255,255,255,.7)':'var(--red)';}
-function updateMicBtn(){var b=document.getElementById('btn-mic');if(b)b.style.color=STUDIO.micOn?'rgba(255,255,255,.7)':'var(--red)';}
+function updateCamBtn(){
+  var b=document.getElementById('btn-cam');
+  if(!b)return;
+  b.textContent = STUDIO.camOn ? '📷 Cam' : '📷 Cam ✕';
+  b.style.color = STUDIO.camOn ? 'rgba(255,255,255,.8)' : 'var(--red)';
+  b.style.opacity = STUDIO.camOn ? '1' : '.7';
+}
+function updateMicBtn(){
+  var b=document.getElementById('btn-mic');
+  if(!b)return;
+  b.textContent = STUDIO.micOn ? '🎙 Mic' : '🎙 Mic ✕';
+  b.style.color = STUDIO.micOn ? 'rgba(255,255,255,.8)' : 'var(--red)';
+  b.style.opacity = STUDIO.micOn ? '1' : '.7';
+}
 
-function toggleRecording(){if(!STUDIO.stream){startCamera();setTimeout(toggleRecording,1500);return;}STUDIO.recording?stopRec():startRecWithCountdown();}
+function toggleRecording(){
+  if(!STUDIO.stream || !STUDIO.stream.active){
+    toast('Starting camera...','info');
+    startCamera();
+    setTimeout(function(){
+      if(STUDIO.stream && STUDIO.stream.active){
+        STUDIO.recording ? stopRec() : startRecWithCountdown();
+      } else {
+        toast('Camera not ready — click 📷 Cam first','error');
+      }
+    }, 1800);
+    return;
+  }
+  STUDIO.recording ? stopRec() : startRecWithCountdown();
+}
 function startRecWithCountdown(){
   if(!STUDIO.stream){toast('Camera not ready','err');return;}
   var canvas=document.getElementById('studio-canvas');if(!canvas)return;
