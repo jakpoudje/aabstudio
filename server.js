@@ -37,6 +37,9 @@ const PRICE_TO_PLAN = {
   [process.env.STRIPE_PRICE_CREATOR_ANNUAL]: 'creator',
   [process.env.STRIPE_PRICE_STUDIO]:         'studio',
   [process.env.STRIPE_PRICE_STUDIO_ANNUAL]:  'studio',
+  // Hardcoded fallbacks (sandbox)
+  'price_1THCSlBJVJa9ylUXwAYC4LpR': 'creator',
+  'price_1TNRx6BJVJa9ylUXwLr11VPm': 'studio',
 };
 
 async function updateUserPlan(email, plan) {
