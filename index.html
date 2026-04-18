@@ -2587,19 +2587,27 @@ function startRec(){
   });
 
   // ── START RECORDING THE COMPOSITE CANVAS ────────────────────────────────
-  var fps = 30;
-  var compositeStream = compCanvas.captureStream(fps);
-
-  // Add audio from the original camera stream
-  var audioTracks = STUDIO.stream.getAudioTracks();
-  audioTracks.forEach(function(track){
-    compositeStream.addTrack(track);
-  });
-
+  var fps  = 30;
   var mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-    ? 'video/webm;codecs=vp9,opus' : 'video/webm';
+    ? 'video/webm;codecs=vp9,opus'
+    : MediaRecorder.isTypeSupported('video/webm')
+    ? 'video/webm' : '';
 
-  var mr = new MediaRecorder(compositeStream, { mimeType: mime, videoBitsPerSecond: 5000000 });
+  var recordStream;
+  try {
+    // Preferred: record composited canvas (bg + camera + assets)
+    recordStream = compCanvas.captureStream(fps);
+    // Add microphone audio from camera stream
+    STUDIO.stream.getAudioTracks().forEach(function(t){ recordStream.addTrack(t); });
+  } catch(e) {
+    // Fallback (e.g. older Safari): record raw camera stream
+    console.warn('captureStream failed, falling back to camera stream:', e.message);
+    recordStream = STUDIO.stream;
+    compCanvas.style.display = 'none'; // hide composite canvas
+  }
+
+  var mrOpts = mime ? { mimeType: mime, videoBitsPerSecond: 5000000 } : {};
+  var mr = new MediaRecorder(recordStream, mrOpts);
 
   mr.ondataavailable = function(e){ if(e.data.size > 0) STUDIO.chunks.push(e.data); };
 
