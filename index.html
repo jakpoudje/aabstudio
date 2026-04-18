@@ -1713,12 +1713,14 @@ async function doSignUp() {
 }
 async function doSignOut() { await getSupa().auth.signOut(); APP.user=null; updateNavState(); nav('home'); }
 function setUser(u) {
-  var meta = u.user_metadata || {};
+  var meta  = u.user_metadata || {};
   APP.user  = { id: u.id, name: meta.name || u.email.split('@')[0], email: u.email };
-  // Plan comes from user metadata set by Stripe webhook (or defaults to free)
   APP.plan  = meta.plan || 'free';
   APP.credits = meta.credits || 0;
   updateNavState();
+  // Show plan badge in dashboard if loaded
+  var badge = document.getElementById('user-plan-badge');
+  if(badge) badge.textContent = APP.plan.charAt(0).toUpperCase() + APP.plan.slice(1);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3086,7 +3088,21 @@ window.addEventListener('load',function(){
   // Check Supabase session
   var supa=getSupa();if(!supa){updateNavState();return;}
   supa.auth.getSession().then(function(r){
-    if(r.data && r.data.session){setUser(r.data.session.user);var params=new URLSearchParams(window.location.search);if(params.get('checkout')==='success'){history.replaceState(null,'','/');nav('dashboard-pg');setTimeout(function(){toast('Payment successful! Credits added.','ok');},600);}else nav('dashboard-pg');}
+    if(r.data && r.data.session){setUser(r.data.session.user);var params=new URLSearchParams(window.location.search);if(params.get('checkout')==='success'){
+        history.replaceState(null,'','/');
+        // Grant plan immediately so user isn't blocked
+        APP.plan = 'creator';
+        // Persist plan to Supabase user metadata
+        var supaUp = getSupa();
+        if(supaUp){
+          supaUp.auth.updateUser({ data: { plan: 'creator' } }).then(function(){
+            toast('Payment successful! Creator plan activated.','ok');
+          });
+        } else {
+          toast('Payment successful! Creator plan activated.','ok');
+        }
+        nav('dashboard-pg');
+      }else nav('dashboard-pg');}
     else {
       updateNavState();
       navFree('home');
@@ -3511,23 +3527,19 @@ async function startCheckout(priceId){
 // Remove the button from the upgrade modal before public launch
 function grantCreatorAccess(){
   APP.plan = 'creator';
+  closeModal('upgrade-modal');
+  toast('Activating Creator plan...','info');
   var supa = getSupa();
   if(supa && APP.user){
     supa.auth.updateUser({ data: { plan: 'creator' } }).then(function(r){
       if(!r.error){
-        toast('✓ Creator plan activated','ok');
-        closeModal('upgrade-modal');
-        // Reload to apply plan everywhere
-        setTimeout(function(){ loadDashboard(); }, 500);
+        toast('✓ Creator plan activated — all features unlocked','ok');
       } else {
-        // Even if Supabase save fails, grant locally for this session
-        toast('Creator access granted for this session','ok');
-        closeModal('upgrade-modal');
+        toast('Plan set for this session (could not save permanently)','info');
       }
     });
   } else {
-    toast('Creator access granted (this session only)','ok');
-    closeModal('upgrade-modal');
+    toast('Creator access granted','ok');
   }
 }
 </script>
