@@ -1322,7 +1322,7 @@ button,input,select,textarea{font-family:inherit;}
           <div style="font-size:13px;">Record your scenes to start editing</div>
           <button class="studio-btn" style="margin-top:12px;" onclick="nav('record-pg')">← Go to studio</button>
         </div>
-        <video id="edit-video" controls style="display:none;max-width:100%;max-height:100%;border-radius:4px;"></video>
+        <video id="edit-video" controls style="display:none;width:100%;height:100%;max-width:100%;max-height:100%;border-radius:4px;background:#000;object-fit:contain;"></video>
         <!-- Playback controls overlay -->
         <div style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:6px;background:rgba(0,0,0,.6);padding:6px 12px;border-radius:20px;" id="edit-playback-controls">
           <button class="studio-btn" onclick="editSeek(-10)">«10s</button>
@@ -3082,9 +3082,34 @@ function drawArrow(ctx, x1, y1, x2, y2){
   var el=document.getElementById('edit-clips-list');if(!el)return;
   var clips=Object.entries(PROJECT.clips||{});
   if(!clips.length){el.innerHTML='<div style="font-size:11px;color:rgba(255,255,255,.2);padding:10px;">No clips recorded yet</div>';return;}
-  el.innerHTML=clips.map(function(entry){var id=entry[0],c=entry[1];return'<div class="edit-clip'+(EDIT_SELECTED===id?' selected':'')+'" onclick="selectClip(\''+id+'\')">'+'<div class="edit-clip-thumb"><video src="'+c.url+'" preload="metadata"></video></div>'+'<div class="edit-clip-name">Scene '+(c.sceneIdx+1)+'</div>'+'<div class="edit-clip-dur">'+c.duration+'s</div></div>';}).join('');
+  el.innerHTML=clips.map(function(entry){var id=entry[0],c=entry[1];return'<div class="edit-clip'+(EDIT_SELECTED===id?' selected':'')+'" onclick="selectClip(\''+id+'\')">'+'<div class="edit-clip-thumb"><video src="'+c.url+'" preload="metadata" onloadeddata="this.currentTime=0.1"></video></div>'+'<div class="edit-clip-name">Scene '+(c.sceneIdx+1)+'</div>'+'<div class="edit-clip-dur">'+c.duration+'s</div></div>';}).join('');
 }
-function selectClip(id){EDIT_SELECTED=id;renderEditClips();var clip=PROJECT.clips[id];if(!clip)return;var v=document.getElementById('edit-video'),e=document.getElementById('edit-no-clips');if(v){v.src=clip.url;v.style.display='block';}if(e)e.style.display='none';var info=document.getElementById('edit-scene-info');if(info)info.innerHTML='<div style="color:#fff;font-size:13px;margin-bottom:5px;">Scene '+(clip.sceneIdx+1)+'</div><div style="color:rgba(255,255,255,.4);font-size:12px;">'+clip.duration+'s recorded</div>';}
+function selectClip(id){
+  EDIT_SELECTED = id;
+  if(EDIT) EDIT.selectedClip = id;
+  renderEditClips();
+  var clip = PROJECT.clips[id];
+  if(!clip) return;
+  var v = document.getElementById('edit-video');
+  var e = document.getElementById('edit-no-clips');
+  if(v){
+    v.src = clip.url;
+    v.load(); // critical for blob URLs
+    v.style.display = 'block';
+    v.style.maxWidth = '100%';
+    v.style.maxHeight = '100%';
+    // Auto-play first frame so user sees content not black
+    v.onloadeddata = function(){
+      v.currentTime = 0.1;
+      startEditTimecode();
+    };
+  }
+  if(e) e.style.display = 'none';
+  renderVideoTimeline();
+  // Update timecode
+  var tc = document.getElementById('edit-timecode');
+  if(tc) tc.textContent = '0:00 / ' + formatDur(clip.duration);
+}
 function renderEditTimeline(){var rail=document.getElementById('tl-video-rail');if(!rail)return;var clips=Object.entries(PROJECT.clips||{});if(!clips.length){rail.innerHTML='<div style="font-size:10px;color:rgba(255,255,255,.2);padding:0 8px;">Record scenes to build timeline</div>';return;}rail.innerHTML=clips.map(function(entry){var id=entry[0],c=entry[1];return'<div class="tl-clip'+(EDIT_SELECTED===id?' selected':'')+'" onclick="selectClip(\''+id+'\')">Scene '+(c.sceneIdx+1)+' · '+c.duration+'s</div>';}).join('');}
 function deleteClip(){if(!EDIT_SELECTED){toast('Select a clip first','err');return;}delete PROJECT.clips[EDIT_SELECTED];EDIT_SELECTED=null;saveProject();renderEditSuite();toast('Clip deleted','ok');}
 function mergeClips(){toast('Export all clips and merge in your video editor (Premiere, DaVinci, iMovie).','info');}
@@ -3411,7 +3436,13 @@ function renderEditSuite(){
   var clips   = Object.values(PROJECT.clips || {});
   if(noClips) noClips.style.display = clips.length ? 'none' : 'block';
   if(vid)     vid.style.display     = clips.length ? 'block' : 'none';
-  if(clips.length && !EDIT.selectedClip) selectClip(Object.keys(PROJECT.clips)[0]);
+  if(clips.length){
+    var firstId = Object.keys(PROJECT.clips)[0];
+    var selId   = (EDIT && EDIT.selectedClip) || EDIT_SELECTED || firstId;
+    // Verify selected clip still exists
+    if(!PROJECT.clips[selId]) selId = firstId;
+    selectClip(selId);
+  }
 }
 
 function renderEditClips(){
@@ -3483,17 +3514,21 @@ function startEditTimecode(){
   var vid = document.getElementById('edit-video');
   if(!vid) return;
   clearInterval(EDIT._tcTimer);
-  EDIT._tcTimer = setInterval(function(){
-    var tc  = document.getElementById('edit-timecode');
-    var ph  = document.getElementById('tl-playhead');
-    if(tc) tc.textContent = formatDur(vid.currentTime)+' / '+formatDur(vid.duration||0);
-    // Move playhead
+  // Use timeupdate event for smooth updates
+  vid.ontimeupdate = function(){
+    var tc = document.getElementById('edit-timecode');
+    if(tc) tc.textContent = formatDur(vid.currentTime) + ' / ' + formatDur(vid.duration || 0);
+    var ph = document.getElementById('tl-playhead');
     if(ph && vid.duration){
-      var rail = document.getElementById('tl-video-rail');
+      var rail  = document.getElementById('tl-video-rail');
       var railW = rail ? rail.scrollWidth : 400;
-      ph.style.left = ((vid.currentTime/vid.duration)*railW)+'px';
+      ph.style.left = ((vid.currentTime / vid.duration) * railW) + 'px';
     }
-  }, 250);
+  };
+  vid.onended = function(){
+    var btn = document.getElementById('edit-play-btn');
+    if(btn) btn.textContent = '▶';
+  };
 }
 
 function editPlayPause(){
