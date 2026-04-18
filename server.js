@@ -443,14 +443,22 @@ app.post('/api/stripe/checkout', async (req, res) => {
     const { priceId, mode = 'subscription', customerEmail } = req.body;
     if (!priceId) return res.status(400).json({ error: 'priceId required.' });
 
-    const session = await stripe.checkout.sessions.create({
+    const sessionParams = {
       payment_method_types: ['card'],
       line_items: [{ price: priceId, quantity: 1 }],
       mode,
       customer_email: customerEmail,
-      success_url:    'https://aabstudio.ai?checkout=success',
-      cancel_url:     'https://aabstudio.ai/pricing'
-    });
+      success_url: 'https://aabstudio.ai?checkout=success',
+      cancel_url:  'https://aabstudio.ai/pricing',
+      // Collect card now, charge after trial ends
+      subscription_data: mode === 'subscription' ? {
+        trial_period_days: 7,
+        trial_settings: { end_behavior: { missing_payment_method: 'cancel' } }
+      } : undefined,
+      // Require payment method even during trial
+      payment_method_collection: 'always'
+    };
+    const session = await stripe.checkout.sessions.create(sessionParams);
     res.json({ url: session.url });
   } catch (e) {
     console.error('stripe checkout error:', e.message);
