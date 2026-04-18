@@ -658,6 +658,13 @@ button,input,select,textarea{font-family:inherit;}
 .mode-card-opt:hover{border-color:rgba(0,212,255,.3);background:rgba(0,212,255,.02);}
 .mode-card-opt.selected{border-color:var(--accent);background:rgba(0,212,255,.04);}
 
+
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(6px);z-index:500;align-items:center;justify-content:center;padding:16px;}
+.modal-overlay.on{display:flex;}
+.modal-box{background:#fff;border-radius:18px;padding:28px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.2);max-height:90vh;overflow-y:auto;}
+.mode-card-opt{border:2px solid var(--bdr2);border-radius:14px;padding:20px;cursor:pointer;transition:all .15s;}
+.mode-card-opt:hover{border-color:rgba(0,212,255,.3);background:rgba(0,212,255,.02);}
+.mode-card-opt.selected{border-color:var(--accent);background:rgba(0,212,255,.04);}
 </style>
 </head>
 <body>
@@ -1562,7 +1569,7 @@ const FACTS = ['The best teleprompter readers speak at 150 WPM — the same spee
 // APP STATE
 // ══════════════════════════════════════════════════════════════════════════════
 var APP = { user:null, credits:0, plan:'free' } // plans: free, creator, studio;
-var PROJECT = { id:null, title:'My Video', script:'', wpm:150, sceneDuration:8, scenes:[], assets:[], clips:{} };
+var PROJECT = { id:null, title:'My Video', mode:'studio', script:'', wpm:150, sceneDuration:8, scenes:[], assets:[], clips:{} };
 var STUDIO  = { stream:null, mr:null, chunks:[], recording:false, camOn:false, micOn:false, recTimer:null, recSecs:0, analyser:null, currentScene:0, tpAuto:false, tpSpeed:80, adaptive:false, recognition:null, overlayPos:'pip-right', drawActive:false, drawMode:'pen', drawColor:'#00d4ff', drawCtx:null, isDrawing:false, sx:0, sy:0, snap:null, elapsed:0, elTimer:null, mirrored:false, focusMode:false };
 var TP      = { playing:false, speed:80, fontSize:28, mirrored:false, adaptive:false, recognition:null, scrollTimer:null, currentWord:0, totalWords:0, theme:'dark', remoteId:null, remotePoll:null, remoteLastCmd:null };
 var EXPORT_STATE = { ratio:'16:9', platform:'youtube' };
@@ -1766,8 +1773,8 @@ function saveProject() {
   PROJECT.date=new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
   var light=JSON.parse(JSON.stringify(PROJECT));
   // Strip binary data to avoid quota exceeded
-  if(light.assets) light.assets=light.assets.map(function(a){return{id:a.id,name:a.name,type:a.type,size:a.size||0};});
-  if(light.scenes) light.scenes=light.scenes.map(function(s){var sc=Object.assign({},s);if(sc.assets)sc.assets=sc.assets.map(function(a){return{id:a.id,name:a.name,type:a.type};});delete sc.aiVoice;delete sc.aiImage;return sc;});
+  if(light.assets) light.assets=light.assets.map(function(a){return{id:a.id,name:a.name,type:a.type,size:a.size||0,dataUrl:a.dataUrl||null,position:a.position,sizePercent:a.sizePercent,animation:a.animation};});
+  if(light.scenes) light.scenes=light.scenes.map(function(s){var sc=Object.assign({},s);if(sc.assets)sc.assets=sc.assets.map(function(a){return{id:a.id,name:a.name,type:a.type,dataUrl:a.dataUrl||null,position:a.position,sizePercent:a.sizePercent,animation:a.animation};});delete sc.aiVoice;delete sc.aiImage;return sc;});
   delete light.clips;
   try {
     var saved=JSON.parse(localStorage.getItem('aab_projects')||'[]');
@@ -3003,7 +3010,7 @@ function tpStart(){
 }
 function tpRender(script){
   var words=script.trim().split(/\s+/);TP.currentWord=0;
-  var wrap=document.getElementById('tp-text-wrap');if(!wrap)return;
+  var wrap=document.getElementById('tp-text-wrap')||document.getElementById('tp-text');if(!wrap)return;
   wrap.innerHTML=words.map(function(w,i){return'<span id="tpw'+i+'" style="color:#fff;transition:color .15s;">'+w+'</span> ';}).join('');
 }
 function tpToggle(){
@@ -3014,7 +3021,7 @@ function tpToggle(){
 }
 function tpScroll(){
   clearInterval(TP.scrollTimer);
-  var words=document.getElementById('tp-text-wrap')?.querySelectorAll('span');if(!words||!words.length)return;
+  var wrap2=document.getElementById('tp-text-wrap')||document.getElementById('tp-text');var words=wrap2?wrap2.querySelectorAll('span'):null;if(!words||!words.length)return;
   var totalWords=words.length;
   TP.scrollTimer=setInterval(function(){
     if(TP.currentWord>0){var prev=document.getElementById('tpw'+(TP.currentWord-1));if(prev)prev.style.color='rgba(255,255,255,.2)';}
@@ -3025,18 +3032,19 @@ function tpScroll(){
   },Math.round(60000/(TP.speed||80)));
 }
 function tpSetSpd(v){TP.speed=parseInt(v)||80;var el=document.getElementById('tp-solo-speed-val');if(el)el.textContent=v;if(TP.playing){clearInterval(TP.scrollTimer);tpScroll();}}
-function tpFontUp(){var w=document.getElementById('tp-text-wrap');if(w){var s=parseFloat(w.style.fontSize)||1.4;w.style.fontSize=(s+0.1)+'rem';}}
-function tpFontDown(){var w=document.getElementById('tp-text-wrap');if(w){var s=parseFloat(w.style.fontSize)||1.4;w.style.fontSize=Math.max(0.8,s-0.1)+'rem';}}
+function tpFontUp(){var w=document.getElementById('tp-text-wrap')||document.getElementById('tp-text');if(w){var s=parseFloat(w.style.fontSize)||1.4;w.style.fontSize=(s+0.1)+'rem';}}
+function tpFontDown(){var w=document.getElementById('tp-text-wrap')||document.getElementById('tp-text');if(w){var s=parseFloat(w.style.fontSize)||1.4;w.style.fontSize=Math.max(0.8,s-0.1)+'rem';}}
 function tpMirror(){var disp=document.getElementById('tp-display-screen');if(disp)disp.style.transform=disp.style.transform?'':'scaleX(-1)';}
 function tpFullscreen(){var el=document.getElementById('tp-display-screen');if(!el)return;if(document.fullscreenElement)document.exitFullscreen();else el.requestFullscreen&&el.requestFullscreen();}
 function tpSetTheme(v){TP.theme=v;tpApplyTheme(v);}
 function tpApplyTheme(v){
   var t=TP_THEMES[v]||TP_THEMES.dark;
   var pg=document.getElementById('teleprompter-pg');if(pg)pg.style.background=t.bg;
-  var wrap=document.getElementById('tp-text-wrap');if(wrap)wrap.style.color=t.text;
+  var wrap=document.getElementById('tp-text-wrap')||document.getElementById('tp-text');if(wrap)wrap.style.color=t.text;
   document.documentElement.style.setProperty('--gold',t.gold);
 }
 function tpLoadSample(){var inp=document.getElementById('tp-input');if(inp)inp.value='Welcome everyone. Today I want to share something that has completely changed how I think about video production.\n\nFor the longest time, I struggled with remembering my script while looking natural on camera. The teleprompter changed everything.\n\nNow I can speak confidently, maintain eye contact, and deliver professional content every single time.';}
+function tpExit(){clearInterval(TP.scrollTimer);TP.playing=false;navFree("home");}
 function tpToggleAdaptive(){TP.adaptive=!TP.adaptive;var btn=document.getElementById('tp-adaptive-btn');if(btn)btn.textContent=TP.adaptive?'🎤 Adaptive: on':'🎤 Adaptive: off';toast(TP.adaptive?'Adaptive sync ON — speak and it follows':'Adaptive sync OFF','info');}
 function tpShowRemote(){
   var modal=document.getElementById('tp-remote-modal');if(modal)modal.classList.add('on');
@@ -3168,6 +3176,59 @@ window.addEventListener('load',function(){
 
 console.log('AABStudio v2.5 loaded ✓');
 </script>
+
+<!-- MODE PICKER MODAL -->
+<div class="modal-overlay" id="mode-picker-modal">
+  <div class="modal-box" style="max-width:580px;">
+    <div style="font-size:17px;font-weight:700;color:var(--ink);margin-bottom:6px;">Choose your mode</div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">How do you want to use this project?</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px;">
+      <div class="mode-card-opt" id="mode-card-studio" data-mode="studio" onclick="selectMode('studio')">
+        <div style="font-size:26px;margin-bottom:8px;">🎬</div>
+        <div style="font-size:14px;font-weight:600;color:var(--ink);margin-bottom:5px;">Full Studio</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:10px;">Script → AI scenes → record → edit → export</div>
+        <div style="font-size:11px;color:var(--muted2);">✓ AI segmentation · Recording · Export</div>
+      </div>
+      <div class="mode-card-opt" id="mode-card-teleprompter" data-mode="teleprompter" onclick="selectMode('teleprompter')">
+        <div style="font-size:26px;margin-bottom:8px;">📺</div>
+        <div style="font-size:14px;font-weight:600;color:var(--ink);margin-bottom:5px;">Teleprompter Only</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:10px;">Paste script → full-screen teleprompter → phone remote</div>
+        <div style="font-size:11px;color:var(--muted2);">✓ Word highlight · QR remote · Free</div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:10px;align-items:center;">
+      <button onclick="closeModal('mode-picker-modal')" style="padding:8px 16px;border-radius:8px;border:.5px solid var(--bdr2);background:transparent;font-size:13px;cursor:pointer;font-family:Sora,sans-serif;color:var(--muted);">Cancel</button>
+      <button id="mode-confirm-btn" onclick="confirmMode()" disabled style="padding:9px 20px;border-radius:8px;background:var(--accent);color:var(--navy);font-size:13px;font-weight:600;border:none;cursor:pointer;font-family:Sora,sans-serif;opacity:.45;transition:opacity .15s;">Continue →</button>
+    </div>
+  </div>
+</div>
+
+<!-- UPGRADE MODAL -->
+<div class="modal-overlay" id="upgrade-modal">
+  <div class="modal-box" style="max-width:460px;text-align:center;">
+    <div style="font-size:36px;margin-bottom:12px;">🚀</div>
+    <div style="font-size:17px;font-weight:700;color:var(--ink);margin-bottom:8px;">Upgrade to Creator</div>
+    <p id="upgrade-modal-msg" style="font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.6;">This feature requires a Creator or Studio plan.</p>
+    <div style="background:rgba(0,212,255,.04);border:.5px solid rgba(0,212,255,.15);border-radius:12px;padding:16px;margin-bottom:18px;text-align:left;">
+      <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:8px;">Creator — £19/month</div>
+      <div style="display:flex;flex-direction:column;gap:5px;">
+        <div style="font-size:12px;color:var(--muted);display:flex;gap:6px;"><span style="color:var(--accent);">✓</span>AI scene segmentation</div>
+        <div style="font-size:12px;color:var(--muted);display:flex;gap:6px;"><span style="color:var(--accent);">✓</span>Recording with teleprompter</div>
+        <div style="font-size:12px;color:var(--muted);display:flex;gap:6px;"><span style="color:var(--accent);">✓</span>Asset overlays &amp; annotation</div>
+        <div style="font-size:12px;color:var(--muted);display:flex;gap:6px;"><span style="color:var(--accent);">✓</span>Edit, timeline &amp; export</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:12px;">
+      <button class="btn btn-primary" onclick="startCheckout('price_1THCSlBJVJa9ylUXwAYC4LpR');closeModal('upgrade-modal');">Start free trial — card required →</button>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('upgrade-modal');nav('pricing-pg');">See all plans</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px;align-items:center;">
+      <button onclick="closeModal('upgrade-modal')" style="font-size:12px;color:var(--muted2);background:none;border:none;cursor:pointer;">Continue with free teleprompter</button>
+      <button onclick="grantCreatorAccess()" style="font-size:11px;color:var(--muted2);background:none;border:none;cursor:pointer;text-decoration:underline;">⚙ Dev: grant creator access</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
 <script>
@@ -3203,5 +3264,63 @@ function deleteStudioAsset(i){
   saveProject();renderStudioAssets();
   if(typeof renderAssetLibrary==='function')renderAssetLibrary();
   toast(name+' deleted','ok');
+}
+
+function renderStudioQueue(){
+  var el=document.getElementById('studio-q-list');if(!el)return;
+  if(!PROJECT.scenes.length){
+    el.innerHTML='<div style="font-size:11px;color:rgba(255,255,255,.2);padding:12px;text-align:center;">No scenes yet</div>';
+    return;
+  }
+  el.innerHTML='';
+  PROJECT.scenes.forEach(function(s,i){
+    var isCurrent=i===STUDIO.currentScene;
+    var isRecorded=!!(PROJECT.clips&&PROJECT.clips[s.id]);
+    var d=document.createElement('div');
+    d.className='sq-item'+(isCurrent?' active':'')+(isRecorded?' done':'');
+    d.onclick=(function(idx){return function(){jumpScene(idx);};})(i);
+    d.innerHTML='<div class="sq-num">SCENE '+(i+1)+'</div>'
+      +'<div class="sq-text">'+(s.narration||'').slice(0,60)+'...</div>'
+      +'<div class="sq-dot" style="background:'+(isRecorded?'var(--green)':isCurrent?'var(--accent)':'rgba(255,255,255,.2)')+'"></div>';
+    el.appendChild(d);
+  });
+  // Scroll active into view
+  setTimeout(function(){var a=el.querySelector('.active');if(a)a.scrollIntoView({block:'nearest'});},50);
+}
+
+function updateStudioClips(){
+  var el=document.getElementById('sp-clips');if(!el)return;
+  var clips=Object.values(PROJECT.clips||{}).filter(function(c){return c.url;});
+  if(!clips.length){el.innerHTML='<div style="font-size:10px;color:rgba(255,255,255,.2);padding:8px;">No clips yet</div>';return;}
+  el.innerHTML='';
+  clips.forEach(function(c,i){
+    var d=document.createElement('div');
+    d.className='sp-clip';
+    d.style.cssText='display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;background:rgba(255,255,255,.03);margin-bottom:4px;cursor:pointer;';
+    d.innerHTML='<div style="width:36px;height:24px;border-radius:3px;overflow:hidden;background:#111;flex-shrink:0;"><video src="'+c.url+'" style="width:100%;height:100%;object-fit:cover;" onloadeddata="this.currentTime=0.1"></video></div>'
+      +'<div style="flex:1;min-width:0;"><div style="font-size:10px;color:rgba(255,255,255,.6);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Scene '+(c.sceneIdx+1)+'</div>'
+      +'<div style="font-size:9px;color:rgba(255,255,255,.3);">'+formatDur(c.duration)+'</div></div>'
+      +'<a href="'+c.url+'" download="scene-'+(c.sceneIdx+1)+'.webm" style="color:rgba(255,255,255,.3);font-size:11px;text-decoration:none;" title="Download">↓</a>';
+    el.appendChild(d);
+  });
+}
+
+function endStudioSession(){
+  // Alias for endSession
+  if(STUDIO.recording)stopRec();
+  if(STUDIO.stream){STUDIO.stream.getTracks().forEach(function(t){t.stop();});STUDIO.stream=null;}
+  clearInterval(STUDIO.elTimer);
+  saveProject();nav('edit-pg');
+}
+
+function startElapsedTimer(){
+  if(STUDIO.elTimer)clearInterval(STUDIO.elTimer);
+  STUDIO.elapsed=0;
+  STUDIO.elTimer=setInterval(function(){
+    STUDIO.elapsed++;
+    var m=Math.floor(STUDIO.elapsed/60),s=STUDIO.elapsed%60;
+    var el=document.getElementById('st-elapsed');
+    if(el)el.textContent=m+':'+(s<10?'0':'')+s;
+  },1000);
 }
 </script>
