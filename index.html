@@ -1191,8 +1191,9 @@ button,input,select,textarea{font-family:inherit;}
             <div class="ctrl-group-label">PROMPTER</div>
             <input type="range" min="20" max="220" value="80" id="tp-spd-range" oninput="setTpSpd(this.value)" style="width:62px;accent-color:var(--gold);">
             <span id="tp-spd-val" style="font-size:10px;font-weight:600;color:var(--gold);min-width:36px;">80wpm</span>
-            <button class="s-btn s-btn-gold" id="btn-auto" onclick="toggleTpAuto()">⏱ Auto</button>
-            <button class="s-btn s-btn-gold" id="btn-adaptive" onclick="toggleAdaptiveTp()">🎤 Adapt</button>
+            <button class="s-btn s-btn-gold" id="btn-tp-start" onclick="studioTpToggle()" title="Start/pause teleprompter (practice mode — no recording)">▶ Prompter</button>
+            <button class="s-btn s-btn-gold" id="btn-auto" onclick="toggleTpAuto()" title="Auto: teleprompter starts when REC starts, stops when REC stops">⏱ Sync REC</button>
+            <button class="s-btn s-btn-gold" id="btn-adaptive" onclick="toggleAdaptiveTp()" title="Adaptive: mic listens and advances words to match your speech">🎤 Adapt</button>
           </div>
 
           <div class="ctrl-div"></div>
@@ -2683,6 +2684,10 @@ function startRec(){
   }
   var sb = document.getElementById('rec-badge'); if(sb) sb.className = 'rec-badge recording';
   var rt = document.getElementById('rec-txt');   if(rt) rt.textContent = 'REC';
+  // If Sync REC mode is ON, start teleprompter automatically
+  if(STUDIO.tpAuto){
+    studioTpStart();
+  }
 
   // Recording timer
   STUDIO.recTimer = setInterval(function(){
@@ -2713,6 +2718,8 @@ function stopRec(){
   }
   var sb = document.getElementById('rec-badge'); if(sb) sb.className = 'rec-badge ready';
   var rt = document.getElementById('rec-txt');   if(rt) rt.textContent = 'READY';
+  // Always stop teleprompter when recording stops
+  studioTpStop();
 }
 function retakeScene(){var sid=PROJECT.scenes[STUDIO.currentScene]?.id;if(sid&&PROJECT.clips[sid]){delete PROJECT.clips[sid];delete STUDIO.clips?.[sid];}if(PROJECT.scenes[STUDIO.currentScene])PROJECT.scenes[STUDIO.currentScene].status='draft';var rb=document.getElementById('btn-retake');if(rb)rb.style.display='none';updateStudioClips();renderStudioQueue();toast('Ready to retake Scene '+(STUDIO.currentScene+1),'info');}
 function endStudioSession(){if(STUDIO.recording)stopRec();clearInterval(STUDIO.elTimer);clearInterval(_tpAutoTimer);if(STUDIO.recognition)try{STUDIO.recognition.stop();}catch(e){}if(STUDIO.stream){STUDIO.stream.getTracks().forEach(function(t){t.stop();});STUDIO.stream=null;}STUDIO.analyser=null;saveProject();nav('edit-pg');}
@@ -2732,7 +2739,11 @@ function updateTP(){
   if(tp_cur){var words=(cur?cur.narration:'Select a scene to begin').split(/\s+/);tp_cur.innerHTML=words.map(function(w,i){return'<span id="tw'+i+'">'+w+' </span>';}).join('');}
   if(tp_next)tp_next.textContent=next?(next.narration||'').slice(0,90)+'...':'';
   clearInterval(_tpAutoTimer);
-  if(STUDIO.tpAuto) startTpAutoTimer();
+  STUDIO_TP.running = false;
+  // If recording with sync, restart TP for new scene
+  if(STUDIO.tpAuto && STUDIO.recording){
+    studioTpStart();
+  }
   var overlayArea=document.getElementById('studio-overlay-area');if(overlayArea)overlayArea.innerHTML='';
   if(cur&&cur.assets&&cur.assets.length)setTimeout(function(){showSceneOverlay(cur.assets[0]);},200);
   var pill=document.getElementById('st-scene-pill');if(pill)pill.textContent='Scene '+(STUDIO.currentScene+1);
@@ -2757,7 +2768,47 @@ function jumpScene(idx){if(STUDIO.recording)stopRec();STUDIO.currentScene=idx;up
 
 // Teleprompter controls
 function setTpSpd(v){STUDIO.tpSpeed=parseInt(v);var el=document.getElementById('tp-spd-val');if(el)el.textContent=v+' wpm';clearInterval(_tpAutoTimer);if(STUDIO.tpAuto)startTpAutoTimer();}
-function toggleTpAuto(){STUDIO.tpAuto=!STUDIO.tpAuto;var btn=document.getElementById('btn-auto');if(btn){btn.textContent='Auto: '+(STUDIO.tpAuto?'on':'off');btn.classList.toggle('active',STUDIO.tpAuto);}clearInterval(_tpAutoTimer);if(STUDIO.tpAuto)startTpAutoTimer();}
+function toggleTpAuto(){
+  STUDIO.tpAuto = !STUDIO.tpAuto;
+  var btn = document.getElementById('btn-auto');
+  if(btn){
+    btn.textContent = STUDIO.tpAuto ? '⏱ Sync: ON' : '⏱ Sync REC';
+    btn.style.background = STUDIO.tpAuto ? 'rgba(245,158,11,.25)' : '';
+    btn.style.borderColor = STUDIO.tpAuto ? 'rgba(245,158,11,.5)' : '';
+  }
+  // In sync mode, TP only runs when recording — stop it now if not recording
+  if(!STUDIO.tpAuto || !STUDIO.recording){
+    clearInterval(_tpAutoTimer);
+    STUDIO.tpRunning = false;
+  }
+  toast(STUDIO.tpAuto ? '⏱ Teleprompter will sync with REC button' : '⏱ Sync off — use ▶ Prompter to run freely','info');
+}
+// ── STUDIO TELEPROMPTER: free play / practice mode ──────────────────────────
+var STUDIO_TP = { running: false };
+
+function studioTpToggle(){
+  if(STUDIO_TP.running){
+    studioTpStop();
+  } else {
+    studioTpStart();
+  }
+}
+
+function studioTpStart(){
+  STUDIO_TP.running = true;
+  var btn = document.getElementById('btn-tp-start');
+  if(btn){ btn.textContent = '⏸ Prompter'; btn.style.background = 'rgba(245,158,11,.2)'; btn.style.borderColor = 'rgba(245,158,11,.4)'; }
+  clearInterval(_tpAutoTimer);
+  startTpAutoTimer();
+}
+
+function studioTpStop(){
+  STUDIO_TP.running = false;
+  clearInterval(_tpAutoTimer);
+  var btn = document.getElementById('btn-tp-start');
+  if(btn){ btn.textContent = '▶ Prompter'; btn.style.background = ''; btn.style.borderColor = ''; }
+}
+
 function startTpAutoTimer(){
   var scene=PROJECT.scenes[STUDIO.currentScene];if(!scene)return;
   var words=(scene.narration||'').split(/\s+/), totalMs=(words.length/(STUDIO.tpSpeed||80))*60000, start=Date.now();
@@ -2766,7 +2817,18 @@ function startTpAutoTimer(){
     var wi=Math.floor(progress*words.length);
     words.forEach(function(_,i){var s=document.getElementById('tw'+i);if(s)s.style.color=i<wi?'rgba(255,255,255,.2)':i===wi?'var(--gold)':'#fff';});
     var pf=document.getElementById('scene-prog-fill');if(pf)pf.style.width=(progress*100)+'%';
-    if(progress>=0.95){clearInterval(_tpAutoTimer);if(STUDIO.tpAuto&&STUDIO.currentScene<PROJECT.scenes.length-1)setTimeout(function(){studioNext();},600);}
+    if(progress>=0.95){
+      clearInterval(_tpAutoTimer);
+      STUDIO_TP.running = false;
+      var btn = document.getElementById('btn-tp-start');
+      if(btn){ btn.textContent = '▶ Prompter'; btn.style.background = ''; btn.style.borderColor = ''; }
+      // Auto-advance scene if sync mode AND recording, or free mode running
+      if(STUDIO.currentScene < PROJECT.scenes.length - 1){
+        if(STUDIO.tpAuto && STUDIO.recording){
+          setTimeout(function(){ studioNext(); }, 600);
+        }
+      }
+    }
   },80);
 }
 function toggleAdaptiveTp(){
