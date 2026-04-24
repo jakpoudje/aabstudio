@@ -274,13 +274,25 @@ RESPOND WITH ONLY THIS JSON — no markdown fences, no explanation, no preamble:
 
     const raw = r.content.map(c => c.text || '').join('').trim();
     const j   = raw.indexOf('{');
-    const k   = raw.lastIndexOf('}');
-
     if (j === -1) {
       throw new Error('AI returned no valid JSON. Check your Anthropic credits at console.anthropic.com');
     }
 
-    const result = JSON.parse(raw.slice(j, k + 1));
+    // Extract JSON by counting braces — handles text after the JSON block
+    let depth = 0, k = -1;
+    for (let ci = j; ci < raw.length; ci++) {
+      if (raw[ci] === '{') depth++;
+      else if (raw[ci] === '}') { depth--; if (depth === 0) { k = ci; break; } }
+    }
+    if (k === -1) throw new Error('Malformed JSON from AI — could not find closing brace');
+
+    // Clean common AI formatting issues before parsing
+    let jsonStr = raw.slice(j, k + 1)
+      .replace(/,\s*}/g, '}')      // trailing commas in objects
+      .replace(/,\s*\]/g, ']')     // trailing commas in arrays
+      .replace(/[ -]/g, ' '); // control chars
+
+    const result = JSON.parse(jsonStr);
     let scenes   = result.scenes || [];
 
     // Normalise every scene — enforce max 10s duration
