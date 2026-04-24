@@ -3351,17 +3351,17 @@ function grantCreatorAccess(){
 // ══ AI PRESENTER ══════════════════════════════════════════════════════════════
 function openAIPresenter(){
   if(!APP.user){
-    toast('Please sign in first — then upgrade to Creator or Pro to use AI Presenter','info');
+    toast('Please sign in first to use AI Presenter','info');
     setTimeout(function(){ nav('auth-pg'); }, 1200);
     return;
   }
   if(APP.plan === 'free'){
-    showUpgradeModalPro('AI Presenter generates a video of an AI presenter reading your script — no camera needed. Requires Creator or Pro Studio plan.');
+    showUpgradeModalPro('AI Presenter generates a video of an AI presenter reading your script — no camera needed.');
     return;
   }
-  // Load scenes into modal and open
-  loadAISceneList();
   openModal('ai-presenter-modal');
+  // Auto-load scenes immediately
+  setTimeout(function(){ loadAISceneList(); }, 80);
 }
 function loadAIPhoto(inp){if(!inp.files.length)return;var f=inp.files[0];var rd=new FileReader();rd.onload=function(e){var img=document.getElementById('ai-photo-preview');if(img){img.src=e.target.result;img.style.display='block';}window._aiPhotoB64=e.target.result.split(',')[1];};rd.readAsDataURL(f);}// ══ KEYBOARD SHORTCUTS ════════════════════════════════════════════════════════
 document.addEventListener('keydown',function(e){
@@ -4169,61 +4169,98 @@ function smartSplitScript(script, wpm, sceneDuration){
 function loadAISceneList(){
   var list = document.getElementById('ai-scenes-list');
   if(!list) return;
-  if(!PROJECT.scenes.length){
-    list.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:8px;">No scenes yet — split your script first.</div>';
+  if(!PROJECT.scenes || !PROJECT.scenes.length){
+    list.innerHTML = '<div style="font-size:12px;color:#6b7280;padding:8px;">No scenes yet — split your script first.</div>';
     return;
   }
-  list.innerHTML = PROJECT.scenes.map(function(s,i){
-    return '<label style="display:flex;align-items:flex-start;gap:8px;padding:6px 4px;cursor:pointer;font-size:12px;border-bottom:.5px solid var(--border);">'
-      + '<input type="checkbox" value="'+s.id+'" '+(i===0?'checked':'')+' style="margin-top:2px;accent-color:var(--accent);">'
-      + '<span><strong>Scene '+(i+1)+'</strong> — '+(s.narration||'').slice(0,80)+'...</span>'
-      + '</label>';
-  }).join('');
+  list.innerHTML = '';
+  PROJECT.scenes.forEach(function(scene, i){
+    var lbl = document.createElement('label');
+    lbl.style.cssText = 'display:flex;align-items:flex-start;gap:10px;padding:8px 4px;cursor:pointer;border-bottom:.5px solid #e5e7eb;';
+    var chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.value = scene.id;
+    chk.checked = (i < 3); // first 3 checked by default
+    chk.style.cssText = 'margin-top:3px;flex-shrink:0;accent-color:#00d4ff;width:14px;height:14px;';
+    var info = document.createElement('div');
+    info.style.cssText = 'flex:1;min-width:0;';
+    info.innerHTML = '<div style="font-size:12px;font-weight:600;color:#111;">Scene '+(i+1)
+      +' <span style="font-size:10px;font-weight:400;color:#9ca3af;background:#f3f4f6;padding:1px 6px;border-radius:10px;">'+( scene.type||'MAIN')+'</span></div>'
+      +'<div style="font-size:11px;color:#6b7280;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(scene.narration||'').slice(0,90)+'</div>';
+    lbl.appendChild(chk);
+    lbl.appendChild(info);
+    list.appendChild(lbl);
+  });
 }
 
 // Override startAIPresenter with better UX
 async function startAIPresenter(){
-  if(!window._aiPhotoB64){ toast('Upload your photo first','error'); return; }
-  var voiceSel = document.getElementById('ai-voice-sel');
-  var voiceId  = voiceSel ? voiceSel.value : 'EXAVITQu4vr4xnSDxMaL';
+  var voiceSel  = document.getElementById('ai-voice-sel');
+  var voiceId   = voiceSel ? voiceSel.value : 'EXAVITQu4vr4xnSDxMaL';
   var sceneList = document.getElementById('ai-scenes-list');
-  var checked   = sceneList ? Array.from(sceneList.querySelectorAll('input:checked')) : [];
-  var sceneIds  = checked.map(function(inp){ return inp.value; });
-  if(!sceneIds.length){ toast('Select at least one scene','error'); return; }
+  var checked   = sceneList ? Array.from(sceneList.querySelectorAll('input[type=checkbox]:checked')) : [];
+  var sceneIds  = checked.map(function(c){ return c.value; });
+
+  if(!sceneIds.length){
+    toast('Select at least one scene first','error');
+    return;
+  }
 
   var status = document.getElementById('ai-presenter-status');
   var btn    = document.getElementById('ai-gen-btn');
-  if(status) status.style.display = 'block';
-  if(btn)    btn.disabled = true;
+  if(btn) btn.disabled = true;
+  if(status){ status.style.display = 'block'; status.innerHTML = '⏳ Starting…'; }
 
-  for(var i=0; i<sceneIds.length; i++){
-    var scene = PROJECT.scenes.find(function(s){ return s.id===sceneIds[i]; });
+  var results = [];
+
+  for(var i = 0; i < sceneIds.length; i++){
+    var scene = PROJECT.scenes.find(function(sc){ return sc.id === sceneIds[i]; });
     if(!scene) continue;
-    var label = 'Scene '+(scene.sceneNumber||i+1);
-    if(status) status.textContent = '⏳ Generating '+label+' ('+( i+1)+'/'+sceneIds.length+')...';
+    var label = 'Scene ' + (i + 1);
+
     try{
-      // Step 1: Generate voice
-      if(status) status.textContent = '🎙 '+label+': generating voice...';
-      var vr = await fetch(API+'/api/voice',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({text:scene.narration, voiceId:voiceId})});
-      var vd = await vr.json();
-      if(vd.error) throw new Error('Voice error: '+vd.error);
+      // Step 1 — Voice (ElevenLabs)
+      if(status) status.innerHTML = '🎙 <b>'+label+'</b> ('+( i+1)+'/'+sceneIds.length+'): Generating voice with ElevenLabs…';
+      var vResp = await fetch(API + '/api/voice', {
+        method:  'POST',
+        headers: {'Content-Type':'application/json'},
+        body:    JSON.stringify({ text: scene.narration, voiceId: voiceId })
+      });
+      var vData = await vResp.json();
+      if(!vResp.ok || vData.error) throw new Error('Voice failed: ' + (vData.error || vResp.status));
 
-      // Step 2: Generate video
-      if(status) status.textContent = '🎬 '+label+': generating video (1–3 min)...';
-      var pr = await fetch(API+'/api/presenter',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({referenceImageBase64:window._aiPhotoB64, audioBase64:vd.audio, ratio:'16:9'})});
-      var pd = await pr.json();
-      if(pd.error) throw new Error('Video error: '+pd.error);
+      // Step 2 — Video (HeyGen)
+      if(status) status.innerHTML = '🎬 <b>'+label+'</b>: Sending to HeyGen (takes 1–3 min)…';
+      var payload = { audioBase64: vData.audio, ratio: '16:9' };
+      if(window._aiPhotoB64) payload.referenceImageBase64 = window._aiPhotoB64;
+      var pResp = await fetch(API + '/api/presenter', {
+        method:  'POST',
+        headers: {'Content-Type':'application/json'},
+        body:    JSON.stringify(payload)
+      });
+      var pData = await pResp.json();
+      if(!pResp.ok || pData.error) throw new Error('HeyGen failed: ' + (pData.error || pResp.status));
 
-      toast(label+' submitted ✓ Task: '+pd.taskId,'ok');
-      if(status) status.textContent = '✓ '+label+' submitted. Task ID: '+pd.taskId+'. Check HeyGen dashboard for result.';
-    } catch(e){
-      toast('Error on '+label+': '+e.message,'error');
-      if(status) status.textContent = '✗ '+label+' failed: '+e.message;
+      results.push({ label: label, taskId: pData.taskId });
+      toast(label + ' submitted ✓', 'ok');
+
+    } catch(err){
+      var msg = err.message || 'Unknown error';
+      if(status) status.innerHTML = '✗ <b>'+label+'</b> failed: ' + msg
+        + '<br><small style="color:#9ca3af;">Check Railway logs — make sure ELEVENLABS_API_KEY and HEYGEN_API_KEY are set</small>';
+      toast('✗ ' + label + ': ' + msg, 'error');
+      console.error('AI Presenter error:', err);
     }
   }
+
   if(btn) btn.disabled = false;
+
+  if(results.length){
+    var summary = '✅ <b>' + results.length + ' scene' + (results.length > 1 ? 's' : '') + ' submitted to HeyGen!</b><br>'
+      + results.map(function(r){ return r.label + ' → Task ID: <code style="background:#f3f4f6;padding:1px 4px;border-radius:3px;">' + r.taskId + '</code>'; }).join('<br>')
+      + '<br><br><a href="https://app.heygen.com" target="_blank" style="color:#00d4ff;font-size:11px;">→ Open HeyGen to download videos</a>';
+    if(status){ status.style.display='block'; status.innerHTML = summary; }
+  }
 }
 
 function openStudioSettings(){
@@ -5314,7 +5351,7 @@ function toggleTpPanel(){
     <div style="margin-bottom:18px;">
       <div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">1. Upload your photo or avatar</div>
       <div style="display:flex;align-items:center;gap:12px;">
-        <label style="display:flex;align-items:center;gap:8px;padding:10px 16px;border:1.5px dashed var(--border);border-radius:10px;cursor:pointer;font-size:13px;color:var(--muted);">
+        <label style="display:flex;align-items:center;gap:8px;padding:10px 16px;border:1.5px dashed #d1d5db;border-radius:10px;cursor:pointer;font-size:13px;color:var(--muted);">
           📷 Choose photo
           <input type="file" accept="image/*" style="display:none;" onchange="loadAIPhoto(this)">
         </label>
@@ -5338,14 +5375,14 @@ function toggleTpPanel(){
     <!-- Step 3: Scene selection -->
     <div style="margin-bottom:18px;">
       <div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">3. Select scenes to generate</div>
-      <div style="max-height:180px;overflow-y:auto;border:.5px solid var(--border);border-radius:8px;padding:8px;" id="ai-scenes-list">
+      <div style="max-height:180px;overflow-y:auto;border:.5px solid #e5e7eb;border-radius:8px;padding:8px;" id="ai-scenes-list">
         <div style="font-size:12px;color:var(--muted);padding:8px;">Click "Load scenes" to see your scenes</div>
       </div>
       <button onclick="loadAISceneList()" style="margin-top:6px;font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;">↻ Load scenes</button>
     </div>
 
     <!-- Status -->
-    <div id="ai-presenter-status" style="display:none;font-size:12px;color:var(--muted);padding:10px;background:var(--surface);border-radius:8px;margin-bottom:14px;line-height:1.6;"></div>
+    <div id="ai-presenter-status" style="display:none;font-size:12px;color:var(--muted);padding:10px;background:#f9fafb;border-radius:8px;margin-bottom:14px;line-height:1.6;"></div>
 
     <div style="display:flex;gap:10px;justify-content:flex-end;">
       <button class="btn btn-ghost" onclick="closeModal('ai-presenter-modal')">Cancel</button>
