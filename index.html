@@ -366,7 +366,7 @@ button,input,select,textarea{font-family:inherit;}
 .studio-scene-prog-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--purple));transition:width .4s linear;}
 
 /* Teleprompter overlay */
-.studio-tp{position:absolute;bottom:0;left:0;right:0;z-index:15;background:linear-gradient(to top,rgba(0,0,0,.95) 0%,rgba(0,0,0,.75) 55%,transparent 100%);padding:18px 26px 82px;}
+.studio-tp{position:absolute;bottom:160px;left:0;right:0;z-index:15;background:linear-gradient(to top,rgba(0,0,0,.85) 0%,rgba(0,0,0,.6) 60%,transparent 100%);padding:18px 26px 24px;}
 .tp-prev-txt{font-size:11px;color:rgba(255,255,255,.2);font-family:'JetBrains Mono',monospace;line-height:1.7;margin-bottom:7px;}
 .tp-cur-txt{font-size:clamp(16px,2.2vw,26px);font-weight:600;color:#fff;font-family:'JetBrains Mono',monospace;line-height:1.65;border-left:3px solid var(--accent);padding-left:14px;margin-bottom:7px;}
 .tp-next-txt{font-size:11px;color:rgba(255,255,255,.18);font-family:'JetBrains Mono',monospace;line-height:1.7;}
@@ -680,7 +680,7 @@ button,input,select,textarea{font-family:inherit;}
     <a onclick="openTeleprompter()">Teleprompter</a>
   </div>
   <div class="nav-right">
-    <div class="credits-pill" id="credits-pill" style="display:none;" onclick="nav('dashboard-pg')">● <span id="credits-display">0</span> credits</div>
+    <div class="credits-pill" id="credits-pill" style="display:none;cursor:pointer;" onclick="nav('pricing-pg')"><span id="credits-display" style="font-size:12px;"></span></div>
     <button class="btn btn-ghost btn-sm" id="nav-signin" onclick="nav('auth-pg')" style="display:none;">Sign in</button>
     <button class="btn btn-primary btn-sm" id="nav-start" onclick="nav('auth-pg')" style="display:none;">Get started free</button>
     <button class="btn btn-ghost btn-sm" id="nav-signout" onclick="doSignOut()" style="display:none;">Sign out</button>
@@ -1320,10 +1320,11 @@ button,input,select,textarea{font-family:inherit;}
             <div style="display:flex;flex-direction:column;">
               <div style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.3);padding:5px 10px 3px;">View</div>
               <div style="display:flex;gap:4px;padding:6px 10px;align-items:center;">
-                <button class="s-btn" onclick="toggleMirror()" style="font-size:11px;padding:5px 9px;" title="Mirror teleprompter">↔</button>
-                <button class="s-btn" onclick="toggleFocus()" style="font-size:11px;padding:5px 9px;" title="Focus mode">⛶</button>
+                <button class="s-btn" id="btn-pip" onclick="setPipMode(!STUDIO._pipMode)" style="font-size:10px;padding:5px 9px;" title="Toggle picture-in-picture camera">📷 PiP</button>
+                <button class="s-btn" onclick="toggleMirror()" style="font-size:11px;padding:5px 9px;" title="Mirror">↔</button>
                 <button class="s-btn" onclick="increaseTpFont()" style="font-size:11px;padding:5px 8px;">A+</button>
                 <button class="s-btn" onclick="decreaseTpFont()" style="font-size:11px;padding:5px 8px;">A-</button>
+                <button class="s-btn s-btn-teal" onclick="openStudioSettings()" style="font-size:10px;padding:5px 9px;" title="Studio settings">⚙ Settings</button>
               </div>
             </div>
 
@@ -1859,7 +1860,14 @@ function updateNavState() {
     ['d-av'].forEach(function(id){ var e=document.getElementById(id); if(e) e.textContent=ini; });
     var dn=document.getElementById('d-name'); if(dn) dn.textContent=APP.user.name||APP.user.email;
     var de=document.getElementById('d-email'); if(de) de.textContent=APP.user.email;
-    var cd=document.getElementById('credits-display'); if(cd) cd.textContent=APP.credits;
+    var cd=document.getElementById('credits-display');
+    if(cd){
+      var planLabel = APP.plan==='free' ? 'Free plan' :
+                      APP.plan==='creator' ? '✦ Creator' :
+                      APP.plan==='pro' || APP.plan==='studio' ? '★ Pro Studio' :
+                      APP.plan==='team' ? '⬡ Team' : APP.plan;
+      cd.textContent = planLabel;
+    }
   }
 }
 function toast(msg, type) {
@@ -2637,11 +2645,21 @@ function updateMicBtn(){
   b.style.opacity = STUDIO.micOn ? '1' : '.7';
 }
 function startRecWithCountdown(){
-  if(!STUDIO.stream){toast('Camera not ready','err');return;}
-  var canvas=document.getElementById('studio-canvas');if(!canvas)return;
-  var overlay=document.createElement('div');overlay.style.cssText='position:absolute;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:50;font-size:5rem;font-weight:700;color:#fff;font-family:Sora,sans-serif;';
-  var count=3;overlay.textContent=count;canvas.appendChild(overlay);
-  var t=setInterval(function(){count--;if(count<=0){clearInterval(t);overlay.remove();startRec();}else{overlay.textContent=count;overlay.style.color=count===1?'var(--red)':'#fff';}},1000);
+  if(!STUDIO.stream){toast('Camera not ready — click Cam first','info');startCamera();return;}
+  var countdownSecs = parseInt((document.getElementById('settings-countdown')||{}).value||'3') || 3;
+  if(countdownSecs === 0){ startRec(); return; }
+  var canvas=document.getElementById('studio-canvas');if(!canvas){startRec();return;}
+  var overlay=document.createElement('div');
+  overlay.style.cssText='position:absolute;inset:0;background:rgba(0,0,0,.65);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:50;font-family:Sora,sans-serif;';
+  overlay.innerHTML='<div style="font-size:5rem;font-weight:700;color:#fff;" id="countdown-num">'+countdownSecs+'</div><div style="font-size:13px;color:rgba(255,255,255,.5);margin-top:8px;">Get ready...</div>';
+  canvas.appendChild(overlay);
+  var count=countdownSecs;
+  var t=setInterval(function(){
+    count--;
+    var numEl=document.getElementById('countdown-num');
+    if(count<=0){clearInterval(t);overlay.remove();startRec();}
+    else if(numEl){numEl.textContent=count;numEl.style.color=count===1?'var(--red)':'#fff';}
+  },1000);
 }function stopRec(){
   STUDIO.recording = false;
   clearInterval(STUDIO.recTimer);
@@ -2670,16 +2688,69 @@ function endSession(){
   saveProject();nav('edit-pg');
 }
 function studioNext(){
-  if(STUDIO.currentScene<PROJECT.scenes.length-1){
-    if(STUDIO.recording)stopRec();
-    STUDIO.currentScene++;updateTP();
-    toast('Scene '+(STUDIO.currentScene+1),'info');
-  } else toast('Last scene','info');
+  if(STUDIO.currentScene < PROJECT.scenes.length - 1){
+    // Save current scene clip if recording — but DON'T stop, auto-save + continue
+    if(STUDIO.recording && STUDIO.mr && STUDIO.mr.state === 'recording'){
+      // Stop current MediaRecorder to save clip, immediately restart for next scene
+      var savedScene = STUDIO.currentScene;
+      STUDIO.mr.onstop = (function(sceneIdx, chunks, mime){
+        return function(){
+          var blobType = mime || 'video/webm';
+          var blob = new Blob(chunks, {type: blobType});
+          var url  = URL.createObjectURL(blob);
+          var scene = PROJECT.scenes[sceneIdx];
+          var sid   = scene ? scene.id : ('clip_'+Date.now());
+          if(!PROJECT.clips) PROJECT.clips = {};
+          PROJECT.clips[sid] = { url:url, sceneIdx:sceneIdx, duration:STUDIO.recSecs, size:blob.size, sceneName:(scene&&scene.type)||'SCENE' };
+          if(scene) scene.status = 'recorded';
+          updateStudioClips();
+          renderStudioQueue();
+          saveProject();
+          toast('Scene '+(sceneIdx+1)+' saved ✓','ok');
+        };
+      })(STUDIO.currentScene, STUDIO.chunks.slice(), STUDIO._mime);
+      STUDIO.mr.stop();
+      // Immediately start new recording for next scene
+      STUDIO.currentScene++;
+      updateTP();
+      STUDIO.chunks = [];
+      STUDIO.recSecs = 0;
+      setTimeout(function(){
+        if(STUDIO.stream && STUDIO.stream.active){
+          var mime = STUDIO._mime || '';
+          var mrOpts = mime ? {mimeType:mime, videoBitsPerSecond:4000000} : {videoBitsPerSecond:4000000};
+          var mr = new MediaRecorder(STUDIO.stream, mrOpts);
+          mr.ondataavailable = function(e){ if(e.data && e.data.size>0) STUDIO.chunks.push(e.data); };
+          mr.onstop = function(){
+            var blobType = STUDIO._mime || 'video/webm';
+            var blob = new Blob(STUDIO.chunks, {type: blobType});
+            var url  = URL.createObjectURL(blob);
+            var scene = PROJECT.scenes[STUDIO.currentScene];
+            var sid   = scene ? scene.id : ('clip_'+Date.now());
+            if(!PROJECT.clips) PROJECT.clips = {};
+            PROJECT.clips[sid] = { url:url, sceneIdx:STUDIO.currentScene, duration:STUDIO.recSecs, size:blob.size, sceneName:(scene&&scene.type)||'SCENE' };
+            if(scene) scene.status = 'recorded';
+            updateStudioClips(); renderStudioQueue(); saveProject();
+            toast('Scene '+(STUDIO.currentScene+1)+' saved ✓','ok');
+          };
+          mr.start(100);
+          STUDIO.mr = mr;
+        }
+      }, 200);
+    } else {
+      STUDIO.currentScene++;
+      updateTP();
+    }
+    toast('→ Scene '+(STUDIO.currentScene+1),'info');
+  } else {
+    toast('Last scene — click STOP when done','info');
+  }
 }
 function studioPrev(){
-  if(STUDIO.currentScene>0){
-    if(STUDIO.recording)stopRec();
-    STUDIO.currentScene--;updateTP();
+  if(STUDIO.currentScene > 0){
+    STUDIO.currentScene--;
+    updateTP();
+    toast('← Scene '+(STUDIO.currentScene+1),'info');
   }
 }
 function jumpScene(i){
@@ -2759,12 +2830,13 @@ function setBg(el){
   document.querySelectorAll('.bg-btn[data-bg]').forEach(function(b){b.classList.remove('on');});
   el.classList.add('on');_currentBg=newBg;
   if(newBg!=='none'&&newBg!=='green')preloadBgImage(newBg,BG_VARIANT[newBg]||0,null);
+  // Camera always stays full-screen — background goes BEHIND it
+  // User can choose PiP/smaller camera using overlay position buttons
   var cam=document.getElementById('studio-cam');
   if(cam){
-    if(_currentBg==='none'){
+    // Keep camera full screen always - bg is always behind
+    if(!STUDIO._pipMode){
       cam.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;';
-    } else {
-      cam.style.cssText='position:absolute;bottom:20px;right:20px;width:320px;height:180px;object-fit:cover;z-index:4;border-radius:12px;box-shadow:0 6px 28px rgba(0,0,0,.7);border:2.5px solid rgba(255,255,255,.2);';
     }
   }
   requestAnimationFrame(function(){requestAnimationFrame(function(){renderBgLayer();});});
@@ -3011,8 +3083,45 @@ function addExternalClip(inp){if(!inp.files.length)return;var f=inp.files[0],url
 function editPlayPause(){var v=document.getElementById('edit-video'),b=document.getElementById('edit-play-btn');if(!v)return;if(v.paused){v.play();if(b)b.textContent='⏸';}else{v.pause();if(b)b.textContent='▶';}}
 function editSeek(s){var v=document.getElementById('edit-video');if(v)v.currentTime=Math.max(0,(v.currentTime||0)+s);}
 function editUndo(){toast('Undo not available — re-record the scene','info');}
-function trimClip(){toast('Use video controls to find your trim point','info');}
-function splitClipAtPlayhead(){toast('Split at this point — export then trim in your video editor','info');}
+function trimClip(){
+  var v = document.getElementById('edit-video');
+  if(!v || !EDIT_SELECTED){toast('Select a clip first','info');return;}
+  var clip = PROJECT.clips[EDIT_SELECTED];
+  if(!clip){return;}
+  // Store trim in/out points
+  if(!clip.trimIn) clip.trimIn = 0;
+  var action = prompt('Set trim point:\n\nCurrent time: '+formatDur(v.currentTime)+'\n\n[1] Set IN point here ('+formatDur(v.currentTime)+')\n[2] Set OUT point here ('+formatDur(v.currentTime)+')\n\nType 1 or 2:');
+  if(action==='1'){
+    clip.trimIn = v.currentTime;
+    toast('IN point set at '+formatDur(v.currentTime)+' ✓','ok');
+  } else if(action==='2'){
+    clip.trimOut = v.currentTime;
+    toast('OUT point set at '+formatDur(v.currentTime)+' ✓','ok');
+  }
+  saveProject();
+  renderVideoTimeline();
+}
+function splitClipAtPlayhead(){
+  var v = document.getElementById('edit-video');
+  if(!v || !EDIT_SELECTED){toast('Select a clip and position playhead to split','info');return;}
+  var clip = PROJECT.clips[EDIT_SELECTED];
+  if(!clip || !clip.url){return;}
+  if(!confirm('Split clip at '+formatDur(v.currentTime)+'?\nThis creates two separate clips.')){return;}
+  // Store split point — actual binary split needs FFmpeg server-side
+  // For now: mark the split point visually and on export
+  var splitTime = v.currentTime;
+  var splitId = EDIT_SELECTED + '_split_' + Date.now();
+  PROJECT.clips[splitId] = Object.assign({}, clip, {
+    id: splitId,
+    splitFrom: EDIT_SELECTED,
+    splitStart: splitTime,
+    sceneName: (clip.sceneName||'CLIP') + ' B'
+  });
+  clip.splitEnd = splitTime;
+  saveProject();
+  renderEditSuite();
+  toast('Split at '+formatDur(splitTime)+' — two clips created ✓','ok');
+}
 function zoomTimeline(v){EDIT.zoom=parseInt(v);renderVideoTimeline();}
 function startEditTimecode(){
   var v=document.getElementById('edit-video');if(!v)return;
@@ -3161,9 +3270,8 @@ function grantCreatorAccess(){
 
 // ══ AI PRESENTER ══════════════════════════════════════════════════════════════
 function openAIPresenter(){
-  if(APP.plan !== 'pro' && APP.plan !== 'studio' && APP.plan !== 'creator'){
-    // AI presenter requires Pro Studio plan
-    showUpgradeModalPro('AI Presenter requires Pro Studio plan. Generate AI video presenters from your script without a camera.');
+  if(APP.plan === 'free'){
+    showUpgradeModalPro('AI Presenter requires a Creator or Pro Studio plan.');
     return;
   }
   openModal('ai-presenter-modal');
@@ -3508,7 +3616,34 @@ function scheduleSceneAssets(sceneIdx){
 
 // Override updateTP to also schedule assets
 function updateTP(){
-    scheduleSceneAssets(STUDIO.currentScene);
+  var scene = PROJECT.scenes[STUDIO.currentScene];
+  var prevScene = PROJECT.scenes[STUDIO.currentScene - 1];
+  var nextScene = PROJECT.scenes[STUDIO.currentScene + 1];
+
+  var prev = document.getElementById('tp-prev');
+  var cur  = document.getElementById('tp-cur');
+  var next = document.getElementById('tp-next');
+  var pill = document.getElementById('st-scene-pill');
+  var name = document.getElementById('st-scene-name');
+  var cnt  = document.getElementById('st-scene-cnt');
+  var scnCtr = document.getElementById('studio-scene-counter');
+
+  if(prev) prev.textContent = prevScene ? (prevScene.narration||'').slice(0,80)+'...' : '';
+  if(cur)  cur.textContent  = scene     ? (scene.narration||'(No narration)') : 'No scenes — go back and split your script first.';
+  if(next) next.textContent = nextScene ? (nextScene.narration||'').slice(0,80)+'...' : '';
+
+  var total = PROJECT.scenes.length;
+  var scNum = STUDIO.currentScene + 1;
+  if(pill)   pill.textContent   = 'Scene ' + scNum;
+  if(name)   name.textContent   = scene ? (scene.type||'') + ' · ' + (scene.narration||'').slice(0,40) : '';
+  if(cnt)    cnt.textContent    = scNum + '/' + total;
+  if(scnCtr) scnCtr.textContent = scNum + '/' + total;
+
+  // Reset progress bar
+  var pf = document.getElementById('scene-prog-fill');
+  if(pf) pf.style.width = '0%';
+
+  scheduleSceneAssets(STUDIO.currentScene);
 }
 
 // ── AUTO-SAVE EVERY 30s ────────────────────────────────────────────────────────
@@ -3955,6 +4090,135 @@ function smartSplitScript(script, wpm, sceneDuration){
   return scenes;
 }
 
+function loadAISceneList(){
+  var list = document.getElementById('ai-scenes-list');
+  if(!list) return;
+  if(!PROJECT.scenes.length){
+    list.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:8px;">No scenes yet — split your script first.</div>';
+    return;
+  }
+  list.innerHTML = PROJECT.scenes.map(function(s,i){
+    return '<label style="display:flex;align-items:flex-start;gap:8px;padding:6px 4px;cursor:pointer;font-size:12px;border-bottom:.5px solid var(--border);">'
+      + '<input type="checkbox" value="'+s.id+'" '+(i===0?'checked':'')+' style="margin-top:2px;accent-color:var(--accent);">'
+      + '<span><strong>Scene '+(i+1)+'</strong> — '+(s.narration||'').slice(0,80)+'...</span>'
+      + '</label>';
+  }).join('');
+}
+
+// Override startAIPresenter with better UX
+async function startAIPresenter(){
+  if(!window._aiPhotoB64){ toast('Upload your photo first','error'); return; }
+  var voiceSel = document.getElementById('ai-voice-sel');
+  var voiceId  = voiceSel ? voiceSel.value : 'EXAVITQu4vr4xnSDxMaL';
+  var sceneList = document.getElementById('ai-scenes-list');
+  var checked   = sceneList ? Array.from(sceneList.querySelectorAll('input:checked')) : [];
+  var sceneIds  = checked.map(function(inp){ return inp.value; });
+  if(!sceneIds.length){ toast('Select at least one scene','error'); return; }
+
+  var status = document.getElementById('ai-presenter-status');
+  var btn    = document.getElementById('ai-gen-btn');
+  if(status) status.style.display = 'block';
+  if(btn)    btn.disabled = true;
+
+  for(var i=0; i<sceneIds.length; i++){
+    var scene = PROJECT.scenes.find(function(s){ return s.id===sceneIds[i]; });
+    if(!scene) continue;
+    var label = 'Scene '+(scene.sceneNumber||i+1);
+    if(status) status.textContent = '⏳ Generating '+label+' ('+( i+1)+'/'+sceneIds.length+')...';
+    try{
+      // Step 1: Generate voice
+      if(status) status.textContent = '🎙 '+label+': generating voice...';
+      var vr = await fetch(API+'/api/voice',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({text:scene.narration, voiceId:voiceId})});
+      var vd = await vr.json();
+      if(vd.error) throw new Error('Voice error: '+vd.error);
+
+      // Step 2: Generate video
+      if(status) status.textContent = '🎬 '+label+': generating video (1–3 min)...';
+      var pr = await fetch(API+'/api/presenter',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({referenceImageBase64:window._aiPhotoB64, audioBase64:vd.audio, ratio:'16:9'})});
+      var pd = await pr.json();
+      if(pd.error) throw new Error('Video error: '+pd.error);
+
+      toast(label+' submitted ✓ Task: '+pd.taskId,'ok');
+      if(status) status.textContent = '✓ '+label+' submitted. Task ID: '+pd.taskId+'. Check HeyGen dashboard for result.';
+    } catch(e){
+      toast('Error on '+label+': '+e.message,'error');
+      if(status) status.textContent = '✗ '+label+' failed: '+e.message;
+    }
+  }
+  if(btn) btn.disabled = false;
+}
+
+function openStudioSettings(){
+  // Populate device dropdowns
+  if(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices){
+    navigator.mediaDevices.enumerateDevices().then(function(devices){
+      var camSel = document.getElementById('settings-cam-select');
+      var micSel = document.getElementById('settings-mic-select');
+      var cams = devices.filter(function(d){ return d.kind==='videoinput'; });
+      var mics = devices.filter(function(d){ return d.kind==='audioinput'; });
+      if(camSel) camSel.innerHTML = cams.length
+        ? cams.map(function(d,i){ return '<option value="'+d.deviceId+'">'+(d.label||'Camera '+(i+1))+'</option>'; }).join('')
+        : '<option>No cameras found</option>';
+      if(micSel) micSel.innerHTML = mics.length
+        ? mics.map(function(d,i){ return '<option value="'+d.deviceId+'">'+(d.label||'Microphone '+(i+1))+'</option>'; }).join('')
+        : '<option>No microphones found</option>';
+      // Select current device
+      if(camSel && STUDIO._preferredCam) camSel.value = STUDIO._preferredCam;
+      if(micSel && STUDIO._preferredMic) micSel.value = STUDIO._preferredMic;
+    }).catch(function(){
+      // If not yet granted permission, show message
+      var camSel = document.getElementById('settings-cam-select');
+      if(camSel) camSel.innerHTML = '<option>Click "Apply" to grant camera access first</option>';
+    });
+  }
+  // Populate current WPM
+  var wpmInp = document.getElementById('settings-wpm');
+  if(wpmInp) wpmInp.value = STUDIO.tpSpeed || 80;
+
+  openModal('studio-settings-modal');
+}
+
+function applySettingsCamera(deviceId){ STUDIO._preferredCam = deviceId; }
+function applySettingsMic(deviceId){ STUDIO._preferredMic = deviceId; }
+
+function applyStudioSettings(){
+  // Camera device
+  var camSel = document.getElementById('settings-cam-select');
+  var micSel = document.getElementById('settings-mic-select');
+  if(camSel && camSel.value) STUDIO._preferredCam = camSel.value;
+  if(micSel && micSel.value) STUDIO._preferredMic = micSel.value;
+
+  // WPM
+  var wpmInp = document.getElementById('settings-wpm');
+  if(wpmInp && wpmInp.value){
+    STUDIO.tpSpeed = parseInt(wpmInp.value);
+    var spd = document.getElementById('tp-spd-val');
+    var spdR = document.getElementById('tp-spd-range');
+    if(spd) spd.textContent = STUDIO.tpSpeed + 'wpm';
+    if(spdR) spdR.value = STUDIO.tpSpeed;
+  }
+
+  // Font size
+  var fontSel = document.getElementById('settings-tp-font');
+  if(fontSel){
+    var sizes = {small:'14px', medium:'20px', large:'28px', xlarge:'38px'};
+    var tpEl = document.getElementById('tp-cur');
+    if(tpEl) tpEl.style.fontSize = sizes[fontSel.value] || '20px';
+  }
+
+  // If stream exists, restart with new devices
+  if(STUDIO.stream){
+    STUDIO.stream.getTracks().forEach(function(t){ t.stop(); });
+    STUDIO.stream = null;
+    startCamera();
+  }
+
+  closeModal('studio-settings-modal');
+  toast('Studio settings applied ✓', 'ok');
+}
+
 </script>
 
 
@@ -4063,5 +4327,202 @@ function smartSplitScript(script, wpm, sceneDuration){
   </div>
 </div>
 
+
+<!-- AI PRESENTER MODAL -->
+<div class="modal-overlay" id="ai-presenter-modal" style="display:none;">
+  <div class="modal-box" style="max-width:560px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <div>
+        <div style="font-size:18px;font-weight:700;color:var(--ink);">🤖 AI Presenter</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:3px;">Generate an AI video presenter from your script scenes</div>
+      </div>
+      <button onclick="closeModal('ai-presenter-modal')" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);">✕</button>
+    </div>
+
+    <!-- Step 1: Upload photo -->
+    <div style="margin-bottom:18px;">
+      <div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">1. Upload your photo or avatar</div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <label style="display:flex;align-items:center;gap:8px;padding:10px 16px;border:1.5px dashed var(--border);border-radius:10px;cursor:pointer;font-size:13px;color:var(--muted);">
+          📷 Choose photo
+          <input type="file" accept="image/*" style="display:none;" onchange="loadAIPhoto(this)">
+        </label>
+        <img id="ai-photo-preview" style="display:none;width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid var(--accent);">
+      </div>
+    </div>
+
+    <!-- Step 2: Voice selection -->
+    <div style="margin-bottom:18px;">
+      <div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">2. Choose voice</div>
+      <select id="ai-voice-sel" style="width:100%;padding:9px 12px;border:.5px solid var(--border);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:var(--surface);">
+        <option value="EXAVITQu4vr4xnSDxMaL">Rachel — Natural female</option>
+        <option value="21m00Tcm4TlvDq8ikWAM">Adam — Professional male</option>
+        <option value="AZnzlk1XvdvUeBnXmlld">Domi — Energetic female</option>
+        <option value="MF3mGyEYCl7XYWbV9V6O">Elli — Calm female</option>
+        <option value="TxGEqnHWrfWFTfGW9XjX">Josh — Warm male</option>
+        <option value="yoZ06aMxZJJ28mfd3POQ">Sam — Casual male</option>
+      </select>
+    </div>
+
+    <!-- Step 3: Scene selection -->
+    <div style="margin-bottom:18px;">
+      <div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">3. Select scenes to generate</div>
+      <div style="max-height:180px;overflow-y:auto;border:.5px solid var(--border);border-radius:8px;padding:8px;" id="ai-scenes-list">
+        <div style="font-size:12px;color:var(--muted);padding:8px;">Click "Load scenes" to see your scenes</div>
+      </div>
+      <button onclick="loadAISceneList()" style="margin-top:6px;font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;">↻ Load scenes</button>
+    </div>
+
+    <!-- Status -->
+    <div id="ai-presenter-status" style="display:none;font-size:12px;color:var(--muted);padding:10px;background:var(--surface);border-radius:8px;margin-bottom:14px;line-height:1.6;"></div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="closeModal('ai-presenter-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="startAIPresenter()" id="ai-gen-btn">🎬 Generate AI video</button>
+    </div>
+
+    <div style="margin-top:14px;padding:10px;background:rgba(245,158,11,.06);border:.5px solid rgba(245,158,11,.2);border-radius:8px;font-size:11px;color:rgba(245,158,11,.8);line-height:1.5;">
+      ⚠️ Requires ElevenLabs (voice) and HeyGen (video) API keys in Railway. Each scene takes 1–3 minutes to generate.
+    </div>
+  </div>
+</div>
+
+
+<!-- STUDIO SETTINGS MODAL -->
+<div class="modal-overlay" id="studio-settings-modal">
+  <div class="modal-box" style="max-width:520px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <div>
+        <div style="font-size:17px;font-weight:700;color:var(--ink);">⚙ Studio Settings</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px;">Configure camera, microphone, and recording preferences</div>
+      </div>
+      <button onclick="closeModal('studio-settings-modal')" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);">✕</button>
+    </div>
+
+    <!-- Camera -->
+    <div style="margin-bottom:18px;padding-bottom:18px;border-bottom:.5px solid var(--bdr);">
+      <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:10px;">📷 Camera</div>
+      <div style="margin-bottom:8px;">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Device</label>
+        <select id="settings-cam-select" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;" onchange="applySettingsCamera(this.value)">
+          <option value="">Loading cameras...</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:10px;">
+        <div style="flex:1;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Resolution</label>
+          <select id="settings-res" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
+            <option value="720">720p (HD)</option>
+            <option value="1080" selected>1080p (Full HD)</option>
+            <option value="1440">1440p (2K)</option>
+            <option value="2160">4K (Creator+ only)</option>
+          </select>
+        </div>
+        <div style="flex:1;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Frame rate</label>
+          <select id="settings-fps" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
+            <option value="24">24 fps (cinematic)</option>
+            <option value="30" selected>30 fps (standard)</option>
+            <option value="60">60 fps (smooth)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Microphone -->
+    <div style="margin-bottom:18px;padding-bottom:18px;border-bottom:.5px solid var(--bdr);">
+      <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:10px;">🎙 Microphone</div>
+      <div style="margin-bottom:8px;">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Device</label>
+        <select id="settings-mic-select" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;" onchange="applySettingsMic(this.value)">
+          <option value="">Loading microphones...</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <div style="flex:1;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Noise suppression</label>
+          <select id="settings-noise" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
+            <option value="true" selected>On (recommended)</option>
+            <option value="false">Off (raw audio)</option>
+          </select>
+        </div>
+        <div style="flex:1;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Echo cancellation</label>
+          <select id="settings-echo" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
+            <option value="true" selected>On (recommended)</option>
+            <option value="false">Off</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recording -->
+    <div style="margin-bottom:18px;padding-bottom:18px;border-bottom:.5px solid var(--bdr);">
+      <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:10px;">⏺ Recording</div>
+      <div style="display:flex;gap:10px;">
+        <div style="flex:1;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Countdown before record</label>
+          <select id="settings-countdown" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
+            <option value="0">No countdown</option>
+            <option value="3" selected>3 seconds</option>
+            <option value="5">5 seconds</option>
+          </select>
+        </div>
+        <div style="flex:1;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Auto-advance on teleprompter end</label>
+          <select id="settings-auto-advance" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
+            <option value="true" selected>Yes — save clip, next scene</option>
+            <option value="false">No — wait for manual stop</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Teleprompter -->
+    <div style="margin-bottom:20px;">
+      <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:10px;">📺 Teleprompter</div>
+      <div style="display:flex;gap:10px;">
+        <div style="flex:1;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Default speed (WPM)</label>
+          <input type="number" id="settings-wpm" value="80" min="20" max="300" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;">
+        </div>
+        <div style="flex:1;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Font size</label>
+          <select id="settings-tp-font" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
+            <option value="small">Small</option>
+            <option value="medium" selected>Medium</option>
+            <option value="large">Large</option>
+            <option value="xlarge">Extra large</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="closeModal('studio-settings-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="applyStudioSettings()">Apply settings ✓</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
+<script>
+
+function setPipMode(enable){
+  STUDIO._pipMode = enable;
+  var cam = document.getElementById('studio-cam');
+  if(!cam) return;
+  if(enable){
+    cam.style.cssText='position:absolute;bottom:96px;right:20px;width:280px;height:158px;object-fit:cover;z-index:4;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.6);border:2px solid rgba(255,255,255,.2);';
+    toast('Camera: PiP mode','info');
+  } else {
+    cam.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;';
+    toast('Camera: fullscreen','info');
+  }
+  // Update button state
+  var pipBtn = document.getElementById('btn-pip');
+  if(pipBtn) pipBtn.classList.toggle('s-btn-gold', enable);
+}
+
+</script>
