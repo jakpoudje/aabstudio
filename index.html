@@ -374,7 +374,7 @@ button,input,select,textarea{font-family:inherit;}
 .tp-body{flex:1;position:relative;display:flex;flex-direction:column;justify-content:center;padding:0 0 6px;}
 
 .tp-cur-txt{font-size:clamp(18px,2.2vw,26px);font-weight:600;font-family:'JetBrains Mono',monospace;line-height:1.9;padding:2px 24px;overflow:hidden;white-space:nowrap;position:relative;}
-.tp-cur-inner{display:inline-block;white-space:nowrap;transition:transform .12s linear;will-change:transform;}
+.tp-cur-inner{display:inline-block;white-space:nowrap;transition:transform .25s cubic-bezier(0.25,0.46,0.45,0.94);will-change:transform;}
 .tp-prev-txt{font-size:clamp(11px,1.3vw,15px);color:rgba(255,255,255,.22);font-family:'JetBrains Mono',monospace;line-height:1.7;padding:0 24px;overflow:hidden;white-space:nowrap;height:28px;}
 .tp-next-txt{font-size:clamp(11px,1.3vw,15px);color:rgba(255,255,255,.22);font-family:'JetBrains Mono',monospace;line-height:1.7;padding:0 24px;overflow:hidden;white-space:nowrap;height:28px;}
 
@@ -1154,7 +1154,8 @@ button,input,select,textarea{font-family:inherit;}
       <div style="margin-left:auto;display:flex;align-items:center;gap:12px;">
         <div style="display:flex;align-items:center;gap:4px;"><span style="font-size:9px;color:rgba(255,255,255,.25);">ELAPSED</span><span style="font-size:11px;font-weight:600;color:var(--gold);font-family:'JetBrains Mono',monospace;" id="st-elapsed">0:00</span></div>
         <div style="display:flex;align-items:center;gap:4px;"><span style="font-size:9px;color:rgba(255,255,255,.25);">SCENE</span><span style="font-size:11px;font-weight:600;color:#fff;" id="st-scene-cnt">1/1</span></div>
-        <button class="btn btn-ghost btn-sm" onclick="endStudioSession()">End session</button>
+        <button class="btn btn-ghost btn-sm" onclick="endStudioSession()" style="color:rgba(255,255,255,.6);">← Exit studio</button>
+        <button class="btn btn-ghost btn-sm" onclick="doSignOut()" style="color:rgba(239,68,68,.6);border-color:rgba(239,68,68,.2);">Sign out</button>
       </div>
     </div>
     <div class="studio-main">
@@ -1206,9 +1207,13 @@ button,input,select,textarea{font-family:inherit;}
         <!-- Teleprompter -->
         <div class="studio-tp" id="studio-tp">
           <!-- Collapse handle -->
-          <div class="tp-handle" onclick="toggleTpPanel()">
-            <span class="tp-handle-label">Teleprompter</span>
-            <span id="tp-collapse-icon" style="font-size:11px;color:rgba(255,255,255,.3);">▼ collapse</span>
+          <div class="tp-handle" id="tp-drag-handle" style="cursor:move;" title="Drag to reposition">
+            <span style="font-size:11px;color:rgba(255,255,255,.2);margin-right:6px;">⠿</span>
+            <span class="tp-handle-label" onclick="toggleTpPanel()">Teleprompter</span>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+              <button onclick="resetTpScroll()" style="background:none;border:none;cursor:pointer;font-size:10px;color:rgba(255,255,255,.3);" title="Reset scroll">↺</button>
+              <span id="tp-collapse-icon" onclick="toggleTpPanel()" style="font-size:11px;color:rgba(255,255,255,.3);cursor:pointer;">▼ collapse</span>
+            </div>
           </div>
           <!-- Teleprompter body -->
           <div class="tp-body" id="tp-body">
@@ -2023,6 +2028,13 @@ function setUser(u) {
   var meta  = u.user_metadata || {};
   APP.user  = { id: u.id, name: meta.name || u.email.split('@')[0], email: u.email };
   APP.plan  = meta.plan || 'free';
+  // Owner override — Julius gets full studio access always
+  if(APP.user && APP.user.email && 
+     (APP.user.email === 'jakpoudje@gmail.com' || 
+      APP.user.email === 'julius@aabstudio.ai' ||
+      APP.user.email === 'admin@aabstudio.ai')) {
+    APP.plan = 'studio'; // full access
+  }
   APP.credits = meta.credits || 0;
   updateNavState();
   // Show plan badge in dashboard if loaded
@@ -2063,28 +2075,83 @@ function loadDashboard() {
   }).join('')+'</div>';
 }
 function loadProject(idx) {
-  var saved=JSON.parse(localStorage.getItem('aab_projects')||'[]');
-  var p=saved[idx]; if(!p) return;
-  PROJECT=Object.assign({id:null,title:'My Video',script:'',wpm:150,sceneDuration:8,scenes:[],assets:[],clips:{}},p);
+  var saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+  var p = saved[idx]; if(!p) return;
+  PROJECT = Object.assign({id:null,title:'My Video',script:'',wpm:150,
+    sceneDuration:8,scenes:[],assets:[],clips:{},clipsMeta:{}}, p);
+  PROJECT.clips = {}; // blob URLs gone, start fresh
+
+  // Restore scene status from clipsMeta so user knows what was recorded
+  if(p.clipsMeta) {
+    Object.keys(p.clipsMeta).forEach(function(sceneId){
+      var meta = p.clipsMeta[sceneId];
+      var scene = PROJECT.scenes.find(function(s){ return s.id === sceneId; });
+      if(scene && meta.recorded) scene.status = 'recorded';
+    });
+    toast(Object.keys(p.clipsMeta).length + ' scenes were previously recorded — retake any scene to re-record it', 'info');
+  }
   nav('scenes-pg');
 }
 function saveProject() {
-  PROJECT.date=new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
-  var light=JSON.parse(JSON.stringify(PROJECT));
-  // Strip binary data to avoid quota exceeded
-  if(light.assets) light.assets=light.assets.map(function(a){return{id:a.id,name:a.name,type:a.type,size:a.size||0,dataUrl:a.dataUrl||null,position:a.position,sizePercent:a.sizePercent,animation:a.animation};});
-  if(light.scenes) light.scenes=light.scenes.map(function(s){var sc=Object.assign({},s);if(sc.assets)sc.assets=sc.assets.map(function(a){return{id:a.id,name:a.name,type:a.type,dataUrl:a.dataUrl||null,position:a.position,sizePercent:a.sizePercent,animation:a.animation};});delete sc.aiVoice;delete sc.aiImage;return sc;});
-  delete light.clips;
-  try {
-    var saved=JSON.parse(localStorage.getItem('aab_projects')||'[]');
-    var idx=saved.findIndex(function(p){return p.id===light.id;});
-    if(idx>-1) saved[idx]=light; else saved.unshift(light);
-    localStorage.setItem('aab_projects',JSON.stringify(saved.slice(0,25)));
-  } catch(e) {
-    try { localStorage.setItem('aab_projects',JSON.stringify([{id:light.id,title:light.title,date:light.date,scenes:light.scenes}])); } catch(e2){}
+  PROJECT.date = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+  var light = JSON.parse(JSON.stringify(PROJECT));
+
+  // Strip binary data from assets to avoid quota exceeded
+  if(light.assets) light.assets = light.assets.map(function(a){
+    return {id:a.id,name:a.name,type:a.type,size:a.size||0,dataUrl:a.dataUrl||null,
+            position:a.position,sizePercent:a.sizePercent,animation:a.animation};
+  });
+  if(light.scenes) light.scenes = light.scenes.map(function(s){
+    var sc = Object.assign({},s);
+    if(sc.assets) sc.assets = sc.assets.map(function(a){
+      return {id:a.id,name:a.name,type:a.type,dataUrl:a.dataUrl||null,
+              position:a.position,sizePercent:a.sizePercent,animation:a.animation};
+    });
+    delete sc.aiVoice; delete sc.aiImage;
+    return sc;
+  });
+
+  // Save clip METADATA (not blob URLs which don't persist)
+  // Mark which scenes have been recorded for state persistence
+  if(PROJECT.clips) {
+    light.clipsMeta = {};
+    Object.keys(PROJECT.clips).forEach(function(k){
+      var c = PROJECT.clips[k];
+      if(c) light.clipsMeta[k] = {
+        sceneIdx: c.sceneIdx,
+        duration: c.duration,
+        size:     c.size || 0,
+        sceneName: c.sceneName || '',
+        recorded: true
+      };
+    });
   }
-  // Flash saved indicator
-  var m=document.getElementById('scenes-meta'); if(m){var prev=m.innerHTML;m.style.color='var(--green)';m.textContent='✓ Saved';setTimeout(function(){m.style.color='';renderScenesMeta();},1400);}
+  delete light.clips; // blob URLs can't be serialised
+
+  try {
+    var saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+    var idx = saved.findIndex(function(p){ return p.id === light.id; });
+    if(idx > -1) saved[idx] = light; else saved.unshift(light);
+    // Keep max 25 projects, strip assets from older ones if too large
+    var json = JSON.stringify(saved.slice(0,25));
+    if(json.length > 4500000) {
+      // Too large — strip asset dataUrls from older projects
+      saved.slice(1).forEach(function(p){ if(p.assets) p.assets.forEach(function(a){ delete a.dataUrl; }); });
+      json = JSON.stringify(saved.slice(0,25));
+    }
+    localStorage.setItem('aab_projects', json);
+    updateStudioClips();
+  } catch(e) {
+    console.warn('saveProject failed:', e.message);
+    try {
+      // Emergency save: strip all assets
+      light.assets = []; light.scenes = light.scenes.map(function(s){ s.assets=[]; return s; });
+      var saved2 = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+      var idx2 = saved2.findIndex(function(p){ return p.id === light.id; });
+      if(idx2 > -1) saved2[idx2] = light; else saved2.unshift(light);
+      localStorage.setItem('aab_projects', JSON.stringify(saved2.slice(0,10)));
+    } catch(e2){ console.error('Emergency save failed:', e2); }
+  }
 }
 function deleteProject(idx, e) {
   if(e) e.stopPropagation();
@@ -2756,11 +2823,44 @@ function startRecWithCountdown(){
   clearInterval(STUDIO.recTimer);
   setRecState('STOPPED');
   clearAssetTimers();
-  if(STUDIO.mr && STUDIO.mr.state !== 'inactive') STUDIO.mr.stop();
-  var sb=document.getElementById('rec-badge'); if(sb) sb.className='rec-badge ready';
-  var rt=document.getElementById('rec-txt');   if(rt) rt.textContent='READY';
-  if(typeof studioTpStop==='function') studioTpStop();
-  setTimeout(function(){ setRecState('READY'); }, 2000);
+  if(typeof studioTpStop === 'function') studioTpStop();
+
+  if(STUDIO.mr && STUDIO.mr.state !== 'inactive'){
+    // Save the current scene's portion before stopping
+    var scene = PROJECT.scenes[STUDIO.currentScene];
+    var sid = scene ? scene.id : ('clip_'+Date.now());
+    
+    STUDIO.mr.onstop = function(){
+      var blobType = STUDIO._mime || 'video/webm';
+      var blob = new Blob(STUDIO.chunks, {type: blobType});
+      var url  = URL.createObjectURL(blob);
+      if(!PROJECT.clips) PROJECT.clips = {};
+      // Save the final scene clip with a real URL
+      PROJECT.clips[sid] = {
+        url:      url,
+        sceneIdx: STUDIO.currentScene,
+        duration: STUDIO.recSecs,
+        size:     blob.size,
+        sceneName: (scene&&scene.type)||'SCENE',
+        recorded:  true
+      };
+      if(scene) scene.status = 'recorded';
+      STUDIO.chunks = [];
+      updateStudioClips();
+      renderStudioQueue();
+      saveProject();
+      var rb = document.getElementById('btn-retake');
+      if(rb) rb.style.display = '';
+      toast('Scene ' + (STUDIO.currentScene+1) + ' saved ✓  ' + STUDIO.recSecs + 's', 'ok');
+      setRecState('READY');
+    };
+    STUDIO.mr.stop();
+  } else {
+    setRecState('READY');
+  }
+
+  var sb = document.getElementById('rec-badge'); if(sb) sb.className='rec-badge ready';
+  var rt = document.getElementById('rec-txt');   if(rt) rt.textContent='READY';
 }
 
 function retakeScene(){
@@ -2780,61 +2880,42 @@ function endSession(){
 }
 function studioNext(){
   if(STUDIO.currentScene < PROJECT.scenes.length - 1){
-    // Save current scene clip if recording — but DON'T stop, auto-save + continue
-    if(STUDIO.recording && STUDIO.mr && STUDIO.mr.state === 'recording'){
-      // Stop current MediaRecorder to save clip, immediately restart for next scene
-      var savedScene = STUDIO.currentScene;
-      STUDIO.mr.onstop = (function(sceneIdx, chunks, mime){
-        return function(){
-          var blobType = mime || 'video/webm';
-          var blob = new Blob(chunks, {type: blobType});
-          var url  = URL.createObjectURL(blob);
-          var scene = PROJECT.scenes[sceneIdx];
-          var sid   = scene ? scene.id : ('clip_'+Date.now());
-          if(!PROJECT.clips) PROJECT.clips = {};
-          PROJECT.clips[sid] = { url:url, sceneIdx:sceneIdx, duration:STUDIO.recSecs, size:blob.size, sceneName:(scene&&scene.type)||'SCENE' };
-          if(scene) scene.status = 'recorded';
-          updateStudioClips();
-          renderStudioQueue();
-          saveProject();
-          toast('Scene '+(sceneIdx+1)+' saved ✓','ok');
-        };
-      })(STUDIO.currentScene, STUDIO.chunks.slice(), STUDIO._mime);
-      STUDIO.mr.stop();
-      // Immediately start new recording for next scene
-      STUDIO.currentScene++;
-      updateTP();
-      STUDIO.chunks = [];
-      STUDIO.recSecs = 0;
-      setTimeout(function(){
-        if(STUDIO.stream && STUDIO.stream.active){
-          var mime = STUDIO._mime || '';
-          var mrOpts = mime ? {mimeType:mime, videoBitsPerSecond:4000000} : {videoBitsPerSecond:4000000};
-          var mr = new MediaRecorder(STUDIO.stream, mrOpts);
-          mr.ondataavailable = function(e){ if(e.data && e.data.size>0) STUDIO.chunks.push(e.data); };
-          mr.onstop = function(){
-            var blobType = STUDIO._mime || 'video/webm';
-            var blob = new Blob(STUDIO.chunks, {type: blobType});
-            var url  = URL.createObjectURL(blob);
-            var scene = PROJECT.scenes[STUDIO.currentScene];
-            var sid   = scene ? scene.id : ('clip_'+Date.now());
-            if(!PROJECT.clips) PROJECT.clips = {};
-            PROJECT.clips[sid] = { url:url, sceneIdx:STUDIO.currentScene, duration:STUDIO.recSecs, size:blob.size, sceneName:(scene&&scene.type)||'SCENE' };
-            if(scene) scene.status = 'recorded';
-            updateStudioClips(); renderStudioQueue(); saveProject();
-            toast('Scene '+(STUDIO.currentScene+1)+' saved ✓','ok');
-          };
-          mr.start(100);
-          STUDIO.mr = mr;
-        }
-      }, 200);
-    } else {
-      STUDIO.currentScene++;
-      updateTP();
+    var wasRecording = STUDIO.recording;
+
+    if(wasRecording && STUDIO.mr && STUDIO.mr.state === 'recording'){
+      // Mark scene boundary with timestamp instead of stopping/restarting
+      // This avoids memory buildup from repeated MediaRecorder stop/start cycles
+      var currentTime = STUDIO.recSecs;
+      var scene = PROJECT.scenes[STUDIO.currentScene];
+      var sid = scene ? scene.id : ('clip_'+Date.now());
+      if(!PROJECT.clips) PROJECT.clips = {};
+      // Save scene boundary marker (not a real clip yet — will be split on export)
+      PROJECT.clips[sid] = {
+        sceneIdx:   STUDIO.currentScene,
+        duration:   STUDIO.recSecs,
+        size:       0,
+        sceneName:  (scene&&scene.type)||'SCENE',
+        startTime:  STUDIO._sessionStartTime || 0,
+        endTime:    Date.now(),
+        recorded:   true,
+        url:        null // no blob yet - continuous recording
+      };
+      if(scene) scene.status = 'recorded';
+      updateStudioClips();
+      renderStudioQueue();
+      saveProject();
+      STUDIO.recSecs = 0; // reset per-scene timer
+      var timerEl = document.getElementById('rec-timer-display');
+      if(timerEl) timerEl.textContent = '0:00';
     }
-    toast('→ Scene '+(STUDIO.currentScene+1),'info');
+
+    STUDIO.currentScene++;
+    updateTP();
+    renderStudioQueue();
+    toast('→ Scene ' + (STUDIO.currentScene+1), 'info');
+
   } else {
-    toast('Last scene — click STOP when done','info');
+    toast('Last scene — click STOP when done', 'info');
   }
 }
 function studioPrev(){
@@ -3011,7 +3092,12 @@ function startBgCompositing(type){
   }
 
   function compositingFrame(){
-    if(_bgCompositingType !== type){ return; }
+    if(_bgCompositingType !== type){ return; } // stopped
+    // Guard: don't draw if cam video is not ready
+    if(!cam || cam.readyState < 2 || cam.videoWidth === 0){
+      _bgCompositingRaf = requestAnimationFrame(compositingFrame);
+      return;
+    }
     var dims = resize();
     var W = dims.W, H = dims.H;
 
@@ -3405,17 +3491,21 @@ function grantCreatorAccess(){
 // ══ AI PRESENTER ══════════════════════════════════════════════════════════════
 function openAIPresenter(){
   if(!APP.user){
-    toast('Please sign in first to use AI Presenter','info');
+    toast('Sign in first to use AI Presenter','info');
     setTimeout(function(){ nav('auth-pg'); }, 1200);
     return;
   }
   if(APP.plan === 'free'){
-    showUpgradeModalPro('AI Presenter generates a video of an AI presenter reading your script — no camera needed.');
+    showUpgradeModalPro('AI Presenter generates a realistic AI video presenter from your scenes. Requires Creator or Pro Studio plan.');
+    return;
+  }
+  if(!PROJECT.scenes || !PROJECT.scenes.length){
+    toast('No scenes yet — split your script first, then come back','info');
     return;
   }
   openModal('ai-presenter-modal');
-  // Auto-load scenes immediately
-  setTimeout(function(){ loadAISceneList(); }, 80);
+  // Always auto-load scenes immediately when modal opens
+  loadAISceneList();
 }
 function loadAIPhoto(inp){if(!inp.files.length)return;var f=inp.files[0];var rd=new FileReader();rd.onload=function(e){var img=document.getElementById('ai-photo-preview');if(img){img.src=e.target.result;img.style.display='block';}window._aiPhotoB64=e.target.result.split(',')[1];};rd.readAsDataURL(f);}// ══ KEYBOARD SHORTCUTS ════════════════════════════════════════════════════════
 document.addEventListener('keydown',function(e){
@@ -3741,7 +3831,7 @@ function updateTP(){
     } else {
       var words = (scene.narration||'').trim().split(/\s+/);
       var spans = words.map(function(w, i){
-        return '<span id="tw'+i+'" style="display:inline-block;margin-right:8px;color:rgba(255,255,255,.5);transition:color .08s;">'+
+        return '<span id="tw'+i+'" style="display:inline-block;margin-right:8px;color:rgba(255,255,255,.45);transition:color .2s ease,transform .2s ease,opacity .2s ease;">'+
                w.replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>';
       }).join('');
       curEl.innerHTML = '<div class="tp-cur-inner" id="tp-cur-inner">'+spans+'</div>';
@@ -3818,6 +3908,7 @@ function initStudio(){
   startElapsedTimer();
   startAutoSave();
   enumerateDevices();
+  setTimeout(initTpDrag, 200);
 
   setTimeout(function(){
     var tp = document.getElementById('tp-cur');
@@ -4008,6 +4099,7 @@ function startRec(){
 
   mr.start(100);
   STUDIO.mr = mr;
+  STUDIO._sessionStartTime = Date.now();
 
   // Recording timer
   STUDIO.recTimer = setInterval(function(){
@@ -5340,6 +5432,31 @@ function setPipMode(enable){
 function syncLabelScroll(scrollEl){
   // Keep labels in sync with vertical scroll of tracks
   // (horizontal scrolling handled by scroll container alone)
+}
+
+function initTpDrag(){
+  var handle = document.getElementById('tp-drag-handle');
+  var tp     = document.getElementById('studio-tp');
+  if(!handle || !tp) return;
+  var isDragging = false, startY = 0, startBottom = 0;
+  handle.addEventListener('mousedown', function(e){
+    if(e.target.tagName === 'BUTTON' || e.target.tagName === 'SPAN' && e.target.id === 'tp-collapse-icon') return;
+    isDragging = true;
+    startY = e.clientY;
+    var canvas = document.getElementById('studio-canvas');
+    var canvasRect = canvas ? canvas.getBoundingClientRect() : {bottom: window.innerHeight};
+    startBottom = canvasRect.bottom - tp.getBoundingClientRect().bottom;
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', function(e){
+    if(!isDragging) return;
+    var canvas = document.getElementById('studio-canvas');
+    var canvasRect = canvas ? canvas.getBoundingClientRect() : {bottom: window.innerHeight};
+    var newBottom = startBottom + (startY - e.clientY);
+    newBottom = Math.max(0, Math.min(canvasRect.height - 60, newBottom));
+    tp.style.bottom = newBottom + 'px';
+  });
+  document.addEventListener('mouseup', function(){ isDragging = false; });
 }
 
 </script>
