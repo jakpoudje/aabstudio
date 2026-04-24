@@ -297,13 +297,13 @@ RESPOND WITH ONLY THIS JSON — no markdown fences, no explanation, no preamble:
     });
 
   } catch (e) {
-    console.error('segment error:', e.message);
+    console.error('segment error:', e.message, 'status:', e.status, 'type:', e.error?.type);
     const isCredits = e.message?.includes('credit') || e.message?.includes('billing') || e.status === 400;
-    res.status(500).json({
-      error: isCredits
-        ? 'Anthropic API credits exhausted. Go to console.anthropic.com → Billing to top up.'
-        : e.message
-    });
+    const isNoKey   = !process.env.ANTHROPIC_API_KEY;
+    const errMsg    = isNoKey ? 'ANTHROPIC_API_KEY not set in Railway environment variables' : 
+                      isCredits ? 'Anthropic API credits exhausted — top up at console.anthropic.com' :
+                      (e.message || 'AI segmentation failed');
+    res.status(500).json({ error: errMsg, detail: e.message });
   }
 });
 
