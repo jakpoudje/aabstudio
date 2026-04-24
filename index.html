@@ -1569,8 +1569,71 @@ button,input,select,textarea{font-family:inherit;}
 
 <div id="export-pg" class="pg" style="background:var(--off);padding-top:52px;min-height:100vh;">
   <div class="export-inner">
-    <h2 style="margin-bottom:6px;">Export your video</h2>
-    <p style="color:var(--muted);margin-bottom:28px;">Choose format and platform. Clips will be downloaded for your video editor.</p>
+    <h2 style="margin-bottom:6px;color:var(--ink);">Export your video</h2>
+    <p style="color:var(--muted);margin-bottom:24px;">Choose format, platform and export method. Clips will be processed and downloaded.</p>
+
+    <!-- Export Method -->
+    <div class="sec-label">Export method</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:22px;">
+      <div class="fmt-opt on" data-method="browser" onclick="pickExportMethod(this)" style="position:relative;">
+        <div style="font-size:18px;margin-bottom:4px;">⬇</div>
+        <div style="font-size:13px;font-weight:600;color:var(--ink);">Direct download</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px;">Download clips, assemble in editor</div>
+        <div style="font-size:10px;color:var(--green);margin-top:4px;">Free · Instant</div>
+      </div>
+      <div class="fmt-opt" data-method="creatomate" onclick="pickExportMethod(this)" style="position:relative;">
+        <div style="font-size:18px;margin-bottom:4px;">🎬</div>
+        <div style="font-size:13px;font-weight:600;color:var(--ink);">Creatomate</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px;">Auto-stitch all scenes into one video</div>
+        <div style="font-size:10px;color:var(--accent);margin-top:4px;">Pro · API key required</div>
+      </div>
+      <div class="fmt-opt" data-method="runway" onclick="pickExportMethod(this)" style="position:relative;">
+        <div style="font-size:18px;margin-bottom:4px;">🚀</div>
+        <div style="font-size:13px;font-weight:600;color:var(--ink);">Runway ML</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px;">AI-enhance video with Runway Gen-4</div>
+        <div style="font-size:10px;color:var(--purple);margin-top:4px;">Pro · API key required</div>
+      </div>
+    </div>
+
+    <!-- Creatomate options (shown when creatomate selected) -->
+    <div id="creatomate-opts" style="display:none;margin-bottom:18px;padding:14px;background:rgba(0,212,255,.04);border:.5px solid rgba(0,212,255,.15);border-radius:var(--rl);">
+      <div class="sec-label" style="margin-bottom:8px;">Creatomate options</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);cursor:pointer;">
+          <input type="checkbox" id="cm-subtitles" checked style="accent-color:var(--accent);">
+          Burn-in subtitles
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);cursor:pointer;">
+          <input type="checkbox" id="cm-music" style="accent-color:var(--accent);">
+          Include background music
+        </label>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:13px;color:var(--ink);">Resolution:</span>
+          <select id="cm-resolution" style="padding:4px 8px;border:.5px solid var(--bdr2);border-radius:6px;font-size:12px;font-family:Sora,sans-serif;">
+            <option value="720p">720p</option>
+            <option value="1080p" selected>1080p</option>
+            <option value="4k">4K</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Runway options (shown when runway selected) -->
+    <div id="runway-opts" style="display:none;margin-bottom:18px;padding:14px;background:rgba(139,92,246,.04);border:.5px solid rgba(139,92,246,.15);border-radius:var(--rl);">
+      <div class="sec-label" style="margin-bottom:8px;">Runway Gen-4 options</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:13px;color:var(--ink);">Duration per clip:</span>
+          <select id="rw-duration" style="padding:4px 8px;border:.5px solid var(--bdr2);border-radius:6px;font-size:12px;font-family:Sora,sans-serif;">
+            <option value="5">5 seconds</option>
+            <option value="10" selected>10 seconds</option>
+          </select>
+        </div>
+        <div style="font-size:12px;color:var(--muted);">Runway will generate video from your scenes using AI</div>
+      </div>
+    </div>
+
+    <!-- Format -->
     <div class="sec-label">Format</div>
     <div class="export-formats">
       <div class="fmt-opt on" data-ratio="16:9" onclick="pickFmt(this)"><div class="fmt-ratio">16:9</div><div class="fmt-label">YouTube</div></div>
@@ -1578,6 +1641,7 @@ button,input,select,textarea{font-family:inherit;}
       <div class="fmt-opt" data-ratio="1:1" onclick="pickFmt(this)"><div class="fmt-ratio">1:1</div><div class="fmt-label">Instagram</div></div>
       <div class="fmt-opt" data-ratio="4:5" onclick="pickFmt(this)"><div class="fmt-ratio">4:5</div><div class="fmt-label">Portrait</div></div>
     </div>
+
     <div class="sec-label">Platform preset</div>
     <div class="platform-grid" style="margin-bottom:28px;">
       <div class="plat-opt on" data-platform="youtube" onclick="pickPlat(this)"><div class="plat-name">YouTube</div><div class="plat-spec">1080p · 16:9</div></div>
@@ -1587,11 +1651,18 @@ button,input,select,textarea{font-family:inherit;}
       <div class="plat-opt" data-platform="x" onclick="pickPlat(this)"><div class="plat-name">X / Twitter</div><div class="plat-spec">720p · 16:9</div></div>
       <div class="plat-opt" data-platform="facebook" onclick="pickPlat(this)"><div class="plat-name">Facebook</div><div class="plat-spec">1080p · 16:9</div></div>
     </div>
-    <button class="btn btn-primary btn-lg" onclick="doExport()">Export video →</button>
+
+    <button class="btn btn-primary btn-lg" onclick="doExport()" id="export-btn">Export video →</button>
     <button class="btn btn-dark btn-sm" style="margin-left:10px;" onclick="nav('edit-pg')">← Back to edit</button>
-    <div id="export-status" style="margin-top:14px;font-size:13px;"></div>
+
+    <div id="export-status" style="margin-top:18px;font-size:13px;"></div>
+    <div id="export-progress" style="display:none;margin-top:12px;">
+      <div style="height:4px;background:var(--bdr);border-radius:2px;overflow:hidden;">
+        <div id="export-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--purple));border-radius:2px;transition:width .4s;"></div>
+      </div>
+      <div id="export-progress-label" style="font-size:11px;color:var(--muted);margin-top:4px;"></div>
+    </div>
   </div>
-</div>
 
 <!-- ══ TELEPROMPTER SOLO ════════════════════════════════════════════════════════ -->
 <div id="teleprompter-pg" class="pg-full" style="background:#000;">
@@ -3368,71 +3439,7 @@ function formatDur(s){if(!s||isNaN(s))return'0:00';var m=Math.floor(s/60),sec=Ma
 var EXPORT_STATE={ratio:'16:9',platform:'youtube'};
 function pickFmt(el){document.querySelectorAll('.fmt-opt').forEach(function(o){o.classList.remove('on');});el.classList.add('on');EXPORT_STATE.ratio=el.dataset.ratio;}
 function pickPlat(el){document.querySelectorAll('.plat-opt').forEach(function(o){o.classList.remove('on');});el.classList.add('on');EXPORT_STATE.platform=el.dataset.platform;}
-function doExport(){
-  var clips = Object.values(PROJECT.clips||{}).filter(function(c){ return c.url; });
-  if(!clips.length){ toast('No clips to export — record your scenes first','error'); return; }
 
-  var st = document.getElementById('export-status');
-  var platform = EXPORT_STATE.platform || 'youtube';
-  var ratio    = EXPORT_STATE.ratio    || '16:9';
-
-  // Sort clips by scene index
-  clips.sort(function(a,b){ return (a.sceneIdx||0) - (b.sceneIdx||0); });
-
-  // Try browser-side concatenation first (works for same mime type clips)
-  if(clips.length === 1){
-    // Single clip — direct download
-    var c = clips[0];
-    var a = document.createElement('a');
-    a.href = c.url;
-    a.download = (PROJECT.title||'video').replace(/[^a-z0-9]/gi,'-') + '-final-' + platform + '.webm';
-    a.click();
-    if(st) st.innerHTML = '<div style="color:var(--green)">✓ Video downloaded!</div>';
-    toast('Video downloaded ✓','ok');
-    return;
-  }
-
-  // Multiple clips — concatenate blobs
-  if(st) st.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:var(--muted)"><div class="spin spin-dk"></div>Stitching ' + clips.length + ' clips…</div>';
-
-  // Fetch all blob URLs as ArrayBuffers and concatenate
-  Promise.all(clips.map(function(c){ return fetch(c.url).then(function(r){ return r.arrayBuffer(); }); }))
-    .then(function(buffers){
-      // Concatenate all buffers
-      var totalLen = buffers.reduce(function(s,b){ return s+b.byteLength; }, 0);
-      var merged = new Uint8Array(totalLen);
-      var offset = 0;
-      buffers.forEach(function(buf){
-        merged.set(new Uint8Array(buf), offset);
-        offset += buf.byteLength;
-      });
-      // Determine mime type
-      var mime = PROJECT.clips[Object.keys(PROJECT.clips)[0]] ? 'video/webm' : 'video/mp4';
-      var blob = new Blob([merged], {type: mime});
-      var url  = URL.createObjectURL(blob);
-      var filename = (PROJECT.title||'video').replace(/[^a-z0-9]/gi,'-') + '-final-' + platform + '.webm';
-      var a = document.createElement('a');
-      a.href = url; a.download = filename; a.click();
-      if(st) st.innerHTML = '<div style="color:var(--green)">✓ All ' + clips.length + ' scenes stitched and downloaded as <strong>' + filename + '</strong>!</div>';
-      toast('✓ Full video downloaded — ' + clips.length + ' scenes','ok');
-      setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
-    })
-    .catch(function(err){
-      // Fallback: download individually with numbering
-      if(st) st.innerHTML = '<div style="color:var(--gold)">⚠ Stitching failed — downloading ' + clips.length + ' clips individually…</div>';
-      clips.forEach(function(c, i){
-        setTimeout(function(){
-          var a = document.createElement('a');
-          a.href = c.url;
-          a.download = (PROJECT.title||'video').replace(/[^a-z0-9]/gi,'-') + '-scene-' + String((c.sceneIdx||i)+1).padStart(2,'0') + '.webm';
-          a.click();
-        }, i * 600);
-      });
-      setTimeout(function(){
-        if(st) st.innerHTML += '<br><div style="font-size:12px;color:var(--muted)">Import these numbered clips into DaVinci Resolve, CapCut or Premiere to assemble the final video in order.</div>';
-      }, clips.length * 600 + 500);
-    });
-}
 function exportTranscript(){
   if(!PROJECT.scenes.length){toast('No scenes','error');return;}
   var lines=['# '+PROJECT.title,''],t=0;
@@ -3554,13 +3561,29 @@ function openAIPresenter(){
     showUpgradeModalPro('AI Presenter generates a realistic AI video presenter from your scenes. Requires Creator or Pro Studio plan.');
     return;
   }
+
+  // If no scenes in current PROJECT, try to recover from localStorage
   if(!PROJECT.scenes || !PROJECT.scenes.length){
-    toast('No scenes yet — split your script first, then open AI Presenter','info');
-    return;
+    var saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+    var latest = saved.find(function(p){ return p.scenes && p.scenes.length > 0; });
+    if(latest){
+      PROJECT = Object.assign({}, PROJECT, {
+        id: latest.id,
+        title: latest.title,
+        scenes: latest.scenes,
+        assets: latest.assets || [],
+        clips: {}
+      });
+      toast('Loaded "' + latest.title + '" — ' + latest.scenes.length + ' scenes', 'info');
+    } else {
+      toast('No scenes found — split your script first, then open AI Presenter','info');
+      return;
+    }
   }
+
   openModal('ai-presenter-modal');
-  // Load scenes after modal is visible
-  setTimeout(loadAISceneList, 150);
+  // Load scenes after modal renders
+  setTimeout(loadAISceneList, 100);
 }
 function loadAIPhoto(inp){if(!inp.files.length)return;var f=inp.files[0];var rd=new FileReader();rd.onload=function(e){var img=document.getElementById('ai-photo-preview');if(img){img.src=e.target.result;img.style.display='block';}window._aiPhotoB64=e.target.result.split(',')[1];};rd.readAsDataURL(f);}// ══ KEYBOARD SHORTCUTS ════════════════════════════════════════════════════════
 document.addEventListener('keydown',function(e){
@@ -3628,6 +3651,7 @@ window.importToTimeline      = importToTimeline;
 window.loadAIPhoto           = loadAIPhoto;
 window.loadAISceneList       = loadAISceneList;
 window.startAIPresenter      = startAIPresenter;
+window.checkAIPresenterStatus = checkAIPresenterStatus;
 window.openAIPresenter       = openAIPresenter;
 window.closeModal            = closeModal;
 window.openModal             = openModal;
@@ -3703,6 +3727,7 @@ window.selectClip            = selectClip;
 window.addExternalClip       = addExternalClip;
 window.mergeAllClips         = mergeAllClips;
 window.doExport              = doExport;
+window.pickExportMethod      = pickExportMethod;
 window.exportAllClips        = exportAllClips;
 window.exportTranscript      = exportTranscript;
 window.exportYTChapters      = exportYTChapters;
@@ -4591,55 +4616,84 @@ async function startAIPresenter(){
   if(btn) btn.disabled = true;
   if(status){ status.style.display = 'block'; status.innerHTML = '⏳ Starting…'; }
 
-  var results = [];
+  var allResults = [];
 
   for(var i = 0; i < sceneIds.length; i++){
     var scene = PROJECT.scenes.find(function(sc){ return sc.id === sceneIds[i]; });
     if(!scene) continue;
-    var label = 'Scene ' + (i + 1);
+    var label = 'Scene ' + ((scene.sceneNumber || i) + 1);
 
     try{
-      // Step 1 — Voice (ElevenLabs)
+      // ── Step 1: Generate voice via ElevenLabs ─────────────────────────────
       if(status) status.innerHTML = '🎙 <b>'+label+'</b> ('+( i+1)+'/'+sceneIds.length+'): Generating voice with ElevenLabs…';
+
       var vResp = await fetch(API + '/api/voice', {
         method:  'POST',
         headers: {'Content-Type':'application/json'},
         body:    JSON.stringify({ text: scene.narration, voiceId: voiceId })
       });
+      if(!vResp.ok){
+        var vErr = await vResp.json().catch(function(){ return {}; });
+        throw new Error('ElevenLabs failed (' + vResp.status + '): ' + (vErr.error || 'Check ELEVENLABS_API_KEY in Railway'));
+      }
       var vData = await vResp.json();
-      if(!vResp.ok || vData.error) throw new Error('Voice failed: ' + (vData.error || vResp.status));
+      if(!vData.audio) throw new Error('ElevenLabs returned no audio');
 
-      // Step 2 — Video (HeyGen)
-      if(status) status.innerHTML = '🎬 <b>'+label+'</b>: Sending to HeyGen (takes 1–3 min)…';
-      var payload = { audioBase64: vData.audio, ratio: '16:9' };
+      // ── Step 2: Generate video via Kling (or HeyGen fallback) ─────────────
+      if(status) status.innerHTML = '🎬 <b>'+label+'</b>: Sending to Kling AI for lip-sync video…';
+
+      var payload = {
+        audioBase64: vData.audio,
+        ratio: '16:9',
+        sceneText: scene.narration.slice(0, 200)
+      };
       if(window._aiPhotoB64) payload.referenceImageBase64 = window._aiPhotoB64;
+
       var pResp = await fetch(API + '/api/presenter', {
         method:  'POST',
         headers: {'Content-Type':'application/json'},
         body:    JSON.stringify(payload)
       });
+      if(!pResp.ok){
+        var pErr = await pResp.json().catch(function(){ return {}; });
+        throw new Error((pErr.error || 'Video generation failed (' + pResp.status + ')'));
+      }
       var pData = await pResp.json();
-      if(!pResp.ok || pData.error) throw new Error('HeyGen failed: ' + (pData.error || pResp.status));
+      if(!pData.taskId) throw new Error('No task ID returned from video API');
 
-      results.push({ label: label, taskId: pData.taskId });
-      toast(label + ' submitted ✓', 'ok');
+      var taskId   = pData.taskId;
+      var provider = pData.provider || (taskId.startsWith('kling') ? 'kling' : 'heygen');
+      allResults.push({ label: label, taskId: taskId, provider: provider });
+      toast(label + ' submitted ✓ (' + provider + ')','ok');
+
+      if(status) status.innerHTML = '✅ <b>'+label+'</b> submitted to '+provider+'!<br>'
+        + '<small>Task ID: <code style="background:#f3f4f6;padding:1px 4px;border-radius:3px;">'+taskId+'</code></small><br>'
+        + '<small style="color:#6b7280;">Video generates in 2-5 min. Click "Check status" below when done.</small>';
 
     } catch(err){
       var msg = err.message || 'Unknown error';
-      if(status) status.innerHTML = '✗ <b>'+label+'</b> failed: ' + msg
-        + '<br><small style="color:#9ca3af;">Check Railway logs — make sure ELEVENLABS_API_KEY and HEYGEN_API_KEY are set</small>';
       toast('✗ ' + label + ': ' + msg, 'error');
-      console.error('AI Presenter error:', err);
+      if(status) status.innerHTML = '✗ <b>'+label+'</b> failed: ' + msg
+        + '<br><small style="color:#9ca3af;font-size:11px;">Check Railway environment: KLING_API_KEY and ELEVENLABS_API_KEY must be set</small>';
+      console.error('AI Presenter error on', label, ':', err);
     }
   }
 
   if(btn) btn.disabled = false;
 
-  if(results.length){
-    var summary = '✅ <b>' + results.length + ' scene' + (results.length > 1 ? 's' : '') + ' submitted to HeyGen!</b><br>'
-      + results.map(function(r){ return r.label + ' → Task ID: <code style="background:#f3f4f6;padding:1px 4px;border-radius:3px;">' + r.taskId + '</code>'; }).join('<br>')
-      + '<br><br><a href="https://app.heygen.com" target="_blank" style="color:#00d4ff;font-size:11px;">→ Open HeyGen to download videos</a>';
+  if(allResults.length){
+    var taskList = allResults.map(function(r){
+      return r.label + ' → <code style="background:#f3f4f6;padding:1px 5px;border-radius:3px;font-size:10px;">' + r.taskId + '</code>';
+    }).join('<br>');
+
+    var summary = '<div style="background:#f0fdf4;border:.5px solid #86efac;border-radius:8px;padding:12px;margin-top:8px;">'
+      + '<div style="font-weight:600;color:#166534;margin-bottom:6px;">✅ '+allResults.length+' scene'+(allResults.length>1?'s':'')+' submitted!</div>'
+      + '<div style="font-size:11px;color:#374151;margin-bottom:8px;">'+taskList+'</div>'
+      + '<button onclick="checkAIPresenterStatus()" style="background:#00d4ff;color:#0a0e1a;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;font-family:Sora,sans-serif;">↻ Check video status</button>'
+      + '</div>';
+
     if(status){ status.style.display='block'; status.innerHTML = summary; }
+    window._aiPresenterTasks = allResults;
   }
 }
 
@@ -5691,6 +5745,208 @@ function initTpDrag(){
     tp.style.bottom = newBottom + 'px';
   });
   document.addEventListener('mouseup', function(){ isDragging = false; });
+}
+
+async function checkAIPresenterStatus(){
+  var tasks = window._aiPresenterTasks || [];
+  if(!tasks.length){ toast('No pending tasks','info'); return; }
+  var status = document.getElementById('ai-presenter-status');
+  if(status) status.innerHTML = '⏳ Checking status…';
+  var results = '';
+  for(var i=0; i<tasks.length; i++){
+    var t = tasks[i];
+    try{
+      var r = await fetch(API + '/api/presenter-status?taskId=' + encodeURIComponent(t.taskId));
+      var d = await r.json();
+      var icon = d.done ? '✅' : d.failed ? '✗' : '⏳';
+      var info = d.done
+        ? ('<a href="'+d.videoUrl+'" target="_blank" style="color:#00d4ff;font-weight:600;">Download video →</a>')
+        : (d.failed ? 'Failed — try again' : 'Still processing…');
+      results += '<div style="padding:6px 0;border-bottom:.5px solid #e5e7eb;">'
+        + icon + ' <b>'+t.label+'</b>: ' + (d.status||'unknown') + ' — ' + info
+        + '</div>';
+    } catch(e){
+      results += '<div style="padding:6px 0;">✗ <b>'+t.label+'</b>: ' + e.message + '</div>';
+    }
+  }
+  if(status) status.innerHTML = '<div style="background:#f9fafb;border-radius:8px;padding:12px;">'
+    + '<div style="font-weight:600;margin-bottom:8px;">Video Status</div>'
+    + results
+    + '<div style="margin-top:8px;"><button onclick="checkAIPresenterStatus()" style="background:#e5e7eb;border:none;padding:5px 12px;border-radius:5px;cursor:pointer;font-size:11px;">↻ Refresh</button></div>'
+    + '</div>';
+}
+
+var EXPORT_METHOD = 'browser'; // 'browser' | 'creatomate' | 'runway'
+
+function pickExportMethod(el){
+  document.querySelectorAll('[data-method]').forEach(function(b){ b.classList.remove('on'); });
+  if(el) el.classList.add('on');
+  EXPORT_METHOD = el ? el.dataset.method : 'browser';
+  document.getElementById('creatomate-opts').style.display = EXPORT_METHOD === 'creatomate' ? '' : 'none';
+  document.getElementById('runway-opts').style.display     = EXPORT_METHOD === 'runway'     ? '' : 'none';
+  var btn = document.getElementById('export-btn');
+  var labels = { browser:'Export video →', creatomate:'🎬 Render with Creatomate →', runway:'🚀 Generate with Runway →' };
+  if(btn) btn.textContent = labels[EXPORT_METHOD] || 'Export →';
+}
+
+async function doExport(){
+  var clips = Object.values(PROJECT.clips||{}).filter(function(c){ return c.url; });
+  if(!clips.length){ toast('No clips to export — record your scenes first','error'); return; }
+  clips.sort(function(a,b){ return (a.sceneIdx||0) - (b.sceneIdx||0); });
+
+  var st = document.getElementById('export-status');
+  var prog = document.getElementById('export-progress');
+  var progBar = document.getElementById('export-progress-bar');
+  var progLabel = document.getElementById('export-progress-label');
+
+  function setStatus(html){ if(st) st.innerHTML = html; }
+  function setProgress(pct, label){
+    if(prog) prog.style.display = '';
+    if(progBar) progBar.style.width = pct + '%';
+    if(progLabel) progLabel.textContent = label || '';
+  }
+
+  if(EXPORT_METHOD === 'creatomate'){
+    // ── Creatomate: send clip URLs + subtitle data, get back one stitched video
+    setStatus('<div style="display:flex;align-items:center;gap:8px;color:var(--muted)"><div class="spin spin-dk"></div>Sending ' + clips.length + ' clips to Creatomate for stitching…</div>');
+    setProgress(10, 'Uploading to Creatomate…');
+
+    var includeSubtitles = document.getElementById('cm-subtitles') && document.getElementById('cm-subtitles').checked;
+    var resolution = (document.getElementById('cm-resolution') || {}).value || '1080p';
+
+    // Build subtitles array from project scenes
+    var subtitles = includeSubtitles ? clips.map(function(c){
+      var scene = PROJECT.scenes[c.sceneIdx];
+      return scene ? scene.narration : '';
+    }) : [];
+
+    try {
+      var resp = await fetch(API + '/api/creatomate/stitch', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          clips:       clips.map(function(c){ return {url:c.url, duration:c.duration||8}; }),
+          subtitles:   subtitles,
+          outputFormat:'mp4',
+          resolution:  resolution,
+          title:       PROJECT.title || 'My Video'
+        })
+      });
+      var data = await resp.json();
+      if(!resp.ok || data.error) throw new Error(data.error || 'Creatomate error');
+
+      setProgress(25, 'Render job submitted — polling for completion…');
+      toast('Creatomate render started — Task: ' + data.taskId, 'ok');
+
+      // Poll for completion
+      var taskId = data.taskId;
+      var pollInterval = setInterval(async function(){
+        try {
+          var poll = await fetch(API + '/api/creatomate/status/' + taskId);
+          var pollData = await poll.json();
+          var pct = Math.min(95, 25 + (pollData.progress || 0) * 0.7);
+          setProgress(pct, 'Rendering: ' + (pollData.progress||0) + '% complete…');
+
+          if(pollData.status === 'succeeded' && pollData.outputUrl){
+            clearInterval(pollInterval);
+            setProgress(100, 'Complete!');
+            setStatus('<div style="color:var(--green)">✅ <strong>Video ready!</strong> <a href="' + pollData.outputUrl + '" target="_blank" style="color:var(--accent);">Download stitched video →</a></div>');
+            toast('✅ Creatomate render complete!', 'ok');
+          } else if(pollData.status === 'failed'){
+            clearInterval(pollInterval);
+            setStatus('<div style="color:var(--red)">✗ Creatomate render failed. Check Railway logs.</div>');
+          }
+        } catch(e){ console.warn('Poll error:', e); }
+      }, 4000);
+
+      // Safety timeout — stop polling after 10 min
+      setTimeout(function(){ clearInterval(pollInterval); }, 600000);
+
+    } catch(e){
+      setStatus('<div style="color:var(--red)">✗ Creatomate error: ' + e.message + '</div>');
+      toast('Creatomate failed: ' + e.message, 'error');
+    }
+    return;
+  }
+
+  if(EXPORT_METHOD === 'runway'){
+    // ── Runway: generate AI video from first scene image
+    setStatus('<div style="display:flex;align-items:center;gap:8px;color:var(--muted)"><div class="spin spin-dk"></div>Sending to Runway Gen-4…</div>');
+    var duration = parseInt((document.getElementById('rw-duration')||{}).value||'10');
+    var firstClip = clips[0];
+    try {
+      var rResp = await fetch(API + '/api/runway/generate', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          promptText: PROJECT.scenes[0] ? PROJECT.scenes[0].narration.slice(0,500) : 'Professional video presentation',
+          duration:   duration,
+          ratio:      EXPORT_STATE.ratio === '16:9' ? '1280:720' : '720:1280',
+          model:      'gen4_turbo'
+        })
+      });
+      var rData = await rResp.json();
+      if(!rResp.ok || rData.error) throw new Error(rData.error || 'Runway error');
+
+      setStatus('<div style="color:var(--muted)">⏳ Runway generating — Task: ' + rData.taskId + '</div>');
+      toast('Runway task started: ' + rData.taskId, 'ok');
+
+      // Poll for completion
+      var rTaskId = rData.taskId;
+      var rPoll = setInterval(async function(){
+        try {
+          var rStatus = await fetch(API + '/api/runway/status/' + rTaskId);
+          var rStatusData = await rStatus.json();
+          setProgress(Math.round((rStatusData.progress||0)*100), 'Runway processing: ' + Math.round((rStatusData.progress||0)*100) + '%');
+          if(rStatusData.status === 'completed' && rStatusData.videoUrl){
+            clearInterval(rPoll);
+            setProgress(100, 'Complete!');
+            setStatus('<div style="color:var(--green)">✅ <strong>Runway video ready!</strong> <a href="' + rStatusData.videoUrl + '" target="_blank" style="color:var(--accent);">Download →</a></div>');
+            toast('✅ Runway complete!', 'ok');
+          } else if(rStatusData.status === 'failed'){
+            clearInterval(rPoll);
+            setStatus('<div style="color:var(--red)">✗ Runway generation failed.</div>');
+          }
+        } catch(e){ console.warn('Runway poll error:', e); }
+      }, 5000);
+      setTimeout(function(){ clearInterval(rPoll); }, 300000); // 5 min timeout
+    } catch(e){
+      setStatus('<div style="color:var(--red)">✗ Runway error: ' + e.message + '</div>');
+      toast('Runway failed: ' + e.message, 'error');
+    }
+    return;
+  }
+
+  // ── Default: browser blob stitching (direct download)
+  setStatus('<div style="display:flex;align-items:center;gap:8px;color:var(--muted)"><div class="spin spin-dk"></div>Stitching ' + clips.length + ' clips…</div>');
+  setProgress(10, 'Fetching clips…');
+
+  try {
+    var buffers = await Promise.all(clips.map(function(c){ return fetch(c.url).then(function(r){ return r.arrayBuffer(); }); }));
+    setProgress(60, 'Merging…');
+    var totalLen = buffers.reduce(function(s,b){ return s+b.byteLength; }, 0);
+    var merged = new Uint8Array(totalLen);
+    var offset = 0;
+    buffers.forEach(function(buf){ merged.set(new Uint8Array(buf), offset); offset += buf.byteLength; });
+    var blob = new Blob([merged], {type:'video/webm'});
+    var url  = URL.createObjectURL(blob);
+    var filename = (PROJECT.title||'video').replace(/[^a-z0-9]/gi,'-') + '-' + EXPORT_STATE.platform + '.webm';
+    var a = document.createElement('a'); a.href=url; a.download=filename; a.click();
+    setProgress(100, 'Done!');
+    setStatus('<div style="color:var(--green)">✅ <strong>' + clips.length + ' scenes downloaded as ' + filename + '</strong><br><small style="color:var(--muted)">Import into DaVinci Resolve, CapCut or Premiere to add transitions.</small></div>');
+    toast('✅ Downloaded ' + clips.length + ' scenes stitched', 'ok');
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
+  } catch(e){
+    // Fallback: download individually
+    clips.forEach(function(c,i){
+      setTimeout(function(){
+        var a=document.createElement('a'); a.href=c.url;
+        a.download=(PROJECT.title||'video').replace(/[^a-z0-9]/gi,'-')+'-scene-'+String((c.sceneIdx||i)+1).padStart(2,'0')+'.webm';
+        a.click();
+      }, i*500);
+    });
+    setStatus('<div style="color:var(--gold)">⚠ Downloading ' + clips.length + ' clips individually — merge in your video editor.</div>');
+  }
 }
 
 </script>
