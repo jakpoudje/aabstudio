@@ -3554,36 +3554,44 @@ function grantCreatorAccess(){
 function openAIPresenter(){
   if(!APP.user){
     toast('Sign in first to use AI Presenter','info');
-    setTimeout(function(){ nav('auth-pg'); }, 1200);
+    setTimeout(function(){ nav('auth-pg'); }, 1500);
     return;
   }
   if(APP.plan === 'free'){
-    showUpgradeModalPro('AI Presenter generates a realistic AI video presenter from your scenes. Requires Creator or Pro Studio plan.');
+    showUpgradeModalPro('AI Presenter generates a realistic AI video of a presenter reading your script. Requires Creator or Pro Studio plan.');
     return;
   }
 
-  // If no scenes in current PROJECT, try to recover from localStorage
-  if(!PROJECT.scenes || !PROJECT.scenes.length){
+  // ── Ensure scenes are in PROJECT ──────────────────────────────────────────
+  // If PROJECT has no scenes, pull from localStorage (user may have refreshed)
+  if(!PROJECT.scenes || PROJECT.scenes.length === 0){
     var saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
-    var latest = saved.find(function(p){ return p.scenes && p.scenes.length > 0; });
-    if(latest){
-      PROJECT = Object.assign({}, PROJECT, {
-        id: latest.id,
-        title: latest.title,
-        scenes: latest.scenes,
-        assets: latest.assets || [],
-        clips: {}
-      });
-      toast('Loaded "' + latest.title + '" — ' + latest.scenes.length + ' scenes', 'info');
-    } else {
-      toast('No scenes found — split your script first, then open AI Presenter','info');
-      return;
+    // Find project with most scenes (most likely the user's real project)
+    var best = null;
+    saved.forEach(function(p){
+      if(p.scenes && p.scenes.length > 0){
+        if(!best || p.scenes.length > best.scenes.length) best = p;
+      }
+    });
+    if(best){
+      PROJECT.id     = best.id;
+      PROJECT.title  = best.title;
+      PROJECT.scenes = best.scenes;
+      PROJECT.assets = best.assets || [];
+      PROJECT.wpm    = best.wpm || 150;
+      PROJECT.clips  = {};
+      console.log('AI Presenter: loaded project "' + best.title + '" with ' + best.scenes.length + ' scenes');
     }
   }
 
+  if(!PROJECT.scenes || PROJECT.scenes.length === 0){
+    toast('No scenes found. Split your script into scenes first, then open AI Presenter.','error');
+    return;
+  }
+
   openModal('ai-presenter-modal');
-  // Load scenes after modal renders
-  setTimeout(loadAISceneList, 100);
+  // Load scenes after modal is visible in DOM
+  setTimeout(loadAISceneList, 80);
 }
 function loadAIPhoto(inp){if(!inp.files.length)return;var f=inp.files[0];var rd=new FileReader();rd.onload=function(e){var img=document.getElementById('ai-photo-preview');if(img){img.src=e.target.result;img.style.display='block';}window._aiPhotoB64=e.target.result.split(',')[1];};rd.readAsDataURL(f);}// ══ KEYBOARD SHORTCUTS ════════════════════════════════════════════════════════
 document.addEventListener('keydown',function(e){
@@ -4540,61 +4548,93 @@ function loadAISceneList(){
   var list = document.getElementById('ai-scenes-list');
   if(!list) return;
 
+  // Try loading from localStorage if PROJECT is empty
   if(!PROJECT.scenes || !PROJECT.scenes.length){
-    list.innerHTML = '<div style="font-size:12px;color:#6b7280;padding:10px;text-align:center;">No scenes yet — split your script first.</div>';
+    var saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+    var best = null;
+    saved.forEach(function(p){
+      if(p.scenes && p.scenes.length > 0){
+        if(!best || p.scenes.length > best.scenes.length) best = p;
+      }
+    });
+    if(best){
+      PROJECT.id = best.id; PROJECT.title = best.title;
+      PROJECT.scenes = best.scenes; PROJECT.assets = best.assets || [];
+      PROJECT.clips = {};
+    }
+  }
+
+  if(!PROJECT.scenes || !PROJECT.scenes.length){
+    list.innerHTML = '<div style="padding:16px;text-align:center;color:#6b7280;font-size:13px;">No scenes found.<br><br>Go to your project → split your script → then open AI Presenter.</div>';
     return;
   }
 
   list.innerHTML = '';
 
-  // Header row with select all/clear
+  // Header
   var hdr = document.createElement('div');
-  hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:4px 4px 8px;border-bottom:.5px solid #e5e7eb;margin-bottom:4px;';
+  hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:6px 4px 10px;border-bottom:.5px solid #e5e7eb;margin-bottom:6px;';
+  
   var countSpan = document.createElement('span');
-  countSpan.style.cssText = 'font-size:11px;font-weight:600;color:#374151;';
-  countSpan.textContent = PROJECT.scenes.length + ' scenes';
+  countSpan.style.cssText = 'font-size:12px;font-weight:700;color:#111;';
+  countSpan.textContent = PROJECT.scenes.length + ' scenes — select which to generate:';
+  
   var btnWrap = document.createElement('div');
-  btnWrap.style.cssText = 'display:flex;gap:8px;';
+  btnWrap.style.cssText = 'display:flex;gap:10px;';
+  
   var selAll = document.createElement('button');
-  selAll.textContent = 'Select all';
-  selAll.style.cssText = 'font-size:10px;color:#00d4ff;background:none;border:none;cursor:pointer;';
+  selAll.textContent = 'All';
+  selAll.style.cssText = 'font-size:11px;color:#00d4ff;background:none;border:none;cursor:pointer;font-weight:600;';
   selAll.onclick = function(){ list.querySelectorAll('input[type=checkbox]').forEach(function(c){ c.checked=true; }); };
+  
   var clrAll = document.createElement('button');
-  clrAll.textContent = 'Clear';
-  clrAll.style.cssText = 'font-size:10px;color:#6b7280;background:none;border:none;cursor:pointer;';
+  clrAll.textContent = 'None';
+  clrAll.style.cssText = 'font-size:11px;color:#9ca3af;background:none;border:none;cursor:pointer;';
   clrAll.onclick = function(){ list.querySelectorAll('input[type=checkbox]').forEach(function(c){ c.checked=false; }); };
+
   btnWrap.appendChild(selAll);
   btnWrap.appendChild(clrAll);
   hdr.appendChild(countSpan);
   hdr.appendChild(btnWrap);
   list.appendChild(hdr);
 
+  // Scene rows
   PROJECT.scenes.forEach(function(scene, i){
-    var lbl = document.createElement('label');
-    lbl.style.cssText = 'display:flex;align-items:flex-start;gap:10px;padding:7px 4px;cursor:pointer;border-bottom:.5px solid #f3f4f6;';
+    var narration = (scene.narration || '').trim();
+    var hasNarration = narration.length > 0;
+
+    var row = document.createElement('label');
+    row.style.cssText = 'display:flex;align-items:flex-start;gap:10px;padding:8px 4px;'
+      + 'cursor:pointer;border-bottom:.5px solid #f3f4f6;'
+      + (hasNarration ? '' : 'opacity:.5;');
+    row.title = hasNarration ? '' : 'This scene has no narration text';
 
     var chk = document.createElement('input');
     chk.type = 'checkbox';
     chk.value = scene.id;
-    chk.checked = (i < 5);
-    chk.style.cssText = 'margin-top:3px;flex-shrink:0;accent-color:#00d4ff;';
+    chk.checked = hasNarration && i < 5;
+    chk.disabled = !hasNarration;
+    chk.style.cssText = 'margin-top:4px;flex-shrink:0;accent-color:#00d4ff;width:14px;height:14px;';
 
     var info = document.createElement('div');
     info.style.cssText = 'flex:1;min-width:0;';
 
     var title = document.createElement('div');
-    title.style.cssText = 'font-size:12px;font-weight:600;color:#111;';
-    title.textContent = 'Scene ' + (i+1) + ' • ' + (scene.type||'MAIN') + ' • ' + (scene.duration||8) + 's';
+    title.style.cssText = 'font-size:12px;font-weight:700;color:#111;display:flex;gap:6px;align-items:center;margin-bottom:3px;';
+    title.innerHTML = 'Scene '+(i+1)
+      + '<span style="background:#f3f4f6;color:#6b7280;font-size:10px;font-weight:400;padding:1px 6px;border-radius:8px;">'+(scene.type||'MAIN')+'</span>'
+      + '<span style="color:#9ca3af;font-size:10px;font-weight:400;">'+(scene.duration||8)+'s</span>'
+      + (hasNarration ? '' : '<span style="color:#ef4444;font-size:10px;">⚠ no text</span>');
 
     var narr = document.createElement('div');
-    narr.style.cssText = 'font-size:11px;color:#6b7280;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-    narr.textContent = (scene.narration||'').slice(0, 100);
+    narr.style.cssText = 'font-size:11px;color:#6b7280;line-height:1.5;';
+    narr.textContent = hasNarration ? narration.slice(0, 120) + (narration.length > 120 ? '…' : '') : 'No narration text in this scene.';
 
     info.appendChild(title);
     info.appendChild(narr);
-    lbl.appendChild(chk);
-    lbl.appendChild(info);
-    list.appendChild(lbl);
+    row.appendChild(chk);
+    row.appendChild(info);
+    list.appendChild(row);
   });
 }
 
@@ -4607,7 +4647,22 @@ async function startAIPresenter(){
   var sceneIds  = checked.map(function(c){ return c.value; });
 
   if(!sceneIds.length){
-    toast('Select at least one scene first','error');
+    // No checkboxes checked — try loading scenes first
+    if(!PROJECT.scenes || PROJECT.scenes.length === 0){
+      toast('No scenes loaded. Close this modal, go to the scenes page, then reopen AI Presenter.','error');
+    } else {
+      toast('Tick at least one scene checkbox to generate.','error');
+    }
+    return;
+  }
+
+  // Verify scenes have narration text
+  var missNarration = sceneIds.filter(function(id){
+    var sc = PROJECT.scenes.find(function(s){ return s.id === id; });
+    return !sc || !sc.narration || sc.narration.trim().length < 3;
+  });
+  if(missNarration.length){
+    toast('Some selected scenes have no narration text. Edit the scenes and add narration.','error');
     return;
   }
 
