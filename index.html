@@ -1252,6 +1252,9 @@ button,input,select,textarea{font-family:inherit;}
                   <input type="range" min="20" max="220" value="80" id="tp-spd-range" oninput="setTpSpd(this.value)" style="width:55px;accent-color:var(--gold);">
                   <span id="tp-spd-val" style="font-size:10px;color:var(--gold);min-width:34px;">80wpm</span>
                 </div>
+                <input type="color" value="#ffffff" onchange="setTpTextColor(this.value)" title="Text colour" style="width:24px;height:24px;border:none;border-radius:4px;cursor:pointer;background:none;">
+                <input type="range" min="0.2" max="0.98" value="0.9" step="0.05" onchange="setTpBgOpacity(this.value)" title="Background opacity" style="width:44px;accent-color:var(--gold);">
+                <button class="s-btn s-btn-gold" onclick="resetTpScroll()" style="font-size:10px;padding:5px 8px;" title="Reset scroll to beginning">↺ Reset</button>
               </div>
             </div>
 
@@ -1304,13 +1307,20 @@ button,input,select,textarea{font-family:inherit;}
               <div style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.3);padding:5px 10px 3px;">Annotate</div>
               <div style="display:flex;gap:4px;padding:6px 10px;align-items:center;">
                 <button class="s-btn" id="btn-draw" onclick="toggleDraw()" style="font-size:13px;padding:5px 9px;" title="Draw on screen">✏️</button>
-                <button class="s-btn" onclick="clearDraw()" style="font-size:13px;padding:5px 9px;" title="Clear drawing">🗑</button>
+                <button class="s-btn" onclick="clearDraw()" style="font-size:13px;padding:5px 9px;" title="Clear all drawing">🗑</button>
+                <button class="s-btn" onclick="setEraserMode()" style="font-size:13px;padding:5px 9px;" title="Eraser">⬜</button>
                 <select id="draw-mode-sel" onchange="setDrawMode(this.value)" style="font-size:10px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);color:rgba(255,255,255,.7);border-radius:5px;padding:4px 5px;font-family:Sora,sans-serif;">
                   <option value="pen">Pen</option>
                   <option value="highlight">Highlight</option>
                   <option value="arrow">Arrow</option>
                   <option value="circle">Circle</option>
                   <option value="rect">Rect</option>
+                </select>
+                <select onchange="STUDIO.drawLineWidth=parseInt(this.value)" style="font-size:10px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);color:rgba(255,255,255,.7);border-radius:5px;padding:4px 5px;font-family:Sora,sans-serif;width:46px;" title="Stroke size">
+                  <option value="2">2px</option>
+                  <option value="4" selected>4px</option>
+                  <option value="8">8px</option>
+                  <option value="14">14px</option>
                 </select>
                 <input type="color" value="#00d4ff" onchange="setDrawColor(this.value)" style="width:28px;height:28px;border:none;border-radius:4px;cursor:pointer;background:none;" title="Pick colour">
               </div>
@@ -4261,6 +4271,243 @@ function applyStudioSettings(){
 
   closeModal('studio-settings-modal');
   toast('Studio settings applied ✓', 'ok');
+}
+
+// ── uploadStudioAssets — studio right panel upload ────────────────────────────
+function uploadStudioAssets(inp){
+  if(!inp.files.length) return;
+  var total = inp.files.length, count = 0;
+  Array.from(inp.files).forEach(function(file){
+    var rd = new FileReader();
+    rd.onload = function(e){
+      var isImg  = file.type.startsWith('image/');
+      var isVid  = file.type.startsWith('video/');
+      var isAud  = file.type.startsWith('audio/');
+      var asset = {
+        id: 'a_' + Date.now() + '_' + Math.floor(Math.random()*99999),
+        name: file.name,
+        dataUrl: e.target.result,
+        type: isImg ? 'image' : isVid ? 'video' : isAud ? 'audio' : 'document',
+        size: file.size,
+        position: STUDIO._overlayPos || 'pip-right',
+        sizePercent: 35,
+        animation: 'fade'
+      };
+      PROJECT.assets.push(asset);
+      count++;
+      if(count === total){
+        saveProject();
+        renderStudioAssets();
+        toast(count + ' asset' + (count>1?'s':'') + ' uploaded ✓','ok');
+      }
+    };
+    rd.readAsDataURL(file);
+  });
+}
+
+// ── setOverlayPos — position buttons apply IMMEDIATELY to live overlay ─────────
+function setOverlayPos(btn){
+  document.querySelectorAll('.pos-btn,[data-pos]').forEach(function(b){ b.classList.remove('on'); });
+  if(btn) btn.classList.add('on');
+  var pos = btn ? btn.dataset.pos : 'pip-right';
+  STUDIO._overlayPos = pos;
+
+  // Map pos-grid positions to asset position system
+  var posMap = {
+    'pip-right':    'bot-right',
+    'pip-left':     'bot-left',
+    'full':         'center',
+    'lower-third':  'bot-center'
+  };
+  var assetPos = posMap[pos] || 'bot-right';
+
+  // Apply to currently displayed overlay(s) immediately
+  var area = document.getElementById('studio-overlay-area');
+  if(area){
+    var overlays = area.querySelectorAll('div[style*="position:absolute"]');
+    overlays.forEach(function(ov){
+      applyOverlayPosition(ov, assetPos);
+    });
+  }
+
+  // Also update selected scene asset position
+  var scene = PROJECT.scenes[STUDIO.currentScene];
+  if(scene && scene.assets && scene.assets.length){
+    scene.assets.forEach(function(a){ a.position = assetPos; });
+    saveProject();
+  }
+}
+
+function applyOverlayPosition(el, pos){
+  var wrap = document.getElementById('studio-canvas');
+  var W = wrap ? wrap.offsetWidth : 1280;
+  var H = wrap ? wrap.offsetHeight : 720;
+  var pctW = (STUDIO._lastAssetSize || 35);
+
+  // Reset all position properties
+  el.style.left = 'auto'; el.style.right = 'auto';
+  el.style.top  = 'auto'; el.style.bottom = 'auto';
+  el.style.width = pctW + '%'; el.style.transform = '';
+
+  var positions = {
+    'pip-right':    { right:'16px', bottom:'96px' },
+    'pip-left':     { left:'16px',  bottom:'96px' },
+    'bot-right':    { right:'16px', bottom:'96px' },
+    'bot-left':     { left:'16px',  bottom:'96px' },
+    'top-right':    { right:'16px', top:'16px' },
+    'top-left':     { left:'16px',  top:'16px' },
+    'top-center':   { left:'50%', top:'16px', transform:'translateX(-50%)' },
+    'center':       { left:'0', top:'0', width:'100%', height:'100%' },
+    'bot-center':   { left:'0', bottom:'0', width:'100%', height:'auto' },
+    'lower-third':  { left:'0', bottom:'0', width:'100%', height:'auto' }
+  };
+  var p = positions[pos] || positions['pip-right'];
+  Object.keys(p).forEach(function(k){ el.style[k] = p[k]; });
+}
+
+// Enhanced showAssetNow with proper position system
+function showAssetNow(id){
+  var asset = PROJECT.assets.find(function(a){ return a.id===id; });
+  if(!asset) return;
+  var area = document.getElementById('studio-overlay-area');
+  if(!area) return;
+
+  // Remove existing overlay for this asset if any
+  var existing = area.querySelector('[data-assetid="'+id+'"]');
+  if(existing){ existing.remove(); return; } // toggle off if already showing
+
+  if(!asset.dataUrl) return;
+
+  var el = document.createElement('div');
+  el.dataset.assetid = id;
+  el.style.cssText = 'position:absolute;z-index:5;border-radius:8px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.5);pointer-events:auto;cursor:move;';
+
+  if(asset.type==='image'){
+    el.innerHTML = '<img src="'+asset.dataUrl+'" style="width:100%;height:auto;display:block;border-radius:8px;">';
+  } else if(asset.type==='video'){
+    el.innerHTML = '<video src="'+asset.dataUrl+'" autoplay loop muted style="width:100%;height:auto;display:block;border-radius:8px;"></video>';
+  }
+
+  // Apply position immediately
+  var pos = asset.position || STUDIO._overlayPos || 'pip-right';
+  applyOverlayPosition(el, pos);
+
+  // Delete on double-click
+  el.ondblclick = function(){
+    el.style.opacity='0';
+    setTimeout(function(){ el.remove(); }, 300);
+  };
+
+  // Make draggable
+  makeDraggableOverlay(el);
+
+  // Animate in
+  el.style.opacity = '0';
+  el.style.transition = 'opacity .3s ease';
+  area.appendChild(el);
+  requestAnimationFrame(function(){ requestAnimationFrame(function(){ el.style.opacity='1'; }); });
+}
+
+function makeDraggableOverlay(el){
+  var isDragging=false, startX=0, startY=0, origLeft=0, origTop=0;
+  el.addEventListener('mousedown',function(e){
+    if(e.target.tagName==='IMG'||e.target.tagName==='VIDEO'){
+      isDragging=true;
+      startX=e.clientX; startY=e.clientY;
+      var rect=el.getBoundingClientRect();
+      var area=document.getElementById('studio-overlay-area');
+      var areaRect=area?area.getBoundingClientRect():{left:0,top:0};
+      origLeft=rect.left-areaRect.left;
+      origTop=rect.top-areaRect.top;
+      el.style.left=origLeft+'px'; el.style.right='auto';
+      el.style.top=origTop+'px';  el.style.bottom='auto';
+      el.style.transform='';
+      e.preventDefault();
+    }
+  });
+  document.addEventListener('mousemove',function(e){
+    if(!isDragging)return;
+    el.style.left=(origLeft+(e.clientX-startX))+'px';
+    el.style.top =(origTop +(e.clientY-startY))+'px';
+  });
+  document.addEventListener('mouseup',function(){ isDragging=false; });
+}
+
+// ── renderStudioAssets — DOM-based to avoid quote issues ──────────────────────
+function renderStudioAssets(){
+  var el = document.getElementById('sp-assets'); if(!el) return;
+  if(!PROJECT.assets||!PROJECT.assets.length){
+    el.innerHTML='<div style="font-size:11px;color:rgba(255,255,255,.2);text-align:center;padding:16px;line-height:1.7;">No assets.<br>Upload images or videos above.</div>';
+    return;
+  }
+  el.innerHTML='';
+  PROJECT.assets.forEach(function(a, i){
+    var isShowing = !!document.querySelector('[data-assetid="'+a.id+'"]');
+    var card = document.createElement('div');
+    card.style.cssText='background:rgba(255,255,255,.04);border:.5px solid rgba(255,255,255,.08);border-radius:8px;overflow:hidden;margin-bottom:6px;';
+
+    // Thumbnail
+    var thumbEl;
+    if(a.dataUrl && a.type==='image'){
+      thumbEl = document.createElement('img');
+      thumbEl.src = a.dataUrl;
+      thumbEl.style.cssText='width:100%;height:60px;object-fit:cover;display:block;cursor:pointer;';
+      thumbEl.title = 'Click to show on canvas';
+    } else {
+      thumbEl = document.createElement('div');
+      thumbEl.style.cssText='height:44px;display:flex;align-items:center;justify-content:center;font-size:20px;background:rgba(255,255,255,.04);cursor:pointer;';
+      thumbEl.textContent = a.type==='video' ? '🎬' : '📄';
+    }
+    thumbEl.onclick = (function(aid){ return function(){ showAssetNow(aid); renderStudioAssets(); }; })(a.id);
+    card.appendChild(thumbEl);
+
+    // Footer
+    var foot = document.createElement('div');
+    foot.style.cssText='display:flex;align-items:center;gap:3px;padding:3px 6px;';
+    var nameEl = document.createElement('span');
+    nameEl.style.cssText='flex:1;font-size:9px;color:rgba(255,255,255,.35);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    nameEl.textContent = a.name.slice(0,14);
+    var showBtn = document.createElement('button');
+    showBtn.textContent = isShowing ? 'Hide' : 'Show';
+    showBtn.style.cssText='background:'+(isShowing?'rgba(0,212,255,.2)':'rgba(0,212,255,.08)')+';border:.5px solid rgba(0,212,255,.3);color:var(--accent);font-size:9px;padding:2px 5px;border-radius:4px;cursor:pointer;font-family:Sora,sans-serif;';
+    showBtn.onclick = (function(aid){ return function(){ showAssetNow(aid); renderStudioAssets(); }; })(a.id);
+    var delBtn = document.createElement('button');
+    delBtn.textContent='✕';
+    delBtn.style.cssText='background:rgba(239,68,68,.1);border:.5px solid rgba(239,68,68,.2);color:#ef4444;font-size:9px;padding:2px 5px;border-radius:4px;cursor:pointer;font-family:Sora,sans-serif;';
+    delBtn.onclick = (function(idx){ return function(){ deleteStudioAsset(idx); }; })(i);
+    foot.appendChild(nameEl); foot.appendChild(showBtn); foot.appendChild(delBtn);
+    card.appendChild(foot);
+    el.appendChild(card);
+  });
+}
+
+// ── Teleprompter controls (text color, bg, font size, mirror, reset) ──────────
+function setTpTextColor(val){
+  var el = document.getElementById('tp-cur');
+  if(el) el.style.color = val;
+  document.querySelectorAll('#tp-prev,#tp-next').forEach(function(e){
+    if(e) e.style.color = val;
+  });
+}
+function setTpBgOpacity(val){
+  var el = document.getElementById('studio-tp');
+  if(el) el.style.background = 'linear-gradient(to top,rgba(0,0,0,'+val+') 0%,rgba(0,0,0,'+(val*.6)+') 55%,transparent 100%)';
+}
+function resetTpScroll(){
+  studioTpStop();
+  var btn = document.getElementById('btn-tp-start');
+  if(btn){ btn.textContent='▶ Practice'; btn.style.background=''; btn.style.borderColor=''; }
+  STUDIO_TP.running = false;
+  STUDIO.tpAuto = false;
+  toast('Teleprompter reset','info');
+}
+
+// ── Eraser tool ────────────────────────────────────────────────────────────────
+function setEraserMode(){
+  STUDIO.drawMode = 'eraser';
+  var sel = document.getElementById('draw-mode-sel');
+  if(sel) sel.value = 'pen'; // reset select visually
+  toast('Eraser active — draw over annotations to erase','info');
 }
 
 </script>
