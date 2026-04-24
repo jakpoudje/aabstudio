@@ -368,7 +368,7 @@ button,input,select,textarea{font-family:inherit;}
 /* Teleprompter overlay */
 .studio-tp{position:absolute;bottom:160px;left:0;right:0;z-index:15;background:linear-gradient(to top,rgba(0,0,0,.85) 0%,rgba(0,0,0,.6) 60%,transparent 100%);padding:18px 26px 24px;}
 .tp-prev-txt{font-size:11px;color:rgba(255,255,255,.2);font-family:'JetBrains Mono',monospace;line-height:1.7;margin-bottom:7px;}
-.tp-cur-txt{font-size:clamp(16px,2.2vw,26px);font-weight:600;color:#fff;font-family:'JetBrains Mono',monospace;line-height:1.65;border-left:3px solid var(--accent);padding-left:14px;margin-bottom:7px;}
+.tp-cur-txt{font-size:clamp(16px,2.2vw,26px);font-weight:600;color:#fff;font-family:'JetBrains Mono',monospace;line-height:1.65;border-left:3px solid var(--accent);padding-left:14px;margin-bottom:7px;overflow-y:auto;max-height:200px;}
 .tp-next-txt{font-size:11px;color:rgba(255,255,255,.18);font-family:'JetBrains Mono',monospace;line-height:1.7;}
 
 /* Studio controls */
@@ -1793,7 +1793,9 @@ button,input,select,textarea{font-family:inherit;}
 </div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
+
 <script>
+
 
 'use strict';
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1814,7 +1816,6 @@ var STUDIO  = { stream:null, mr:null, chunks:[], recording:false, camOn:false, m
 var TP      = { playing:false, speed:80, fontSize:28, mirrored:false, adaptive:false, recognition:null, scrollTimer:null, currentWord:0, totalWords:0, theme:'dark', remoteId:null, remotePoll:null, remoteLastCmd:null };
 var EXPORT_STATE = { ratio:'16:9', platform:'youtube' };
 var SELECTED_SCENE = null;
-var EDIT_SELECTED  = null;
 var _tpAutoTimer   = null;
 var _supa          = null;
 
@@ -2875,25 +2876,60 @@ function preloadBgImage(type,variant,cb){
 }
 
 function setBg(el){
-  var newBg=el.dataset.bg;
-  if(newBg===_currentBg&&newBg!=='none'){
-    BG_VARIANT[newBg]=((BG_VARIANT[newBg]||0)+1)%Math.max(1,(BG_IMAGES[newBg]||[]).length||1);
+  var newBg = el ? el.dataset.bg : _currentBg;
+
+  // Cycle variant if same bg clicked twice
+  if(newBg === _currentBg && newBg !== 'none'){
+    BG_VARIANT[newBg] = ((BG_VARIANT[newBg]||0)+1) % Math.max(1,(BG_IMAGES[newBg]||[]).length||1);
     delete BG_IMG_CACHE[newBg+'_'+BG_VARIANT[newBg]];
-    var urls=BG_IMAGES[newBg];if(urls&&urls.length>1)toast('Background '+((BG_VARIANT[newBg]||0)+1)+' of '+urls.length,'info');
+    var urls = BG_IMAGES[newBg];
+    if(urls && urls.length > 1) toast('Background '+(BG_VARIANT[newBg]+1)+' of '+urls.length,'info');
   }
-  document.querySelectorAll('.bg-btn[data-bg]').forEach(function(b){b.classList.remove('on');});
-  el.classList.add('on');_currentBg=newBg;
-  if(newBg!=='none'&&newBg!=='green')preloadBgImage(newBg,BG_VARIANT[newBg]||0,null);
-  // Camera always stays full-screen — background goes BEHIND it
-  // User can choose PiP/smaller camera using overlay position buttons
-  var cam=document.getElementById('studio-cam');
-  if(cam){
-    // Keep camera full screen always - bg is always behind
+
+  document.querySelectorAll('.bg-btn[data-bg]').forEach(function(b){ b.classList.remove('on'); });
+  if(el) el.classList.add('on');
+  _currentBg = newBg;
+
+  var cam = document.getElementById('studio-cam');
+  var bgCanvas = document.getElementById('studio-bg-canvas');
+
+  if(newBg === 'none'){
+    // Live camera — fullscreen, no filter
+    if(cam) cam.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;filter:none;';
+    if(bgCanvas) bgCanvas.style.display = 'none';
+    STUDIO._pipMode = false;
+
+  } else if(newBg === 'blur'){
+    // Blur: apply CSS blur to camera itself — works even fullscreen
+    if(cam) cam.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;filter:blur(12px) brightness(.8);';
+    if(bgCanvas) bgCanvas.style.display = 'none';
+    STUDIO._pipMode = false;
+    toast('Blur background active','ok');
+
+  } else if(newBg === 'dark'){
+    // Dark grade — CSS filter on camera
+    if(cam) cam.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;filter:brightness(.35) contrast(1.2);';
+    if(bgCanvas) bgCanvas.style.display = 'none';
+    STUDIO._pipMode = false;
+    toast('Dark mode active','ok');
+
+  } else if(newBg === 'green'){
+    // Green screen — show green canvas
+    if(cam) cam.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;filter:none;';
+    if(bgCanvas){ bgCanvas.style.display='block'; renderBgLayer(); }
+    toast('Green screen active','ok');
+
+  } else {
+    // Photo backgrounds (news/office/library/etc)
+    // Camera goes to PiP — background fills canvas
     if(!STUDIO._pipMode){
-      cam.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;';
+      if(cam) cam.style.cssText = 'position:absolute;bottom:90px;right:16px;width:260px;height:146px;object-fit:cover;z-index:6;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.6);border:2px solid rgba(255,255,255,.2);filter:none;';
+      STUDIO._pipMode = true;
     }
+    if(newBg !== 'none' && newBg !== 'green') preloadBgImage(newBg, BG_VARIANT[newBg]||0, null);
+    requestAnimationFrame(function(){ requestAnimationFrame(function(){ renderBgLayer(); }); });
+    toast('Background set — camera in PiP. Click 📷 PiP to toggle.','ok');
   }
-  requestAnimationFrame(function(){requestAnimationFrame(function(){renderBgLayer();});});
 }
 
 function setLighting(type,el){
@@ -3023,92 +3059,8 @@ function initDrawEvents(canvas){
   canvas.addEventListener('mousedown',onDown,{passive:false});canvas.addEventListener('mousemove',onMove,{passive:false});canvas.addEventListener('mouseup',onUp);canvas.addEventListener('mouseleave',onUp);canvas.addEventListener('touchstart',onDown,{passive:false});canvas.addEventListener('touchmove',onMove,{passive:false});canvas.addEventListener('touchend',onUp);
 }
 
-// ══ ASSET OVERLAY ═════════════════════════════════════════════════════════════
-function showAssetNow(id){
-  var asset=PROJECT.assets.find(function(a){return a.id===id;});
-  if(!asset)return;
-  var area=document.getElementById('studio-overlay-area');if(!area)return;
-  area.innerHTML='';
-  if(!asset.dataUrl)return;
-  var wrap=document.getElementById('studio-canvas');
-  var W=wrap?wrap.offsetWidth:1280,H=wrap?wrap.offsetHeight:720;
-  var pct=(asset.sizePercent||35)/100,aw=W*pct;
-  var pos=asset.position||'bot-right';
-  var left=pos.includes('left')?'16px':pos.includes('right')?'auto':'50%';
-  var right=pos.includes('right')?'16px':'auto';
-  var top=pos.includes('top')?'16px':pos.includes('bot')?'auto':pos.includes('mid')?'50%':'auto';
-  var bottom=pos.includes('bot')?'16px':'auto';
-  var transform=(pos==='center'||pos==='mid-left'||pos==='mid-right')?'translateY(-50%)':'';
-  if(pos==='center')transform='translate(-50%,-50%)';
-  var el=document.createElement('div');
-  el.style.cssText='position:absolute;left:'+left+';right:'+right+';top:'+top+';bottom:'+bottom+';width:'+pct*100+'%;transform:'+transform+';z-index:5;border-radius:8px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.4);pointer-events:auto;opacity:0;transition:opacity .4s;';
-  if(asset.type==='image')el.innerHTML='<img src="'+asset.dataUrl+'" style="width:100%;height:100%;object-fit:contain;display:block;">';
-  // Apply animation
-  var anim = asset.animation || 'fade';
-  if(anim === 'fade'){
-    el.style.opacity = '0';
-    el.style.transition = 'opacity .4s ease';
-    requestAnimationFrame(function(){ requestAnimationFrame(function(){ el.style.opacity='1'; }); });
-  } else if(anim === 'slide'){
-    el.style.opacity = '0';
-    el.style.transform = (el.style.transform||'') + ' translateY(20px)';
-    el.style.transition = 'opacity .4s ease, transform .4s ease';
-    requestAnimationFrame(function(){ requestAnimationFrame(function(){ el.style.opacity='1'; el.style.transform=(el.style.transform||'').replace('translateY(20px)',''); }); });
-  } else if(anim === 'pop'){
-    el.style.opacity = '0';
-    el.style.transform = (el.style.transform||'') + ' scale(0.5)';
-    el.style.transition = 'opacity .3s ease, transform .3s cubic-bezier(.34,1.56,.64,1)';
-    requestAnimationFrame(function(){ requestAnimationFrame(function(){ el.style.opacity='1'; el.style.transform=(el.style.transform||'').replace('scale(0.5)',''); }); });
-  } else {
-    el.style.opacity = '1';
-  }
-  el.onclick = function(){ el.style.opacity='0'; setTimeout(function(){ el.remove(); }, 400); };
-  area.appendChild(el);
-}
-
-// ══ EDIT SUITE ════════════════════════════════════════════════════════════════
-var EDIT={selectedClip:null,zoom:100,bgMusicEl:null};
-var EDIT_SELECTED=null;
-
-function renderEditSuite(){
-  var t=document.getElementById('edit-title');if(t)t.textContent='Edit — '+PROJECT.title;
-  renderEditClips();renderVideoTimeline();
-  var noClips=document.getElementById('edit-no-clips'),vid=document.getElementById('edit-video');
-  var clips=Object.values(PROJECT.clips||{}).filter(function(c){return c.url;});
-  if(noClips)noClips.style.display=clips.length?'none':'block';
-  if(vid)vid.style.display=clips.length?'block':'none';
-  if(clips.length){
-    var firstId=Object.keys(PROJECT.clips).find(function(k){return PROJECT.clips[k].url;});
-    if(firstId)selectClip(firstId);
-  }
-}
-function renderEditClips(){
-  var el=document.getElementById('edit-clips-list');if(!el)return;
-  var clips=Object.entries(PROJECT.clips||{}).filter(function(e){return e[1].url;});
-  if(!clips.length){el.innerHTML='<div style="font-size:11px;color:rgba(255,255,255,.2);padding:10px;">No clips yet</div>';return;}
-  el.innerHTML='';
-  clips.forEach(function(entry){
-    var id=entry[0],c=entry[1];
-    var d=document.createElement('div');
-    d.className='edit-clip-item'+(EDIT_SELECTED===id?' on':'');
-    d.style.cssText='display:flex;gap:8px;align-items:center;padding:8px 10px;border-bottom:.5px solid rgba(255,255,255,.04);cursor:pointer;';
-    d.innerHTML='<div style="width:52px;height:36px;border-radius:4px;background:#111;overflow:hidden;flex-shrink:0;"><video src="'+c.url+'" style="width:100%;height:100%;object-fit:cover;" onloadeddata="this.currentTime=0.1"></video></div>'
-      +'<div style="flex:1;min-width:0;"><div style="font-size:11px;font-weight:500;color:rgba(255,255,255,.7);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Scene '+(c.sceneIdx+1)+' · '+(c.sceneName||'CLIP')+'</div><div style="font-size:10px;color:rgba(255,255,255,.3);">'+formatDur(c.duration||0)+'</div></div>'
-      +'<button style="background:transparent;border:none;color:rgba(255,255,255,.2);cursor:pointer;font-size:14px;padding:4px;" data-cid="'+id+'">×</button>';
-    d.querySelector('button').onclick=function(e){e.stopPropagation();deleteClip(this.dataset.cid);};
-    d.onclick=function(){selectClip(id);};
-    el.appendChild(d);
-  });
-}
-function selectClip(id){
-  EDIT_SELECTED=id;EDIT.selectedClip=id;
-  renderEditClips();renderVideoTimeline();
-  var clip=PROJECT.clips[id];if(!clip||!clip.url)return;
-  var v=document.getElementById('edit-video'),e=document.getElementById('edit-no-clips');
-  if(v){v.src=clip.url;v.load();v.style.display='block';v.onloadeddata=function(){v.currentTime=0.1;startEditTimecode();};}
-  if(e)e.style.display='none';
-}
-function renderVideoTimeline(){
+// ══ ASSET OVERLAY ═════════════════════════════════════════════════════════════// ══ EDIT SUITE ════════════════════════════════════════════════════════════════
+var EDIT_SELECTED=null;function renderVideoTimeline(){
   var rail=document.getElementById('tl-video-rail');if(!rail)return;rail.innerHTML='';
   var clips=Object.entries(PROJECT.clips||{}).filter(function(e){return e[1].url;});
   if(!clips.length){var em=document.createElement('div');em.style.cssText='font-size:10px;color:rgba(255,255,255,.2);padding:4px 8px;';em.textContent='No clips recorded';rail.appendChild(em);return;}
@@ -3124,75 +3076,7 @@ function renderVideoTimeline(){
     d.onclick=function(){selectClip(this.dataset.tid);};
     rail.appendChild(d);
   });
-}
-function deleteClip(id){
-  if(!confirm('Delete this clip?'))return;
-  delete PROJECT.clips[id];
-  if(EDIT_SELECTED===id)EDIT_SELECTED=null;
-  saveProject();renderEditSuite();toast('Clip deleted','ok');
-}
-function deleteSelectedClip(){if(EDIT_SELECTED)deleteClip(EDIT_SELECTED);else toast('Select a clip first','info');}
-function mergeAllClips(){toast('Export clips then merge in DaVinci Resolve, Premiere or CapCut','info');}
-function addExternalClip(inp){if(!inp.files.length)return;var f=inp.files[0],url=URL.createObjectURL(f),id='ext_'+Date.now();if(!PROJECT.clips)PROJECT.clips={};PROJECT.clips[id]={url:url,sceneIdx:0,duration:0,sceneName:'EXTERNAL'};saveProject();renderEditSuite();toast(f.name+' added','ok');}
-function editPlayPause(){var v=document.getElementById('edit-video'),b=document.getElementById('edit-play-btn');if(!v)return;if(v.paused){v.play();if(b)b.textContent='⏸';}else{v.pause();if(b)b.textContent='▶';}}
-function editSeek(s){var v=document.getElementById('edit-video');if(v)v.currentTime=Math.max(0,(v.currentTime||0)+s);}
-function editUndo(){toast('Undo not available — re-record the scene','info');}
-function trimClip(){
-  var v = document.getElementById('edit-video');
-  if(!v || !EDIT_SELECTED){toast('Select a clip first','info');return;}
-  var clip = PROJECT.clips[EDIT_SELECTED];
-  if(!clip){return;}
-  // Store trim in/out points
-  if(!clip.trimIn) clip.trimIn = 0;
-  var action = prompt('Set trim point:\n\nCurrent time: '+formatDur(v.currentTime)+'\n\n[1] Set IN point here ('+formatDur(v.currentTime)+')\n[2] Set OUT point here ('+formatDur(v.currentTime)+')\n\nType 1 or 2:');
-  if(action==='1'){
-    clip.trimIn = v.currentTime;
-    toast('IN point set at '+formatDur(v.currentTime)+' ✓','ok');
-  } else if(action==='2'){
-    clip.trimOut = v.currentTime;
-    toast('OUT point set at '+formatDur(v.currentTime)+' ✓','ok');
-  }
-  saveProject();
-  renderVideoTimeline();
-}
-function splitClipAtPlayhead(){
-  var v = document.getElementById('edit-video');
-  if(!v || !EDIT_SELECTED){toast('Select a clip and position playhead to split','info');return;}
-  var clip = PROJECT.clips[EDIT_SELECTED];
-  if(!clip || !clip.url){return;}
-  if(!confirm('Split clip at '+formatDur(v.currentTime)+'?\nThis creates two separate clips.')){return;}
-  // Store split point — actual binary split needs FFmpeg server-side
-  // For now: mark the split point visually and on export
-  var splitTime = v.currentTime;
-  var splitId = EDIT_SELECTED + '_split_' + Date.now();
-  PROJECT.clips[splitId] = Object.assign({}, clip, {
-    id: splitId,
-    splitFrom: EDIT_SELECTED,
-    splitStart: splitTime,
-    sceneName: (clip.sceneName||'CLIP') + ' B'
-  });
-  clip.splitEnd = splitTime;
-  saveProject();
-  renderEditSuite();
-  toast('Split at '+formatDur(splitTime)+' — two clips created ✓','ok');
-}
-function zoomTimeline(v){EDIT.zoom=parseInt(v);renderVideoTimeline();}
-function startEditTimecode(){
-  var v=document.getElementById('edit-video');if(!v)return;
-  v.ontimeupdate=function(){var tc=document.getElementById('edit-timecode');if(tc)tc.textContent=formatDur(v.currentTime)+' / '+formatDur(v.duration||0);var ph=document.getElementById('tl-playhead');if(ph&&v.duration){var rail=document.getElementById('tl-video-rail');ph.style.left=((v.currentTime/v.duration)*(rail?rail.scrollWidth:400))+'px';}};
-  v.onended=function(){var b=document.getElementById('edit-play-btn');if(b)b.textContent='▶';};
-}
-function loadBgMusic(inp){
-  if(!inp.files.length)return;var f=inp.files[0],url=URL.createObjectURL(f);
-  if(EDIT.bgMusicEl){EDIT.bgMusicEl.pause();}
-  EDIT.bgMusicEl=new Audio(url);EDIT.bgMusicEl.loop=true;EDIT.bgMusicEl.volume=0.3;
-  var rail=document.getElementById('tl-music-rail');
-  if(rail)rail.innerHTML='<div style="height:24px;padding:0 10px;border-radius:4px;background:rgba(245,158,11,.15);border:.5px solid rgba(245,158,11,.3);display:flex;align-items:center;font-size:10px;color:var(--gold);gap:6px;"><span>🎵 '+f.name.slice(0,20)+'</span><button onclick="removeBgMusic()" style="background:transparent;border:none;color:var(--gold);cursor:pointer;">×</button></div>';
-  toast('Music: '+f.name,'ok');
-}
-function removeBgMusic(){if(EDIT.bgMusicEl){EDIT.bgMusicEl.pause();EDIT.bgMusicEl=null;}var rail=document.getElementById('tl-music-rail');if(rail)rail.innerHTML='<label class="studio-btn" style="cursor:pointer;font-size:10px;height:24px;padding:2px 10px;">+ Add music<input type="file" style="display:none;" accept="audio/*" onchange="loadBgMusic(this)"></label>';}
-function loadSFX(inp){if(!inp.files.length)return;var f=inp.files[0];var rail=document.getElementById('tl-sfx-rail');if(rail)rail.innerHTML='<div style="height:24px;padding:0 10px;border-radius:4px;background:rgba(139,92,246,.15);border:.5px solid rgba(139,92,246,.3);display:flex;align-items:center;font-size:10px;color:var(--purple);gap:6px;"><span>🔊 '+f.name.slice(0,16)+'</span></div>';toast('SFX: '+f.name,'ok');}
-function setMusicVol(v){document.getElementById('music-vol-val').textContent=v+'%';if(EDIT.bgMusicEl)EDIT.bgMusicEl.volume=v/100;}
+}function deleteSelectedClip(){if(EDIT_SELECTED)deleteClip(EDIT_SELECTED);else toast('Select a clip first','info');}function editPlayPause(){var v=document.getElementById('edit-video'),b=document.getElementById('edit-play-btn');if(!v)return;if(v.paused){v.play();if(b)b.textContent='⏸';}else{v.pause();if(b)b.textContent='▶';}}function editUndo(){toast('Undo not available — re-record the scene','info');}function zoomTimeline(v){EDIT.zoom=parseInt(v);renderVideoTimeline();}function removeBgMusic(){if(EDIT.bgMusicEl){EDIT.bgMusicEl.pause();EDIT.bgMusicEl=null;}var rail=document.getElementById('tl-music-rail');if(rail)rail.innerHTML='<label class="studio-btn" style="cursor:pointer;font-size:10px;height:24px;padding:2px 10px;">+ Add music<input type="file" style="display:none;" accept="audio/*" onchange="loadBgMusic(this)"></label>';}function setMusicVol(v){document.getElementById('music-vol-val').textContent=v+'%';if(EDIT.bgMusicEl)EDIT.bgMusicEl.volume=v/100;}
 function formatDur(s){if(!s||isNaN(s))return'0:00';var m=Math.floor(s/60),sec=Math.floor(s%60);return m+':'+(sec<10?'0':'')+sec;}
 
 // ══ EXPORT ════════════════════════════════════════════════════════════════════
@@ -3330,29 +3214,7 @@ function openAIPresenter(){
   }
   openModal('ai-presenter-modal');
 }
-function loadAIPhoto(inp){if(!inp.files.length)return;var f=inp.files[0];var rd=new FileReader();rd.onload=function(e){var img=document.getElementById('ai-photo-preview');if(img){img.src=e.target.result;img.style.display='block';}window._aiPhotoB64=e.target.result.split(',')[1];};rd.readAsDataURL(f);}
-async function startAIPresenter(){
-  if(!window._aiPhotoB64){toast('Upload your photo first','error');return;}
-  var voiceSel=document.getElementById('ai-voice-sel');
-  var voiceId=voiceSel?voiceSel.value:'EXAVITQu4vr4xnSDxMaL';
-  var sceneList=document.getElementById('ai-scenes-list');
-  var sceneIds=sceneList?Array.from(sceneList.querySelectorAll('input:checked')).map(function(i){return i.value;}):[PROJECT.scenes[0]?.id];
-  if(!sceneIds.length){toast('Select at least one scene','error');return;}
-  toast('Generating AI presenter...','info');
-  for(var i=0;i<sceneIds.length;i++){
-    var scene=PROJECT.scenes.find(function(s){return s.id===sceneIds[i];});
-    if(!scene)continue;
-    try{
-      var vr=await fetch(API+'/api/voice',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:scene.narration,voiceId:voiceId})});
-      var vd=await vr.json();if(vd.error)throw new Error(vd.error);
-      var pr=await fetch(API+'/api/presenter',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({referenceImageBase64:window._aiPhotoB64,audioBase64:vd.audio,ratio:'16:9'})});
-      var pd=await pr.json();if(pd.error)throw new Error(pd.error);
-      toast('Scene '+(scene.sceneNumber||i+1)+' submitted (task: '+pd.taskId+')','ok');
-    }catch(e){toast('Error: '+e.message,'error');}
-  }
-}
-
-// ══ KEYBOARD SHORTCUTS ════════════════════════════════════════════════════════
+function loadAIPhoto(inp){if(!inp.files.length)return;var f=inp.files[0];var rd=new FileReader();rd.onload=function(e){var img=document.getElementById('ai-photo-preview');if(img){img.src=e.target.result;img.style.display='block';}window._aiPhotoB64=e.target.result.split(',')[1];};rd.readAsDataURL(f);}// ══ KEYBOARD SHORTCUTS ════════════════════════════════════════════════════════
 document.addEventListener('keydown',function(e){
   var tag=document.activeElement.tagName;
   if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;
@@ -3406,41 +3268,18 @@ window.addEventListener('load',function(){
       supa.auth.signOut().then(function(){
         APP.user=null; APP.plan='free'; updateNavState(); navFree('home');
         console.log('Stale session cleared — please sign in again');
+console.log('AABStudio v3.0 loaded ✓');
       });
     }
   });
 });
 
-console.log('AABStudio v2.5 loaded ✓');
+
 
 
 // ── PATCH FUNCTIONS ──────────────────────────────────────────────────────────
 
-// Patch: renderStudioAssets and deleteStudioAsset
-function renderStudioAssets(){
-  var el=document.getElementById('sp-assets');if(!el)return;
-  if(!PROJECT.assets||!PROJECT.assets.length){
-    el.innerHTML='<div style="font-size:11px;color:rgba(255,255,255,.2);text-align:center;padding:16px;line-height:1.7;">No assets yet.<br>Upload images to overlay on your video.</div>';
-    return;
-  }
-  el.innerHTML='';
-  PROJECT.assets.forEach(function(a,i){
-    var d=document.createElement('div');
-    d.style.cssText='background:rgba(255,255,255,.04);border:.5px solid rgba(255,255,255,.08);border-radius:8px;overflow:hidden;margin-bottom:6px;';
-    var thumb='';
-    if(a.dataUrl&&(a.type==='image'||a.dataUrl.startsWith('data:image'))){
-      thumb='<img src="'+a.dataUrl+'" style="width:100%;height:68px;object-fit:cover;display:block;">';
-    } else {
-      thumb='<div style="height:68px;display:flex;align-items:center;justify-content:center;font-size:26px;background:rgba(255,255,255,.03);">🖼</div>';
-    }
-    var foot='<div style="padding:4px 6px;display:flex;align-items:center;gap:3px;">'
-      +'<span style="flex:1;font-size:9px;color:rgba(255,255,255,.35);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+a.name.slice(0,14)+'</span>'
-      +'<button data-aid="'+a.id+'" onclick="showAssetNow(this.dataset.aid)" style="background:rgba(0,212,255,.15);border:.5px solid rgba(0,212,255,.3);color:var(--accent);font-size:9px;padding:2px 6px;border-radius:4px;cursor:pointer;font-family:Sora,sans-serif;">Show</button>'
-      +'<button data-i="'+i+'" onclick="deleteStudioAsset(parseInt(this.dataset.i))" style="background:rgba(239,68,68,.12);border:.5px solid rgba(239,68,68,.2);color:#ef4444;font-size:9px;padding:2px 5px;border-radius:4px;cursor:pointer;font-family:Sora,sans-serif;">✕</button>'
-      +'</div>';
-    d.innerHTML=thumb+foot;el.appendChild(d);
-  });
-}
+
 function deleteStudioAsset(i){
   if(i<0||i>=PROJECT.assets.length)return;
   var name=PROJECT.assets[i].name;
@@ -3670,26 +3509,43 @@ function scheduleSceneAssets(sceneIdx){
 
 // Override updateTP to also schedule assets
 function updateTP(){
-  var scene = PROJECT.scenes[STUDIO.currentScene];
+  var scene     = PROJECT.scenes[STUDIO.currentScene];
   var prevScene = PROJECT.scenes[STUDIO.currentScene - 1];
   var nextScene = PROJECT.scenes[STUDIO.currentScene + 1];
 
-  var prev = document.getElementById('tp-prev');
-  var cur  = document.getElementById('tp-cur');
-  var next = document.getElementById('tp-next');
-  var pill = document.getElementById('st-scene-pill');
-  var name = document.getElementById('st-scene-name');
-  var cnt  = document.getElementById('st-scene-cnt');
+  var prev   = document.getElementById('tp-prev');
+  var cur    = document.getElementById('tp-cur');
+  var next   = document.getElementById('tp-next');
+  var pill   = document.getElementById('st-scene-pill');
+  var stName = document.getElementById('st-scene-name');
+  var cnt    = document.getElementById('st-scene-cnt');
   var scnCtr = document.getElementById('studio-scene-counter');
 
-  if(prev) prev.textContent = prevScene ? (prevScene.narration||'').slice(0,80)+'...' : '';
-  if(cur)  cur.textContent  = scene     ? (scene.narration||'(No narration)') : 'No scenes — go back and split your script first.';
-  if(next) next.textContent = nextScene ? (nextScene.narration||'').slice(0,80)+'...' : '';
+  // ── Previous / next scene previews ─────────────────────────────────────────
+  if(prev) prev.textContent = prevScene ? (prevScene.narration||'').slice(0,80)+'…' : '';
+  if(next) next.textContent = nextScene ? (nextScene.narration||'').slice(0,80)+'…' : '';
 
+  // ── Current scene — build word spans for highlighting ─────────────────────
+  if(cur){
+    if(!scene){
+      cur.innerHTML = '<span style="color:rgba(255,255,255,.4);">No scenes yet — go back and split your script first.</span>';
+    } else {
+      var narration = scene.narration || '(No narration)';
+      var words = narration.split(/\s+/);
+      cur.innerHTML = words.map(function(w, i){
+        return '<span id="tw'+i+'" style="color:#fff;transition:color .1s;">'+w+'</span>';
+      }).join(' ');
+      // Scroll to top
+      cur.scrollTop = 0;
+      cur.parentElement.scrollTop = 0;
+    }
+  }
+
+  // ── Update counters ────────────────────────────────────────────────────────
   var total = PROJECT.scenes.length;
   var scNum = STUDIO.currentScene + 1;
   if(pill)   pill.textContent   = 'Scene ' + scNum;
-  if(name)   name.textContent   = scene ? (scene.type||'') + ' · ' + (scene.narration||'').slice(0,40) : '';
+  if(stName) stName.textContent = scene ? (scene.type||'MAIN') + ' · ' + (scene.narration||'').slice(0,40) : '';
   if(cnt)    cnt.textContent    = scNum + '/' + total;
   if(scnCtr) scnCtr.textContent = scNum + '/' + total;
 
@@ -3974,9 +3830,16 @@ function startTpAutoTimer(){
       if(s) s.style.color = i < wi ? 'rgba(255,255,255,.18)' : i === wi ? 'var(--gold)' : '#fff';
     });
 
-    // Scroll current word into view smoothly
+    // Scroll current word into view
     var curEl = document.getElementById('tw' + wi);
-    if(curEl) curEl.scrollIntoView({ behavior:'smooth', block:'center' });
+    if(curEl){
+      var container = document.getElementById('tp-cur');
+      if(container){
+        var elTop = curEl.offsetTop;
+        var contH = container.clientHeight;
+        container.scrollTop = Math.max(0, elTop - contH/2);
+      }
+    }
 
     // Scene progress bar
     var pf = document.getElementById('scene-prog-fill');
@@ -4046,7 +3909,7 @@ document.addEventListener('visibilitychange', function(){
   }
 });
 
-console.log('AABStudio feature block loaded ✓');
+
 
 function setBilling(type){
   var mBtns = document.querySelectorAll('.price-monthly');
@@ -4084,15 +3947,6 @@ function exportAllClips(){
   });
   toast('Downloading '+clips.length+' clip'+(clips.length!==1?'s':'')+'...','ok');
 }
-
-function setOverlayPos(btn){
-  document.querySelectorAll('[data-pos]').forEach(function(b){b.classList.remove('on');});
-  if(btn) btn.classList.add('on');
-  // Store position for current scene asset
-  var pos = btn ? btn.dataset.pos : 'pip-right';
-  STUDIO._overlayPos = pos;
-}
-
 function tpHideRemote(){
   var modal=document.getElementById('tp-remote-modal');
   if(modal)modal.classList.remove('on');
@@ -4510,313 +4364,9 @@ function setEraserMode(){
   toast('Eraser active — draw over annotations to erase','info');
 }
 
-</script>
 
 
-<!-- MODE PICKER MODAL -->
-<div class="modal-overlay" id="mode-picker-modal">
-  <div class="modal-box" style="max-width:580px;">
-    <div style="font-size:17px;font-weight:700;color:var(--ink);margin-bottom:6px;">Choose your mode</div>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">How do you want to use this project?</p>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px;">
-      <div class="mode-card-opt" id="mode-card-studio" data-mode="studio" onclick="selectMode('studio')">
-        <div style="font-size:26px;margin-bottom:8px;">🎬</div>
-        <div style="font-size:14px;font-weight:600;color:var(--ink);margin-bottom:5px;">Full Studio</div>
-        <div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:10px;">Script → AI scenes → record → edit → export</div>
-        <div style="font-size:11px;color:var(--muted2);">✓ AI segmentation · Recording · Export</div>
-      </div>
-      <div class="mode-card-opt" id="mode-card-teleprompter" data-mode="teleprompter" onclick="selectMode('teleprompter')">
-        <div style="font-size:26px;margin-bottom:8px;">📺</div>
-        <div style="font-size:14px;font-weight:600;color:var(--ink);margin-bottom:5px;">Teleprompter Only</div>
-        <div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:10px;">Paste script → full-screen teleprompter → phone remote</div>
-        <div style="font-size:11px;color:var(--muted2);">✓ Word highlight · QR remote · Free</div>
-      </div>
-    </div>
-    <div style="display:flex;justify-content:flex-end;gap:10px;align-items:center;">
-      <button onclick="closeModal('mode-picker-modal')" style="padding:8px 16px;border-radius:8px;border:.5px solid var(--bdr2);background:transparent;font-size:13px;cursor:pointer;font-family:Sora,sans-serif;color:var(--muted);">Cancel</button>
-      <button id="mode-confirm-btn" onclick="confirmMode()" disabled style="padding:9px 20px;border-radius:8px;background:var(--accent);color:var(--navy);font-size:13px;font-weight:600;border:none;cursor:pointer;font-family:Sora,sans-serif;opacity:.45;transition:opacity .15s;">Continue →</button>
-    </div>
-  </div>
-</div>
 
-<!-- UPGRADE MODAL -->
-<div class="modal-overlay" id="upgrade-modal">
-  <div class="modal-box" style="max-width:460px;text-align:center;">
-    <div style="font-size:36px;margin-bottom:12px;">🚀</div>
-    <div style="font-size:17px;font-weight:700;color:var(--ink);margin-bottom:8px;">Upgrade to Creator</div>
-    <p id="upgrade-modal-msg" style="font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.6;">This feature requires a Creator or Studio plan.</p>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px;">
-      <div style="background:rgba(0,212,255,.04);border:.5px solid rgba(0,212,255,.15);border-radius:12px;padding:14px;text-align:left;">
-        <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:6px;">CREATOR · £14/mo</div>
-        <div style="display:flex;flex-direction:column;gap:4px;">
-          <div style="font-size:11px;color:var(--muted);">✓ Scene workflow</div>
-          <div style="font-size:11px;color:var(--muted);">✓ Manual &amp; Sync REC</div>
-          <div style="font-size:11px;color:var(--muted);">✓ Basic editing</div>
-          <div style="font-size:11px;color:var(--muted);">✓ 1080p export</div>
-        </div>
-        <button class="btn btn-primary btn-sm" style="width:100%;margin-top:10px;" onclick="startCheckout('price_1THCSlBJVJa9ylUXwAYC4LpR');closeModal('upgrade-modal');">Try free 7 days →</button>
-      </div>
-      <div style="background:rgba(139,92,246,.06);border:.5px solid rgba(139,92,246,.3);border-radius:12px;padding:14px;text-align:left;">
-        <div style="font-size:11px;font-weight:700;color:#a78bfa;margin-bottom:6px;">PRO STUDIO · £34/mo</div>
-        <div style="display:flex;flex-direction:column;gap:4px;">
-          <div style="font-size:11px;color:var(--muted);">✓ Asset overlays</div>
-          <div style="font-size:11px;color:var(--muted);">✓ AI presenter</div>
-          <div style="font-size:11px;color:var(--muted);">✓ 4K export</div>
-          <div style="font-size:11px;color:var(--muted);">✓ QR remote (full)</div>
-        </div>
-        <button class="btn btn-primary btn-sm" style="width:100%;margin-top:10px;background:#8b5cf6;border-color:#8b5cf6;" onclick="startCheckout('price_1TNRx6BJVJa9ylUXwLr11VPm');closeModal('upgrade-modal');">Try free 7 days →</button>
-      </div>
-    </div>
-    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:12px;">
-      <button class="btn btn-ghost btn-sm" onclick="closeModal('upgrade-modal');nav('pricing-pg');">See all plans</button>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:6px;align-items:center;">
-      <button onclick="closeModal('upgrade-modal')" style="font-size:12px;color:var(--muted2);background:none;border:none;cursor:pointer;">Continue with free teleprompter</button>
-      <button onclick="grantCreatorAccess()" style="font-size:11px;color:var(--muted2);background:none;border:none;cursor:pointer;text-decoration:underline;">⚙ Dev: grant creator access</button>
-    </div>
-  </div>
-</div>
-
-
-<!-- PRIVACY PAGE -->
-<div class="pg" id="privacy-pg" style="display:none;min-height:100vh;background:var(--bg);padding:60px 20px;max-width:760px;margin:0 auto;">
-  <button onclick="navFree('home')" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:14px;margin-bottom:24px;">← Back</button>
-  <h1 style="font-size:28px;font-weight:700;color:var(--ink);margin-bottom:8px;">Privacy Policy</h1>
-  <p style="color:var(--muted);font-size:13px;margin-bottom:24px;">Last updated: April 2026</p>
-  <div style="color:var(--ink);font-size:14px;line-height:1.8;">
-    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">1. Data We Collect</h2>
-    <p>AABStudio collects your email address for authentication, project metadata (titles, scene text), and usage analytics to improve the product. We do not collect or store your video recordings — all recordings are processed locally in your browser and downloaded directly to your device.</p>
-    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">2. How We Use Your Data</h2>
-    <p>Your data is used solely to provide and improve AABStudio services. We do not sell your personal data to third parties. Anonymous usage statistics may be used to improve the product.</p>
-    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">3. Video Recordings</h2>
-    <p>All video recordings are created and stored entirely on your device. AABStudio does not upload, store, or process your video content on our servers. Your recordings remain private and under your full control.</p>
-    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">4. Third-Party Services</h2>
-    <p>We use Supabase for authentication, Stripe for payments, and Anthropic's Claude API for AI scene segmentation. Each of these services has their own privacy policy. Camera and microphone access is requested only when you use the recording studio and is not recorded or transmitted by us.</p>
-    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">5. Contact</h2>
-    <p>For privacy questions, contact us at privacy@aabstudio.ai</p>
-  </div>
-</div>
-
-<!-- TERMS PAGE -->
-<div class="pg" id="terms-pg" style="display:none;min-height:100vh;background:var(--bg);padding:60px 20px;max-width:760px;margin:0 auto;">
-  <button onclick="navFree('home')" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:14px;margin-bottom:24px;">← Back</button>
-  <h1 style="font-size:28px;font-weight:700;color:var(--ink);margin-bottom:8px;">Terms of Service</h1>
-  <p style="color:var(--muted);font-size:13px;margin-bottom:24px;">Last updated: April 2026</p>
-  <div style="color:var(--ink);font-size:14px;line-height:1.8;">
-    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">1. Acceptance</h2>
-    <p>By using AABStudio.ai, you agree to these Terms of Service. If you do not agree, please do not use the platform.</p>
-    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">2. Permitted Use</h2>
-    <p>AABStudio is provided for lawful video production purposes. You may not use the platform to create content that is illegal, harmful, defamatory, or infringes on intellectual property rights.</p>
-    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">3. Subscription and Billing</h2>
-    <p>Paid plans are billed monthly. Free trials include a 7-day period after which your card will be charged. You may cancel at any time before the trial ends. Refunds are considered on a case-by-case basis.</p>
-    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">4. Intellectual Property</h2>
-    <p>You retain full ownership of all content you create with AABStudio. We claim no rights over your scripts, recordings, or exported videos.</p>
-    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">5. Service Availability</h2>
-    <p>We aim for 99.9% uptime but do not guarantee uninterrupted service. We are not liable for data loss resulting from service outages.</p>
-    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">6. Contact</h2>
-    <p>For terms questions, contact us at legal@aabstudio.ai</p>
-  </div>
-</div>
-
-
-<!-- AI PRESENTER MODAL -->
-<div class="modal-overlay" id="ai-presenter-modal" style="display:none;">
-  <div class="modal-box" style="max-width:560px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
-      <div>
-        <div style="font-size:18px;font-weight:700;color:var(--ink);">🤖 AI Presenter</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:3px;">Generate an AI video presenter from your script scenes</div>
-      </div>
-      <button onclick="closeModal('ai-presenter-modal')" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);">✕</button>
-    </div>
-
-    <!-- Step 1: Upload photo -->
-    <div style="margin-bottom:18px;">
-      <div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">1. Upload your photo or avatar</div>
-      <div style="display:flex;align-items:center;gap:12px;">
-        <label style="display:flex;align-items:center;gap:8px;padding:10px 16px;border:1.5px dashed var(--border);border-radius:10px;cursor:pointer;font-size:13px;color:var(--muted);">
-          📷 Choose photo
-          <input type="file" accept="image/*" style="display:none;" onchange="loadAIPhoto(this)">
-        </label>
-        <img id="ai-photo-preview" style="display:none;width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid var(--accent);">
-      </div>
-    </div>
-
-    <!-- Step 2: Voice selection -->
-    <div style="margin-bottom:18px;">
-      <div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">2. Choose voice</div>
-      <select id="ai-voice-sel" style="width:100%;padding:9px 12px;border:.5px solid var(--border);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:var(--surface);">
-        <option value="EXAVITQu4vr4xnSDxMaL">Rachel — Natural female</option>
-        <option value="21m00Tcm4TlvDq8ikWAM">Adam — Professional male</option>
-        <option value="AZnzlk1XvdvUeBnXmlld">Domi — Energetic female</option>
-        <option value="MF3mGyEYCl7XYWbV9V6O">Elli — Calm female</option>
-        <option value="TxGEqnHWrfWFTfGW9XjX">Josh — Warm male</option>
-        <option value="yoZ06aMxZJJ28mfd3POQ">Sam — Casual male</option>
-      </select>
-    </div>
-
-    <!-- Step 3: Scene selection -->
-    <div style="margin-bottom:18px;">
-      <div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">3. Select scenes to generate</div>
-      <div style="max-height:180px;overflow-y:auto;border:.5px solid var(--border);border-radius:8px;padding:8px;" id="ai-scenes-list">
-        <div style="font-size:12px;color:var(--muted);padding:8px;">Click "Load scenes" to see your scenes</div>
-      </div>
-      <button onclick="loadAISceneList()" style="margin-top:6px;font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;">↻ Load scenes</button>
-    </div>
-
-    <!-- Status -->
-    <div id="ai-presenter-status" style="display:none;font-size:12px;color:var(--muted);padding:10px;background:var(--surface);border-radius:8px;margin-bottom:14px;line-height:1.6;"></div>
-
-    <div style="display:flex;gap:10px;justify-content:flex-end;">
-      <button class="btn btn-ghost" onclick="closeModal('ai-presenter-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="startAIPresenter()" id="ai-gen-btn">🎬 Generate AI video</button>
-    </div>
-
-    <div style="margin-top:14px;padding:10px;background:rgba(245,158,11,.06);border:.5px solid rgba(245,158,11,.2);border-radius:8px;font-size:11px;color:rgba(245,158,11,.8);line-height:1.5;">
-      ⚠️ Requires ElevenLabs (voice) and HeyGen (video) API keys in Railway. Each scene takes 1–3 minutes to generate.
-    </div>
-  </div>
-</div>
-
-
-<!-- STUDIO SETTINGS MODAL -->
-<div class="modal-overlay" id="studio-settings-modal">
-  <div class="modal-box" style="max-width:520px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
-      <div>
-        <div style="font-size:17px;font-weight:700;color:var(--ink);">⚙ Studio Settings</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:2px;">Configure camera, microphone, and recording preferences</div>
-      </div>
-      <button onclick="closeModal('studio-settings-modal')" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);">✕</button>
-    </div>
-
-    <!-- Camera -->
-    <div style="margin-bottom:18px;padding-bottom:18px;border-bottom:.5px solid var(--bdr);">
-      <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:10px;">📷 Camera</div>
-      <div style="margin-bottom:8px;">
-        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Device</label>
-        <select id="settings-cam-select" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;" onchange="applySettingsCamera(this.value)">
-          <option value="">Loading cameras...</option>
-        </select>
-      </div>
-      <div style="display:flex;gap:10px;">
-        <div style="flex:1;">
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Resolution</label>
-          <select id="settings-res" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
-            <option value="720">720p (HD)</option>
-            <option value="1080" selected>1080p (Full HD)</option>
-            <option value="1440">1440p (2K)</option>
-            <option value="2160">4K (Creator+ only)</option>
-          </select>
-        </div>
-        <div style="flex:1;">
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Frame rate</label>
-          <select id="settings-fps" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
-            <option value="24">24 fps (cinematic)</option>
-            <option value="30" selected>30 fps (standard)</option>
-            <option value="60">60 fps (smooth)</option>
-          </select>
-        </div>
-      </div>
-    </div>
-
-    <!-- Microphone -->
-    <div style="margin-bottom:18px;padding-bottom:18px;border-bottom:.5px solid var(--bdr);">
-      <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:10px;">🎙 Microphone</div>
-      <div style="margin-bottom:8px;">
-        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Device</label>
-        <select id="settings-mic-select" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;" onchange="applySettingsMic(this.value)">
-          <option value="">Loading microphones...</option>
-        </select>
-      </div>
-      <div style="display:flex;gap:10px;align-items:center;">
-        <div style="flex:1;">
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Noise suppression</label>
-          <select id="settings-noise" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
-            <option value="true" selected>On (recommended)</option>
-            <option value="false">Off (raw audio)</option>
-          </select>
-        </div>
-        <div style="flex:1;">
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Echo cancellation</label>
-          <select id="settings-echo" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
-            <option value="true" selected>On (recommended)</option>
-            <option value="false">Off</option>
-          </select>
-        </div>
-      </div>
-    </div>
-
-    <!-- Recording -->
-    <div style="margin-bottom:18px;padding-bottom:18px;border-bottom:.5px solid var(--bdr);">
-      <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:10px;">⏺ Recording</div>
-      <div style="display:flex;gap:10px;">
-        <div style="flex:1;">
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Countdown before record</label>
-          <select id="settings-countdown" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
-            <option value="0">No countdown</option>
-            <option value="3" selected>3 seconds</option>
-            <option value="5">5 seconds</option>
-          </select>
-        </div>
-        <div style="flex:1;">
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Auto-advance on teleprompter end</label>
-          <select id="settings-auto-advance" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
-            <option value="true" selected>Yes — save clip, next scene</option>
-            <option value="false">No — wait for manual stop</option>
-          </select>
-        </div>
-      </div>
-    </div>
-
-    <!-- Teleprompter -->
-    <div style="margin-bottom:20px;">
-      <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:10px;">📺 Teleprompter</div>
-      <div style="display:flex;gap:10px;">
-        <div style="flex:1;">
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Default speed (WPM)</label>
-          <input type="number" id="settings-wpm" value="80" min="20" max="300" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;">
-        </div>
-        <div style="flex:1;">
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Font size</label>
-          <select id="settings-tp-font" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
-            <option value="small">Small</option>
-            <option value="medium" selected>Medium</option>
-            <option value="large">Large</option>
-            <option value="xlarge">Extra large</option>
-          </select>
-        </div>
-      </div>
-    </div>
-
-    <div style="display:flex;gap:10px;justify-content:flex-end;">
-      <button class="btn btn-ghost" onclick="closeModal('studio-settings-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="applyStudioSettings()">Apply settings ✓</button>
-    </div>
-  </div>
-</div>
-
-</body>
-</html>
-<script>
-
-function setPipMode(enable){
-  STUDIO._pipMode = enable;
-  var cam = document.getElementById('studio-cam');
-  if(!cam) return;
-  if(enable){
-    cam.style.cssText='position:absolute;bottom:96px;right:20px;width:280px;height:158px;object-fit:cover;z-index:4;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.6);border:2px solid rgba(255,255,255,.2);';
-    toast('Camera: PiP mode','info');
-  } else {
-    cam.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;';
-    toast('Camera: fullscreen','info');
-  }
-  // Update button state
-  var pipBtn = document.getElementById('btn-pip');
-  if(pipBtn) pipBtn.classList.toggle('s-btn-gold', enable);
-}
-
-</script><script>
 // ══════════════════════════════════════════════════════════════════════════════
 // MULTI-TRACK TIMELINE ENGINE
 // ══════════════════════════════════════════════════════════════════════════════
@@ -5369,14 +4919,6 @@ function startEditTimecode(){
     TL.playing = false;
   };
 }
-
-function editPlayPause(){
-  var v = document.getElementById('edit-video'), b = document.getElementById('edit-play-btn');
-  if(!v) return;
-  if(v.paused){ v.play(); if(b) b.textContent='⏸'; TL.playing=true; }
-  else        { v.pause(); if(b) b.textContent='▶'; TL.playing=false; }
-}
-
 function editSeek(s){
   var v = document.getElementById('edit-video');
   if(v){ v.currentTime = Math.max(0,(v.currentTime||0)+s); }
@@ -5426,25 +4968,10 @@ function deleteClip(id){
   saveProject(); renderEditSuite();
   toast('Clip deleted','ok');
 }
-
-function deleteSelectedClip(){
-  if(TL.selectedClip) tl_deleteSelected();
-  else toast('Select a clip first','info');
-}
-
 function mergeAllClips(){ toast('Export clips then merge in DaVinci Resolve, CapCut or Premiere','info'); }
 
 function addExternalClip(inp){ importToTimeline(inp, 'video'); }
-
-function editUndo(){ toast('Undo: re-record the scene for a clean take','info'); }
-
-// ── AUDIO CONTROLS (existing, keep working) ────────────────────────────────────
-function setMusicVol(v){
-  var el = document.getElementById('music-vol-val'); if(el) el.textContent=v+'%';
-  if(EDIT && EDIT.bgMusicEl) EDIT.bgMusicEl.volume = v/100;
-}
-
-var EDIT = { bgMusicEl:null, zoom:100 };
+// ── AUDIO CONTROLS (existing, keep working) ────────────────────────────────────var EDIT = { bgMusicEl:null, zoom:100 };
 
 function loadBgMusic(inp){
   if(!inp.files.length) return; var f=inp.files[0], url=URL.createObjectURL(f);
@@ -5454,23 +4981,12 @@ function loadBgMusic(inp){
   if(track) track.clips = [{id:'music_'+Date.now(),url:url,name:f.name.slice(0,16),start:0,duration:TL.duration||60,color:'#065f46',trimIn:0,trimOut:TL.duration||60}];
   tl_render(); toast('Music: '+f.name,'ok');
 }
-
-function removeBgMusic(){
-  if(EDIT.bgMusicEl){ EDIT.bgMusicEl.pause(); EDIT.bgMusicEl=null; }
-  var track = TL.tracks.find(function(tr){ return tr.id==='track_music'; });
-  if(track) track.clips=[];
-  tl_render();
-}
-
 function loadSFX(inp){
   if(!inp.files.length) return; var f=inp.files[0];
   var track = TL.tracks.find(function(tr){ return tr.id==='track_sfx'; });
   if(track) track.clips = [{id:'sfx_'+Date.now(),url:URL.createObjectURL(f),name:f.name.slice(0,16),start:TL.playhead,duration:5,color:'#4c1d95',trimIn:0,trimOut:5}];
   tl_render(); toast('SFX: '+f.name,'ok');
 }
-
-function zoomTimeline(v){ tl_setZoom(v); }
-
 // Legacy compatibility
 function trimClip(){
   if(TL.selectedClip) tl_showTrimControls(TL.selectedClip.trackId, TL.selectedClip.clipId);
@@ -5482,5 +4998,294 @@ function splitClipAtPlayhead(){
   else toast('Select a clip and position the playhead to split','info');
 }
 
-console.log('Timeline engine loaded ✓');
+
+
 </script>
+
+
+
+<!-- MODE PICKER MODAL -->
+<div class="modal-overlay" id="mode-picker-modal">
+  <div class="modal-box" style="max-width:580px;">
+    <div style="font-size:17px;font-weight:700;color:var(--ink);margin-bottom:6px;">Choose your mode</div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">How do you want to use this project?</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px;">
+      <div class="mode-card-opt" id="mode-card-studio" data-mode="studio" onclick="selectMode('studio')">
+        <div style="font-size:26px;margin-bottom:8px;">🎬</div>
+        <div style="font-size:14px;font-weight:600;color:var(--ink);margin-bottom:5px;">Full Studio</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:10px;">Script → AI scenes → record → edit → export</div>
+        <div style="font-size:11px;color:var(--muted2);">✓ AI segmentation · Recording · Export</div>
+      </div>
+      <div class="mode-card-opt" id="mode-card-teleprompter" data-mode="teleprompter" onclick="selectMode('teleprompter')">
+        <div style="font-size:26px;margin-bottom:8px;">📺</div>
+        <div style="font-size:14px;font-weight:600;color:var(--ink);margin-bottom:5px;">Teleprompter Only</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:10px;">Paste script → full-screen teleprompter → phone remote</div>
+        <div style="font-size:11px;color:var(--muted2);">✓ Word highlight · QR remote · Free</div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:10px;align-items:center;">
+      <button onclick="closeModal('mode-picker-modal')" style="padding:8px 16px;border-radius:8px;border:.5px solid var(--bdr2);background:transparent;font-size:13px;cursor:pointer;font-family:Sora,sans-serif;color:var(--muted);">Cancel</button>
+      <button id="mode-confirm-btn" onclick="confirmMode()" disabled style="padding:9px 20px;border-radius:8px;background:var(--accent);color:var(--navy);font-size:13px;font-weight:600;border:none;cursor:pointer;font-family:Sora,sans-serif;opacity:.45;transition:opacity .15s;">Continue →</button>
+    </div>
+  </div>
+</div>
+
+<!-- UPGRADE MODAL -->
+<div class="modal-overlay" id="upgrade-modal">
+  <div class="modal-box" style="max-width:460px;text-align:center;">
+    <div style="font-size:36px;margin-bottom:12px;">🚀</div>
+    <div style="font-size:17px;font-weight:700;color:var(--ink);margin-bottom:8px;">Upgrade to Creator</div>
+    <p id="upgrade-modal-msg" style="font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.6;">This feature requires a Creator or Studio plan.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px;">
+      <div style="background:rgba(0,212,255,.04);border:.5px solid rgba(0,212,255,.15);border-radius:12px;padding:14px;text-align:left;">
+        <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:6px;">CREATOR · £14/mo</div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <div style="font-size:11px;color:var(--muted);">✓ Scene workflow</div>
+          <div style="font-size:11px;color:var(--muted);">✓ Manual &amp; Sync REC</div>
+          <div style="font-size:11px;color:var(--muted);">✓ Basic editing</div>
+          <div style="font-size:11px;color:var(--muted);">✓ 1080p export</div>
+        </div>
+        <button class="btn btn-primary btn-sm" style="width:100%;margin-top:10px;" onclick="startCheckout('price_1THCSlBJVJa9ylUXwAYC4LpR');closeModal('upgrade-modal');">Try free 7 days →</button>
+      </div>
+      <div style="background:rgba(139,92,246,.06);border:.5px solid rgba(139,92,246,.3);border-radius:12px;padding:14px;text-align:left;">
+        <div style="font-size:11px;font-weight:700;color:#a78bfa;margin-bottom:6px;">PRO STUDIO · £34/mo</div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <div style="font-size:11px;color:var(--muted);">✓ Asset overlays</div>
+          <div style="font-size:11px;color:var(--muted);">✓ AI presenter</div>
+          <div style="font-size:11px;color:var(--muted);">✓ 4K export</div>
+          <div style="font-size:11px;color:var(--muted);">✓ QR remote (full)</div>
+        </div>
+        <button class="btn btn-primary btn-sm" style="width:100%;margin-top:10px;background:#8b5cf6;border-color:#8b5cf6;" onclick="startCheckout('price_1TNRx6BJVJa9ylUXwLr11VPm');closeModal('upgrade-modal');">Try free 7 days →</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:12px;">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('upgrade-modal');nav('pricing-pg');">See all plans</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px;align-items:center;">
+      <button onclick="closeModal('upgrade-modal')" style="font-size:12px;color:var(--muted2);background:none;border:none;cursor:pointer;">Continue with free teleprompter</button>
+      <button onclick="grantCreatorAccess()" style="font-size:11px;color:var(--muted2);background:none;border:none;cursor:pointer;text-decoration:underline;">⚙ Dev: grant creator access</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- PRIVACY PAGE -->
+<div class="pg" id="privacy-pg" style="display:none;min-height:100vh;background:var(--bg);padding:60px 20px;max-width:760px;margin:0 auto;">
+  <button onclick="navFree('home')" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:14px;margin-bottom:24px;">← Back</button>
+  <h1 style="font-size:28px;font-weight:700;color:var(--ink);margin-bottom:8px;">Privacy Policy</h1>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:24px;">Last updated: April 2026</p>
+  <div style="color:var(--ink);font-size:14px;line-height:1.8;">
+    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">1. Data We Collect</h2>
+    <p>AABStudio collects your email address for authentication, project metadata (titles, scene text), and usage analytics to improve the product. We do not collect or store your video recordings — all recordings are processed locally in your browser and downloaded directly to your device.</p>
+    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">2. How We Use Your Data</h2>
+    <p>Your data is used solely to provide and improve AABStudio services. We do not sell your personal data to third parties. Anonymous usage statistics may be used to improve the product.</p>
+    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">3. Video Recordings</h2>
+    <p>All video recordings are created and stored entirely on your device. AABStudio does not upload, store, or process your video content on our servers. Your recordings remain private and under your full control.</p>
+    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">4. Third-Party Services</h2>
+    <p>We use Supabase for authentication, Stripe for payments, and Anthropic's Claude API for AI scene segmentation. Each of these services has their own privacy policy. Camera and microphone access is requested only when you use the recording studio and is not recorded or transmitted by us.</p>
+    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">5. Contact</h2>
+    <p>For privacy questions, contact us at privacy@aabstudio.ai</p>
+  </div>
+</div>
+
+<!-- TERMS PAGE -->
+<div class="pg" id="terms-pg" style="display:none;min-height:100vh;background:var(--bg);padding:60px 20px;max-width:760px;margin:0 auto;">
+  <button onclick="navFree('home')" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:14px;margin-bottom:24px;">← Back</button>
+  <h1 style="font-size:28px;font-weight:700;color:var(--ink);margin-bottom:8px;">Terms of Service</h1>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:24px;">Last updated: April 2026</p>
+  <div style="color:var(--ink);font-size:14px;line-height:1.8;">
+    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">1. Acceptance</h2>
+    <p>By using AABStudio.ai, you agree to these Terms of Service. If you do not agree, please do not use the platform.</p>
+    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">2. Permitted Use</h2>
+    <p>AABStudio is provided for lawful video production purposes. You may not use the platform to create content that is illegal, harmful, defamatory, or infringes on intellectual property rights.</p>
+    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">3. Subscription and Billing</h2>
+    <p>Paid plans are billed monthly. Free trials include a 7-day period after which your card will be charged. You may cancel at any time before the trial ends. Refunds are considered on a case-by-case basis.</p>
+    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">4. Intellectual Property</h2>
+    <p>You retain full ownership of all content you create with AABStudio. We claim no rights over your scripts, recordings, or exported videos.</p>
+    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">5. Service Availability</h2>
+    <p>We aim for 99.9% uptime but do not guarantee uninterrupted service. We are not liable for data loss resulting from service outages.</p>
+    <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">6. Contact</h2>
+    <p>For terms questions, contact us at legal@aabstudio.ai</p>
+  </div>
+</div>
+
+
+<!-- AI PRESENTER MODAL -->
+<div class="modal-overlay" id="ai-presenter-modal" style="display:none;">
+  <div class="modal-box" style="max-width:560px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <div>
+        <div style="font-size:18px;font-weight:700;color:var(--ink);">🤖 AI Presenter</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:3px;">Generate an AI video presenter from your script scenes</div>
+      </div>
+      <button onclick="closeModal('ai-presenter-modal')" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);">✕</button>
+    </div>
+
+    <!-- Step 1: Upload photo -->
+    <div style="margin-bottom:18px;">
+      <div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">1. Upload your photo or avatar</div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <label style="display:flex;align-items:center;gap:8px;padding:10px 16px;border:1.5px dashed var(--border);border-radius:10px;cursor:pointer;font-size:13px;color:var(--muted);">
+          📷 Choose photo
+          <input type="file" accept="image/*" style="display:none;" onchange="loadAIPhoto(this)">
+        </label>
+        <img id="ai-photo-preview" style="display:none;width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid var(--accent);">
+      </div>
+    </div>
+
+    <!-- Step 2: Voice selection -->
+    <div style="margin-bottom:18px;">
+      <div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">2. Choose voice</div>
+      <select id="ai-voice-sel" style="width:100%;padding:9px 12px;border:.5px solid var(--border);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:var(--surface);">
+        <option value="EXAVITQu4vr4xnSDxMaL">Rachel — Natural female</option>
+        <option value="21m00Tcm4TlvDq8ikWAM">Adam — Professional male</option>
+        <option value="AZnzlk1XvdvUeBnXmlld">Domi — Energetic female</option>
+        <option value="MF3mGyEYCl7XYWbV9V6O">Elli — Calm female</option>
+        <option value="TxGEqnHWrfWFTfGW9XjX">Josh — Warm male</option>
+        <option value="yoZ06aMxZJJ28mfd3POQ">Sam — Casual male</option>
+      </select>
+    </div>
+
+    <!-- Step 3: Scene selection -->
+    <div style="margin-bottom:18px;">
+      <div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">3. Select scenes to generate</div>
+      <div style="max-height:180px;overflow-y:auto;border:.5px solid var(--border);border-radius:8px;padding:8px;" id="ai-scenes-list">
+        <div style="font-size:12px;color:var(--muted);padding:8px;">Click "Load scenes" to see your scenes</div>
+      </div>
+      <button onclick="loadAISceneList()" style="margin-top:6px;font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;">↻ Load scenes</button>
+    </div>
+
+    <!-- Status -->
+    <div id="ai-presenter-status" style="display:none;font-size:12px;color:var(--muted);padding:10px;background:var(--surface);border-radius:8px;margin-bottom:14px;line-height:1.6;"></div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="closeModal('ai-presenter-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="startAIPresenter()" id="ai-gen-btn">🎬 Generate AI video</button>
+    </div>
+
+    <div style="margin-top:14px;padding:10px;background:rgba(245,158,11,.06);border:.5px solid rgba(245,158,11,.2);border-radius:8px;font-size:11px;color:rgba(245,158,11,.8);line-height:1.5;">
+      ⚠️ Requires ElevenLabs (voice) and HeyGen (video) API keys in Railway. Each scene takes 1–3 minutes to generate.
+    </div>
+  </div>
+</div>
+
+
+<!-- STUDIO SETTINGS MODAL -->
+<div class="modal-overlay" id="studio-settings-modal">
+  <div class="modal-box" style="max-width:520px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <div>
+        <div style="font-size:17px;font-weight:700;color:var(--ink);">⚙ Studio Settings</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px;">Configure camera, microphone, and recording preferences</div>
+      </div>
+      <button onclick="closeModal('studio-settings-modal')" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);">✕</button>
+    </div>
+
+    <!-- Camera -->
+    <div style="margin-bottom:18px;padding-bottom:18px;border-bottom:.5px solid var(--bdr);">
+      <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:10px;">📷 Camera</div>
+      <div style="margin-bottom:8px;">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Device</label>
+        <select id="settings-cam-select" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;" onchange="applySettingsCamera(this.value)">
+          <option value="">Loading cameras...</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:10px;">
+        <div style="flex:1;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Resolution</label>
+          <select id="settings-res" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
+            <option value="720">720p (HD)</option>
+            <option value="1080" selected>1080p (Full HD)</option>
+            <option value="1440">1440p (2K)</option>
+            <option value="2160">4K (Creator+ only)</option>
+          </select>
+        </div>
+        <div style="flex:1;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Frame rate</label>
+          <select id="settings-fps" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
+            <option value="24">24 fps (cinematic)</option>
+            <option value="30" selected>30 fps (standard)</option>
+            <option value="60">60 fps (smooth)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Microphone -->
+    <div style="margin-bottom:18px;padding-bottom:18px;border-bottom:.5px solid var(--bdr);">
+      <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:10px;">🎙 Microphone</div>
+      <div style="margin-bottom:8px;">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Device</label>
+        <select id="settings-mic-select" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;" onchange="applySettingsMic(this.value)">
+          <option value="">Loading microphones...</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <div style="flex:1;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Noise suppression</label>
+          <select id="settings-noise" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
+            <option value="true" selected>On (recommended)</option>
+            <option value="false">Off (raw audio)</option>
+          </select>
+        </div>
+        <div style="flex:1;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Echo cancellation</label>
+          <select id="settings-echo" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
+            <option value="true" selected>On (recommended)</option>
+            <option value="false">Off</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recording -->
+    <div style="margin-bottom:18px;padding-bottom:18px;border-bottom:.5px solid var(--bdr);">
+      <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:10px;">⏺ Recording</div>
+      <div style="display:flex;gap:10px;">
+        <div style="flex:1;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Countdown before record</label>
+          <select id="settings-countdown" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
+            <option value="0">No countdown</option>
+            <option value="3" selected>3 seconds</option>
+            <option value="5">5 seconds</option>
+          </select>
+        </div>
+        <div style="flex:1;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Auto-advance on teleprompter end</label>
+          <select id="settings-auto-advance" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
+            <option value="true" selected>Yes — save clip, next scene</option>
+            <option value="false">No — wait for manual stop</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Teleprompter -->
+    <div style="margin-bottom:20px;">
+      <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:10px;">📺 Teleprompter</div>
+      <div style="display:flex;gap:10px;">
+        <div style="flex:1;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Default speed (WPM)</label>
+          <input type="number" id="settings-wpm" value="80" min="20" max="300" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;">
+        </div>
+        <div style="flex:1;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Font size</label>
+          <select id="settings-tp-font" style="width:100%;padding:8px 10px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:#fff;">
+            <option value="small">Small</option>
+            <option value="medium" selected>Medium</option>
+            <option value="large">Large</option>
+            <option value="xlarge">Extra large</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="closeModal('studio-settings-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="applyStudioSettings()">Apply settings ✓</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
