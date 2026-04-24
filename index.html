@@ -2124,7 +2124,23 @@ async function startSegmentation() {
     setTimeout(function(){nav('scenes-pg');},700);
   } catch(e) {
     clearInterval(stepTimer); clearInterval(factTimer);
-    toast('Segmentation failed: '+e.message,'err');
+    var msg = e.message || 'Unknown error';
+    var isApiKey = msg.includes('API key') || msg.includes('credits') || msg.includes('503') || msg.includes('500');
+    if(isApiKey){
+      toast('AI segmentation unavailable — using smart split instead','info');
+      // Fallback: smart paragraph-based segmentation
+      var fallbackScenes = smartSplitScript(script, PROJECT.wpm, PROJECT.sceneDuration);
+      if(fallbackScenes.length){
+        PROJECT.scenes = fallbackScenes;
+        PROJECT.title  = title;
+        steps.forEach(function(id){var el=document.getElementById(id);if(el){el.classList.remove('run');el.classList.add('done');}});
+        if(prog) prog.style.width='100%';
+        saveProject();
+        setTimeout(function(){nav('scenes-pg');},700);
+        return;
+      }
+    }
+    toast('Segmentation failed: '+msg,'err');
     nav('script-pg');
   }
 }
@@ -3184,8 +3200,19 @@ window.addEventListener('load',function(){
     else{updateNavState();navFree('home');}
   });
   supa.auth.onAuthStateChange(function(event,session){
-    if(event==='SIGNED_IN'&&session)setUser(session.user);
-    if(event==='SIGNED_OUT'){APP.user=null;APP.plan='free';updateNavState();}
+    if(event==='SIGNED_IN'&&session){ setUser(session.user); }
+    if(event==='SIGNED_OUT'){ APP.user=null; APP.plan='free'; updateNavState(); navFree('home'); }
+    if(event==='TOKEN_REFRESHED'&&session){ setUser(session.user); }
+  });
+  // Handle stale/invalid session tokens gracefully
+  supa.auth.getSession().then(function(r){
+    if(r.error && r.error.message && r.error.message.includes('Refresh Token')){
+      // Clear stale session and show sign-in
+      supa.auth.signOut().then(function(){
+        APP.user=null; APP.plan='free'; updateNavState(); navFree('home');
+        console.log('Stale session cleared — please sign in again');
+      });
+    }
   });
 });
 
@@ -3807,6 +3834,51 @@ function tpHideRemote(){
   var modal=document.getElementById('tp-remote-modal');
   if(modal)modal.classList.remove('on');
   clearInterval(TP.remotePoll);
+}
+
+// Smart local script splitter — used as fallback when AI API is unavailable
+function smartSplitScript(script, wpm, sceneDuration){
+  wpm = wpm || 150;
+  sceneDuration = sceneDuration || 8;
+  var wordsPerScene = Math.round((wpm / 60) * sceneDuration);
+  
+  // Split by paragraphs first, then by sentences
+  var paragraphs = script.split(/\n\n+/).filter(function(p){ return p.trim().length > 0; });
+  if(paragraphs.length < 2){
+    // Single paragraph — split by sentences
+    paragraphs = script.split(/[.!?]+\s+/).filter(function(s){ return s.trim().length > 0; });
+  }
+  
+  var scenes = [];
+  var buffer = '';
+  var bufferWords = 0;
+  var sceneTypes = ['INTRO','MAIN','MAIN','MAIN','TRANSITION','MAIN','SUMMARY','CONCLUSION'];
+  
+  paragraphs.forEach(function(para, i){
+    var words = para.trim().split(/\s+/).length;
+    buffer += (buffer ? '\n\n' : '') + para.trim();
+    bufferWords += words;
+    
+    if(bufferWords >= wordsPerScene || i === paragraphs.length - 1){
+      var typeIdx = scenes.length === 0 ? 0 : 
+                   (i === paragraphs.length-1 ? 7 : Math.min(scenes.length, 5));
+      scenes.push({
+        id: 's_' + (scenes.length + 1),
+        sceneNumber: scenes.length + 1,
+        type: sceneTypes[typeIdx] || 'MAIN',
+        narration: buffer,
+        wordCount: bufferWords,
+        duration: Math.min(Math.round(bufferWords / (wpm/60)), 10),
+        notes: '',
+        assets: [],
+        status: 'draft'
+      });
+      buffer = '';
+      bufferWords = 0;
+    }
+  });
+  
+  return scenes;
 }
 
 </script>
