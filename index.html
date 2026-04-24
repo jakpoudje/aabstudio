@@ -1186,7 +1186,7 @@ button,input,select,textarea{font-family:inherit;}
         <!-- Layer 3: Hidden video for recording (captures camera only) -->
         <video id="studio-cam-hidden" autoplay muted playsinline style="display:none;"></video>
         <!-- Layer 4: Compositing canvas (used when bg replacement is active) -->
-        <canvas id="studio-composite-canvas" style="position:absolute;inset:0;width:100%;height:100%;z-index:6;display:none;pointer-events:none;"></canvas>
+        <canvas id="studio-composite-canvas" style="position:absolute;inset:0;width:100%;height:100%;z-index:4;display:none;pointer-events:none;"></canvas>
         <!-- Layer 5: Asset overlays (draggable, resizable) -->
         <div class="studio-overlay-area" id="studio-overlay-area" style="position:absolute;inset:0;z-index:5;pointer-events:none;overflow:hidden;"></div>
         <!-- Layer 6: Annotation canvas -->
@@ -1838,7 +1838,6 @@ button,input,select,textarea{font-family:inherit;}
 <script>
 
 
-'use strict';
 // ══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3004,8 +3003,11 @@ function setBg(el){
 
   // Cycle variant if same bg clicked again
   if(newBg === _currentBg && newBg !== 'none'){
-    BG_VARIANT[newBg] = ((BG_VARIANT[newBg]||0)+1) % Math.max(1,(BG_IMAGES[newBg]||[]).length||1);
-    delete BG_IMG_CACHE[newBg+'_'+BG_VARIANT[newBg]];
+    var imgs = BG_IMAGES[newBg] || [];
+    if(imgs.length > 1){
+      BG_VARIANT[newBg] = ((BG_VARIANT[newBg]||0)+1) % imgs.length;
+      toast('Background variant '+(BG_VARIANT[newBg]+1)+' of '+imgs.length,'info');
+    }
   }
 
   document.querySelectorAll('.bg-btn[data-bg]').forEach(function(b){ b.classList.remove('on'); });
@@ -3015,50 +3017,68 @@ function setBg(el){
   var cam    = document.getElementById('studio-cam');
   var canvas = document.getElementById('studio-composite-canvas');
 
-  if(newBg === 'none'){
-    // Raw camera fullscreen, no filter, no compositing
-    if(cam){
-      cam.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;filter:none;';
-      cam.style.display = 'block';
-    }
-    if(canvas) canvas.style.display = 'none';
-    stopBgCompositing();
-    STUDIO._pipMode = false;
+  // CRITICAL: NEVER hide the cam video — it needs to stream for drawImage to work
+  // Instead layer the composite canvas ON TOP of cam when bg is active
 
-  } else if(newBg === 'blur'){
-    // Blur the camera feed using canvas compositing
-    if(cam){ cam.style.display = 'none'; }
-    if(canvas){ canvas.style.display = 'block'; canvas.style.zIndex = '4'; }
-    startBgCompositing('blur');
+  // Reset canvas state
+  stopBgCompositing();
+  if(canvas){ canvas.style.display = 'none'; canvas.style.zIndex = ''; }
+
+  if(newBg === 'none'){
+    // Live: cam fullscreen, no overlay
+    if(cam){ cam.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;filter:none;'; }
+    document.querySelectorAll('#studio-bg-img,#studio-bg-vid').forEach(function(e){ e.style.display='none'; });
 
   } else if(newBg === 'dark'){
-    if(cam){ cam.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;filter:brightness(.3) contrast(1.15);'; }
-    if(canvas) canvas.style.display = 'none';
-    stopBgCompositing();
+    // Dark grade — CSS filter on cam, no compositing needed
+    if(cam){ cam.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;filter:brightness(.28) contrast(1.2) saturate(0.8);'; }
 
   } else if(newBg === 'green'){
+    // Green screen — solid green bg canvas behind cam
     if(cam){ cam.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;filter:none;'; }
-    if(canvas) canvas.style.display = 'none';
-    stopBgCompositing();
-    // Show green background behind
     var bgCanvas = document.getElementById('studio-bg-canvas');
-    if(bgCanvas){ bgCanvas.style.display='block'; renderBgLayer(); }
-    toast('Green screen active — key out in post','ok');
+    if(bgCanvas){
+      bgCanvas.style.display = 'block';
+      bgCanvas.style.zIndex = '1';
+      var ctx2 = bgCanvas.getContext('2d');
+      bgCanvas.width = bgCanvas.offsetWidth || 1280;
+      bgCanvas.height = bgCanvas.offsetHeight || 720;
+      ctx2.fillStyle = '#00b140';
+      ctx2.fillRect(0,0,bgCanvas.width,bgCanvas.height);
+    }
+    toast('Green screen active','ok');
+
+  } else if(newBg === 'blur'){
+    // Blur: composite canvas ON TOP of cam
+    // cam stays visible and streaming behind composite
+    if(cam){ cam.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:3;filter:none;'; }
+    if(canvas){ canvas.style.display = 'block'; canvas.style.zIndex = '4'; canvas.style.cssText += ';position:absolute;inset:0;width:100%;height:100%;z-index:4;'; }
+    startBgCompositing('blur');
+
+  } else if(newBg === 'custom-img' || newBg === 'custom-vid'){
+    // Custom upload — handled by uploadCustomBg
+    if(cam){ cam.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:3;filter:none;'; }
+    if(canvas){ canvas.style.display = 'block'; canvas.style.zIndex = '4'; }
+    startBgCompositing(newBg);
 
   } else {
-    // Photo background (news/office/library etc) — COMPOSITED
-    // Camera hidden, composite canvas shows bg photo + camera (no pip)
-    if(cam){ cam.style.display = 'none'; }
-    if(canvas){ canvas.style.display = 'block'; canvas.style.zIndex = '4'; }
-    if(newBg !== 'none') preloadBgImage(newBg, BG_VARIANT[newBg]||0, function(){
+    // Photo backgrounds (news/office/library)
+    if(cam){ cam.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:3;filter:none;'; }
+    if(canvas){ canvas.style.display = 'block'; canvas.style.zIndex = '4'; canvas.style.cssText += ';position:absolute;inset:0;width:100%;height:100%;z-index:4;'; }
+
+    var variant = BG_VARIANT[newBg] || 0;
+    var cacheKey = newBg + '_' + variant;
+
+    if(BG_IMG_CACHE[cacheKey]){
       startBgCompositing(newBg);
-    });
-    if(!BG_IMG_CACHE[newBg+'_'+(BG_VARIANT[newBg]||0)]){
-      preloadBgImage(newBg, BG_VARIANT[newBg]||0, function(){ startBgCompositing(newBg); });
     } else {
-      startBgCompositing(newBg);
+      // Show gradient placeholder immediately, then load image
+      startBgCompositing(newBg); // starts with fallback gradient
+      preloadBgImage(newBg, variant, function(){
+        if(_currentBg === newBg) startBgCompositing(newBg); // restart with real image
+      });
     }
-    toast('Virtual background active','ok');
+    toast('Virtual background: ' + newBg,'ok');
   }
 }
 
@@ -3071,77 +3091,96 @@ function startBgCompositing(type){
 
   var canvas = document.getElementById('studio-composite-canvas');
   var cam    = document.getElementById('studio-cam');
-  if(!canvas || !cam) return;
+  if(!canvas) return;
 
-  // Make canvas visible, hide raw cam video
-  canvas.style.display  = 'block';
-  canvas.style.zIndex   = '6';
-  cam.style.display     = 'none';
-
+  canvas.style.display = 'block';
   var ctx = canvas.getContext('2d');
 
   function resize(){
     var wrap = document.getElementById('studio-canvas');
-    var W = wrap ? wrap.offsetWidth : 1280;
-    var H = wrap ? wrap.offsetHeight : 720;
+    var W = (wrap && wrap.offsetWidth > 10) ? wrap.offsetWidth : 1280;
+    var H = (wrap && wrap.offsetHeight > 10) ? wrap.offsetHeight : 720;
     if(canvas.width !== W || canvas.height !== H){
-      canvas.width  = W;
-      canvas.height = H;
+      canvas.width = W; canvas.height = H;
     }
     return {W:W, H:H};
   }
 
   function compositingFrame(){
-    if(_bgCompositingType !== type){ return; } // stopped
-    // Guard: don't draw if cam video is not ready
-    if(!cam || cam.readyState < 2 || cam.videoWidth === 0){
-      _bgCompositingRaf = requestAnimationFrame(compositingFrame);
-      return;
-    }
+    if(_bgCompositingType !== type) return;
+
     var dims = resize();
     var W = dims.W, H = dims.H;
-
     ctx.clearRect(0, 0, W, H);
 
-    if(type === 'blur'){
-      // Step 1: draw camera blurred as full background
-      ctx.save();
-      ctx.filter = 'blur(18px) brightness(.6) saturate(1.2)';
-      ctx.drawImage(cam, -30, -30, W+60, H+60);
-      ctx.filter = 'none';
-      ctx.restore();
-      // Step 2: draw clean camera sharp in centre (portrait crop)
-      ctx.save();
-      var cw = Math.round(W * 0.52), ch = Math.round(H * 0.9);
-      var cx = (W - cw) / 2, cy = (H - ch) / 2;
-      ctx.beginPath();
-      if(ctx.roundRect){
-        ctx.roundRect(cx, cy, cw, ch, 16);
-      } else {
-        ctx.rect(cx, cy, cw, ch);
-      }
-      ctx.clip();
-      ctx.drawImage(cam, cx, cy, cw, ch);
-      ctx.restore();
+    // Check if camera has valid video data
+    var camReady = cam && cam.readyState >= 2 && cam.videoWidth > 0 && cam.videoHeight > 0;
 
-    } else {
-      // Photo bg: draw photo, then camera fullscreen on top
-      var variant = BG_VARIANT[type] || 0;
-      var bgImg   = BG_IMG_CACHE[type+'_'+variant];
-      if(bgImg){
-        // Cover-fit photo
-        var scale = Math.max(W/bgImg.width, H/bgImg.height);
-        var bw = bgImg.width*scale, bh = bgImg.height*scale;
-        ctx.drawImage(bgImg, (W-bw)/2, (H-bh)/2, bw, bh);
+    if(type === 'blur'){
+      if(camReady){
+        // Draw blurred camera as background
+        ctx.save();
+        ctx.filter = 'blur(20px) brightness(.65) saturate(1.3)';
+        ctx.drawImage(cam, -40, -40, W+80, H+80);
+        ctx.filter = 'none';
+        ctx.restore();
+        // Draw sharp camera in portrait centre
+        ctx.save();
+        var cw = Math.round(W * 0.52), ch = Math.round(H * 0.92);
+        var cx = (W - cw) / 2, cy = (H - ch) / 2;
+        ctx.beginPath();
+        if(ctx.roundRect) ctx.roundRect(cx, cy, cw, ch, 14);
+        else ctx.rect(cx, cy, cw, ch);
+        ctx.clip();
+        ctx.drawImage(cam, cx, cy, cw, ch);
+        ctx.restore();
       } else {
-        // Fallback gradient while image loads
+        // Camera not ready yet — show blur placeholder
         var gr = ctx.createLinearGradient(0,0,W,H);
-        gr.addColorStop(0,'#0d1b2a'); gr.addColorStop(1,'#1e3a5f');
+        gr.addColorStop(0,'#1a1a2e'); gr.addColorStop(1,'#16213e');
         ctx.fillStyle = gr;
         ctx.fillRect(0,0,W,H);
+        ctx.fillStyle = 'rgba(255,255,255,.12)';
+        ctx.font = '16px Sora,sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Blur active — start camera to see effect', W/2, H/2);
       }
-      // Draw camera video on top — user appears in front of background
-      ctx.drawImage(cam, 0, 0, W, H);
+
+    } else if(type === 'custom-img'){
+      var bgImg = document.getElementById('studio-bg-img');
+      if(bgImg && bgImg.src && bgImg.naturalWidth > 0){
+        var sc = Math.max(W/bgImg.naturalWidth, H/bgImg.naturalHeight);
+        var bw = bgImg.naturalWidth*sc, bh = bgImg.naturalHeight*sc;
+        ctx.drawImage(bgImg, (W-bw)/2, (H-bh)/2, bw, bh);
+      }
+      if(camReady) ctx.drawImage(cam, 0, 0, W, H);
+
+    } else if(type === 'custom-vid'){
+      var bgVid = document.getElementById('studio-bg-vid');
+      if(bgVid && bgVid.readyState >= 2){
+        var sc2 = Math.max(W/bgVid.videoWidth, H/bgVid.videoHeight);
+        var bw2 = bgVid.videoWidth*sc2, bh2 = bgVid.videoHeight*sc2;
+        ctx.drawImage(bgVid, (W-bw2)/2, (H-bh2)/2, bw2, bh2);
+      }
+      if(camReady) ctx.drawImage(cam, 0, 0, W, H);
+
+    } else {
+      // Photo background (news/office/library etc)
+      var variant = BG_VARIANT[type] || 0;
+      var bgImg2  = BG_IMG_CACHE[type+'_'+variant];
+      if(bgImg2 && bgImg2.naturalWidth > 0){
+        var sc3 = Math.max(W/bgImg2.naturalWidth, H/bgImg2.naturalHeight);
+        var bw3 = bgImg2.naturalWidth*sc3, bh3 = bgImg2.naturalHeight*sc3;
+        ctx.drawImage(bgImg2, (W-bw3)/2, (H-bh3)/2, bw3, bh3);
+      } else {
+        // Fallback while loading
+        var gr2 = ctx.createLinearGradient(0,0,W,H);
+        gr2.addColorStop(0,'#0d1b2a'); gr2.addColorStop(1,'#1e3a5f');
+        ctx.fillStyle = gr2;
+        ctx.fillRect(0,0,W,H);
+      }
+      // Camera fullscreen on top
+      if(camReady) ctx.drawImage(cam, 0, 0, W, H);
     }
 
     // Lighting overlay
@@ -3150,11 +3189,8 @@ function startBgCompositing(type){
     _bgCompositingRaf = requestAnimationFrame(compositingFrame);
   }
 
-  // Give canvas a moment to get dimensions then start
-  setTimeout(function(){
-    var dims = resize();
-    _bgCompositingRaf = requestAnimationFrame(compositingFrame);
-  }, 50);
+  // Start immediately — don't wait for camera (show fallback until camera ready)
+  _bgCompositingRaf = requestAnimationFrame(compositingFrame);
 }
 
 function stopBgCompositing(){
@@ -3218,16 +3254,35 @@ function applyLightingFilter(){
   if(bgImg)bgImg.style.filter=f;if(bgVid)bgVid.style.filter=f;
 }
 function uploadCustomBg(inp){
-  if(!inp.files.length)return;
-  var file=inp.files[0],url=URL.createObjectURL(file);
+  if(!inp || !inp.files || !inp.files.length) return;
+  var file = inp.files[0];
+  var url  = URL.createObjectURL(file);
+
   if(file.type.startsWith('video/')){
-    var bgVid=document.getElementById('studio-bg-vid');if(bgVid){bgVid.src=url;bgVid.style.display='block';}
-    document.getElementById('studio-bg-canvas').style.display='none';_currentBg='custom-vid';
+    var bgVid = document.getElementById('studio-bg-vid');
+    if(bgVid){
+      bgVid.src = url;
+      bgVid.style.display = 'none'; // keep hidden, composite reads it
+      bgVid.play().catch(function(){});
+    }
+    // Switch to custom-vid compositing mode
+    var liveBtn = document.querySelector('.bg-btn[data-bg="none"]');
+    document.querySelectorAll('.bg-btn[data-bg]').forEach(function(b){ b.classList.remove('on'); });
+    setBg({dataset:{bg:'custom-vid'}});
   } else {
-    var bgImg=document.getElementById('studio-bg-img');if(bgImg){bgImg.src=url;bgImg.style.display='block';}
-    document.getElementById('studio-bg-canvas').style.display='none';_currentBg='custom-img';
+    // Image background
+    var bgImg = document.getElementById('studio-bg-img');
+    if(bgImg){
+      bgImg.src = url;
+      bgImg.style.display = 'none'; // composite reads it
+      bgImg.onload = function(){
+        if(_currentBg === 'custom-img') startBgCompositing('custom-img');
+      };
+    }
+    document.querySelectorAll('.bg-btn[data-bg]').forEach(function(b){ b.classList.remove('on'); });
+    setBg({dataset:{bg:'custom-img'}});
   }
-  applyLightingFilter();toast(file.name+' set as background','ok');
+  toast('✓ ' + file.name + ' set as background', 'ok');
 }
 
 // ══ BG DESIGNER ═══════════════════════════════════════════════════════════════
@@ -3500,12 +3555,12 @@ function openAIPresenter(){
     return;
   }
   if(!PROJECT.scenes || !PROJECT.scenes.length){
-    toast('No scenes yet — split your script first, then come back','info');
+    toast('No scenes yet — split your script first, then open AI Presenter','info');
     return;
   }
   openModal('ai-presenter-modal');
-  // Always auto-load scenes immediately when modal opens
-  loadAISceneList();
+  // Load scenes after modal is visible
+  setTimeout(loadAISceneList, 150);
 }
 function loadAIPhoto(inp){if(!inp.files.length)return;var f=inp.files[0];var rd=new FileReader();rd.onload=function(e){var img=document.getElementById('ai-photo-preview');if(img){img.src=e.target.result;img.style.display='block';}window._aiPhotoB64=e.target.result.split(',')[1];};rd.readAsDataURL(f);}// ══ KEYBOARD SHORTCUTS ════════════════════════════════════════════════════════
 document.addEventListener('keydown',function(e){
@@ -3561,7 +3616,151 @@ window.addEventListener('load',function(){
       supa.auth.signOut().then(function(){
         APP.user=null; APP.plan='free'; updateNavState(); navFree('home');
         console.log('Stale session cleared — please sign in again');
-console.log('AABStudio v3.0 loaded ✓');
+
+// ── SAFARI COMPATIBILITY: Explicitly expose all handler functions on window ──
+// Safari with strict scripts can lose inline handler access to closured functions
+window.handleScriptUpload    = handleScriptUpload;
+window.uploadSceneAsset      = uploadSceneAsset;
+window.uploadAssets          = uploadAssets;
+window.uploadCustomBg        = uploadCustomBg;
+window.uploadStudioAssets    = uploadStudioAssets;
+window.importToTimeline      = importToTimeline;
+window.loadAIPhoto           = loadAIPhoto;
+window.loadAISceneList       = loadAISceneList;
+window.startAIPresenter      = startAIPresenter;
+window.openAIPresenter       = openAIPresenter;
+window.closeModal            = closeModal;
+window.openModal             = openModal;
+window.setBg                 = setBg;
+window.setLighting           = setLighting;
+window.toggleDraw            = toggleDraw;
+window.clearDraw             = clearDraw;
+window.setDrawColor          = setDrawColor;
+window.setDrawMode           = setDrawMode;
+window.setOverlayPos         = setOverlayPos;
+window.showAssetNow          = showAssetNow;
+window.deleteStudioAsset     = deleteStudioAsset;
+window.toggleCamera          = toggleCamera;
+window.toggleMic             = toggleMic;
+window.toggleRecording       = toggleRecording;
+window.studioNext            = studioNext;
+window.studioPrev            = studioPrev;
+window.jumpScene             = jumpScene;
+window.studioTpToggle        = studioTpToggle;
+window.toggleTpAuto          = toggleTpAuto;
+window.toggleAdaptiveTp      = toggleAdaptiveTp;
+window.setTpSpd              = setTpSpd;
+window.setTpTextColor        = setTpTextColor;
+window.setTpBgOpacity        = setTpBgOpacity;
+window.resetTpScroll         = resetTpScroll;
+window.increaseTpFont        = increaseTpFont;
+window.decreaseTpFont        = decreaseTpFont;
+window.toggleMirror          = toggleMirror;
+window.toggleFocus           = toggleFocus;
+window.toggleTpPanel         = toggleTpPanel;
+window.setPipMode            = typeof setPipMode !== 'undefined' ? setPipMode : function(){};
+window.openStudioSettings    = openStudioSettings;
+window.applyStudioSettings   = applyStudioSettings;
+window.applySettingsCamera   = applySettingsCamera;
+window.applySettingsMic      = applySettingsMic;
+window.endStudioSession      = endStudioSession;
+window.retakeScene           = retakeScene;
+window.openBgDesigner        = openBgDesigner;
+window.bgDesignStyle         = bgDesignStyle;
+window.updateBgDesign        = updateBgDesign;
+window.applyBgDesign         = applyBgDesign;
+window.uploadCustomBgFile    = uploadCustomBg;
+window.pickPace              = pickPace;
+window.pickDur               = pickDur;
+window.scriptTab             = scriptTab;
+window.startSegmentation     = startSegmentation;
+window.selectScene           = selectScene;
+window.delScene              = delScene;
+window.dupeScene             = dupeScene;
+window.splitScene            = splitScene;
+window.copyScene             = copyScene;
+window.editScene             = editScene;
+window.openAssetAssign       = openAssetAssign;
+window.removeAssetFromScene  = removeAssetFromScene;
+window.assignAsset           = assignAsset;
+window.sidebarTab            = sidebarTab;
+window.triggerAssetUpload    = triggerAssetUpload;
+window.openRecordingStudio   = openRecordingStudio;
+window.exportFullScript      = exportFullScript;
+window.searchScenes          = searchScenes;
+window.generateSubtitles     = generateSubtitles;
+window.tl_setTool            = tl_setTool;
+window.tl_setZoom            = tl_setZoom;
+window.tl_fitToWindow        = tl_fitToWindow;
+window.tl_addTrack           = tl_addTrack;
+window.tl_deleteSelected     = tl_deleteSelected;
+window.tl_toggleSubtitles    = tl_toggleSubtitles;
+window.openSubtitleEditor    = openSubtitleEditor;
+window.editPlayPause         = editPlayPause;
+window.editSeek              = editSeek;
+window.deleteClip            = deleteClip;
+window.selectClip            = selectClip;
+window.addExternalClip       = addExternalClip;
+window.mergeAllClips         = mergeAllClips;
+window.doExport              = doExport;
+window.exportAllClips        = exportAllClips;
+window.exportTranscript      = exportTranscript;
+window.exportYTChapters      = exportYTChapters;
+window.pickFmt               = pickFmt;
+window.pickPlat              = pickPlat;
+window.setMusicVol           = setMusicVol;
+window.loadBgMusic           = loadBgMusic;
+window.loadSFX               = loadSFX;
+window.removeBgMusic         = removeBgMusic;
+window.tpToggle              = tpToggle;
+window.tpStart               = tpStart;
+window.tpExit                = tpExit;
+window.tpFontUp              = tpFontUp;
+window.tpFontDown            = tpFontDown;
+window.tpMirror              = tpMirror;
+window.tpSetSpd              = tpSetSpd;
+window.tpSetTheme            = tpSetTheme;
+window.tpShowRemote          = tpShowRemote;
+window.tpHideRemote          = tpHideRemote;
+window.tpFullscreen          = tpFullscreen;
+window.tpLoadSample          = tpLoadSample;
+window.tpToggleAdaptive      = tpToggleAdaptive;
+window.remoteSend            = remoteSend;
+window.setBilling            = setBilling;
+window.startCheckout         = startCheckout;
+window.grantCreatorAccess    = grantCreatorAccess;
+window.dashNav               = dashNav;
+window.loadDashboard         = loadDashboard;
+window.loadProject           = loadProject;
+window.deleteProject         = deleteProject;
+window.newProject            = newProject;
+window.heroStart             = heroStart;
+window.nav                   = nav;
+window.navFree               = navFree;
+window.authTab               = authTab;
+window.doSignIn              = doSignIn;
+window.doSignUp              = doSignUp;
+window.doSignOut             = doSignOut;
+window.openTeleprompter      = openTeleprompter;
+window.selectMode            = selectMode;
+window.confirmMode           = confirmMode;
+window.showUpgradeModal      = showUpgradeModal;
+window.showUpgradeModalPro   = showUpgradeModalPro;
+window.syncLabelScroll       = syncLabelScroll;
+window.saveSceneEditorAndClose = saveSceneEditorAndClose;
+window.closeSceneEditor      = closeSceneEditor;
+window.scenePrev             = scenePrev;
+window.sceneNext             = sceneNext;
+window.setSceneDurFromEditor = setSceneDurFromEditor;
+window.deleteSceneFromEditor = deleteSceneFromEditor;
+window.updateSceNarrWC       = updateSceNarrWC;
+window.removeSceneAsset      = removeSceneAsset;
+window.setAssetPosInEditor   = setAssetPosInEditor;
+window.setAssetSizeInEditor  = setAssetSizeInEditor;
+window.setAssetAnimInEditor  = setAssetAnimInEditor;
+window.initTpDrag            = typeof initTpDrag !== 'undefined' ? initTpDrag : function(){};
+console.log('AABStudio v3.1 loaded ✓ — Safari-compatible');
+
       });
     }
   });
@@ -4315,24 +4514,59 @@ function smartSplitScript(script, wpm, sceneDuration){
 function loadAISceneList(){
   var list = document.getElementById('ai-scenes-list');
   if(!list) return;
+
   if(!PROJECT.scenes || !PROJECT.scenes.length){
-    list.innerHTML = '<div style="font-size:12px;color:#6b7280;padding:8px;">No scenes yet — split your script first.</div>';
+    list.innerHTML = '<div style="font-size:12px;color:#6b7280;padding:10px;text-align:center;">No scenes yet — split your script first.</div>';
     return;
   }
+
   list.innerHTML = '';
+
+  // Header row with select all/clear
+  var hdr = document.createElement('div');
+  hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:4px 4px 8px;border-bottom:.5px solid #e5e7eb;margin-bottom:4px;';
+  var countSpan = document.createElement('span');
+  countSpan.style.cssText = 'font-size:11px;font-weight:600;color:#374151;';
+  countSpan.textContent = PROJECT.scenes.length + ' scenes';
+  var btnWrap = document.createElement('div');
+  btnWrap.style.cssText = 'display:flex;gap:8px;';
+  var selAll = document.createElement('button');
+  selAll.textContent = 'Select all';
+  selAll.style.cssText = 'font-size:10px;color:#00d4ff;background:none;border:none;cursor:pointer;';
+  selAll.onclick = function(){ list.querySelectorAll('input[type=checkbox]').forEach(function(c){ c.checked=true; }); };
+  var clrAll = document.createElement('button');
+  clrAll.textContent = 'Clear';
+  clrAll.style.cssText = 'font-size:10px;color:#6b7280;background:none;border:none;cursor:pointer;';
+  clrAll.onclick = function(){ list.querySelectorAll('input[type=checkbox]').forEach(function(c){ c.checked=false; }); };
+  btnWrap.appendChild(selAll);
+  btnWrap.appendChild(clrAll);
+  hdr.appendChild(countSpan);
+  hdr.appendChild(btnWrap);
+  list.appendChild(hdr);
+
   PROJECT.scenes.forEach(function(scene, i){
     var lbl = document.createElement('label');
-    lbl.style.cssText = 'display:flex;align-items:flex-start;gap:10px;padding:8px 4px;cursor:pointer;border-bottom:.5px solid #e5e7eb;';
+    lbl.style.cssText = 'display:flex;align-items:flex-start;gap:10px;padding:7px 4px;cursor:pointer;border-bottom:.5px solid #f3f4f6;';
+
     var chk = document.createElement('input');
     chk.type = 'checkbox';
     chk.value = scene.id;
-    chk.checked = (i < 3); // first 3 checked by default
-    chk.style.cssText = 'margin-top:3px;flex-shrink:0;accent-color:#00d4ff;width:14px;height:14px;';
+    chk.checked = (i < 5);
+    chk.style.cssText = 'margin-top:3px;flex-shrink:0;accent-color:#00d4ff;';
+
     var info = document.createElement('div');
     info.style.cssText = 'flex:1;min-width:0;';
-    info.innerHTML = '<div style="font-size:12px;font-weight:600;color:#111;">Scene '+(i+1)
-      +' <span style="font-size:10px;font-weight:400;color:#9ca3af;background:#f3f4f6;padding:1px 6px;border-radius:10px;">'+( scene.type||'MAIN')+'</span></div>'
-      +'<div style="font-size:11px;color:#6b7280;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(scene.narration||'').slice(0,90)+'</div>';
+
+    var title = document.createElement('div');
+    title.style.cssText = 'font-size:12px;font-weight:600;color:#111;';
+    title.textContent = 'Scene ' + (i+1) + ' • ' + (scene.type||'MAIN') + ' • ' + (scene.duration||8) + 's';
+
+    var narr = document.createElement('div');
+    narr.style.cssText = 'font-size:11px;color:#6b7280;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    narr.textContent = (scene.narration||'').slice(0, 100);
+
+    info.appendChild(title);
+    info.appendChild(narr);
     lbl.appendChild(chk);
     lbl.appendChild(info);
     list.appendChild(lbl);
