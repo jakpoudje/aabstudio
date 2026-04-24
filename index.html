@@ -2111,7 +2111,12 @@ async function startSegmentation() {
   try {
     var r=await fetch(API+'/api/segment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({script:script,wpm:PROJECT.wpm,sceneDuration:PROJECT.sceneDuration,title:title})});
     clearInterval(stepTimer); clearInterval(factTimer);
-    if(!r.ok){var ed=await r.json().catch(function(){return {};});throw new Error(ed.error||'Server error '+r.status);}
+    if(!r.ok){
+      var ed=await r.json().catch(function(){return {};});
+      var errDetail = ed.error || ed.detail || ('Server error '+r.status);
+      console.error('Segment error from server:', errDetail);
+      throw new Error(errDetail);
+    }
     var data=await r.json(); if(data.error) throw new Error(data.error);
     if(!data.scenes||!data.scenes.length) throw new Error('No scenes returned — try a longer script.');
     steps.forEach(function(id){var el=document.getElementById(id);if(el){el.classList.remove('run');el.classList.add('done');}});
@@ -2125,20 +2130,17 @@ async function startSegmentation() {
   } catch(e) {
     clearInterval(stepTimer); clearInterval(factTimer);
     var msg = e.message || 'Unknown error';
-    var isApiKey = msg.includes('API key') || msg.includes('credits') || msg.includes('503') || msg.includes('500');
-    if(isApiKey){
-      toast('AI segmentation unavailable — using smart split instead','info');
-      // Fallback: smart paragraph-based segmentation
-      var fallbackScenes = smartSplitScript(script, PROJECT.wpm, PROJECT.sceneDuration);
-      if(fallbackScenes.length){
-        PROJECT.scenes = fallbackScenes;
-        PROJECT.title  = title;
-        steps.forEach(function(id){var el=document.getElementById(id);if(el){el.classList.remove('run');el.classList.add('done');}});
-        if(prog) prog.style.width='100%';
-        saveProject();
-        setTimeout(function(){nav('scenes-pg');},700);
-        return;
-      }
+    // Always try smart local fallback — works even if API is down
+    toast('AI unavailable — splitting script locally...','info');
+    var fallbackScenes = smartSplitScript(script, PROJECT.wpm, PROJECT.sceneDuration);
+    if(fallbackScenes.length){
+      PROJECT.scenes = fallbackScenes;
+      PROJECT.title  = title;
+      steps.forEach(function(id){var el=document.getElementById(id);if(el){el.classList.remove('run');el.classList.add('done');}});
+      if(prog) prog.style.width='100%';
+      saveProject();
+      setTimeout(function(){nav('scenes-pg');},700);
+      return;
     }
     toast('Segmentation failed: '+msg,'err');
     nav('script-pg');
