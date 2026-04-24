@@ -366,10 +366,17 @@ button,input,select,textarea{font-family:inherit;}
 .studio-scene-prog-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--purple));transition:width .4s linear;}
 
 /* Teleprompter overlay */
-.studio-tp{position:absolute;bottom:160px;left:0;right:0;z-index:15;background:linear-gradient(to top,rgba(0,0,0,.85) 0%,rgba(0,0,0,.6) 60%,transparent 100%);padding:18px 26px 24px;}
-.tp-prev-txt{font-size:11px;color:rgba(255,255,255,.2);font-family:'JetBrains Mono',monospace;line-height:1.7;margin-bottom:7px;}
-.tp-cur-txt{font-size:clamp(16px,2.2vw,26px);font-weight:600;color:#fff;font-family:'JetBrains Mono',monospace;line-height:1.65;border-left:3px solid var(--accent);padding-left:14px;margin-bottom:7px;overflow-y:auto;max-height:200px;}
-.tp-next-txt{font-size:11px;color:rgba(255,255,255,.18);font-family:'JetBrains Mono',monospace;line-height:1.7;}
+.studio-tp{position:absolute;bottom:0;left:0;right:0;z-index:15;height:220px;background:rgba(0,0,0,.72);backdrop-filter:blur(4px);display:flex;flex-direction:column;overflow:hidden;transition:height .3s ease;}
+.studio-tp.collapsed{height:32px;}
+.studio-tp.collapsed .tp-body{display:none;}
+.tp-handle{height:32px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;cursor:pointer;flex-shrink:0;border-top:.5px solid rgba(255,255,255,.08);}
+.tp-handle-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.35);}
+.tp-body{flex:1;overflow:hidden;position:relative;display:flex;flex-direction:column;justify-content:center;}
+
+.tp-cur-txt{font-size:clamp(18px,2.4vw,28px);font-weight:600;color:#fff;font-family:'JetBrains Mono',monospace;line-height:2;overflow:hidden;white-space:nowrap;width:100%;padding:0 24px;letter-spacing:.01em;scroll-behavior:smooth;}
+.tp-prev-txt{font-size:clamp(12px,1.4vw,18px);color:rgba(255,255,255,.2);font-family:'JetBrains Mono',monospace;line-height:1.8;padding:0 24px;height:36px;overflow:hidden;white-space:nowrap;text-overflow:clip;}
+.tp-next-txt{font-size:clamp(12px,1.4vw,18px);color:rgba(255,255,255,.2);font-family:'JetBrains Mono',monospace;line-height:1.8;padding:0 24px;height:36px;overflow:hidden;white-space:nowrap;text-overflow:clip;}
+
 
 /* Studio controls */
 .studio-ctrl{position:absolute;bottom:0;left:0;right:0;z-index:25;padding:7px 14px;background:rgba(0,0,0,.62);backdrop-filter:blur(10px);display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
@@ -1194,9 +1201,20 @@ button,input,select,textarea{font-family:inherit;}
         <div class="studio-scene-prog"><div class="studio-scene-prog-fill" id="scene-prog-fill"></div></div>
         <!-- Teleprompter -->
         <div class="studio-tp" id="studio-tp">
-          <div class="tp-prev-txt" id="tp-prev"></div>
-          <div class="tp-cur-txt" id="tp-cur">Select a scene to begin</div>
-          <div class="tp-next-txt" id="tp-next"></div>
+          <!-- Collapse handle -->
+          <div class="tp-handle" onclick="toggleTpPanel()">
+            <span class="tp-handle-label">Teleprompter</span>
+            <span id="tp-collapse-icon" style="font-size:11px;color:rgba(255,255,255,.3);">▼ collapse</span>
+          </div>
+          <!-- Teleprompter body -->
+          <div class="tp-body" id="tp-body">
+            <!-- Previous line (fading out) -->
+            <div class="tp-prev-txt" id="tp-prev" style="opacity:.3;"></div>
+            <!-- Current line with word highlights -->
+            <div class="tp-cur-txt" id="tp-cur" style="position:relative;"></div>
+            <!-- Next line (preview) -->
+            <div class="tp-next-txt" id="tp-next" style="opacity:.25;"></div>
+          </div>
         </div>
         <!-- Controls Bar — grouped and colour-coded -->
         <div class="studio-ctrl" style="display:flex;flex-direction:column;gap:0;padding:0;">
@@ -2878,58 +2896,132 @@ function preloadBgImage(type,variant,cb){
 function setBg(el){
   var newBg = el ? el.dataset.bg : _currentBg;
 
-  // Cycle variant if same bg clicked twice
+  // Cycle variant if same bg clicked again
   if(newBg === _currentBg && newBg !== 'none'){
     BG_VARIANT[newBg] = ((BG_VARIANT[newBg]||0)+1) % Math.max(1,(BG_IMAGES[newBg]||[]).length||1);
     delete BG_IMG_CACHE[newBg+'_'+BG_VARIANT[newBg]];
-    var urls = BG_IMAGES[newBg];
-    if(urls && urls.length > 1) toast('Background '+(BG_VARIANT[newBg]+1)+' of '+urls.length,'info');
   }
 
   document.querySelectorAll('.bg-btn[data-bg]').forEach(function(b){ b.classList.remove('on'); });
   if(el) el.classList.add('on');
   _currentBg = newBg;
 
-  var cam = document.getElementById('studio-cam');
-  var bgCanvas = document.getElementById('studio-bg-canvas');
+  var cam    = document.getElementById('studio-cam');
+  var canvas = document.getElementById('studio-composite-canvas');
 
   if(newBg === 'none'){
-    // Live camera — fullscreen, no filter
-    if(cam) cam.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;filter:none;';
-    if(bgCanvas) bgCanvas.style.display = 'none';
+    // Raw camera fullscreen, no filter, no compositing
+    if(cam){
+      cam.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;filter:none;';
+      cam.style.display = 'block';
+    }
+    if(canvas) canvas.style.display = 'none';
+    stopBgCompositing();
     STUDIO._pipMode = false;
 
   } else if(newBg === 'blur'){
-    // Blur: apply CSS blur to camera itself — works even fullscreen
-    if(cam) cam.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;filter:blur(12px) brightness(.8);';
-    if(bgCanvas) bgCanvas.style.display = 'none';
-    STUDIO._pipMode = false;
-    toast('Blur background active','ok');
+    // Blur the camera feed using canvas compositing
+    if(cam){ cam.style.display = 'none'; }
+    if(canvas){ canvas.style.display = 'block'; canvas.style.zIndex = '4'; }
+    startBgCompositing('blur');
 
   } else if(newBg === 'dark'){
-    // Dark grade — CSS filter on camera
-    if(cam) cam.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;filter:brightness(.35) contrast(1.2);';
-    if(bgCanvas) bgCanvas.style.display = 'none';
-    STUDIO._pipMode = false;
-    toast('Dark mode active','ok');
+    if(cam){ cam.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;filter:brightness(.3) contrast(1.15);'; }
+    if(canvas) canvas.style.display = 'none';
+    stopBgCompositing();
 
   } else if(newBg === 'green'){
-    // Green screen — show green canvas
-    if(cam) cam.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;filter:none;';
+    if(cam){ cam.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;filter:none;'; }
+    if(canvas) canvas.style.display = 'none';
+    stopBgCompositing();
+    // Show green background behind
+    var bgCanvas = document.getElementById('studio-bg-canvas');
     if(bgCanvas){ bgCanvas.style.display='block'; renderBgLayer(); }
-    toast('Green screen active','ok');
+    toast('Green screen active — key out in post','ok');
 
   } else {
-    // Photo backgrounds (news/office/library/etc)
-    // Camera goes to PiP — background fills canvas
-    if(!STUDIO._pipMode){
-      if(cam) cam.style.cssText = 'position:absolute;bottom:90px;right:16px;width:260px;height:146px;object-fit:cover;z-index:6;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.6);border:2px solid rgba(255,255,255,.2);filter:none;';
-      STUDIO._pipMode = true;
+    // Photo background (news/office/library etc) — COMPOSITED
+    // Camera hidden, composite canvas shows bg photo + camera (no pip)
+    if(cam){ cam.style.display = 'none'; }
+    if(canvas){ canvas.style.display = 'block'; canvas.style.zIndex = '4'; }
+    if(newBg !== 'none') preloadBgImage(newBg, BG_VARIANT[newBg]||0, function(){
+      startBgCompositing(newBg);
+    });
+    if(!BG_IMG_CACHE[newBg+'_'+(BG_VARIANT[newBg]||0)]){
+      preloadBgImage(newBg, BG_VARIANT[newBg]||0, function(){ startBgCompositing(newBg); });
+    } else {
+      startBgCompositing(newBg);
     }
-    if(newBg !== 'none' && newBg !== 'green') preloadBgImage(newBg, BG_VARIANT[newBg]||0, null);
-    requestAnimationFrame(function(){ requestAnimationFrame(function(){ renderBgLayer(); }); });
-    toast('Background set — camera in PiP. Click 📷 PiP to toggle.','ok');
+    toast('Virtual background active','ok');
   }
+}
+
+var _bgCompositingRaf = null;
+var _bgCompositingType = null;
+
+function startBgCompositing(type){
+  _bgCompositingType = type;
+  stopBgCompositing();
+
+  var canvas = document.getElementById('studio-composite-canvas');
+  var cam    = document.getElementById('studio-cam');
+  if(!canvas || !cam) return;
+
+  var ctx = canvas.getContext('2d');
+
+  function compositingFrame(){
+    if(_bgCompositingType !== type) return;
+    if(!STUDIO.stream || !STUDIO.stream.active){ _bgCompositingRaf = requestAnimationFrame(compositingFrame); return; }
+
+    var W = canvas.offsetWidth  || 1280;
+    var H = canvas.offsetHeight || 720;
+    if(canvas.width !== W || canvas.height !== H){ canvas.width = W; canvas.height = H; }
+
+    ctx.clearRect(0, 0, W, H);
+
+    if(type === 'blur'){
+      // Draw camera blurred as background, then sharp camera in center
+      ctx.filter = 'blur(20px) brightness(.7)';
+      ctx.drawImage(cam, -40, -40, W+80, H+80);
+      ctx.filter = 'none';
+      // Rounded camera portrait in center
+      var cw = Math.round(W * 0.55), ch = Math.round(H * 0.85);
+      var cx = (W - cw) / 2, cy = (H - ch) / 2;
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect ? ctx.roundRect(cx, cy, cw, ch, 18) : ctx.rect(cx, cy, cw, ch);
+      ctx.clip();
+      ctx.drawImage(cam, cx, cy, cw, ch);
+      ctx.restore();
+    } else {
+      // Photo background: draw photo, then camera in full on top
+      var variant = BG_VARIANT[type] || 0;
+      var bgImg   = BG_IMG_CACHE[type+'_'+variant];
+      if(bgImg){
+        // Cover-fit background
+        var scale = Math.max(W/bgImg.width, H/bgImg.height);
+        var bw = bgImg.width*scale, bh = bgImg.height*scale;
+        ctx.drawImage(bgImg, (W-bw)/2, (H-bh)/2, bw, bh);
+      } else {
+        ctx.fillStyle = '#1a2035';
+        ctx.fillRect(0, 0, W, H);
+      }
+      // Draw camera fullscreen on top (user appears in front of background)
+      ctx.drawImage(cam, 0, 0, W, H);
+    }
+
+    // Apply lighting filter
+    applyLightingToCtx(ctx, W, H);
+
+    _bgCompositingRaf = requestAnimationFrame(compositingFrame);
+  }
+
+  _bgCompositingRaf = requestAnimationFrame(compositingFrame);
+}
+
+function stopBgCompositing(){
+  if(_bgCompositingRaf){ cancelAnimationFrame(_bgCompositingRaf); _bgCompositingRaf = null; }
+  _bgCompositingType = null;
 }
 
 function setLighting(type,el){
@@ -3513,43 +3605,49 @@ function updateTP(){
   var prevScene = PROJECT.scenes[STUDIO.currentScene - 1];
   var nextScene = PROJECT.scenes[STUDIO.currentScene + 1];
 
-  var prev   = document.getElementById('tp-prev');
-  var cur    = document.getElementById('tp-cur');
-  var next   = document.getElementById('tp-next');
-  var pill   = document.getElementById('st-scene-pill');
-  var stName = document.getElementById('st-scene-name');
-  var cnt    = document.getElementById('st-scene-cnt');
-  var scnCtr = document.getElementById('studio-scene-counter');
+  var prevEl = document.getElementById('tp-prev');
+  var curEl  = document.getElementById('tp-cur');
+  var nextEl = document.getElementById('tp-next');
 
-  // ── Previous / next scene previews ─────────────────────────────────────────
-  if(prev) prev.textContent = prevScene ? (prevScene.narration||'').slice(0,80)+'…' : '';
-  if(next) next.textContent = nextScene ? (nextScene.narration||'').slice(0,80)+'…' : '';
+  // ── Prev line (faded, last sentence of previous scene) ───────────────────
+  if(prevEl){
+    var prevText = prevScene ? (prevScene.narration||'').trim() : '';
+    // Show last ~60 chars
+    if(prevText.length > 60) prevText = '…' + prevText.slice(-60);
+    prevEl.textContent = prevText;
+  }
 
-  // ── Current scene — build word spans for highlighting ─────────────────────
-  if(cur){
+  // ── Next line (preview of next scene first sentence) ─────────────────────
+  if(nextEl){
+    var nextText = nextScene ? (nextScene.narration||'').trim() : '';
+    if(nextText.length > 80) nextText = nextText.slice(0,80) + '…';
+    nextEl.textContent = nextText;
+  }
+
+  // ── Current line — split into word spans for highlighting ─────────────────
+  if(curEl){
     if(!scene){
-      cur.innerHTML = '<span style="color:rgba(255,255,255,.4);">No scenes yet — go back and split your script first.</span>';
+      curEl.innerHTML = '<span style="color:rgba(255,255,255,.3);">Select a scene to begin</span>';
     } else {
-      var narration = scene.narration || '(No narration)';
-      var words = narration.split(/\s+/);
-      cur.innerHTML = words.map(function(w, i){
-        return '<span id="tw'+i+'" style="color:#fff;transition:color .1s;">'+w+'</span>';
-      }).join(' ');
-      // Scroll to top
-      cur.scrollTop = 0;
-      cur.parentElement.scrollTop = 0;
+      var words = (scene.narration||'').trim().split(/\s+/);
+      curEl.innerHTML = words.map(function(w,i){
+        return '<span id="tw'+i+'" style="display:inline-block;margin-right:6px;color:rgba(255,255,255,.35);transition:color .08s,transform .08s;">'+w+'</span>';
+      }).join('');
     }
   }
 
   // ── Update counters ────────────────────────────────────────────────────────
-  var total = PROJECT.scenes.length;
-  var scNum = STUDIO.currentScene + 1;
+  var total  = PROJECT.scenes.length;
+  var scNum  = STUDIO.currentScene + 1;
+  var pill   = document.getElementById('st-scene-pill');
+  var stName = document.getElementById('st-scene-name');
+  var cnt    = document.getElementById('st-scene-cnt');
+  var scnCtr = document.getElementById('studio-scene-counter');
   if(pill)   pill.textContent   = 'Scene ' + scNum;
-  if(stName) stName.textContent = scene ? (scene.type||'MAIN') + ' · ' + (scene.narration||'').slice(0,40) : '';
+  if(stName) stName.textContent = scene ? (scene.type||'MAIN') : '';
   if(cnt)    cnt.textContent    = scNum + '/' + total;
   if(scnCtr) scnCtr.textContent = scNum + '/' + total;
 
-  // Reset progress bar
   var pf = document.getElementById('scene-prog-fill');
   if(pf) pf.style.width = '0%';
 
@@ -3812,65 +3910,87 @@ function startRec(){
 }
 
 function startTpAutoTimer(){
-  var scene = PROJECT.scenes[STUDIO.currentScene]; if(!scene) return;
-  var words    = (scene.narration||'').split(/\s+/);
-  var totalMs  = (words.length / (STUDIO.tpSpeed||80)) * 60000;
-  var startTs  = null;
+  var scene = PROJECT.scenes[STUDIO.currentScene];
+  if(!scene) return;
+  var words   = (scene.narration||'').trim().split(/\s+/);
+  if(!words.length) return;
+  var wpm     = STUDIO.tpSpeed || 80;
+  var msPerW  = 60000 / wpm;
+  var totalMs = words.length * msPerW;
+  var startTs = null;
+  var lastWi  = -1;
 
   function frame(ts){
     if(!STUDIO_TP.running && !STUDIO.tpAuto) return;
     if(!startTs) startTs = ts;
     var elapsed  = ts - startTs;
     var progress = Math.min(elapsed / totalMs, 1);
-    var wi       = Math.floor(progress * words.length);
+    var wi       = Math.min(Math.floor(elapsed / msPerW), words.length - 1);
 
-    // Highlight current word
-    words.forEach(function(_, i){
-      var s = document.getElementById('tw' + i);
-      if(s) s.style.color = i < wi ? 'rgba(255,255,255,.18)' : i === wi ? 'var(--gold)' : '#fff';
-    });
+    // Only update DOM when word index changes
+    if(wi !== lastWi){
+      lastWi = wi;
 
-    // Scroll current word into view
-    var curEl = document.getElementById('tw' + wi);
-    if(curEl){
-      var container = document.getElementById('tp-cur');
-      if(container){
-        var elTop = curEl.offsetTop;
-        var contH = container.clientHeight;
-        container.scrollTop = Math.max(0, elTop - contH/2);
+      // Highlight words
+      for(var k = 0; k < words.length; k++){
+        var span = document.getElementById('tw' + k);
+        if(!span) continue;
+        if(k < wi){
+          // Past words — dim
+          span.style.color     = 'rgba(255,255,255,.2)';
+          span.style.transform = '';
+        } else if(k === wi){
+          // Current word — gold, slightly larger
+          span.style.color     = '#f59e0b';
+          span.style.transform = 'scale(1.08)';
+          // Scroll this word into view within tp-cur
+          var curEl = document.getElementById('tp-cur');
+          if(curEl){
+            var spanLeft = span.offsetLeft;
+            var curW     = curEl.offsetWidth;
+            curEl.scrollLeft = Math.max(0, spanLeft - curW * 0.3);
+          }
+        } else {
+          // Future words — white
+          span.style.color     = 'rgba(255,255,255,.75)';
+          span.style.transform = '';
+        }
+      }
+
+      // Progress bar
+      var pf = document.getElementById('scene-prog-fill');
+      if(pf) pf.style.width = (progress * 100) + '%';
+
+      // When near end of current narration line (~every 10 words),
+      // update prev/next preview context
+      if(wi % 10 === 0 && wi > 0){
+        var pv = document.getElementById('tp-prev');
+        var nx = document.getElementById('tp-next');
+        if(pv){ var passed = words.slice(Math.max(0,wi-8), wi).join(' '); pv.textContent = passed.length > 60 ? '…'+passed.slice(-60) : passed; }
       }
     }
-
-    // Scene progress bar
-    var pf = document.getElementById('scene-prog-fill');
-    if(pf) pf.style.width = (progress * 100) + '%';
 
     if(progress < 1){
       _tpAutoTimer = requestAnimationFrame(frame);
     } else {
-      // Scene complete — advance
+      // Scene complete
       var wasRunning = STUDIO_TP.running;
       var wasSynced  = STUDIO.tpAuto;
-      var hasNext    = STUDIO.currentScene < PROJECT.scenes.length - 1;
       STUDIO_TP.running = false;
       var btn = document.getElementById('btn-tp-start');
-      if(btn){ btn.textContent='▶ Prompter'; btn.style.background=''; btn.style.borderColor=''; }
-
-      if(hasNext){
+      if(btn){ btn.textContent='▶ Practice'; btn.style.background=''; btn.style.borderColor=''; }
+      if(STUDIO.currentScene < PROJECT.scenes.length - 1){
         setTimeout(function(){
           studioNext();
-          if(wasRunning || wasSynced){
-            setTimeout(function(){ studioTpStart(); }, 400);
-          }
-        }, 500);
+          if(wasRunning || wasSynced) setTimeout(function(){ studioTpStart(); }, 300);
+        }, 400);
       } else {
         toast('✓ All scenes complete','ok');
       }
     }
   }
 
-  // Cancel any previous rAF
-  if(_tpAutoTimer){ cancelAnimationFrame(_tpAutoTimer); }
+  if(_tpAutoTimer) cancelAnimationFrame(_tpAutoTimer);
   _tpAutoTimer = requestAnimationFrame(frame);
 }
 
@@ -4999,6 +5119,14 @@ function splitClipAtPlayhead(){
 }
 
 
+
+function toggleTpPanel(){
+  var tp   = document.getElementById('studio-tp');
+  var icon = document.getElementById('tp-collapse-icon');
+  if(!tp) return;
+  var collapsed = tp.classList.toggle('collapsed');
+  if(icon) icon.textContent = collapsed ? '▲ expand' : '▼ collapse';
+}
 
 </script>
 
