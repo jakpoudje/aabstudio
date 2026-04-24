@@ -134,6 +134,7 @@ const HEYGEN_KEY     = process.env.HEYGEN_API_KEY;
 const OPENAI_KEY     = process.env.OPENAI_API_KEY;
 const STRIPE_KEY     = process.env.STRIPE_SECRET_KEY;
 const MODEL          = 'claude-sonnet-4-6';
+const MODEL_FALLBACK = 'claude-sonnet-4-5-20250929';
 
 // ── HEALTH ────────────────────────────────────────────────────────────────────
 // Check Supabase service key is set
@@ -225,8 +226,11 @@ app.post('/api/segment', async (req, res) => {
     const wordsPerScene = Math.round((wpm / 60) * sceneDuration);
     const text          = script.trim().slice(0, 60000);
 
-    const r = await anthropic.messages.create({
-      model: MODEL, max_tokens: 12000,
+    // Try primary model, fall back to previous if not supported
+    let r;
+    try {
+      r = await anthropic.messages.create({
+        model: MODEL, max_tokens: 12000,
       system: `You are a teleprompter scene segmentation engine.
 Split the provided script into presenter scenes for teleprompter recording.
 DO NOT analyse, critique, or rewrite. Preserve exact wording from the script.
@@ -257,7 +261,16 @@ RESPOND WITH ONLY THIS JSON — no markdown fences, no explanation, no preamble:
   ]
 }`,
       messages: [{ role: 'user', content: `Segment this script:\n\n${text}\n\nReturn ONLY valid JSON, nothing else.` }]
-    });
+      });
+    } catch(modelErr) {
+      if(modelErr.status === 404 || modelErr.message?.includes('model')) {
+        r = await anthropic.messages.create({
+          model: MODEL_FALLBACK, max_tokens: 12000,
+          system: `You are a teleprompter scene segmentation engine. Split the script into scenes. Respond ONLY with valid JSON.`,
+          messages: [{ role: 'user', content: `Segment this script:\n\n${text}\n\nReturn ONLY valid JSON.` }]
+        });
+      } else { throw modelErr; }
+    }
 
     const raw = r.content.map(c => c.text || '').join('').trim();
     const j   = raw.indexOf('{');
