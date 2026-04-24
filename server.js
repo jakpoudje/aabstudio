@@ -224,13 +224,25 @@ app.post('/api/segment', async (req, res) => {
     }
 
     const wordsPerScene = Math.round((wpm / 60) * sceneDuration);
-    const text          = script.trim().slice(0, 60000);
+    const fullText = script.trim();
+    // For very long scripts, Claude can't return all scenes in one response
+    // Limit to ~400 words per scene * max scenes that fit in 16k tokens (~60 scenes max)
+    // Each scene JSON is ~200 tokens, so 60 scenes = 12000 tokens for scenes alone
+    const MAX_SCENES_PER_CALL = 50;
+    const approxSceneCount = Math.ceil(fullText.split(/\s+/).length / wordsPerScene);
+    // If script would produce > MAX_SCENES_PER_CALL scenes, truncate to fit
+    const maxWords = MAX_SCENES_PER_CALL * wordsPerScene;
+    const words = fullText.split(/\s+/);
+    const text = words.length > maxWords 
+      ? words.slice(0, maxWords).join(' ') + ' [Script continues — remaining scenes will use local segmentation]'
+      : fullText;
+    const isLongScript = words.length > maxWords;
 
     // Try primary model, fall back to previous if not supported
     let r;
     try {
       r = await anthropic.messages.create({
-        model: MODEL, max_tokens: 12000,
+        model: MODEL, max_tokens: 16000,
       system: `You are a teleprompter scene segmentation engine.
 Split the provided script into presenter scenes for teleprompter recording.
 DO NOT analyse, critique, or rewrite. Preserve exact wording from the script.
@@ -242,7 +254,9 @@ RULES:
 - Scene types: INTRO, MAIN, TRANSITION, SUMMARY, CONCLUSION, HOOK
 - Max scene duration: 10 seconds. No scene should exceed 10s worth of words.
 
-RESPOND WITH ONLY THIS JSON — no markdown fences, no explanation, no preamble:
+CRITICAL: Your response must be pure valid JSON only. No markdown, no explanation, no text before or after.
+Escape any double quotes inside narration strings with backslash. Replace actual newlines in narration with spaces.
+RESPOND WITH ONLY THIS JSON:
 {
   "title": "${title.replace(/"/g, "'")}",
   "totalScenes": 0,
@@ -265,7 +279,7 @@ RESPOND WITH ONLY THIS JSON — no markdown fences, no explanation, no preamble:
     } catch(modelErr) {
       if(modelErr.status === 404 || modelErr.message?.includes('model')) {
         r = await anthropic.messages.create({
-          model: MODEL_FALLBACK, max_tokens: 12000,
+          model: MODEL_FALLBACK, max_tokens: 16000,
           system: `You are a teleprompter scene segmentation engine. Split the script into scenes. Respond ONLY with valid JSON.`,
           messages: [{ role: 'user', content: `Segment this script:\n\n${text}\n\nReturn ONLY valid JSON.` }]
         });
@@ -274,25 +288,64 @@ RESPOND WITH ONLY THIS JSON — no markdown fences, no explanation, no preamble:
 
     const raw = r.content.map(c => c.text || '').join('').trim();
     const j   = raw.indexOf('{');
-    if (j === -1) {
-      throw new Error('AI returned no valid JSON. Check your Anthropic credits at console.anthropic.com');
-    }
+    if (j === -1) throw new Error('AI returned no valid JSON');
 
-    // Extract JSON by counting braces — handles text after the JSON block
-    let depth = 0, k = -1;
+    // Smart JSON extraction — handles truncated responses
+    // Try finding last complete scene by looking for last valid "}" before any trailing text
+    let depth = 0, k = -1, lastValidK = -1;
     for (let ci = j; ci < raw.length; ci++) {
       if (raw[ci] === '{') depth++;
-      else if (raw[ci] === '}') { depth--; if (depth === 0) { k = ci; break; } }
+      else if (raw[ci] === '}') { 
+        depth--; 
+        if (depth === 0) { k = ci; break; }
+        if (depth === 1) lastValidK = ci; // track last complete scene closing
+      }
     }
-    if (k === -1) throw new Error('Malformed JSON from AI — could not find closing brace');
+    // If full JSON not found (truncated), try to repair by closing open braces
+    if (k === -1 && lastValidK > -1) {
+      // Truncated response — close the arrays and objects
+      k = lastValidK;
+      // We'll repair below
+    }
+    if (k === -1) throw new Error('Could not find valid JSON in AI response');
 
-    // Clean common AI formatting issues before parsing
-    let jsonStr = raw.slice(j, k + 1)
-      .replace(/,\s*}/g, '}')      // trailing commas in objects
-      .replace(/,\s*\]/g, ']')     // trailing commas in arrays
-      .replace(/[ -]/g, ' '); // control chars
-
-    const result = JSON.parse(jsonStr);
+    let result;
+    try {
+      let jsonStr = raw.slice(j, k + 1);
+      // Clean up common AI JSON issues
+      jsonStr = jsonStr
+        .replace(/,\s*}/g, '}')
+        .replace(/,\s*]/g, ']')
+        .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, ' ')
+        .replace(/\n/g, ' ')
+        .replace(/\t/g, ' ');
+      result = JSON.parse(jsonStr);
+    } catch(parseErr) {
+      // Truncated JSON repair: extract complete scenes only
+      console.warn('JSON parse failed, attempting repair:', parseErr.message);
+      // Extract all complete scene objects
+      const sceneRx = /\{[^{}]*"narration"[^{}]*\}/g;
+      // Regex fallback: extract narration fields directly
+      console.warn('JSON.parse failed, using regex:', parseErr.message);
+      const sceneMatches = [];
+      // Better regex that handles escaped quotes
+      const rx = /"narration"\s*:\s*"((?:[^\\"]|\\.)*)"/g;
+      let m2, idx2 = 0;
+      while ((m2 = rx.exec(raw)) !== null) {
+        sceneMatches.push({
+          id: 's_' + (sceneMatches.length + 1),
+          sceneNumber: sceneMatches.length + 1,
+          type: idx2 === 0 ? 'INTRO' : 'MAIN',
+          narration: m2[1].replace(/\n/g, ' ').replace(/\"/g, '"'),
+          wordCount: m2[1].split(/\s+/).length,
+          duration: Math.min(sceneDuration, 10),
+          notes: '', assets: [], status: 'draft'
+        });
+        idx2++;
+      }
+      if (sceneMatches.length === 0) throw new Error('Could not parse AI response');
+      result = { scenes: sceneMatches, title };
+    }
     let scenes   = result.scenes || [];
 
     // Normalise every scene — enforce max 10s duration
@@ -307,6 +360,28 @@ RESPOND WITH ONLY THIS JSON — no markdown fences, no explanation, no preamble:
       assets:      [],
       status:      'draft'
     })).filter(s => s.narration.length > 0); // remove empty scenes
+
+    // If script was truncated, add remaining words as locally-split scenes
+    if(isLongScript && scenes.length > 0) {
+      const coveredWords = scenes.reduce((t,s) => t + (s.wordCount||0), 0);
+      const remainingWords = words.slice(coveredWords);
+      let wi = 0;
+      while(wi < remainingWords.length) {
+        const chunk = remainingWords.slice(wi, wi + wordsPerScene).join(' ');
+        if(chunk.trim().length > 5) {
+          scenes.push({
+            id: 's_' + (scenes.length + 1),
+            sceneNumber: scenes.length + 1,
+            type: wi === 0 ? 'TRANSITION' : 'MAIN',
+            narration: chunk,
+            wordCount: chunk.split(/\s+/).length,
+            duration: Math.min(sceneDuration, 10),
+            notes: '', assets: [], status: 'draft'
+          });
+        }
+        wi += wordsPerScene;
+      }
+    }
 
     const totalSecs = scenes.reduce((t, s) => t + s.duration, 0);
     const mins      = Math.floor(totalSecs / 60);
