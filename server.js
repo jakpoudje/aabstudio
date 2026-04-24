@@ -710,77 +710,78 @@ async function generateWithKling(req, res, { referenceImageBase64, audioBase64, 
 
 // ── HeyGen: correct API flow ──────────────────────────────────────────────
 // HeyGen v2 requires: upload audio → get asset_id → use in video/generate
+// ── HeyGen: correct API flow per official docs ────────────────────────────
+// Docs: https://docs.heygen.com/reference/upload-asset
+// Asset upload = RAW BINARY body, Content-Type: audio/mpeg, NO form fields
 async function generateWithHeyGen(req, res, { referenceImageBase64, audioBase64, ratio }) {
-  // Step 1: Upload audio to HeyGen asset storage
-  // HeyGen /v1/asset accepts multipart upload, returns audio_asset_id
-  const audioBuffer  = Buffer.from(audioBase64, 'base64');
-  const audioBoundary = '----AudioBoundary' + Date.now();
-  const audioForm    = Buffer.concat([
-    Buffer.from(`--${audioBoundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.mp3"\r\nContent-Type: audio/mpeg\r\n\r\n`),
-    audioBuffer,
-    Buffer.from(`\r\n--${audioBoundary}--\r\n`)
-  ]);
 
+  // Step 1: Upload audio as RAW BINARY (not multipart, not JSON)
+  const audioBuffer = Buffer.from(audioBase64, 'base64');
+
+  console.log(`HeyGen: uploading audio ${audioBuffer.length} bytes...`);
   const audioUpload = await fetch('https://upload.heygen.com/v1/asset', {
     method:  'POST',
-    headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': `multipart/form-data; boundary=${audioBoundary}` },
-    body:    audioForm
+    headers: {
+      'X-Api-Key':    HEYGEN_KEY,
+      'Content-Type': 'audio/mpeg'  // RAW binary — no multipart, no form fields
+    },
+    body: audioBuffer  // raw binary buffer directly
   });
 
   if (!audioUpload.ok) {
     const errText = await audioUpload.text();
-    throw new Error(`HeyGen audio upload failed: ${audioUpload.status} — ${errText.slice(0,150)}`);
+    throw new Error(`HeyGen audio upload failed: ${audioUpload.status} — ${errText.slice(0, 200)}`);
   }
 
-  const audioData = await audioUpload.json();
-  const audioAssetId = audioData.data?.id || audioData.data?.asset_id || audioData.id;
+  const audioData   = await audioUpload.json();
+  const audioAssetId = audioData.data?.id || audioData.data?.asset_id || audioData.asset_id || audioData.id;
   if (!audioAssetId) {
-    throw new Error(`HeyGen audio upload returned no asset_id. Response: ${JSON.stringify(audioData).slice(0,150)}`);
+    throw new Error(`HeyGen audio upload: no asset_id returned. Response: ${JSON.stringify(audioData).slice(0, 200)}`);
   }
-  console.log('HeyGen audio uploaded, asset_id:', audioAssetId);
+  console.log('HeyGen audio asset_id:', audioAssetId);
 
-  // Step 2: Upload photo (optional)
+  // Step 2: Upload photo as RAW BINARY (if provided)
   let tpId = null;
   if (referenceImageBase64) {
     try {
-      const imageBuffer  = Buffer.from(referenceImageBase64, 'base64');
-      const imgBoundary  = '----ImgBoundary' + Date.now();
-      const imgForm      = Buffer.concat([
-        Buffer.from(`--${imgBoundary}\r\nContent-Disposition: form-data; name="file"; filename="photo.jpg"\r\nContent-Type: image/jpeg\r\n\r\n`),
-        imageBuffer,
-        Buffer.from(`\r\n--${imgBoundary}--\r\n`)
-      ]);
+      const imgBuffer = Buffer.from(referenceImageBase64, 'base64');
+      console.log(`HeyGen: uploading photo ${imgBuffer.length} bytes...`);
 
       const photoUp = await fetch('https://upload.heygen.com/v1/talking_photo', {
         method:  'POST',
-        headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': `multipart/form-data; boundary=${imgBoundary}` },
-        body:    imgForm
+        headers: {
+          'X-Api-Key':    HEYGEN_KEY,
+          'Content-Type': 'image/jpeg'  // RAW binary
+        },
+        body: imgBuffer
       });
 
       if (photoUp.ok) {
         const pd = await photoUp.json();
-        tpId = pd.data?.talking_photo_id;
-        console.log('HeyGen photo uploaded, tpId:', tpId);
+        tpId = pd.data?.talking_photo_id || pd.talking_photo_id;
+        console.log('HeyGen photo tpId:', tpId);
       } else {
-        console.warn('HeyGen photo upload failed:', photoUp.status, '— using default avatar');
+        const errTxt = await photoUp.text();
+        console.warn('HeyGen photo upload failed:', photoUp.status, errTxt.slice(0,100), '— using default avatar');
       }
     } catch (e) {
       console.warn('HeyGen photo error:', e.message, '— using default avatar');
     }
   }
 
-  // Step 3: Generate video using audio_asset_id (NOT audio_base64)
+  // Step 3: Generate video — audio_asset_id in voice field
   const character = tpId
     ? { type: 'talking_photo', talking_photo_id: tpId, talking_style: 'expressive' }
     : { type: 'avatar', avatar_id: 'josh_lite3_20230714', avatar_style: 'normal' };
 
+  console.log('HeyGen: generating video, character:', character.type);
   const vr = await fetch('https://api.heygen.com/v2/video/generate', {
     method:  'POST',
     headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       video_inputs: [{
         character,
-        voice: { type: 'audio', audio_asset_id: audioAssetId },  // ← correct field
+        voice: { type: 'audio', audio_asset_id: audioAssetId },
         background: { type: 'color', value: '#1a2a3a' }
       }],
       aspect_ratio: ratio,
@@ -790,13 +791,14 @@ async function generateWithHeyGen(req, res, { referenceImageBase64, audioBase64,
 
   if (!vr.ok) {
     const errText = await vr.text();
-    throw new Error(`HeyGen video failed: ${vr.status} — ${errText.slice(0,200)}`);
+    throw new Error(`HeyGen video generate failed: ${vr.status} — ${errText.slice(0, 200)}`);
   }
 
   const vd  = await vr.json();
   const vid = vd.data?.video_id || vd.video_id;
-  if (!vid) throw new Error(`HeyGen did not return a video_id. Response: ${JSON.stringify(vd).slice(0,200)}`);
+  if (!vid) throw new Error(`HeyGen no video_id. Response: ${JSON.stringify(vd).slice(0, 200)}`);
 
+  console.log('HeyGen video_id:', vid);
   res.json({ taskId: 'heygen-' + vid, provider: 'heygen', usedPhoto: !!tpId, audioAssetId });
 }
 
