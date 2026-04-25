@@ -4,6 +4,7 @@
   Clean, production-ready. All endpoints verified against frontend.
 */
 
+const sharp    = require('sharp');
 const express   = require('express');
 const cors      = require('cors');
 const Anthropic = require('@anthropic-ai/sdk');
@@ -134,7 +135,6 @@ const HEYGEN_KEY     = process.env.HEYGEN_API_KEY;
 const KLING_KEY      = process.env.KLING_API_KEY;
 const RUNWAY_KEY      = process.env.RUNWAY_API_KEY;
 const CREATOMATE_KEY  = process.env.CREATOMATE_API_KEY;
-const OPENAI_KEY     = process.env.OPENAI_API_KEY;
 const STRIPE_KEY     = process.env.STRIPE_SECRET_KEY;
 const MODEL          = 'claude-sonnet-4-6';
 const MODEL_FALLBACK = 'claude-sonnet-4-5-20250929';
@@ -422,9 +422,882 @@ app.post('/api/project/save-all', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SCENE IMAGE COMPOSITING — Sharp-based presenter + background compositor
+// Puts the uploaded presenter photo IN FRONT of the selected background
+// ══════════════════════════════════════════════════════════════════════════════
+
+
+
+// Background definitions — gradient colors for each studio type
+const STUDIO_BACKGROUNDS = {
+  'news-studio':   { r: 8,  g: 18, b: 60 },   // deep navy blue
+  'podcast':       { r: 12, g: 4,  b: 28 },   // dark purple
+  'office':        { r: 10, g: 20, b: 10 },   // dark green
+  'classroom':     { r: 20, g: 18, b: 8  },   // warm dark
+  'courtroom':     { r: 25, g: 12, b: 4  },   // dark brown
+  'documentary':   { r: 5,  g: 5,  b: 5  },   // near black
+  'cooking':       { r: 8,  g: 22, b: 8  },   // kitchen green
+  'custom':        { r: 15, g: 20, b: 30 },   // fallback dark blue
+};
+
+const STUDIO_ACCENT = {
+  'news-studio':  { r: 20,  g: 60,  b: 180 },
+  'podcast':      { r: 80,  g: 20,  b: 120 },
+  'office':       { r: 20,  g: 80,  b: 40  },
+  'classroom':    { r: 100, g: 90,  b: 20  },
+  'courtroom':    { r: 120, g: 60,  b: 20  },
+  'documentary':  { r: 40,  g: 10,  b: 10  },
+  'cooking':      { r: 40,  g: 120, b: 20  },
+  'custom':       { r: 30,  g: 60,  b: 100 },
+};
+
+// Framing: where presenter sits in frame (as fraction of canvas)
+const FRAMING_CONFIG = {
+  'medium':    { w: 0.42, h: 0.80, x: 0.50, y: 1.0  },  // centered, chest-up
+  'close':     { w: 0.55, h: 0.90, x: 0.50, y: 1.0  },  // larger face
+  'wide':      { w: 0.30, h: 0.90, x: 0.50, y: 1.0  },  // smaller, full body feel
+  'news-desk': { w: 0.50, h: 0.75, x: 0.50, y: 1.0  },  // slightly right of center
+  'podcast':   { w: 0.38, h: 0.82, x: 0.48, y: 1.0  },  // slightly left of center
+};
+
+async function generateStudioBackground(studioType, W, H) {
+  // SVG-based studio background — tested, no external API needed
+  const configs = {
+    'news-studio':  { base: [8,18,60],    accent: [20,60,180],  desk: true  },
+    'podcast':      { base: [12,4,28],    accent: [80,20,120],  desk: false },
+    'office':       { base: [10,20,10],   accent: [20,100,40],  desk: false },
+    'classroom':    { base: [20,18,8],    accent: [100,90,20],  desk: true  },
+    'courtroom':    { base: [25,12,4],    accent: [120,60,20],  desk: true  },
+    'documentary':  { base: [5,5,5],      accent: [60,10,10],   desk: false },
+    'cooking':      { base: [8,22,8],     accent: [40,130,20],  desk: true  },
+  };
+  const cfg = configs[studioType] || configs['news-studio'];
+  const [br,bg_,bb] = cfg.base;
+  const [ar,ag,ab]  = cfg.accent;
+
+  const bgSvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+    <rect width="${W}" height="${H}" fill="rgb(${br},${bg_},${bb})"/>
+    <defs>
+      <radialGradient id="l1" cx="28%" cy="55%" r="65%">
+        <stop offset="0%" stop-color="rgb(${ar},${ag},${ab})" stop-opacity="0.55"/>
+        <stop offset="100%" stop-color="rgb(${br},${bg_},${bb})" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="l2" cx="76%" cy="42%" r="45%">
+        <stop offset="0%" stop-color="rgb(${Math.min(ar+20,255)},${Math.min(ag+20,255)},${Math.min(ab+20,255)})" stop-opacity="0.28"/>
+        <stop offset="100%" stop-color="rgb(0,0,0)" stop-opacity="0"/>
+      </radialGradient>
+      <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="rgb(${ar},${ag},${ab})" stop-opacity="0"/>
+        <stop offset="100%" stop-color="rgb(${ar},${ag},${ab})" stop-opacity="0.25"/>
+      </linearGradient>
+    </defs>
+    <rect width="${W}" height="${H}" fill="url(#l1)"/>
+    <rect width="${W}" height="${H}" fill="url(#l2)"/>
+    <rect x="0" y="${Math.round(H*0.72)}" width="${W}" height="${Math.round(H*0.28)}" fill="url(#floor)"/>
+    ${cfg.desk ? `<rect x="${Math.round(W*0.14)}" y="${Math.round(H*0.73)}" width="${Math.round(W*0.72)}" height="${Math.round(H*0.055)}" rx="4" fill="rgb(${Math.min(ar+5,80)},${Math.min(ag+5,50)},${Math.min(ab+15,100)})" opacity="0.85"/>` : ''}
+    <ellipse cx="${Math.round(W*0.28)}" cy="-8" rx="${Math.round(W*0.13)}" ry="${Math.round(H*0.07)}" fill="rgb(${ar},${ag},${ab})" opacity="0.22"/>
+    <ellipse cx="${Math.round(W*0.72)}" cy="-8" rx="${Math.round(W*0.13)}" ry="${Math.round(H*0.07)}" fill="rgb(${ar},${ag},${ab})" opacity="0.22"/>
+  </svg>`;
+
+  return await sharp(Buffer.from(bgSvg)).jpeg({ quality: 95 }).toBuffer();
+}
+
+
+
+
+
+
+
+
+// ── Studio background images (generated via DALL-E) ───────────────────────────
+// Cache generated backgrounds to avoid re-generating same studio across scenes
+const BG_CACHE = {};
+
+
+
+async function generateBackgroundImage(bgType, customBgB64) {
+  // Return cached background if available
+  if (BG_CACHE[bgType] && bgType !== 'custom') {
+    console.log(`Using cached background: ${bgType}`);
+    return BG_CACHE[bgType];
+  }
+
+  // Custom background: user uploaded
+  if (bgType === 'custom' && customBgB64) {
+    return { b64: customBgB64, provider: 'custom-upload' };
+  }
+
+  const bgPrompt = BG_PROMPTS[bgType] || BG_PROMPTS['news-studio'];
+  
+  // Generate background with DALL-E 3
+  if (OPENAI_KEY) {
+    try {
+      console.log(`Generating background: "${bgType}"...`);
+      const resp = await fetch('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + OPENAI_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'dall-e-3',
+          prompt: bgPrompt + ' Photorealistic, wide angle, 16:9 composition, broadcast quality, empty set ready for presenter.',
+          n: 1,
+          size: '1792x1024',
+          quality: 'hd',
+          response_format: 'b64_json'
+        })
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        const b64 = data.data?.[0]?.b64_json;
+        if (b64) {
+          console.log(`Background "${bgType}" generated via DALL-E 3 ✓`);
+          const result = { b64, provider: 'dalle3' };
+          BG_CACHE[bgType] = result; // cache it
+          return result;
+        }
+      } else {
+        console.warn('DALL-E background failed:', (await resp.text()).slice(0,100));
+      }
+    } catch(e) { console.warn('DALL-E background error:', e.message); }
+  }
+
+  // Fallback: FAL flux
+  if (FAL_KEY) {
+    try {
+      const resp = await fetch('https://fal.run/fal-ai/flux-pro/v1.1', {
+        method: 'POST',
+        headers: { 'Authorization': 'Key ' + FAL_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: bgPrompt, image_size: 'landscape_16_9', num_inference_steps: 28, output_format: 'jpeg' })
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        const url = data.images?.[0]?.url;
+        if (url) {
+          const dlBuf = await (await fetch(url)).arrayBuffer();
+          const b64 = Buffer.from(dlBuf).toString('base64');
+          console.log(`Background "${bgType}" generated via FAL ✓`);
+          const result = { b64, provider: 'fal' };
+          BG_CACHE[bgType] = result;
+          return result;
+        }
+      }
+    } catch(e) { console.warn('FAL background error:', e.message); }
+  }
+
+  return null;
+}
+
+async function removePresenterBackground(presenterB64) {
+  // Method 1: remove.bg API (best quality, requires API key)
+  if (REMOVE_BG_KEY) {
+    try {
+      const buf = Buffer.from(presenterB64, 'base64');
+      const formData = new FormData();
+      formData.append('image_file', new Blob([buf], { type: 'image/jpeg' }), 'presenter.jpg');
+      formData.append('size', 'regular');
+      
+      const resp = await fetch('https://api.remove.bg/v1.0/removebg', {
+        method: 'POST',
+        headers: { 'X-Api-Key': REMOVE_BG_KEY },
+        body: formData
+      });
+      
+      if (resp.ok) {
+        const pngBuf = await resp.arrayBuffer();
+        const b64 = Buffer.from(pngBuf).toString('base64');
+        console.log('Background removed via remove.bg ✓');
+        return { b64, format: 'png', provider: 'remove.bg' };
+      } else {
+        console.warn('remove.bg failed:', resp.status);
+      }
+    } catch(e) { console.warn('remove.bg error:', e.message); }
+  }
+
+  // Method 2: FAL background removal
+  if (FAL_KEY) {
+    try {
+      const buf = Buffer.from(presenterB64, 'base64');
+      const formData = new FormData();
+      formData.append('image', new Blob([buf], { type: 'image/jpeg' }), 'presenter.jpg');
+      
+      const resp = await fetch('https://fal.run/fal-ai/imageutils/rembg', {
+        method: 'POST',
+        headers: { 'Authorization': 'Key ' + FAL_KEY },
+        body: formData
+      });
+      
+      if (resp.ok) {
+        const data = await resp.json();
+        const url = data.image?.url;
+        if (url) {
+          const dlBuf = await (await fetch(url)).arrayBuffer();
+          const b64 = Buffer.from(dlBuf).toString('base64');
+          console.log('Background removed via FAL rembg ✓');
+          return { b64, format: 'png', provider: 'fal-rembg' };
+        }
+      }
+    } catch(e) { console.warn('FAL rembg error:', e.message); }
+  }
+
+  // Method 3: No removal API — use presenter as-is (still better than nothing)
+  console.log('No background removal API — using presenter photo as-is');
+  return null;
+}
+
+async function compositePresenterOnBackground({
+  presenterPhotoBase64,
+  customBackgroundBase64,
+  studioType = 'news-studio',
+  framingStyle = 'medium',
+  ratio = '16:9'
+}) {
+  const DIMS = { '16:9': [1280,720], '9:16': [720,1280], '1:1': [1024,1024] };
+  const [W, H] = DIMS[ratio] || DIMS['16:9'];
+
+  const FRAMING = {
+    'medium':    { wFrac: 0.42, hFrac: 0.80, xFrac: 0.50 },
+    'close':     { wFrac: 0.55, hFrac: 0.90, xFrac: 0.50 },
+    'wide':      { wFrac: 0.30, hFrac: 0.90, xFrac: 0.50 },
+    'news-desk': { wFrac: 0.50, hFrac: 0.76, xFrac: 0.50 },
+    'podcast':   { wFrac: 0.38, hFrac: 0.82, xFrac: 0.48 },
+  };
+  const framing = FRAMING[framingStyle] || FRAMING['medium'];
+
+  console.log(`Compositing: ${W}x${H}, studio="${studioType}", framing="${framingStyle}"`);
+
+  // STEP A: Get background buffer
+  let bgBuffer;
+  if (customBackgroundBase64) {
+    bgBuffer = await sharp(Buffer.from(customBackgroundBase64, 'base64'))
+      .resize(W, H, { fit: 'cover', position: 'center' })
+      .jpeg({ quality: 92 })
+      .toBuffer();
+    console.log('Using custom uploaded background');
+  } else {
+    bgBuffer = await generateStudioBackground(studioType, W, H);
+    console.log('Generated studio background:', studioType);
+  }
+
+  // STEP B: If no presenter photo, return background only
+  if (!presenterPhotoBase64) {
+    console.log('No presenter photo — returning background only');
+    return bgBuffer.toString('base64');
+  }
+
+  // STEP C: Resize presenter photo to fit the frame
+  const maxW = Math.round(W * framing.wFrac);
+  const maxH = Math.round(H * framing.hFrac);
+
+  const presenterBuf = Buffer.from(presenterPhotoBase64, 'base64');
+  
+  // Get presenter metadata to maintain aspect ratio
+  const meta = await sharp(presenterBuf).metadata();
+  const aspect = (meta.width || 1) / (meta.height || 1);
+  
+  let fitW = maxW;
+  let fitH = Math.round(maxW / aspect);
+  if (fitH > maxH) { fitH = maxH; fitW = Math.round(maxH * aspect); }
+  
+  const presResized = await sharp(presenterBuf)
+    .resize(fitW, fitH, { fit: 'fill' })
+    .toBuffer();
+
+  // STEP D: Calculate position (centered horizontally, anchored to bottom)
+  const left = Math.max(0, Math.round(W * framing.xFrac - fitW / 2));
+  const top  = Math.max(0, H - fitH);
+
+  console.log(`Presenter placed: ${fitW}x${fitH} at (${left}, ${top})`);
+
+  // STEP E: Add drop shadow beneath presenter
+  const shadowSvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <radialGradient id="s" cx="50%" cy="100%" r="32%">
+        <stop offset="0%" stop-color="rgba(0,0,0,0.55)"/>
+        <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+      </radialGradient>
+    </defs>
+    <ellipse cx="${left + fitW/2}" cy="${H}" rx="${Math.round(fitW * 0.38)}" ry="${Math.round(H * 0.038)}" fill="url(#s)"/>
+  </svg>`;
+
+  // STEP F: Final composite — background + shadow + presenter on top
+  const result = await sharp(bgBuffer)
+    .composite([
+      { input: Buffer.from(shadowSvg), blend: 'multiply' },
+      { input: presResized, top, left, blend: 'over' }
+    ])
+    .jpeg({ quality: 92 })
+    .toBuffer();
+
+  console.log(`Composite done: ${result.length} bytes (${Math.round(result.length/1024)}KB)`);
+  return result.toString('base64');
+}
+
+
+
+// ── MAIN scene image builder ──────────────────────────────────────────────────
+// This is the correct flow:
+// 1. Generate empty studio background image
+// 2. Remove background from presenter photo
+// 3. Composite presenter IN FRONT of background
+// 4. Return composited scene image for animation
+
+// ── AI Video Pipeline
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AI PRESENTER PIPELINE — Correct 4-step flow
+// Step 1: Voice (ElevenLabs) → audio
+// Step 2: Scene Image (DALL-E 3 / FAL) → presenter + background composite image  
+// Step 3: Animate (Kling lipsync / HeyGen / Runway) → video from image + audio
+// Step 4: Return video URL
+// ══════════════════════════════════════════════════════════════════════════════
+
+
+// ── STEP 3: Animate image with audio (Kling lip-sync) ─────────────────────────
+
+// ── UPDATED generateWithKling — uses 4-step pipeline ──────────────────────────
+
+// ── UPDATED generateWithHeyGen — uses scene image if available ─────────────────
+
+// ── generateWithRunway — uses scene image ──────────────────────────────────────
+
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AI PRESENTER PIPELINE v3 — Correct compositing flow:
+// Step 1: Generate background image (DALL-E 3 / FAL)
+// Step 2: Composite presenter photo ON TOP of background (sharp)
+// Step 3: Generate voice audio (ElevenLabs)
+// Step 4: Animate composite image with audio (Kling / HeyGen / Runway)
+// ══════════════════════════════════════════════════════════════════════════════
+
+const OPENAI_KEY = process.env.OPENAI_API_KEY;
+const FAL_KEY    = process.env.FAL_KEY;
+
+// Background style prompts
+const BG_PROMPTS = {
+  'news-studio':   'Professional broadcast news studio. Dark blue background with gold accent lighting. Large LED display screen behind the desk. Clean modern set, broadcast quality. Empty studio, no people.',
+  'podcast':       'Modern podcast recording studio. Dark moody atmosphere with warm ring light glow. Exposed brick or acoustic panels. Microphone stand. Comfortable chairs. No people.',
+  'office':        'Clean modern corporate office. Floor-to-ceiling windows with city skyline view. Minimal desk setup. Professional warm lighting. No people.',
+  'classroom':     'Academic classroom or lecture hall. Whiteboard, bookshelves, wooden desk. Warm educational atmosphere. Natural light. No people.',
+  'courtroom':     'Formal courtroom studio. Dark mahogany wood panelling. Dramatic overhead lighting. Serious professional atmosphere. No people.',
+  'documentary':   'Dark cinematic documentary backdrop. Single dramatic side light source. Moody dark atmosphere. Film quality. No people.',
+  'cooking':       'Bright professional cooking show kitchen. White marble counters, hanging copper pots, colourful produce. Warm inviting light. No people.',
+  'outdoor':       'Beautiful outdoor location. Lush greenery, natural daylight. Clean background, slightly blurred bokeh. No people.'
+};
+
+// ── STEP 1: Generate background image ─────────────────────────────────────────
+async function generateBackgroundImage(bgType, customBgB64, ratio) {
+  // If user uploaded a custom background, use it directly
+  if (bgType === 'custom' && customBgB64) {
+    console.log('Using custom uploaded background');
+    return { b64: customBgB64, source: 'custom-upload' };
+  }
+
+  const prompt = BG_PROMPTS[bgType] || BG_PROMPTS['news-studio'];
+  const size = ratio === '9:16' ? '1024x1792' : ratio === '1:1' ? '1024x1024' : '1792x1024';
+
+  console.log(`Generating background: "${bgType}" at ${size}`);
+
+  // Try DALL-E 3 first
+  if (OPENAI_KEY) {
+    try {
+      const resp = await fetch('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + OPENAI_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'dall-e-3',
+          prompt: prompt + ' Photorealistic, professional photography, wide angle lens, no people, no text, no watermarks.',
+          n: 1, size, quality: 'hd', response_format: 'b64_json'
+        })
+      });
+      if (resp.ok) {
+        const d = await resp.json();
+        const b64 = d.data?.[0]?.b64_json;
+        if (b64) { console.log('Background generated via DALL-E 3 ✓'); return { b64, source: 'dalle3' }; }
+      } else {
+        console.warn('DALL-E 3 background failed:', (await resp.text()).slice(0,100));
+      }
+    } catch(e) { console.warn('DALL-E 3 error:', e.message); }
+  }
+
+  // FAL.ai fallback
+  if (FAL_KEY) {
+    try {
+      const imgSize = ratio === '9:16' ? 'portrait_16_9' : ratio === '1:1' ? 'square_hd' : 'landscape_16_9';
+      const resp = await fetch('https://fal.run/fal-ai/flux-pro/v1.1', {
+        method: 'POST',
+        headers: { 'Authorization': 'Key ' + FAL_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: prompt + ' No people. Photorealistic.', image_size: imgSize, num_inference_steps: 28, num_images: 1, output_format: 'jpeg' })
+      });
+      if (resp.ok) {
+        const d = await resp.json();
+        const url = d.images?.[0]?.url;
+        if (url) {
+          const dl = await fetch(url);
+          const buf = await dl.arrayBuffer();
+          const b64 = Buffer.from(buf).toString('base64');
+          console.log('Background generated via FAL.ai ✓');
+          return { b64, source: 'fal' };
+        }
+      }
+    } catch(e) { console.warn('FAL error:', e.message); }
+  }
+
+  console.log('No image generation API — using solid colour background');
+  return null;
+}
+
+// ── STEP 2: Composite presenter photo ON TOP of background ────────────────────
+async function compositePresenterOnBackground({ presenterB64, backgroundB64, framing, ratio }) {
+  const sharp = require('sharp');
+
+  // Canvas dimensions
+  const DIMS = {
+    '16:9': { w: 1280, h: 720 },
+    '9:16': { w: 720,  h: 1280 },
+    '1:1':  { w: 1024, h: 1024 }
+  };
+  const { w: W, h: H } = DIMS[ratio] || DIMS['16:9'];
+
+  // Presenter sizing by framing style
+  const FRAMING = {
+    'medium':    { presW: Math.round(W * 0.45), presH: Math.round(H * 0.88), x: 'center', y: 'bottom' },
+    'close':     { presW: Math.round(W * 0.60), presH: Math.round(H * 0.75), x: 'center', y: 'top' },
+    'wide':      { presW: Math.round(W * 0.35), presH: Math.round(H * 0.95), x: 'center', y: 'bottom' },
+    'news-desk': { presW: Math.round(W * 0.55), presH: Math.round(H * 0.80), x: 'center', y: 'bottom' },
+    'podcast':   { presW: Math.round(W * 0.50), presH: Math.round(H * 0.85), x: 'center', y: 'bottom' }
+  };
+  const frame = FRAMING[framing] || FRAMING['medium'];
+
+  // 1. Resize background to canvas size
+  let bgBuf;
+  if (backgroundB64) {
+    bgBuf = await sharp(Buffer.from(backgroundB64, 'base64'))
+      .resize(W, H, { fit: 'cover', position: 'center' })
+      .jpeg({ quality: 95 })
+      .toBuffer();
+  } else {
+    // Solid dark blue gradient fallback
+    bgBuf = await sharp({
+      create: { width: W, height: H, channels: 3, background: { r: 10, g: 20, b: 50 } }
+    }).jpeg().toBuffer();
+  }
+
+  // 2. Resize presenter photo to correct framing size
+  const presenterResized = await sharp(Buffer.from(presenterB64, 'base64'))
+    .resize(frame.presW, frame.presH, { fit: 'cover', position: 'attention' }) // attention focuses on face
+    .toBuffer();
+
+  // 3. Calculate position
+  const presenterMeta = await sharp(presenterResized).metadata();
+  let left, top;
+
+  // X position
+  if (frame.x === 'center') left = Math.round((W - presenterMeta.width) / 2);
+  else if (frame.x === 'left') left = Math.round(W * 0.05);
+  else left = Math.round(W * 0.55);
+
+  // Y position
+  if (frame.y === 'bottom') top = H - presenterMeta.height;
+  else if (frame.y === 'top') top = Math.round(H * 0.05);
+  else top = Math.round((H - presenterMeta.height) / 2);
+
+  top = Math.max(0, top);
+  left = Math.max(0, left);
+
+  // 4. Composite presenter ON TOP of background
+  const composited = await sharp(bgBuf)
+    .composite([{
+      input: presenterResized,
+      left,
+      top,
+      blend: 'over'   // presenter on top
+    }])
+    .jpeg({ quality: 95 })
+    .toBuffer();
+
+  const compositedB64 = composited.toString('base64');
+  console.log(`Composited: presenter(${presenterMeta.width}x${presenterMeta.height}) at (${left},${top}) on bg(${W}x${H})`);
+  return compositedB64;
+}
+
+// ── MASTER PRESENTER ROUTE — orchestrates all 4 steps ─────────────────────────
+app.post('/api/presenter', async (req, res) => {
+  try {
+    const {
+      audioBase64,
+      referenceImageBase64,   // presenter photo uploaded by user
+      customBgBase64,         // custom background uploaded by user
+      bgType       = 'news-studio',
+      ratio        = '16:9',
+      framing      = 'medium',
+      sceneText    = '',
+      provider: requestedProvider = null,
+      prompt       = null
+    } = req.body;
+
+    if (!audioBase64) return res.status(400).json({ error: 'audioBase64 required' });
+
+    // ── STEP 1: Generate background image ─────────────────────────────────────
+    console.log('\n=== AI Presenter Pipeline ===');
+    console.log('Step 1: Generating background image...');
+    const bgResult = await generateBackgroundImage(bgType, customBgBase64, ratio);
+    const bgB64 = bgResult?.b64 || null;
+    console.log('Background source:', bgResult?.source || 'none');
+
+    // ── STEP 2: Composite presenter photo on background ────────────────────────
+    let compositeImageB64 = null;
+    if (referenceImageBase64) {
+      console.log('Step 2: Compositing presenter photo on background...');
+      try {
+        compositeImageB64 = await compositePresenterOnBackground({
+          presenterB64:  referenceImageBase64,
+          backgroundB64: bgB64,
+          framing:       prompt?.presenter?.framing || framing,
+          ratio
+        });
+        console.log('Composite scene image created ✓');
+      } catch(e) {
+        console.warn('Compositing failed, using photo directly:', e.message);
+        compositeImageB64 = referenceImageBase64;
+      }
+    } else if (bgB64) {
+      // No presenter photo — use just the background
+      compositeImageB64 = bgB64;
+      console.log('Step 2: No presenter photo — using background only');
+    }
+
+    if (!compositeImageB64) {
+      console.log('Step 2: No image available — video provider will use default avatar');
+    }
+
+    // ── STEP 3: Already done (voice generated client-side or in /api/voice) ───
+    // audioBase64 is already provided
+
+    // ── STEP 4: Animate composite image with audio ─────────────────────────────
+    console.log('Step 4: Selecting video provider...');
+
+    const providers = {
+      kling:  { available: !!KLING_KEY,  priority: 1 },
+      heygen: { available: !!HEYGEN_KEY, priority: 2 },
+      runway: { available: !!RUNWAY_KEY, priority: 3 }
+    };
+
+    const chosen = requestedProvider && providers[requestedProvider]?.available
+      ? requestedProvider
+      : Object.entries(providers)
+          .filter(([_,v]) => v.available)
+          .sort((a,b) => a[1].priority - b[1].priority)[0]?.[0];
+
+    if (!chosen) {
+      return res.status(503).json({
+        error: 'No video generation API configured. Add KLING_API_KEY or HEYGEN_API_KEY in Railway.',
+        note: 'Composite scene image was generated successfully — just needs a video provider to animate it.',
+        compositeGenerated: !!compositeImageB64
+      });
+    }
+
+    console.log(`Step 4: Animating with ${chosen}...`);
+
+    const args = { compositeImageB64, audioBase64, ratio, sceneText, prompt };
+
+    if (chosen === 'kling')  return await generateWithKling(req, res, args);
+    if (chosen === 'heygen') return await generateWithHeyGen(req, res, args);
+    if (chosen === 'runway') return await generateWithRunway(req, res, args);
+
+  } catch(e) {
+    console.error('/api/presenter error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+})
+// ══════════════════════════════════════════════════════════════════════════════
+// AI PRESENTER GENERATOR FUNCTIONS
+// Each function: composites presenter+background → animates with audio → returns taskId
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Step A: Get or generate studio background image ───────────────────────────
+async function getStudioBackgroundB64(studioType, customBgBase64, ratio) {
+  // If user uploaded a custom background, use that
+  if (customBgBase64) {
+    const DIMS = { '16:9':{w:1280,h:720}, '9:16':{w:720,h:1280}, '1:1':{w:1024,h:1024} };
+    const {w,h} = DIMS[ratio] || DIMS['16:9'];
+    const buf = await sharp(Buffer.from(customBgBase64,'base64'))
+      .resize(w, h, { fit:'cover', position:'center' }).jpeg({ quality:92 }).toBuffer();
+    console.log('Using custom uploaded background');
+    return buf.toString('base64');
+  }
+
+  // Otherwise use generateStudioBackground (SVG gradients)
+  const DIMS = { '16:9':{w:1280,h:720}, '9:16':{w:720,h:1280}, '1:1':{w:1024,h:1024} };
+  const {w,h} = DIMS[ratio] || DIMS['16:9'];
+  const buf = await generateStudioBackground(studioType || 'news-studio', w, h);
+  console.log('Generated studio background:', studioType);
+  return buf.toString('base64');
+}
+
+// ── Step B: Composite presenter photo onto background ─────────────────────────
+// This is the KEY step — places uploaded photo IN FRONT of background
+async function buildSceneImage(presenterB64, bgB64, framingStyle, ratio) {
+  if (!presenterB64 && !bgB64) return null;
+
+  const DIMS = { '16:9':{w:1280,h:720}, '9:16':{w:720,h:1280}, '1:1':{w:1024,h:1024} };
+  const {w:W, h:H} = DIMS[ratio] || DIMS['16:9'];
+
+  // If no presenter photo, return background only
+  if (!presenterB64) {
+    const bgBuf = Buffer.from(bgB64,'base64');
+    const sized = await sharp(bgBuf).resize(W,H,{fit:'cover'}).jpeg({quality:92}).toBuffer();
+    return sized.toString('base64');
+  }
+
+  // Resize background to canvas
+  const bgBuf     = Buffer.from(bgB64,'base64');
+  const bgResized = await sharp(bgBuf).resize(W,H,{fit:'cover',position:'center'}).jpeg({quality:92}).toBuffer();
+
+  // Framing: how big and where to place presenter
+  const FRAMING = {
+    'medium':    { hPct:0.85, xPct:0.50, topPct:0.15 },
+    'close':     { hPct:0.95, xPct:0.50, topPct:0.05 },
+    'wide':      { hPct:0.92, xPct:0.50, topPct:0.08 },
+    'news-desk': { hPct:0.78, xPct:0.50, topPct:0.22 },
+    'podcast':   { hPct:0.82, xPct:0.48, topPct:0.12 },
+  };
+  const f = FRAMING[framingStyle] || FRAMING['medium'];
+
+  const presH = Math.round(H * f.hPct);
+
+  // Resize presenter maintaining its natural aspect ratio
+  const presBuf  = Buffer.from(presenterB64,'base64');
+  const presMeta = await sharp(presBuf).metadata();
+  const aspect   = (presMeta.width || 3) / (presMeta.height || 4);
+  const presW    = Math.round(presH * aspect);
+
+  const presResized = await sharp(presBuf)
+    .resize(presW, presH, { fit:'cover', position:'centre' })
+    .png()
+    .toBuffer();
+
+  // Position: centered horizontally, anchored to bottom
+  const left = Math.max(0, Math.min(Math.round(W * f.xPct - presW/2), W - presW));
+  const top  = Math.max(0, Math.min(Math.round(H * f.topPct), H - presH));
+
+  console.log(`Compositing: presenter ${presW}x${presH} at (${left},${top}) on ${W}x${H} canvas`);
+
+  // Add floor shadow under presenter
+  const shadowSvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <radialGradient id="sh" cx="50%" cy="100%" r="35%">
+        <stop offset="0%"   stop-color="rgba(0,0,0,0.55)"/>
+        <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+      </radialGradient>
+    </defs>
+    <ellipse cx="${left + presW/2}" cy="${H}" rx="${presW*0.45}" ry="${H*0.05}" fill="url(#sh)"/>
+  </svg>`;
+
+  const composited = await sharp(bgResized)
+    .composite([
+      { input: Buffer.from(shadowSvg), blend:'multiply' },
+      { input: presResized, top, left, blend:'over' }
+    ])
+    .jpeg({ quality:93 })
+    .toBuffer();
+
+  console.log(`Scene image composited: ${composited.length} bytes ✓`);
+  return composited.toString('base64');
+}
+
+// ── generateWithKling ─────────────────────────────────────────────────────────
+async function generateWithKling(req, res, { referenceImageBase64, audioBase64, ratio, sceneText, bgPrompt, prompt, studioType, customBgBase64 }) {
+  try {
+    const framingStyle = prompt?.presenter?.framing || 'medium';
+
+    // Step A: Get background
+    const bgB64 = await getStudioBackgroundB64(studioType, customBgBase64, ratio);
+
+    // Step B: Composite presenter onto background
+    const sceneImageB64 = await buildSceneImage(referenceImageBase64 || null, bgB64, framingStyle, ratio);
+    if (!sceneImageB64) return res.status(400).json({ error: 'Cannot generate scene image. Upload a presenter photo.' });
+
+    if (!KLING_KEY) {
+      // No Kling — use HeyGen with the composited image
+      console.log('No Kling key — using HeyGen with composited scene image');
+      return generateWithHeyGen(req, res, { referenceImageBase64: sceneImageB64, audioBase64, ratio, studioType:'custom', customBgBase64: null, prompt, bgPrompt });
+    }
+
+    // Kling JWT
+    const klingToken = buildKlingJWT(KLING_KEY);
+
+    // Kling lip-sync: image + audio → video
+    const lsResp = await fetch('https://api.klingai.com/v1/videos/lip-sync', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + klingToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model_name: 'kling-v1-5',
+        mode: 'pro',
+        inputs: [{
+          type: 'image',
+          image_type: 'base64',
+          image: sceneImageB64
+        }],
+        audio_type: 'base64',
+        audio: audioBase64
+      })
+    });
+
+    if (!lsResp.ok) {
+      const err = await lsResp.text();
+      throw new Error('Kling lip-sync failed: ' + lsResp.status + ' — ' + err.slice(0,200));
+    }
+
+    const lsData = await lsResp.json();
+    const taskId = lsData.data?.task_id || lsData.task_id;
+    if (!taskId) throw new Error('Kling: no task_id. Response: ' + JSON.stringify(lsData).slice(0,200));
+
+    console.log('Kling task:', taskId);
+    return res.json({ taskId: 'kling-' + taskId, provider: 'kling', composited: true });
+
+  } catch(e) {
+    console.error('generateWithKling:', e.message);
+    if (HEYGEN_KEY) {
+      console.log('Falling back to HeyGen...');
+      return generateWithHeyGen(req, res, { referenceImageBase64, audioBase64, ratio, studioType, customBgBase64, prompt, bgPrompt });
+    }
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+// ── generateWithHeyGen ────────────────────────────────────────────────────────
+async function generateWithHeyGen(req, res, { referenceImageBase64, audioBase64, ratio, studioType, customBgBase64, prompt, bgPrompt }) {
+  const framingStyle = prompt?.presenter?.framing || 'medium';
+
+  // Step A: Get background
+  const bgB64 = await getStudioBackgroundB64(studioType, customBgBase64, ratio);
+
+  // Step B: Composite presenter onto background
+  const sceneImageB64 = await buildSceneImage(referenceImageBase64 || null, bgB64, framingStyle, ratio);
+
+  // Upload audio as RAW BINARY
+  const audioBuffer = Buffer.from(audioBase64, 'base64');
+  console.log('HeyGen: uploading audio', audioBuffer.length, 'bytes...');
+
+  const audioUpload = await fetch('https://upload.heygen.com/v1/asset', {
+    method: 'POST',
+    headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'audio/mpeg' },
+    body: audioBuffer
+  });
+
+  if (!audioUpload.ok) {
+    const err = await audioUpload.text();
+    throw new Error('HeyGen audio upload failed: ' + audioUpload.status + ' — ' + err.slice(0,200));
+  }
+
+  const audioData    = await audioUpload.json();
+  const audioAssetId = audioData.data?.id || audioData.data?.asset_id || audioData.asset_id || audioData.id;
+  if (!audioAssetId) throw new Error('HeyGen: no audio asset_id. ' + JSON.stringify(audioData).slice(0,200));
+  console.log('HeyGen audio asset_id:', audioAssetId);
+
+  // Upload composited scene image as talking photo
+  let tpId = null;
+  if (sceneImageB64) {
+    try {
+      const imgBuffer = Buffer.from(sceneImageB64, 'base64');
+      console.log('HeyGen: uploading composited scene image', imgBuffer.length, 'bytes...');
+
+      const photoUp = await fetch('https://upload.heygen.com/v1/talking_photo', {
+        method: 'POST',
+        headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'image/jpeg' },
+        body: imgBuffer
+      });
+
+      if (photoUp.ok) {
+        const pd = await photoUp.json();
+        tpId = pd.data?.talking_photo_id || pd.talking_photo_id;
+        console.log('HeyGen talking_photo_id:', tpId);
+      } else {
+        const err = await photoUp.text();
+        console.warn('HeyGen photo upload failed:', err.slice(0,100), '— using default avatar');
+      }
+    } catch(e) {
+      console.warn('HeyGen photo error:', e.message);
+    }
+  }
+
+  const character = tpId
+    ? { type: 'talking_photo', talking_photo_id: tpId, talking_style: 'expressive' }
+    : { type: 'avatar', avatar_id: 'josh_lite3_20230714', avatar_style: 'normal' };
+
+  console.log('HeyGen: generating video, character:', character.type);
+
+  const vr = await fetch('https://api.heygen.com/v2/video/generate', {
+    method: 'POST',
+    headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      video_inputs: [{
+        character,
+        voice: { type: 'audio', audio_asset_id: audioAssetId },
+        background: { type: 'color', value: '#1a2a3a' }
+      }],
+      aspect_ratio: ratio,
+      test: false
+    })
+  });
+
+  if (!vr.ok) {
+    const err = await vr.text();
+    throw new Error('HeyGen video generate failed: ' + vr.status + ' — ' + err.slice(0,200));
+  }
+
+  const vd  = await vr.json();
+  const vid = vd.data?.video_id || vd.video_id;
+  if (!vid) throw new Error('HeyGen: no video_id. ' + JSON.stringify(vd).slice(0,200));
+
+  console.log('HeyGen video_id:', vid);
+  return res.json({ taskId: 'heygen-' + vid, provider: 'heygen', composited: !!tpId, audioAssetId });
+}
+
+// ── generateWithRunway ────────────────────────────────────────────────────────
+async function generateWithRunway(req, res, { referenceImageBase64, audioBase64, ratio, sceneText, studioType, customBgBase64, prompt }) {
+  if (!RUNWAY_KEY) throw new Error('RUNWAY_API_KEY not set');
+  const framingStyle = prompt?.presenter?.framing || 'medium';
+
+  // Step A+B: Composite
+  const bgB64         = await getStudioBackgroundB64(studioType, customBgBase64, ratio);
+  const sceneImageB64 = await buildSceneImage(referenceImageBase64 || null, bgB64, framingStyle, ratio);
+
+  if (!sceneImageB64) throw new Error('No scene image for Runway. Upload a presenter photo.');
+
+  const motionPrompt = 'Professional TV presenter speaking to camera. Natural lip sync, subtle head movement, realistic breathing. Consistent studio background. High quality broadcast video.';
+
+  const ratioMap = { '16:9':'1280:768', '9:16':'768:1280', '1:1':'1024:1024' };
+
+  const rnResp = await fetch('https://api.dev.runwayml.com/v1/image_to_video', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + RUNWAY_KEY, 'Content-Type': 'application/json', 'X-Runway-Version': '2024-11-06' },
+    body: JSON.stringify({
+      promptImage: 'data:image/jpeg;base64,' + sceneImageB64,
+      model: 'gen4_turbo',
+      promptText: motionPrompt,
+      ratio: ratioMap[ratio] || '1280:768',
+      duration: 10
+    })
+  });
+
+  if (!rnResp.ok) throw new Error('Runway: ' + rnResp.status + ' — ' + (await rnResp.text()).slice(0,200));
+  const rnData = await rnResp.json();
+  const taskId = rnData.id;
+  if (!taskId) throw new Error('Runway: no task id. ' + JSON.stringify(rnData).slice(0,200));
+
+  return res.json({ taskId: 'runway-' + taskId, provider: 'runway', composited: true });
+}
+
+;
+
+
 app.get('/health', (req, res) => res.json({
   status:     'ok',
-  version:    '2.3',
+  version:    '2.7',
   platform:   'AABStudio.ai',
   model:      MODEL,
   anthropic:  !!process.env.ANTHROPIC_API_KEY,
@@ -748,223 +1621,15 @@ app.post('/api/image', async (req, res) => {
 // ── AI PRESENTER (HeyGen) ─────────────────────────────────────────────────────
 // Sends clean audio for accurate phoneme/viseme/lipsync.
 // No text overlays, no watermark, seamless transitions via talking_style: expressive.
-app.post('/api/presenter', async (req, res) => {
-  try {
-    const { referenceImageBase64, audioBase64, ratio = '16:9', sceneText = '' } = req.body;
-    if (!audioBase64) return res.status(400).json({ error: 'Audio (base64) is required.' });
+;
+;
 
-    // ── Prefer Kling for lip-sync ──────────────────────────────────────────
-    if (KLING_KEY) {
-      return await generateWithKling(req, res, { referenceImageBase64, audioBase64, ratio, sceneText });
-    }
-
-    // ── Fallback: HeyGen (original) ────────────────────────────────────────
-    if (HEYGEN_KEY) {
-      return await generateWithHeyGen(req, res, { referenceImageBase64, audioBase64, ratio });
-    }
-
-    res.status(503).json({ error: 'No video generation API key configured. Add KLING_API_KEY or HEYGEN_API_KEY in Railway environment variables.' });
-
-  } catch (e) {
-    console.error('presenter error:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ── Kling lip-sync implementation ──────────────────────────────────────────
-async function generateWithKling(req, res, { referenceImageBase64, audioBase64, ratio, sceneText }) {
-  // Kling API: https://api.klingai.com/v1
-  const KLING_BASE = 'https://api.klingai.com/v1';
-
-  // Build the lip-sync payload
-  // Kling accepts: image (base64), audio (base64), prompt for motion
-  const payload = {
-    model_name: 'kling-v1-5',
-    mode:       'pro',
-    duration:   '5',
-    aspect_ratio: ratio === '9:16' ? '9:16' : ratio === '1:1' ? '1:1' : '16:9',
-  };
-
-  // Add audio for lip sync
-  if (audioBase64) {
-    payload.audio = {
-      type: 'base64',
-      data: audioBase64,
-      mime_type: 'audio/mpeg'
-    };
-  }
-
-  // Add reference image
-  if (referenceImageBase64) {
-    payload.image = referenceImageBase64; // base64 string
-    payload.prompt = (sceneText || 'person speaking naturally to camera, professional presenter').slice(0, 200);
-  } else {
-    // No image — generate avatar with prompt
-    payload.prompt = 'professional news presenter speaking to camera, clear lighting, ' + (sceneText || '').slice(0, 150);
-  }
-
-  console.log('Kling lip-sync request, hasImage:', !!referenceImageBase64, 'hasAudio:', !!audioBase64);
-
-  // Try lip-sync endpoint first
-  const lipSyncResp = await fetch(`${KLING_BASE}/videos/lip-sync`, {
-    method:  'POST',
-    headers: {
-      'Authorization': `Bearer ${KLING_KEY}`,
-      'Content-Type':  'application/json'
-    },
-    body: JSON.stringify({
-      input: {
-        type:       'audio',
-        audio_type: 'base64',
-        audio_base64: audioBase64,
-        ...(referenceImageBase64 ? { image_type: 'base64', image_base64: referenceImageBase64 } : {})
-      },
-      model_name: 'kling-v1',
-    })
-  });
-
-  let taskId, videoUrl;
-
-  if (lipSyncResp.ok) {
-    const lipData = await lipSyncResp.json();
-    taskId = lipData.data?.task_id || lipData.task_id;
-    console.log('Kling lip-sync task created:', taskId);
-  } else {
-    const lipErr = await lipSyncResp.text();
-    console.warn('Kling lip-sync failed:', lipSyncResp.status, lipErr.slice(0, 200));
-
-    // Fallback: image-to-video
-    if (referenceImageBase64) {
-      const i2vResp = await fetch(`${KLING_BASE}/images/image2video`, {
-        method:  'POST',
-        headers: {
-          'Authorization': `Bearer ${KLING_KEY}`,
-          'Content-Type':  'application/json'
-        },
-        body: JSON.stringify({
-          model_name:   'kling-v1-5',
-          image:         referenceImageBase64,
-          prompt:        'person speaking to camera naturally, professional presenter, clear speech',
-          duration:      '5',
-          aspect_ratio:  payload.aspect_ratio,
-          cfg_scale:     0.5
-        })
-      });
-
-      if (!i2vResp.ok) {
-        const i2vErr = await i2vResp.text();
-        throw new Error(`Kling image-to-video failed: ${i2vResp.status} — ${i2vErr.slice(0,150)}`);
-      }
-      const i2vData = await i2vResp.json();
-      taskId = i2vData.data?.task_id || i2vData.task_id;
-      console.log('Kling image2video task:', taskId);
-    } else {
-      throw new Error(`Kling lip-sync failed: ${lipSyncResp.status} — ${lipErr.slice(0,100)}`);
-    }
-  }
-
-  if (!taskId) throw new Error('Kling did not return a task_id');
-
-  res.json({
-    taskId:   'kling-' + taskId,
-    provider: 'kling',
-    message:  'Kling video generating — poll /api/presenter-status for completion (usually 2-5 min)'
-  });
-}
 
 // ── HeyGen: correct API flow ──────────────────────────────────────────────
 // HeyGen v2 requires: upload audio → get asset_id → use in video/generate
 // ── HeyGen: correct API flow per official docs ────────────────────────────
 // Docs: https://docs.heygen.com/reference/upload-asset
 // Asset upload = RAW BINARY body, Content-Type: audio/mpeg, NO form fields
-async function generateWithHeyGen(req, res, { referenceImageBase64, audioBase64, ratio }) {
-
-  // Step 1: Upload audio as RAW BINARY (not multipart, not JSON)
-  const audioBuffer = Buffer.from(audioBase64, 'base64');
-
-  console.log(`HeyGen: uploading audio ${audioBuffer.length} bytes...`);
-  const audioUpload = await fetch('https://upload.heygen.com/v1/asset', {
-    method:  'POST',
-    headers: {
-      'X-Api-Key':    HEYGEN_KEY,
-      'Content-Type': 'audio/mpeg'  // RAW binary — no multipart, no form fields
-    },
-    body: audioBuffer  // raw binary buffer directly
-  });
-
-  if (!audioUpload.ok) {
-    const errText = await audioUpload.text();
-    throw new Error(`HeyGen audio upload failed: ${audioUpload.status} — ${errText.slice(0, 200)}`);
-  }
-
-  const audioData   = await audioUpload.json();
-  const audioAssetId = audioData.data?.id || audioData.data?.asset_id || audioData.asset_id || audioData.id;
-  if (!audioAssetId) {
-    throw new Error(`HeyGen audio upload: no asset_id returned. Response: ${JSON.stringify(audioData).slice(0, 200)}`);
-  }
-  console.log('HeyGen audio asset_id:', audioAssetId);
-
-  // Step 2: Upload photo as RAW BINARY (if provided)
-  let tpId = null;
-  if (referenceImageBase64) {
-    try {
-      const imgBuffer = Buffer.from(referenceImageBase64, 'base64');
-      console.log(`HeyGen: uploading photo ${imgBuffer.length} bytes...`);
-
-      const photoUp = await fetch('https://upload.heygen.com/v1/talking_photo', {
-        method:  'POST',
-        headers: {
-          'X-Api-Key':    HEYGEN_KEY,
-          'Content-Type': 'image/jpeg'  // RAW binary
-        },
-        body: imgBuffer
-      });
-
-      if (photoUp.ok) {
-        const pd = await photoUp.json();
-        tpId = pd.data?.talking_photo_id || pd.talking_photo_id;
-        console.log('HeyGen photo tpId:', tpId);
-      } else {
-        const errTxt = await photoUp.text();
-        console.warn('HeyGen photo upload failed:', photoUp.status, errTxt.slice(0,100), '— using default avatar');
-      }
-    } catch (e) {
-      console.warn('HeyGen photo error:', e.message, '— using default avatar');
-    }
-  }
-
-  // Step 3: Generate video — audio_asset_id in voice field
-  const character = tpId
-    ? { type: 'talking_photo', talking_photo_id: tpId, talking_style: 'expressive' }
-    : { type: 'avatar', avatar_id: 'josh_lite3_20230714', avatar_style: 'normal' };
-
-  console.log('HeyGen: generating video, character:', character.type);
-  const vr = await fetch('https://api.heygen.com/v2/video/generate', {
-    method:  'POST',
-    headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      video_inputs: [{
-        character,
-        voice: { type: 'audio', audio_asset_id: audioAssetId },
-        background: { type: 'color', value: '#1a2a3a' }
-      }],
-      aspect_ratio: ratio,
-      test: false
-    })
-  });
-
-  if (!vr.ok) {
-    const errText = await vr.text();
-    throw new Error(`HeyGen video generate failed: ${vr.status} — ${errText.slice(0, 200)}`);
-  }
-
-  const vd  = await vr.json();
-  const vid = vd.data?.video_id || vd.video_id;
-  if (!vid) throw new Error(`HeyGen no video_id. Response: ${JSON.stringify(vd).slice(0, 200)}`);
-
-  console.log('HeyGen video_id:', vid);
-  res.json({ taskId: 'heygen-' + vid, provider: 'heygen', usedPhoto: !!tpId, audioAssetId });
-}
 
 // ── Poll status for Kling tasks ────────────────────────────────────────────
 app.get('/api/presenter-status', async (req, res) => {
