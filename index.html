@@ -701,6 +701,12 @@ button,input,select,textarea{font-family:inherit;}
 .aps-status-dot.generating{background:#f59e0b;}
 .aps-status-dot.done{background:#10b981;}
 .aps-status-dot.failed{background:#ef4444;}
+
+/* ── Button press feedback ──────────────────────────────────────────── */
+button:active, .btn:active { transform: scale(0.96); filter: brightness(0.9); transition: transform 0.08s, filter 0.08s; }
+.aps-scene-row:active { transform: scale(0.98); transition: transform 0.08s; }
+.aps-bg-btn:active { transform: scale(0.94); transition: transform 0.08s; }
+.bg-btn:active { transform: scale(0.96); filter: brightness(0.85); transition: transform 0.08s; }
 </style>
 </head>
 <body>
@@ -9147,6 +9153,10 @@ button,input,select,textarea{font-family:inherit;}
   window.aps_generateScene = async function(idx){
     if(!window.APS||!window.API) return false;
     var sc=APS.scenes[idx]; if(!sc||!sc.narration.trim()){ if(typeof toast==='function') toast('Scene '+(idx+1)+' has no narration','error'); return false; }
+    // Warn if no presenter photo - HeyGen needs it
+    if(!APS.photoB64 && (APS.settings.provider==='heygen' || !APS.settings.provider)){
+      if(typeof toast==='function') toast('Tip: Upload a presenter photo for better results. Using studio background only.','info');
+    }
     sc.status='generating';
     var row=document.getElementById('aps-row-'+sc.id);
     if(row) row.className='aps-scene-row generating'+(idx===APS.currentIdx?' active':'');
@@ -9234,6 +9244,23 @@ button,input,select,textarea{font-family:inherit;}
   window.loadAISceneList  = function(){ if(typeof aps_renderSceneList==='function') aps_renderSceneList(); };
   window.startAIPresenter = window.aps_generateSelected;
   window.checkAIPresenterStatus = function(){ if(typeof toast==='function') toast('Check video status in the AI Presenter Studio','info'); };
+  // pushAllLocalProjectsToCloud — needed on sign-in
+  window.pushAllLocalProjectsToCloud = async function(){
+    try {
+      var session = window._sbSession;
+      if(!session || !session.access_token) return;
+      var projects = JSON.parse(localStorage.getItem('aab_projects')||'[]');
+      for(var i=0;i<projects.length;i++){
+        var p=projects[i]; if(!p.id) continue;
+        await fetch('https://aabstudio-production.up.railway.app/api/project/save',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
+          body:JSON.stringify({project:p})
+        }).catch(function(){});
+      }
+      console.log('All projects pushed to cloud');
+    } catch(e){ console.warn('pushAllLocalProjectsToCloud:', e.message); }
+  };
   console.log('APS fallback loaded: openAIPresenterStudio, aps_generateScene, initRemote ✓');
 })();
 </script>
