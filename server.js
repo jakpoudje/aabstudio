@@ -132,6 +132,7 @@ setInterval(() => {
 const anthropic      = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const ELEVENLABS_KEY = process.env.ELEVENLABS_API_KEY;
 const HEYGEN_KEY     = process.env.HEYGEN_API_KEY;
+let HEYGEN_AVATAR_ID  = process.env.HEYGEN_AVATAR_ID || 'Anna_public_3_20240108'; // safe current default, overwritten by discoverHeyGenAvatar()
 const KLING_KEY      = process.env.KLING_API_KEY;
 const RUNWAY_KEY      = process.env.RUNWAY_API_KEY;
 const CREATOMATE_KEY  = process.env.CREATOMATE_API_KEY;
