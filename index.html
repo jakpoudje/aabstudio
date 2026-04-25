@@ -2121,28 +2121,28 @@ function dashNav(sec, el) {
   document.querySelectorAll('.dash-sec').forEach(function(s){s.classList.remove('on');});
   var s=document.getElementById('dash-'+sec); if(s) s.classList.add('on');
 }
-function loadDashboard() {
-  var list=document.getElementById('proj-list');
-  // Clear oversized storage
-  try { var s=localStorage.getItem('aab_projects'); if(s&&s.length>800000){localStorage.removeItem('aab_projects');} } catch(e){}
-  var saved = JSON.parse(localStorage.getItem('aab_projects')||'[]');
-  if (!saved.length) {
-    list.innerHTML='<div class="empty-state"><div class="empty-icon">🎬</div><div class="empty-title">No projects yet</div><div class="empty-sub">Create your first video production.</div><button class="btn btn-primary" onclick="nav(\'script-pg\')">+ Create first project</button></div>';
+async function loadDashboard(){
+  var projects = await syncAndLoadProjects();
+  var grid = document.getElementById('proj-grid');
+  if(!grid) return;
+  if(!projects.length){
+    grid.innerHTML = '<div class="proj-empty"><div class="proj-empty-icon">🎬</div><div>No projects yet</div><div style="font-size:13px;color:var(--muted);margin-top:4px;">Create a new project to get started</div></div>';
     return;
   }
-  list.innerHTML='<div class="proj-grid">'+saved.map(function(p,i){
-    var sc=(p.scenes||[]).length, clips=Object.keys(p.clips||{}).length;
-    var stc=clips>0?'s-done':sc>0?'s-recording':'s-draft';
-    var stl=clips>0?'Recorded':sc>0?'Planning':'Draft';
-    return '<div class="proj-card" onclick="loadProject('+i+')">'
-      +'<div class="proj-thumb"><div style="font-size:28px;opacity:.4;">🎬</div><div class="proj-status '+stc+'">'+stl+'</div></div>'
-      +'<div class="proj-name">'+(p.title||'Untitled')+'</div>'
-      +'<div class="proj-meta">'+sc+' scene'+(sc!==1?'s':'')+(clips?' · '+clips+' clip'+(clips!==1?'s':''):'')+' · '+(p.date||'Today')+'</div>'
-      +'<div class="proj-actions" onclick="event.stopPropagation();">'
-      +'<button class="btn btn-dark btn-sm" style="flex:1;" onclick="loadProject('+i+')">Open</button>'
-      +'<button class="btn btn-danger btn-sm" onclick="deleteProject('+i+',event)">Delete</button>'
-      +'</div></div>';
-  }).join('')+'</div>';
+  grid.innerHTML = '';
+  projects.forEach(function(p, i){
+    var card = document.createElement('div');
+    card.className = 'proj-card';
+    card.innerHTML =
+      '<div class="proj-title">' + (p.title||'Untitled') + '</div>'
+      + '<div class="proj-meta">' + (p.scenes?p.scenes.length:0) + ' scenes · ' + (p.date||'') + '</div>'
+      + '<div class="proj-clips">' + Object.keys(p.clipsMeta||p.clips||{}).length + ' recorded</div>'
+      + '<div class="proj-actions">'
+      +   '<button class="btn btn-primary btn-sm" onclick="loadProject('+i+')">Open →</button>'
+      +   '<button class="btn btn-ghost btn-sm" onclick="deleteProject('+i+')" style="color:var(--muted);">Delete</button>'
+      + '</div>';
+    grid.appendChild(card);
+  });
 }
 function loadProject(idx) {
   var saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
@@ -2212,9 +2212,8 @@ function saveProject() {
     localStorage.setItem('aab_projects', json);
     updateStudioClips();
   } catch(e) {
-    console.warn('saveProject failed:', e.message);
+    console.warn('saveProject localStorage failed:', e.message);
     try {
-      // Emergency save: strip all assets
       light.assets = []; light.scenes = light.scenes.map(function(s){ s.assets=[]; return s; });
       var saved2 = JSON.parse(localStorage.getItem('aab_projects') || '[]');
       var idx2 = saved2.findIndex(function(p){ return p.id === light.id; });
@@ -2222,6 +2221,9 @@ function saveProject() {
       localStorage.setItem('aab_projects', JSON.stringify(saved2.slice(0,10)));
     } catch(e2){ console.error('Emergency save failed:', e2); }
   }
+
+  // Cloud sync — save to Supabase so project loads on any device
+  syncProjectToCloud(light);
 }
 function deleteProject(idx, e) {
   if(e) e.stopPropagation();
@@ -3167,100 +3169,106 @@ function startBgCompositing(type){
   canvas.style.display = 'block';
   var ctx = canvas.getContext('2d');
 
-  function resize(){
-    var wrap = document.getElementById('studio-canvas');
-    var W = (wrap && wrap.offsetWidth > 10) ? wrap.offsetWidth : 1280;
-    var H = (wrap && wrap.offsetHeight > 10) ? wrap.offsetHeight : 720;
-    if(canvas.width !== W || canvas.height !== H){
-      canvas.width = W; canvas.height = H;
-    }
-    return {W:W, H:H};
+  // Set size once upfront — don't resize every frame (resets canvas content)
+  var wrap = document.getElementById('studio-canvas');
+  var W = (wrap && wrap.offsetWidth  > 10) ? wrap.offsetWidth  : (cam.videoWidth  || 1280);
+  var H = (wrap && wrap.offsetHeight > 10) ? wrap.offsetHeight : (cam.videoHeight || 720);
+  canvas.width  = W;
+  canvas.height = H;
+
+  // Handle resize without clearing canvas mid-frame
+  var _resizeTimer = null;
+  function onResize(){
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(function(){
+      var nW = wrap ? wrap.offsetWidth  : W;
+      var nH = wrap ? wrap.offsetHeight : H;
+      if(nW > 10 && nH > 10 && (nW !== canvas.width || nH !== canvas.height)){
+        W = nW; H = nH;
+        canvas.width  = W;
+        canvas.height = H;
+      }
+    }, 200);
   }
+  window.addEventListener('resize', onResize);
 
   function compositingFrame(){
-    if(_bgCompositingType !== type) return;
+    if(_bgCompositingType !== type){
+      window.removeEventListener('resize', onResize);
+      return;
+    }
 
-    var dims = resize();
-    var W = dims.W, H = dims.H;
+    // Only draw if camera has video data
+    var camOk = cam && cam.readyState >= 2 && cam.videoWidth > 0;
+
     ctx.clearRect(0, 0, W, H);
 
-    // Check if camera has valid video data
-    var camReady = cam && cam.readyState >= 2 && cam.videoWidth > 0 && cam.videoHeight > 0;
-
     if(type === 'blur'){
-      if(camReady){
-        // Draw blurred camera as background
+      if(camOk){
+        // Blurred background
         ctx.save();
-        ctx.filter = 'blur(20px) brightness(.65) saturate(1.3)';
-        ctx.drawImage(cam, -40, -40, W+80, H+80);
+        ctx.filter = 'blur(22px) brightness(0.6) saturate(1.2)';
+        ctx.drawImage(cam, -50, -50, W+100, H+100);
         ctx.filter = 'none';
         ctx.restore();
-        // Draw sharp camera in portrait centre
+        // Sharp portrait in center
+        var cw = Math.round(W * 0.52);
+        var ch = Math.round(H * 0.92);
+        var cx = (W - cw) / 2;
+        var cy = (H - ch) / 2;
         ctx.save();
-        var cw = Math.round(W * 0.52), ch = Math.round(H * 0.92);
-        var cx = (W - cw) / 2, cy = (H - ch) / 2;
         ctx.beginPath();
-        if(ctx.roundRect) ctx.roundRect(cx, cy, cw, ch, 14);
+        if(ctx.roundRect) ctx.roundRect(cx, cy, cw, ch, 12);
         else ctx.rect(cx, cy, cw, ch);
         ctx.clip();
         ctx.drawImage(cam, cx, cy, cw, ch);
         ctx.restore();
       } else {
-        // Camera not ready yet — show blur placeholder
+        // Placeholder while camera starts
         var gr = ctx.createLinearGradient(0,0,W,H);
-        gr.addColorStop(0,'#1a1a2e'); gr.addColorStop(1,'#16213e');
+        gr.addColorStop(0,'#0f172a'); gr.addColorStop(1,'#1e3a5f');
         ctx.fillStyle = gr;
         ctx.fillRect(0,0,W,H);
-        ctx.fillStyle = 'rgba(255,255,255,.12)';
-        ctx.font = '16px Sora,sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.font = '600 16px Sora,sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('Blur active — start camera to see effect', W/2, H/2);
+        ctx.fillText('Blur background ready — click Cam to start', W/2, H/2);
       }
 
     } else if(type === 'custom-img'){
       var bgImg = document.getElementById('studio-bg-img');
-      if(bgImg && bgImg.src && bgImg.naturalWidth > 0){
+      if(bgImg && bgImg.naturalWidth > 0){
         var sc = Math.max(W/bgImg.naturalWidth, H/bgImg.naturalHeight);
-        var bw = bgImg.naturalWidth*sc, bh = bgImg.naturalHeight*sc;
-        ctx.drawImage(bgImg, (W-bw)/2, (H-bh)/2, bw, bh);
+        ctx.drawImage(bgImg, (W-bgImg.naturalWidth*sc)/2, (H-bgImg.naturalHeight*sc)/2, bgImg.naturalWidth*sc, bgImg.naturalHeight*sc);
       }
-      if(camReady) ctx.drawImage(cam, 0, 0, W, H);
+      if(camOk) ctx.drawImage(cam, 0, 0, W, H);
 
     } else if(type === 'custom-vid'){
       var bgVid = document.getElementById('studio-bg-vid');
       if(bgVid && bgVid.readyState >= 2){
-        var sc2 = Math.max(W/bgVid.videoWidth, H/bgVid.videoHeight);
-        var bw2 = bgVid.videoWidth*sc2, bh2 = bgVid.videoHeight*sc2;
-        ctx.drawImage(bgVid, (W-bw2)/2, (H-bh2)/2, bw2, bh2);
+        var sv = Math.max(W/bgVid.videoWidth, H/bgVid.videoHeight);
+        ctx.drawImage(bgVid, (W-bgVid.videoWidth*sv)/2, (H-bgVid.videoHeight*sv)/2, bgVid.videoWidth*sv, bgVid.videoHeight*sv);
       }
-      if(camReady) ctx.drawImage(cam, 0, 0, W, H);
+      if(camOk) ctx.drawImage(cam, 0, 0, W, H);
 
     } else {
-      // Photo background (news/office/library etc)
+      // Photo background: news / office / library etc
       var variant = BG_VARIANT[type] || 0;
-      var bgImg2  = BG_IMG_CACHE[type+'_'+variant];
+      var bgImg2  = BG_IMG_CACHE[type + '_' + variant];
       if(bgImg2 && bgImg2.naturalWidth > 0){
-        var sc3 = Math.max(W/bgImg2.naturalWidth, H/bgImg2.naturalHeight);
-        var bw3 = bgImg2.naturalWidth*sc3, bh3 = bgImg2.naturalHeight*sc3;
-        ctx.drawImage(bgImg2, (W-bw3)/2, (H-bh3)/2, bw3, bh3);
+        var sc2 = Math.max(W/bgImg2.naturalWidth, H/bgImg2.naturalHeight);
+        ctx.drawImage(bgImg2, (W-bgImg2.naturalWidth*sc2)/2, (H-bgImg2.naturalHeight*sc2)/2, bgImg2.naturalWidth*sc2, bgImg2.naturalHeight*sc2);
       } else {
-        // Fallback while loading
         var gr2 = ctx.createLinearGradient(0,0,W,H);
-        gr2.addColorStop(0,'#0d1b2a'); gr2.addColorStop(1,'#1e3a5f');
-        ctx.fillStyle = gr2;
-        ctx.fillRect(0,0,W,H);
+        gr2.addColorStop(0,'#0d1b2a'); gr2.addColorStop(1,'#1a3a5f');
+        ctx.fillStyle = gr2; ctx.fillRect(0,0,W,H);
       }
-      // Camera fullscreen on top
-      if(camReady) ctx.drawImage(cam, 0, 0, W, H);
+      if(camOk) ctx.drawImage(cam, 0, 0, W, H);
     }
-
-    // Lighting overlay
-    applyLightingToCtx(ctx, W, H);
 
     _bgCompositingRaf = requestAnimationFrame(compositingFrame);
   }
 
-  // Start immediately — don't wait for camera (show fallback until camera ready)
   _bgCompositingRaf = requestAnimationFrame(compositingFrame);
 }
 
@@ -3551,7 +3559,7 @@ function grantCreatorAccess(){
 }
 
 // ══ AI PRESENTER ══════════════════════════════════════════════════════════════
-function openAIPresenter(){
+async function openAIPresenter(){
   if(!APP.user){
     toast('Sign in first to use AI Presenter','info');
     setTimeout(function(){ nav('auth-pg'); }, 1500);
@@ -3562,20 +3570,20 @@ function openAIPresenter(){
     return;
   }
 
-  // Always try to restore project from localStorage first
-  var saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
-  // Pick project with most scenes (the user's real work)
-  var best = null;
-  saved.forEach(function(p){
-    if(p.scenes && p.scenes.length > 0){
-      if(!best || p.scenes.length > best.scenes.length) best = p;
+  // Load scenes from cloud or localStorage if PROJECT is empty
+  if(!PROJECT.scenes || PROJECT.scenes.length === 0){
+    var projects = await syncAndLoadProjects();
+    var best = null;
+    (projects||[]).forEach(function(p){
+      if(p.scenes && p.scenes.length > 0){
+        if(!best || p.scenes.length > best.scenes.length) best = p;
+      }
+    });
+    if(best){
+      PROJECT.id = best.id; PROJECT.title = best.title;
+      PROJECT.scenes = best.scenes; PROJECT.assets = best.assets||[];
+      PROJECT.wpm = best.wpm||150; PROJECT.clips = {};
     }
-  });
-
-  if(best && (!PROJECT.scenes || PROJECT.scenes.length < best.scenes.length)){
-    PROJECT.id = best.id; PROJECT.title = best.title;
-    PROJECT.scenes = best.scenes; PROJECT.assets = best.assets || [];
-    PROJECT.wpm = best.wpm || 150; PROJECT.clips = {};
   }
 
   if(!PROJECT.scenes || PROJECT.scenes.length === 0){
@@ -3584,8 +3592,7 @@ function openAIPresenter(){
   }
 
   openModal('ai-presenter-modal');
-  // Load immediately — no button click needed
-  setTimeout(loadAISceneList, 50);
+  setTimeout(window.loadAISceneList, 80);
 }
 function loadAIPhoto(inp){if(!inp.files.length)return;var f=inp.files[0];var rd=new FileReader();rd.onload=function(e){var img=document.getElementById('ai-photo-preview');if(img){img.src=e.target.result;img.style.display='block';}window._aiPhotoB64=e.target.result.split(',')[1];};rd.readAsDataURL(f);}// ══ KEYBOARD SHORTCUTS ════════════════════════════════════════════════════════
 document.addEventListener('keydown',function(e){
@@ -3621,7 +3628,7 @@ window.addEventListener('load',function(){
   var params=new URLSearchParams(window.location.search);
   if(params.get('remote')){initRemotePage();return;}
   if(params.get('checkout')==='success'){
-    var supa2=getSupa();if(supa2){supa2.auth.getSession().then(function(r){if(r.data&&r.data.session){setUser(r.data.session.user);APP.plan='creator';supa2.auth.updateUser({data:{plan:'creator'}}).then(function(){history.replaceState(null,'','/');nav('dashboard-pg');setTimeout(function(){toast('✓ Payment successful! Creator plan activated.','ok');},600);});}});}
+    var supa2=getSupa();if(supa2){supa2.auth.getSession().then(function(r){if(r.data&&r.data.session){window._sbSession=r.data.session;setUser(r.data.session.user);APP.plan='creator';supa2.auth.updateUser({data:{plan:'creator'}}).then(function(){history.replaceState(null,'','/');nav('dashboard-pg');setTimeout(function(){toast('✓ Payment successful! Creator plan activated.','ok');},600);});}});}
     return;
   }
   var supa=getSupa();if(!supa){updateNavState();return;}
@@ -3630,8 +3637,12 @@ window.addEventListener('load',function(){
     else{updateNavState();navFree('home');}
   });
   supa.auth.onAuthStateChange(function(event,session){
-    if(event==='SIGNED_IN'&&session){ setUser(session.user); }
-    if(event==='SIGNED_OUT'){ APP.user=null; APP.plan='free'; updateNavState(); navFree('home'); }
+    if(event==='SIGNED_IN'&&session){ 
+      window._sbSession = session;
+      setUser(session.user);
+      setTimeout(syncAndLoadProjects, 800);
+    }
+    if(event==='SIGNED_OUT'){ window._sbSession=null; APP.user=null; APP.plan='free'; updateNavState(); navFree('home'); }
     if(event==='TOKEN_REFRESHED'&&session){ setUser(session.user); }
   });
   // Handle stale/invalid session tokens gracefully
@@ -3773,6 +3784,9 @@ window.selectMode            = selectMode;
 window.confirmMode           = confirmMode;
 window.showUpgradeModal      = showUpgradeModal;
 window.showUpgradeModalPro   = showUpgradeModalPro;
+window.syncProjectToCloud   = syncProjectToCloud;
+window.loadProjectsFromCloud  = loadProjectsFromCloud;
+window.syncAndLoadProjects    = syncAndLoadProjects;
 window.syncLabelScroll       = syncLabelScroll;
 window.saveSceneEditorAndClose = saveSceneEditorAndClose;
 window.closeSceneEditor      = closeSceneEditor;
@@ -6038,6 +6052,61 @@ async function doExport(){
     });
     setStatus('<div style="color:var(--gold)">⚠ Downloading ' + clips.length + ' clips individually — merge in your video editor.</div>');
   }
+}
+
+// ── Cloud project sync — saves/loads projects via Supabase so all devices in sync
+async function syncProjectToCloud(projectData){
+  try {
+    var session = window._sbSession;
+    if(!session || !session.access_token) return; // not logged in
+    await fetch(API + '/api/project/save', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + session.access_token
+      },
+      body: JSON.stringify({ project: projectData })
+    });
+  } catch(e){ console.warn('Cloud sync failed:', e.message); }
+}
+
+async function loadProjectsFromCloud(){
+  try {
+    var session = window._sbSession;
+    if(!session || !session.access_token) return null;
+    var r = await fetch(API + '/api/project/list', {
+      headers: { 'Authorization': 'Bearer ' + session.access_token }
+    });
+    if(!r.ok) return null;
+    var d = await r.json();
+    return d.projects || [];
+  } catch(e){
+    console.warn('Cloud load failed:', e.message);
+    return null;
+  }
+}
+
+async function syncAndLoadProjects(){
+  // Try cloud first, fall back to localStorage
+  var cloudProjects = await loadProjectsFromCloud();
+  if(cloudProjects && cloudProjects.length > 0){
+    // Merge cloud projects into localStorage
+    var local = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+    cloudProjects.forEach(function(cp){
+      var idx = local.findIndex(function(p){ return p.id === cp.id; });
+      if(idx > -1){
+        // Keep whichever is newer
+        var localDate = local[idx].date || '';
+        var cloudDate = cp.date || '';
+        if(cloudDate >= localDate) local[idx] = cp;
+      } else {
+        local.unshift(cp);
+      }
+    });
+    localStorage.setItem('aab_projects', JSON.stringify(local.slice(0,25)));
+    return local;
+  }
+  return JSON.parse(localStorage.getItem('aab_projects') || '[]');
 }
 
 </script>
