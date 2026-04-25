@@ -924,6 +924,93 @@ async function compositePresenterOnBackground({ presenterB64, backgroundB64, fra
 }
 
 // ── MASTER PRESENTER ROUTE — orchestrates all 4 steps ─────────────────────────
+
+// ── Industry-standard camera selection per studio type ────────────────────────
+const STUDIO_CAMERA_RULES = {
+  'news-studio': {
+    shots: ['medium shot', 'medium close-up', 'wide establishing shot', 'over-shoulder cut'],
+    motions: ['static lock-off', 'subtle push-in', 'slow pan right', 'static'],
+    framing: 'news-desk seated, eye level camera, slight down angle',
+    cutPattern: ['medium', 'medium', 'wide', 'medium-close'], // repeating pattern
+    description: 'professional broadcast news anchor framing'
+  },
+  'podcast': {
+    shots: ['medium close-up', 'close-up', 'medium shot', 'extreme close-up'],
+    motions: ['static', 'subtle push-in', 'very slow rack focus', 'handheld slight'],
+    framing: 'intimate podcast framing, slightly below eye level',
+    cutPattern: ['medium-close', 'close', 'medium-close', 'medium'],
+    description: 'intimate podcast host framing'
+  },
+  'office': {
+    shots: ['medium shot', 'medium close-up', 'wide office shot', 'medium'],
+    motions: ['static', 'slow push-in', 'static', 'subtle pan'],
+    framing: 'professional business setting, eye level',
+    cutPattern: ['medium', 'medium-close', 'wide', 'medium'],
+    description: 'corporate professional video call framing'
+  },
+  'classroom': {
+    shots: ['medium shot', 'wide shot', 'medium close-up', 'over-shoulder'],
+    motions: ['static', 'slow pull-back', 'push-in on key point', 'static'],
+    framing: 'teacher at front of room, slightly elevated camera',
+    cutPattern: ['medium', 'wide', 'medium', 'medium-close'],
+    description: 'educational presenter framing'
+  },
+  'courtroom': {
+    shots: ['medium shot', 'medium close-up', 'wide dramatic shot', 'tight close-up'],
+    motions: ['static lock-off', 'very slow push-in', 'static', 'static'],
+    framing: 'formal legal setting, slightly elevated authoritative angle',
+    cutPattern: ['medium', 'medium-close', 'wide', 'close'],
+    description: 'authoritative legal/investigative framing'
+  },
+  'documentary': {
+    shots: ['medium close-up', 'close-up', 'extreme close-up', 'medium shot'],
+    motions: ['very slow push-in', 'subtle handheld', 'rack focus', 'slow pull-back'],
+    framing: 'cinematic documentary single-camera, slight dutch angle allowed',
+    cutPattern: ['medium-close', 'close', 'medium', 'extreme-close'],
+    description: 'cinematic documentary talking head'
+  },
+  'cooking': {
+    shots: ['medium shot', 'wide kitchen shot', 'medium close-up hands', 'overhead cut'],
+    motions: ['static', 'slow pan with movement', 'push-in on food', 'static'],
+    framing: 'cooking show counter level, slightly elevated, energetic',
+    cutPattern: ['medium', 'wide', 'medium-close', 'medium'],
+    description: 'cooking show host framing'
+  },
+  'custom': {
+    shots: ['medium shot', 'medium close-up', 'wide shot', 'close-up'],
+    motions: ['static', 'subtle push-in', 'static', 'slow pan'],
+    framing: 'custom studio, eye level camera',
+    cutPattern: ['medium', 'medium-close', 'wide', 'medium'],
+    description: 'custom studio framing'
+  }
+};
+
+// Get randomised (but industry-appropriate) camera for a scene
+function getSceneCamera(studioType, sceneIndex, totalScenes) {
+  const rules = STUDIO_CAMERA_RULES[studioType] || STUDIO_CAMERA_RULES['news-studio'];
+  
+  // Use cut pattern for variety but follow industry standard
+  const patternIdx = sceneIndex % rules.cutPattern.length;
+  const shotType = rules.cutPattern[patternIdx];
+  
+  // Motion: vary every few scenes
+  const motionIdx = Math.floor(sceneIndex / 2) % rules.motions.length;
+  const motion = rules.motions[motionIdx];
+  
+  // First and last scenes always get wide/establishing
+  let shot = rules.shots[patternIdx % rules.shots.length];
+  if (sceneIndex === 0) shot = rules.shots.find(s => s.includes('wide') || s.includes('establishing')) || shot;
+  if (sceneIndex === totalScenes - 1) shot = rules.shots.find(s => s.includes('medium')) || shot;
+  
+  return {
+    shot,
+    motion,
+    framing: rules.framing,
+    description: rules.description,
+    promptText: `${shot}, ${motion}, ${rules.framing}, ${rules.description}`
+  };
+}
+
 app.post('/api/presenter', async (req, res) => {
   try {
     const {
@@ -1224,9 +1311,13 @@ async function generateWithHeyGen(req, res, { referenceImageBase64, audioBase64,
     }
   }
 
-  const character = tpId
-    ? { type: 'talking_photo', talking_photo_id: tpId, talking_style: 'expressive' }
-    : { type: 'avatar', avatar_id: 'josh_lite3_20230714', avatar_style: 'normal' };
+  // Only use talking_photo mode (user's uploaded photo on studio background)
+  // If no photo available, return error asking user to upload one
+  if (!tpId) {
+    console.warn('HeyGen: no talking photo available — user must upload a presenter photo');
+    throw new Error('Please upload a presenter photo in the AI Presenter Studio to generate video. Click "Upload presenter photo" in the right panel.');
+  }
+  const character = { type: 'talking_photo', talking_photo_id: tpId, talking_style: 'expressive' };
 
   console.log('HeyGen: generating video, character:', character.type);
 
@@ -1268,7 +1359,8 @@ async function generateWithRunway(req, res, { referenceImageBase64, audioBase64,
 
   if (!sceneImageB64) throw new Error('No scene image for Runway. Upload a presenter photo.');
 
-  const motionPrompt = 'Professional TV presenter speaking to camera. Natural lip sync, subtle head movement, realistic breathing. Consistent studio background. High quality broadcast video.';
+  const camera = sceneCamera || { shot: 'medium shot', motion: 'static', promptText: 'medium shot, static, professional broadcast video' };
+  const motionPrompt = `Professional TV presenter speaking to camera. ${camera.shot}. ${camera.motion}. Natural lip sync, subtle head movement, realistic breathing. ${camera.framing || ''}. Consistent studio background. High quality broadcast video.`;
 
   const ratioMap = { '16:9':'1280:768', '9:16':'768:1280', '1:1':'1024:1024' };
 
@@ -1297,7 +1389,7 @@ async function generateWithRunway(req, res, { referenceImageBase64, audioBase64,
 
 app.get('/health', (req, res) => res.json({
   status:     'ok',
-  version:    '2.7',
+  version:    '2.8',
   platform:   'AABStudio.ai',
   model:      MODEL,
   anthropic:  !!process.env.ANTHROPIC_API_KEY,
