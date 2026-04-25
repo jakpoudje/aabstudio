@@ -676,6 +676,28 @@ button,input,select,textarea{font-family:inherit;}
 .mode-card-opt{border:2px solid var(--bdr2);border-radius:14px;padding:20px;cursor:pointer;transition:all .15s;}
 .mode-card-opt:hover{border-color:rgba(0,212,255,.3);background:rgba(0,212,255,.02);}
 .mode-card-opt.selected{border-color:var(--accent);background:rgba(0,212,255,.04);}
+
+/* ── AI Presenter Studio ──────────────────────────────────── */
+.aps-section{margin-bottom:20px;padding-bottom:16px;border-bottom:.5px solid #1f2937;}
+.aps-section:last-child{border-bottom:none;}
+.aps-section-hdr{font-size:11px;font-weight:700;color:#9ca3af;letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;}
+.aps-label{font-size:11px;color:#6b7280;margin:8px 0 4px;}
+.aps-select{width:100%;padding:7px 10px;border:.5px solid #374151;border-radius:6px;background:#1f2937;color:#e5e7eb;font-size:12px;font-family:Sora,sans-serif;margin-bottom:2px;}
+.aps-slider{width:100%;accent-color:#00d4ff;margin:2px 0;}
+.aps-bg-btn{padding:8px 6px;border:.5px solid #374151;border-radius:6px;cursor:pointer;font-size:11px;color:#e5e7eb;text-align:center;transition:border-color .15s;font-family:Sora,sans-serif;}
+.aps-bg-btn:hover,.aps-bg-btn.active{border-color:#00d4ff;color:#00d4ff;}
+.aps-scene-row{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer;margin-bottom:3px;border:.5px solid transparent;transition:all .1s;}
+.aps-scene-row:hover{background:#1f2937;border-color:#374151;}
+.aps-scene-row.active{background:#0c1e30;border-color:#00d4ff;}
+.aps-scene-row.done{border-color:#10b981;}
+.aps-scene-row.failed{border-color:#ef4444;}
+.aps-scene-row.generating{border-color:#f59e0b;animation:aps-pulse 1.5s infinite;}
+@keyframes aps-pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.aps-status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.aps-status-dot.pending{background:#374151;}
+.aps-status-dot.generating{background:#f59e0b;}
+.aps-status-dot.done{background:#10b981;}
+.aps-status-dot.failed{background:#ef4444;}
 </style>
 </head>
 <body>
@@ -1114,7 +1136,7 @@ button,input,select,textarea{font-family:inherit;}
         <button class="btn btn-dark btn-sm" onclick="nav('script-pg')">← Edit script</button>
         <button class="btn btn-dark btn-sm" onclick="exportFullScript()">↓ Script</button>
         <button class="btn btn-dark btn-sm" onclick="generateSubtitles()">↓ .SRT</button>
-        <button class="btn btn-dark btn-sm" id="ai-pres-btn" onclick="openAIPresenter()">🤖 AI presenter</button>
+        <button class="btn btn-dark btn-sm" id="ai-pres-btn" onclick="window.openAIPresenterStudio ? window.openAIPresenterStudio() : window.openAIPresenter()">🤖 AI presenter</button>
         <button class="btn btn-primary btn-sm" onclick="openRecordingStudio()">🎙 Record →</button>
       </div>
     </div>
@@ -3606,48 +3628,10 @@ function grantCreatorAccess(){
 }
 
 // ══ AI PRESENTER ══════════════════════════════════════════════════════════════
-function openAIPresenter(){
-  // NOT async - Safari drops async onclick handlers silently
-  if(!APP.user){
-    toast('Sign in first to use AI Presenter','info');
-    setTimeout(function(){ nav('auth-pg'); }, 1500);
-    return;
-  }
-  if(APP.plan === 'free'){
-    showUpgradeModalPro('AI Presenter requires Creator or Pro Studio plan.');
-    return;
-  }
+// [replaced by AI Presenter Studio]
 
-  // Restore project from localStorage if empty
-  if(!PROJECT.scenes || PROJECT.scenes.length === 0){
-    var saved = JSON.parse(localStorage.getItem('aab_projects')||'[]');
-    var best = null;
-    saved.forEach(function(p){
-      if(p.scenes && p.scenes.length > 0){
-        if(!best || p.scenes.length > best.scenes.length) best = p;
-      }
-    });
-    if(best){
-      PROJECT.id=best.id; PROJECT.title=best.title;
-      PROJECT.scenes=best.scenes; PROJECT.assets=best.assets||[];
-      PROJECT.wpm=best.wpm||150; PROJECT.clips={};
-    }
-  }
-
-  if(!PROJECT.scenes || PROJECT.scenes.length === 0){
-    toast('No scenes found. Split your script first, then open AI Presenter.','error');
-    return;
-  }
-
-  // Open modal SYNCHRONOUSLY - no awaiting
-  openModal('ai-presenter-modal');
-  
-  // Load scenes after modal is visible - use setTimeout not await
-  setTimeout(function(){ 
-    if(typeof window.loadAISceneList === 'function') window.loadAISceneList();
-  }, 80);
-}
-function loadAIPhoto(inp){if(!inp.files.length)return;var f=inp.files[0];var rd=new FileReader();rd.onload=function(e){var img=document.getElementById('ai-photo-preview');if(img){img.src=e.target.result;img.style.display='block';}window._aiPhotoB64=e.target.result.split(',')[1];};rd.readAsDataURL(f);}// ══ KEYBOARD SHORTCUTS ════════════════════════════════════════════════════════
+// [replaced by AI Presenter Studio]
+// ══ KEYBOARD SHORTCUTS ════════════════════════════════════════════════════════
 document.addEventListener('keydown',function(e){
   var tag=document.activeElement.tagName;
   if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;
@@ -3737,6 +3721,685 @@ async function pushAllLocalProjectsToCloud(){
   } catch(e){ console.warn('pushAllLocalProjectsToCloud:', e.message); }
 }
 
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AI PRESENTER STUDIO — Professional presenter video generation
+// ══════════════════════════════════════════════════════════════════════════════
+
+// State
+var APS = {
+  scenes: [],           // all scenes with status
+  currentIdx: 0,        // currently selected scene index
+  photoB64: null,       // presenter photo base64
+  customBgB64: null,    // custom background base64
+  generating: false,    // queue running
+  stopRequested: false, // stop signal
+  clips: {},            // taskId per scene id
+  results: {},          // final video URLs per scene id
+  settings: {
+    voiceId: 'pNInz6obpgDQGcFmaJgB',
+    voiceName: 'Adam',
+    voiceGender: 'male',
+    framing: 'medium',
+    gesture: 'professional',
+    bg: 'news-studio',
+    shot: 'medium',
+    motion: 'static',
+    provider: 'kling',
+    ratio: '16:9',
+    bgLocked: true,
+    stability: 0.5,
+    clarity: 0.75
+  }
+};
+
+// Background definitions
+var APS_BG_PROMPTS = {
+  'news-studio': 'modern professional broadcast news studio, blue and gold lighting, dark background, clean minimal set, broadcast quality',
+  'podcast': 'modern podcast studio, dark moody atmosphere, ring light, microphone visible, acoustic panels, professional setup',
+  'office': 'clean modern corporate office background, city view through window, professional lighting, warm tones',
+  'classroom': 'academic classroom studio, whiteboard, bookshelf, clean educational environment, warm lighting',
+  'courtroom': 'formal courtroom or legal studio, dark wood panels, professional serious atmosphere, dramatic lighting',
+  'documentary': 'dark cinematic documentary backdrop, dark room, dramatic single source lighting, serious atmosphere',
+  'cooking': 'bright professional cooking show kitchen studio, marble counter, hanging pots, warm inviting lighting',
+  'custom': 'custom user-provided background'
+};
+
+var APS_BG_CSS = {
+  'news-studio': 'linear-gradient(135deg,#0a1628,#1a2f5a,#0d2040)',
+  'podcast': 'linear-gradient(135deg,#0d0020,#1a0535,#0a0015)',
+  'office': 'linear-gradient(135deg,#0f1a10,#1a2f1a,#0a1a20)',
+  'classroom': 'linear-gradient(135deg,#1a1a0a,#2a2a10,#1a2010)',
+  'courtroom': 'linear-gradient(135deg,#1a0a00,#3a1500,#1a0800)',
+  'documentary': 'linear-gradient(135deg,#050505,#100005,#050010)',
+  'cooking': 'linear-gradient(135deg,#0a1a0a,#182a10,#0f2010)',
+  'custom': '#1a2535'
+};
+
+function openAIPresenterStudio(){
+  if(!APP.user){
+    toast('Sign in first','info');
+    setTimeout(function(){ nav('auth-pg'); }, 1500);
+    return;
+  }
+  if(APP.plan === 'free'){
+    if(typeof showUpgradeModalPro==='function') showUpgradeModalPro('AI Presenter Studio requires Creator or Pro Studio plan.');
+    return;
+  }
+
+  // Load scenes from current project or localStorage
+  var scenes = [];
+  if(PROJECT.scenes && PROJECT.scenes.length > 0){
+    scenes = PROJECT.scenes;
+  } else {
+    var saved = JSON.parse(localStorage.getItem('aab_projects')||'[]');
+    var best = null;
+    saved.forEach(function(p){ if(p.scenes && p.scenes.length > 0 && (!best || p.scenes.length > best.scenes.length)) best = p; });
+    if(best){ PROJECT.id=best.id; PROJECT.title=best.title; PROJECT.scenes=best.scenes; PROJECT.clips={}; scenes=best.scenes; }
+  }
+
+  if(!scenes.length){
+    toast('No scenes found. Split your script into scenes first.','error');
+    return;
+  }
+
+  // Init APS state
+  APS.scenes = scenes.map(function(sc, i){
+    return {
+      id: sc.id,
+      num: i+1,
+      total: scenes.length,
+      narration: sc.narration || sc.script || '',
+      duration: sc.duration || 8,
+      type: sc.type || 'MAIN',
+      status: APS.results[sc.id] ? 'done' : 'ready',
+      taskId: APS.clips[sc.id] || null,
+      videoUrl: APS.results[sc.id] || null,
+      selected: true
+    };
+  });
+
+  APS.currentIdx = 0;
+  APS.generating = false;
+  APS.stopRequested = false;
+
+  // Open the studio page
+  var studio = document.getElementById('ai-presenter-studio');
+  studio.classList.add('on');
+
+  // Set project name
+  var nameEl = document.getElementById('aps-project-name');
+  if(nameEl) nameEl.textContent = PROJECT.title || 'My Video';
+
+  // Render
+  aps_renderSceneList();
+  aps_selectScene(0);
+  aps_syncSettingsUI();
+
+  // Restore saved settings
+  try {
+    var saved = JSON.parse(localStorage.getItem('aps_settings')||'{}');
+    if(saved.voiceId){ APS.settings = Object.assign(APS.settings, saved); aps_syncSettingsUI(); }
+  } catch(e){}
+}
+window.openAIPresenterStudio = openAIPresenterStudio;
+
+// Keep backward compat — openAIPresenter now opens studio
+function openAIPresenter(){
+  openAIPresenterStudio();
+}
+window.openAIPresenter = openAIPresenter;
+
+function closeAIPresenterStudio(){
+  var studio = document.getElementById('ai-presenter-studio');
+  if(studio) studio.classList.remove('on');
+  APS.stopRequested = true;
+}
+window.closeAIPresenterStudio = closeAIPresenterStudio;
+
+function aps_syncSettingsUI(){
+  var s = APS.settings;
+  var voiceSel = document.getElementById('aps-voice-sel');
+  var framingSel = document.getElementById('aps-framing');
+  var gestureSel = document.getElementById('aps-gesture');
+  var shotSel = document.getElementById('aps-shot');
+  var motionSel = document.getElementById('aps-motion');
+  var providerSel = document.getElementById('aps-provider');
+  var ratioSel = document.getElementById('aps-ratio');
+  var stabSlider = document.getElementById('aps-voice-stability');
+  var claritySlider = document.getElementById('aps-voice-clarity');
+  var bgLock = document.getElementById('aps-bg-lock');
+
+  if(voiceSel) voiceSel.value = s.voiceId;
+  if(framingSel) framingSel.value = s.framing;
+  if(gestureSel) gestureSel.value = s.gesture;
+  if(shotSel) shotSel.value = s.shot;
+  if(motionSel) motionSel.value = s.motion;
+  if(providerSel) providerSel.value = s.provider;
+  if(ratioSel) ratioSel.value = s.ratio;
+  if(stabSlider) stabSlider.value = s.stability * 100;
+  if(claritySlider) claritySlider.value = s.clarity * 100;
+  if(bgLock) bgLock.checked = s.bgLocked;
+
+  // Update bg buttons
+  document.querySelectorAll('.aps-bg-btn').forEach(function(btn){
+    btn.classList.toggle('active', btn.dataset.bg === s.bg);
+  });
+}
+
+function aps_saveSettings(){
+  APS.settings.voiceId = (document.getElementById('aps-voice-sel')||{}).value || APS.settings.voiceId;
+  var voiceOpt = document.querySelector('#aps-voice-sel option:checked');
+  APS.settings.voiceGender = voiceOpt ? (voiceOpt.dataset.gender || 'unknown') : 'unknown';
+  APS.settings.voiceName = voiceOpt ? voiceOpt.textContent.split('—')[0].trim() : '';
+  APS.settings.framing = (document.getElementById('aps-framing')||{}).value || APS.settings.framing;
+  APS.settings.gesture = (document.getElementById('aps-gesture')||{}).value || APS.settings.gesture;
+  APS.settings.shot = (document.getElementById('aps-shot')||{}).value || APS.settings.shot;
+  APS.settings.motion = (document.getElementById('aps-motion')||{}).value || APS.settings.motion;
+  APS.settings.provider = (document.getElementById('aps-provider')||{}).value || APS.settings.provider;
+  APS.settings.ratio = (document.getElementById('aps-ratio')||{}).value || APS.settings.ratio;
+  APS.settings.stability = ((document.getElementById('aps-voice-stability')||{}).value || 50) / 100;
+  APS.settings.clarity = ((document.getElementById('aps-voice-clarity')||{}).value || 75) / 100;
+  APS.settings.bgLocked = !!(document.getElementById('aps-bg-lock')||{}).checked;
+  localStorage.setItem('aps_settings', JSON.stringify(APS.settings));
+}
+
+function aps_renderSceneList(filter){
+  var list = document.getElementById('aps-scene-list');
+  if(!list) return;
+  list.innerHTML = '';
+
+  var scenes = APS.scenes;
+  if(filter && filter !== 'failed'){
+    var q = filter.toLowerCase();
+    scenes = scenes.filter(function(sc){ return sc.narration.toLowerCase().includes(q) || String(sc.num).includes(q); });
+  } else if(filter === 'failed'){
+    scenes = scenes.filter(function(sc){ return sc.status === 'failed'; });
+  }
+
+  var countEl = document.getElementById('aps-scene-count');
+  if(countEl) countEl.textContent = APS.scenes.length + ' scenes';
+
+  scenes.forEach(function(sc){
+    var row = document.createElement('div');
+    row.className = 'aps-scene-row' + (sc.num-1 === APS.currentIdx ? ' active' : '') + (sc.status === 'done' ? ' done' : '') + (sc.status === 'failed' ? ' failed' : '') + (sc.status === 'generating' ? ' generating' : '');
+    row.id = 'aps-row-' + sc.id;
+
+    var dot = '<span class="aps-status-dot ' + sc.status + '"></span>';
+    var chk = '<input type="checkbox" ' + (sc.selected ? 'checked' : '') + ' style="accent-color:#00d4ff;flex-shrink:0;" onclick="APS.scenes[' + (sc.num-1) + '].selected=this.checked;event.stopPropagation();">';
+    var num = '<span style="font-size:10px;color:#6b7280;font-weight:600;flex-shrink:0;width:28px;">'+String(sc.num).padStart(2,'0')+'</span>';
+    var text = '<span style="font-size:11px;color:#e5e7eb;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (sc.narration.slice(0,50)||'(no narration)') + '</span>';
+    var dur = '<span style="font-size:10px;color:#4b5563;flex-shrink:0;">' + sc.duration + 's</span>';
+
+    var statusIcon = '';
+    if(sc.status === 'done') statusIcon = '<span style="font-size:10px;color:#10b981;">✓</span>';
+    else if(sc.status === 'failed') statusIcon = '<button onclick="event.stopPropagation();aps_regenerateScene('+(sc.num-1)+')" style="font-size:9px;color:#ef4444;background:none;border:none;cursor:pointer;padding:0;">↻ retry</button>';
+    else if(sc.status === 'generating') statusIcon = '<span style="font-size:10px;color:#f59e0b;">⏳</span>';
+
+    row.innerHTML = dot + chk + num + text + dur + statusIcon;
+    row.onclick = function(){ aps_selectScene(sc.num-1); };
+    list.appendChild(row);
+  });
+
+  if(!scenes.length){
+    list.innerHTML = '<div style="padding:20px;text-align:center;font-size:12px;color:#4b5563;">No scenes match filter</div>';
+  }
+}
+
+function aps_selectScene(idx){
+  APS.currentIdx = idx;
+  var sc = APS.scenes[idx];
+  if(!sc) return;
+
+  // Update all rows
+  document.querySelectorAll('.aps-scene-row').forEach(function(r){ r.classList.remove('active'); });
+  var activeRow = document.getElementById('aps-row-' + sc.id);
+  if(activeRow) activeRow.classList.add('active');
+
+  // Update preview
+  var numEl = document.getElementById('aps-preview-scene-num');
+  var durEl = document.getElementById('aps-preview-duration');
+  var scriptEl = document.getElementById('aps-preview-script');
+  var badgeEl = document.getElementById('aps-preview-badge');
+  var regenBtn = document.getElementById('aps-regen-btn');
+  var genOneBtn = document.getElementById('aps-gen-one-btn');
+
+  if(numEl) numEl.textContent = 'Scene ' + String(sc.num).padStart(2,'0') + ' / ' + sc.total + ' — ' + sc.type;
+  if(durEl) durEl.textContent = sc.duration + 's · ' + Math.ceil(sc.narration.split(' ').length / 2.5) + ' words';
+
+  if(scriptEl){
+    scriptEl.textContent = sc.narration.slice(0,120) + (sc.narration.length>120?'…':'');
+    scriptEl.style.display = sc.narration ? 'block' : 'none';
+  }
+
+  var statusLabels = {ready:'Ready',generating:'Generating…',done:'✓ Generated',failed:'✗ Failed',pending:'Pending'};
+  var statusColors = {ready:'#6b7280',generating:'#f59e0b',done:'#10b981',failed:'#ef4444',pending:'#374151'};
+  if(badgeEl){
+    badgeEl.textContent = statusLabels[sc.status] || sc.status;
+    badgeEl.style.color = statusColors[sc.status] || '#6b7280';
+  }
+
+  if(regenBtn) regenBtn.style.display = (sc.status === 'done' || sc.status === 'failed') ? 'block' : 'none';
+  if(genOneBtn) genOneBtn.style.display = (sc.status !== 'done') ? 'block' : 'none';
+
+  // If scene has a generated video, show it
+  if(sc.videoUrl){
+    var wrap = document.getElementById('aps-preview-wrap');
+    if(wrap){
+      var existVid = wrap.querySelector('.aps-preview-vid');
+      if(!existVid){
+        existVid = document.createElement('video');
+        existVid.className = 'aps-preview-vid';
+        existVid.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:10px;';
+        existVid.controls = true;
+        wrap.appendChild(existVid);
+      }
+      existVid.src = sc.videoUrl;
+      existVid.style.display = 'block';
+    }
+  }
+}
+window.aps_selectScene = aps_selectScene;
+
+function aps_filterScenes(q){
+  aps_renderSceneList(q);
+}
+window.aps_filterScenes = aps_filterScenes;
+
+function aps_selectAll(val){
+  APS.scenes.forEach(function(sc){ sc.selected = val; });
+  aps_renderSceneList();
+}
+window.aps_selectAll = aps_selectAll;
+
+function aps_setBg(btn){
+  document.querySelectorAll('.aps-bg-btn').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+  APS.settings.bg = btn.dataset.bg;
+  // Update preview
+  var bg = document.getElementById('aps-preview-bg');
+  if(bg) bg.style.background = APS_BG_CSS[APS.settings.bg] || '#1a2535';
+  localStorage.setItem('aps_settings', JSON.stringify(APS.settings));
+}
+window.aps_setBg = aps_setBg;
+
+function aps_triggerCustomBg(){
+  document.getElementById('aps-bg-file') && document.getElementById('aps-bg-file').click();
+}
+window.aps_triggerCustomBg = aps_triggerCustomBg;
+
+function aps_loadCustomBg(input){
+  var file = input.files[0];
+  if(!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e){
+    APS.customBgB64 = e.target.result.split(',')[1];
+    APS.settings.bg = 'custom';
+    var bg = document.getElementById('aps-preview-bg');
+    if(bg){ bg.style.background = 'none'; bg.style.backgroundImage = 'url('+e.target.result+')'; bg.style.backgroundSize='cover'; bg.style.backgroundPosition='center'; }
+    document.querySelectorAll('.aps-bg-btn').forEach(function(b){ b.classList.toggle('active', b.dataset.bg==='custom'); });
+  };
+  reader.readAsDataURL(file);
+}
+window.aps_loadCustomBg = aps_loadCustomBg;
+
+function aps_loadPhoto(input){
+  var file = input.files[0];
+  if(!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e){
+    APS.photoB64 = e.target.result.split(',')[1];
+    var preview = document.getElementById('aps-photo-preview');
+    if(preview){ preview.src = e.target.result; preview.style.display='block'; }
+    // Update presenter placeholder
+    var presenterWrap = document.getElementById('aps-presenter-img-wrap');
+    if(presenterWrap){ presenterWrap.innerHTML = '<img src="'+e.target.result+'" style="width:100%;height:100%;object-fit:cover;border-radius:100px 100px 0 0;">'; }
+  };
+  reader.readAsDataURL(file);
+}
+window.aps_loadPhoto = aps_loadPhoto;
+
+async function aps_previewVoice(){
+  aps_saveSettings();
+  var sc = APS.scenes[APS.currentIdx];
+  if(!sc) return;
+  var text = sc.narration.slice(0,100) || 'Hello, this is a voice preview for the AI Presenter Studio.';
+  toast('Generating voice preview…','info');
+  try {
+    var r = await fetch(API + '/api/voice', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ text, voiceId: APS.settings.voiceId, stability: APS.settings.stability, similarityBoost: APS.settings.clarity })
+    });
+    var d = await r.json();
+    if(d.audio){
+      var audio = new Audio('data:audio/mpeg;base64,' + d.audio);
+      audio.play();
+      toast('Voice: ' + APS.settings.voiceName + ' (' + APS.settings.voiceGender + ')','ok');
+    } else {
+      toast('Voice preview failed: ' + (d.error||'unknown'),'error');
+    }
+  } catch(e){ toast('Voice preview error: '+e.message,'error'); }
+}
+window.aps_previewVoice = aps_previewVoice;
+
+function aps_applyVoiceAll(){
+  aps_saveSettings();
+  toast('Voice "' + APS.settings.voiceName + '" applied to all scenes','ok');
+}
+window.aps_applyVoiceAll = aps_applyVoiceAll;
+
+// Build the AI prompt for a scene
+function aps_buildPrompt(sc){
+  aps_saveSettings();
+  var s = APS.settings;
+  return {
+    sceneNumber: sc.num,
+    totalScenes: sc.total,
+    script: sc.narration,
+    presenter: {
+      framing: s.framing,
+      gestureStyle: s.gesture,
+      hasPhoto: !!APS.photoB64
+    },
+    studio: {
+      background: APS_BG_PROMPTS[s.bg] || s.bg,
+      continuity: s.bgLocked ? 'same background, same lighting, same presenter identity across all scenes' : 'scene-specific',
+      lighting: s.bg === 'news-studio' ? 'clean broadcast lighting, blue and gold tones' : 'professional studio lighting'
+    },
+    camera: { shot: s.shot, motion: s.motion, quality: 'professional broadcast video' },
+    voice: { id: s.voiceId, name: s.voiceName, gender: s.voiceGender, stability: s.stability, clarity: s.clarity },
+    negativePrompt: 'no robotic edge animation, no distorted hands, no frozen body, no flickering background, no wrong gender voice, no low quality'
+  };
+}
+
+// Generate a single scene
+async function aps_generateScene(sceneIdx){
+  var sc = APS.scenes[sceneIdx];
+  if(!sc){ return false; }
+  if(!sc.narration || !sc.narration.trim()){
+    toast('Scene ' + (sceneIdx+1) + ' has no narration text — skipping','error');
+    sc.status = 'failed';
+    sc.error = 'No narration text';
+    aps_updateSceneRow(sc);
+    return false;
+  }
+
+  sc.status = 'generating';
+  sc.videoUrl = null;
+  aps_updateSceneRow(sc);
+  if(sceneIdx === APS.currentIdx) aps_selectScene(sceneIdx);
+
+  try {
+    aps_saveSettings();
+    var s = APS.settings;
+    var prompt = aps_buildPrompt(sc);
+
+    // ── STEP 1: Generate voice audio ──────────────────────────
+    aps_showStep(sc.num, 1, 3, 'Generating voice audio…');
+    var voiceR = await fetch(API + '/api/voice', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        text:            sc.narration,
+        voiceId:         APS.settings.voiceId,
+        stability:       APS.settings.stability,
+        similarityBoost: APS.settings.clarity
+      })
+    });;;
+    var voiceD = await voiceR.json();
+    if(!voiceD.audio) throw new Error('Voice step failed: ' + (voiceD.error||'no audio returned'));
+    toast('Scene ' + sc.num + ': voice ready ✓','ok');
+
+    // ── STEP 2: Generate scene image (presenter + background) ──
+    aps_showStep(sc.num, 2, 3, 'Generating scene image (presenter + background)…');
+    // The server does this internally — we pass all the info it needs
+
+    // ── STEP 3: Animate into video ─────────────────────────────
+    aps_showStep(sc.num, 3, 3, 'Animating scene image with audio…');
+    var vidR = await fetch(API + '/api/presenter', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        audioBase64:          voiceD.audio,
+        referenceImageBase64: APS.photoB64 || null,
+        studioType:           APS.settings.bg,
+        customBgBase64:       APS.customBgB64 || null,
+        framingStyle:         APS.settings.framing,
+        gestureStyle:         APS.settings.gesture,
+        ratio:                APS.settings.ratio,
+        sceneText:            sc.narration,
+        provider:             APS.settings.provider,
+        bgPrompt:             (window.APS_BG_PROMPTS && window.APS_BG_PROMPTS[APS.settings.bg]) || ''
+      })
+    });;
+    var vidD = await vidR.json();
+    if(vidD.error) throw new Error(vidD.error);
+
+    sc.taskId = vidD.taskId;
+    APS.clips[sc.id] = vidD.taskId;
+
+    // Show scene image if returned
+    if(vidD.sceneImageUrl || vidD.sceneImageB64){
+      aps_showSceneImagePreview(sceneIdx, vidD.sceneImageUrl || ('data:image/jpeg;base64,'+vidD.sceneImageB64));
+    }
+
+    // ── POLL for video completion ──────────────────────────────
+    aps_showStep(sc.num, 3, 3, 'Video rendering (2–5 min)… polling every 10s');
+    var maxPolls = 60; var pollCount = 0;
+    while(pollCount < maxPolls && !APS.stopRequested){
+      await new Promise(function(r){ setTimeout(r, 10000); });
+      pollCount++;
+      try {
+        var statR = await fetch(API + '/api/presenter-status?taskId=' + encodeURIComponent(sc.taskId));
+        var statD = await statR.json();
+
+        if(statD.done && statD.videoUrl){
+          sc.status = 'done';
+          sc.videoUrl = statD.videoUrl;
+          APS.results[sc.id] = statD.videoUrl;
+          aps_updateSceneRow(sc);
+          aps_addClipToBar(sc);
+          aps_addClipToTimeline(sc);
+          if(sceneIdx === APS.currentIdx) aps_selectScene(sceneIdx);
+          toast('Scene ' + sc.num + ' video ready ✓','ok');
+          aps_showStep(sc.num, 3, 3, 'Scene ' + sc.num + ' complete ✓');
+          return true;
+        } else if(statD.failed){
+          throw new Error('Video rendering failed: ' + (statD.error||'provider error'));
+        }
+
+        var elapsed = pollCount * 10;
+        aps_showStep(sc.num, 3, 3, 'Rendering scene ' + sc.num + '… ' + elapsed + 's elapsed (' + (statD.status||'processing') + ')');
+      } catch(e){
+        if(e.message.includes('failed')) throw e;
+        // Poll error — continue
+      }
+    }
+    throw new Error('Timed out after ' + (maxPolls*10) + 's waiting for video');
+
+  } catch(e){
+    sc.status = 'failed';
+    sc.error = e.message;
+    aps_updateSceneRow(sc);
+    if(sceneIdx === APS.currentIdx) aps_selectScene(sceneIdx);
+    toast('Scene ' + sc.num + ' failed: ' + e.message.slice(0,80),'error');
+    return false;
+  }
+}
+
+function aps_showStep(sceneNum, step, totalSteps, message){
+  var label = document.getElementById('aps-progress-label');
+  var pct = document.getElementById('aps-progress-pct');
+  var bar = document.getElementById('aps-progress-bar');
+  var wrap = document.getElementById('aps-progress-wrap');
+  var queue = document.getElementById('aps-queue-status');
+
+  if(wrap) wrap.style.display = 'block';
+  var p = Math.round((step / totalSteps) * 100);
+  if(bar) bar.style.width = p + '%';
+  if(pct) pct.textContent = 'Step ' + step + '/' + totalSteps;
+  if(label) label.textContent = 'Scene ' + sceneNum + ': ' + message;
+
+  var done = APS.scenes.filter(function(s){ return s.status==='done'; }).length;
+  var failed = APS.scenes.filter(function(s){ return s.status==='failed'; }).length;
+  var total = APS.scenes.length;
+  if(queue) queue.textContent = done + ' done · ' + failed + ' failed · ' + (total-done-failed) + ' pending';
+}
+window.aps_showStep = aps_showStep;
+
+function aps_showSceneImagePreview(idx, imgSrc){
+  if(idx !== APS.currentIdx) return;
+  var wrap = document.getElementById('aps-preview-wrap');
+  if(!wrap) return;
+  var bg = document.getElementById('aps-preview-bg');
+  if(bg){
+    bg.style.background = 'none';
+    bg.style.backgroundImage = 'url(' + imgSrc + ')';
+    bg.style.backgroundSize = 'cover';
+    bg.style.backgroundPosition = 'center';
+  }
+  // Hide presenter placeholder since image shows full scene
+  var presEl = document.getElementById('aps-preview-presenter');
+  if(presEl) presEl.style.display = 'none';
+  var badge = document.getElementById('aps-preview-badge');
+  if(badge){ badge.textContent = '⏳ Animating scene image…'; badge.style.color = '#f59e0b'; }
+}
+window.aps_showSceneImagePreview = aps_showSceneImagePreview;
+
+function aps_updateSceneRow(sc){
+  var row = document.getElementById('aps-row-' + sc.id);
+  if(!row) return;
+  row.className = 'aps-scene-row' + (sc.num-1 === APS.currentIdx ? ' active' : '') + (sc.status === 'done' ? ' done' : '') + (sc.status === 'failed' ? ' failed' : '') + (sc.status === 'generating' ? ' generating' : '');
+  var dot = row.querySelector('.aps-status-dot');
+  if(dot) dot.className = 'aps-status-dot ' + sc.status;
+}
+
+function aps_updateProgress(current, total, label){
+  var wrap = document.getElementById('aps-progress-wrap');
+  var bar = document.getElementById('aps-progress-bar');
+  var pct = document.getElementById('aps-progress-pct');
+  var lbl = document.getElementById('aps-progress-label');
+  var queue = document.getElementById('aps-queue-status');
+  if(wrap) wrap.style.display = 'block';
+  var p = Math.round((current / total) * 100);
+  if(bar) bar.style.width = p + '%';
+  if(pct) pct.textContent = p + '%';
+  if(lbl) lbl.textContent = label || '';
+  var done = APS.scenes.filter(function(s){ return s.status==='done'; }).length;
+  var failed = APS.scenes.filter(function(s){ return s.status==='failed'; }).length;
+  if(queue) queue.textContent = done + ' done · ' + failed + ' failed · ' + (total-done-failed) + ' pending';
+}
+
+async function aps_generateAll(){
+  aps_saveSettings();
+  APS.stopRequested = false;
+  APS.generating = true;
+  var stopBtn = document.getElementById('aps-stop-btn');
+  var genBtn = document.getElementById('aps-gen-all-btn');
+  if(stopBtn) stopBtn.style.display = 'block';
+  if(genBtn) genBtn.style.display = 'none';
+
+  var toGenerate = APS.scenes.filter(function(sc){ return sc.selected && sc.status !== 'done'; });
+  toast('Generating ' + toGenerate.length + ' scenes…','info');
+
+  for(var i=0; i<toGenerate.length; i++){
+    if(APS.stopRequested) break;
+    var sc = toGenerate[i];
+    aps_updateProgress(i+1, toGenerate.length, 'Generating scene ' + sc.num + ' of ' + sc.total + '…');
+    aps_selectScene(sc.num-1);
+    await aps_generateScene(sc.num-1);
+    if(APS.stopRequested) break;
+  }
+
+  APS.generating = false;
+  if(stopBtn) stopBtn.style.display = 'none';
+  if(genBtn) genBtn.style.display = 'block';
+  if(!APS.stopRequested) toast('All scenes processed','ok');
+  else toast('Generation stopped','info');
+}
+window.aps_generateAll = aps_generateAll;
+
+async function aps_generateSelected(){
+  aps_saveSettings();
+  APS.stopRequested = false;
+  APS.generating = true;
+  var selected = APS.scenes.filter(function(sc){ return sc.selected && sc.status !== 'done'; });
+  if(!selected.length){ toast('Select at least one scene','error'); APS.generating=false; return; }
+  toast('Generating ' + selected.length + ' selected scenes…','info');
+  for(var i=0; i<selected.length; i++){
+    if(APS.stopRequested) break;
+    aps_updateProgress(i+1, selected.length, 'Scene ' + selected[i].num + '…');
+    await aps_generateScene(selected[i].num-1);
+  }
+  APS.generating = false;
+  toast('Done','ok');
+}
+window.aps_generateSelected = aps_generateSelected;
+
+async function aps_generateCurrent(){
+  await aps_generateScene(APS.currentIdx);
+}
+window.aps_generateCurrent = aps_generateCurrent;
+
+async function aps_regenerateCurrent(){
+  APS.scenes[APS.currentIdx].status = 'ready';
+  APS.scenes[APS.currentIdx].videoUrl = null;
+  await aps_generateScene(APS.currentIdx);
+}
+window.aps_regenerateCurrent = aps_regenerateCurrent;
+
+async function aps_regenerateScene(idx){
+  APS.scenes[idx].status = 'ready';
+  APS.scenes[idx].videoUrl = null;
+  APS.scenes[idx].taskId = null;
+  aps_updateSceneRow(APS.scenes[idx]);
+  await aps_generateScene(idx);
+}
+window.aps_regenerateScene = aps_regenerateScene;
+
+function aps_stopQueue(){
+  APS.stopRequested = true;
+  APS.generating = false;
+  toast('Stopping after current scene…','info');
+}
+window.aps_stopQueue = aps_stopQueue;
+
+function aps_addClipToBar(sc){
+  var bar = document.getElementById('aps-clips-list');
+  var empty = document.getElementById('aps-clips-empty');
+  if(!bar) return;
+  if(empty) empty.style.display = 'none';
+
+  var existing = document.getElementById('aps-clip-' + sc.id);
+  if(existing) existing.remove();
+
+  var clip = document.createElement('div');
+  clip.id = 'aps-clip-' + sc.id;
+  clip.style.cssText = 'flex-shrink:0;width:80px;height:56px;background:#1f2937;border-radius:6px;border:.5px solid #10b981;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;position:relative;overflow:hidden;';
+  clip.title = 'Scene ' + sc.num + ' — click to preview';
+  clip.innerHTML = '<span style="font-size:18px;">🎬</span><span style="font-size:9px;color:#10b981;font-weight:700;">Scene '+sc.num+'</span>';
+  clip.onclick = function(){ window.open(sc.videoUrl, '_blank'); };
+  bar.appendChild(clip);
+}
+
+function aps_addClipToTimeline(sc){
+  // Add generated clip to the main project timeline
+  if(!PROJECT.clips) PROJECT.clips = {};
+  PROJECT.clips[sc.id] = {
+    sceneId: sc.id,
+    sceneNum: sc.num,
+    videoUrl: sc.videoUrl,
+    duration: sc.duration,
+    source: 'ai-presenter',
+    provider: APS.settings.provider,
+    voice: APS.settings.voiceName,
+    bg: APS.settings.bg,
+    generatedAt: new Date().toISOString()
+  };
+  saveProject();
+}
+
 // ── SAFARI COMPATIBILITY: Explicitly expose all handler functions on window ──
 // Safari with strict scripts can lose inline handler access to closured functions
 window.handleScriptUpload    = handleScriptUpload;
@@ -3750,6 +4413,25 @@ window.loadAISceneList       = loadAISceneList;
 window.startAIPresenter      = startAIPresenter;
 window.checkAIPresenterStatus = checkAIPresenterStatus;
 window.openAIPresenter       = openAIPresenter;
+
+window.openAIPresenterStudio = openAIPresenterStudio;
+window.closeAIPresenterStudio = closeAIPresenterStudio;
+window.aps_generateAll        = aps_generateAll;
+window.aps_generateSelected   = aps_generateSelected;
+window.aps_generateCurrent    = aps_generateCurrent;
+window.aps_regenerateCurrent  = aps_regenerateCurrent;
+window.aps_regenerateScene    = aps_regenerateScene;
+window.aps_stopQueue          = aps_stopQueue;
+window.aps_selectScene        = aps_selectScene;
+window.aps_selectAll          = aps_selectAll;
+window.aps_filterScenes       = aps_filterScenes;
+window.aps_setBg              = aps_setBg;
+window.aps_triggerCustomBg    = aps_triggerCustomBg;
+window.aps_loadCustomBg       = aps_loadCustomBg;
+window.aps_loadPhoto          = aps_loadPhoto;
+window.aps_previewVoice       = aps_previewVoice;
+window.aps_applyVoiceAll      = aps_applyVoiceAll;
+
 window.closeModal            = closeModal;
 window.openModal             = openModal;
 window.setBg                 = setBg;
@@ -4639,255 +5321,12 @@ function smartSplitScript(script, wpm, sceneDuration){
   return scenes;
 }
 
-function loadAISceneList(){
-  var list = document.getElementById('ai-scenes-list');
-  if(!list) return;
+// [replaced by AI Presenter Studio]
 
-  // Try loading from localStorage if PROJECT is empty
-  if(!PROJECT.scenes || !PROJECT.scenes.length){
-    var saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
-    var best = null;
-    saved.forEach(function(p){
-      if(p.scenes && p.scenes.length > 0){
-        if(!best || p.scenes.length > best.scenes.length) best = p;
-      }
-    });
-    if(best){
-      PROJECT.id = best.id; PROJECT.title = best.title;
-      PROJECT.scenes = best.scenes; PROJECT.assets = best.assets || [];
-      PROJECT.clips = {};
-    }
-  }
-
-  if(!PROJECT.scenes || !PROJECT.scenes.length){
-    list.innerHTML = '<div style="padding:16px;text-align:center;color:#6b7280;font-size:13px;">No scenes found.<br><br>Go to your project → split your script → then open AI Presenter.</div>';
-    return;
-  }
-
-  list.innerHTML = '';
-
-  // Header
-  var hdr = document.createElement('div');
-  hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:6px 4px 10px;border-bottom:.5px solid #e5e7eb;margin-bottom:6px;';
-  
-  var countSpan = document.createElement('span');
-  countSpan.style.cssText = 'font-size:12px;font-weight:700;color:#111;';
-  countSpan.textContent = PROJECT.scenes.length + ' scenes — select which to generate:';
-  
-  var btnWrap = document.createElement('div');
-  btnWrap.style.cssText = 'display:flex;gap:10px;';
-  
-  var selAll = document.createElement('button');
-  selAll.textContent = 'All';
-  selAll.style.cssText = 'font-size:11px;color:#00d4ff;background:none;border:none;cursor:pointer;font-weight:600;';
-  selAll.onclick = function(){ list.querySelectorAll('input[type=checkbox]').forEach(function(c){ c.checked=true; }); };
-  
-  var clrAll = document.createElement('button');
-  clrAll.textContent = 'None';
-  clrAll.style.cssText = 'font-size:11px;color:#9ca3af;background:none;border:none;cursor:pointer;';
-  clrAll.onclick = function(){ list.querySelectorAll('input[type=checkbox]').forEach(function(c){ c.checked=false; }); };
-
-  btnWrap.appendChild(selAll);
-  btnWrap.appendChild(clrAll);
-  hdr.appendChild(countSpan);
-  hdr.appendChild(btnWrap);
-  list.appendChild(hdr);
-
-  // Update count badge
-  var countBadge = document.getElementById('ai-scene-count');
-  if(countBadge) countBadge.textContent = PROJECT.scenes.length + ' scenes loaded';
-
-  // Scene rows
-  PROJECT.scenes.forEach(function(scene, i){
-    var narration = (scene.narration || '').trim();
-    var hasNarration = narration.length > 0;
-
-    var row = document.createElement('label');
-    row.style.cssText = 'display:flex;align-items:flex-start;gap:10px;padding:8px 4px;'
-      + 'cursor:pointer;border-bottom:.5px solid #f3f4f6;'
-      + (hasNarration ? '' : 'opacity:.5;');
-    row.title = hasNarration ? '' : 'This scene has no narration text';
-
-    var chk = document.createElement('input');
-    chk.type = 'checkbox';
-    chk.value = scene.id;
-    chk.checked = hasNarration && i < 5;
-    chk.disabled = !hasNarration;
-    chk.style.cssText = 'margin-top:4px;flex-shrink:0;accent-color:#00d4ff;width:14px;height:14px;';
-
-    var info = document.createElement('div');
-    info.style.cssText = 'flex:1;min-width:0;';
-
-    var title = document.createElement('div');
-    title.style.cssText = 'font-size:12px;font-weight:700;color:#111;display:flex;gap:6px;align-items:center;margin-bottom:3px;';
-    title.innerHTML = 'Scene '+(i+1)
-      + '<span style="background:#f3f4f6;color:#6b7280;font-size:10px;font-weight:400;padding:1px 6px;border-radius:8px;">'+(scene.type||'MAIN')+'</span>'
-      + '<span style="color:#9ca3af;font-size:10px;font-weight:400;">'+(scene.duration||8)+'s</span>'
-      + (hasNarration ? '' : '<span style="color:#ef4444;font-size:10px;">⚠ no text</span>');
-
-    var narr = document.createElement('div');
-    narr.style.cssText = 'font-size:11px;color:#6b7280;line-height:1.5;';
-    narr.textContent = hasNarration ? narration.slice(0, 120) + (narration.length > 120 ? '…' : '') : 'No narration text in this scene.';
-
-    info.appendChild(title);
-    info.appendChild(narr);
-    row.appendChild(chk);
-    row.appendChild(info);
-    list.appendChild(row);
-  });
-}
 
 // Override startAIPresenter with better UX
-async function startAIPresenter(){
-  var voiceSel  = document.getElementById('ai-voice-sel');
-  var voiceId   = voiceSel ? voiceSel.value : 'EXAVITQu4vr4xnSDxMaL';
-  var sceneList = document.getElementById('ai-scenes-list');
-  var checked   = sceneList ? Array.from(sceneList.querySelectorAll('input[type=checkbox]:checked')) : [];
-  var sceneIds  = checked.map(function(c){ return c.value; });
+// [replaced by AI Presenter Studio]
 
-  if(!sceneIds.length){
-    // No checkboxes checked — try loading scenes first
-    if(!PROJECT.scenes || PROJECT.scenes.length === 0){
-      toast('No scenes loaded. Close this modal, go to the scenes page, then reopen AI Presenter.','error');
-    } else {
-      toast('Tick at least one scene checkbox to generate.','error');
-    }
-    return;
-  }
-
-  // Verify scenes have narration text
-  var missNarration = sceneIds.filter(function(id){
-    var sc = PROJECT.scenes.find(function(s){ return s.id === id; });
-    return !sc || !sc.narration || sc.narration.trim().length < 3;
-  });
-  if(missNarration.length){
-    toast('Some selected scenes have no narration text. Edit the scenes and add narration.','error');
-    return;
-  }
-
-  var status = document.getElementById('ai-presenter-status');
-  var btn    = document.getElementById('ai-gen-btn');
-  if(btn) btn.disabled = true;
-  if(status){ status.style.display = 'block'; status.innerHTML = '⏳ Starting…'; }
-
-  var allResults = [];
-
-  for(var i = 0; i < sceneIds.length; i++){
-    var scene = PROJECT.scenes.find(function(sc){ return sc.id === sceneIds[i]; });
-    if(!scene) continue;
-    var label = 'Scene ' + ((scene.sceneNumber || i) + 1);
-
-    try{
-      // ── Step 1: Generate voice via ElevenLabs ─────────────────────────────
-      if(status) status.innerHTML = '🎙 <b>'+label+'</b> ('+( i+1)+'/'+sceneIds.length+'): Generating voice with ElevenLabs…';
-
-      var vResp = await fetch(API + '/api/voice', {
-        method:  'POST',
-        headers: {'Content-Type':'application/json'},
-        body:    JSON.stringify({ text: scene.narration, voiceId: voiceId })
-      });
-      if(!vResp.ok){
-        var vErr = await vResp.json().catch(function(){ return {}; });
-        throw new Error('ElevenLabs failed (' + vResp.status + '): ' + (vErr.error || 'Check ELEVENLABS_API_KEY in Railway'));
-      }
-      var vData = await vResp.json();
-      if(!vData.audio) throw new Error('ElevenLabs returned no audio');
-
-      // ── Step 2: Generate video via Kling (or HeyGen fallback) ─────────────
-      if(status) status.innerHTML = '🎬 <b>'+label+'</b>: Sending to Kling AI for lip-sync video…';
-
-      var payload = {
-        audioBase64: vData.audio,
-        ratio: '16:9',
-        sceneText: scene.narration.slice(0, 200)
-      };
-      if(window._aiPhotoB64) payload.referenceImageBase64 = window._aiPhotoB64;
-
-      var pResp = await fetch(API + '/api/presenter', {
-        method:  'POST',
-        headers: {'Content-Type':'application/json'},
-        body:    JSON.stringify(payload)
-      });
-      if(!pResp.ok){
-        var pErr = await pResp.json().catch(function(){ return {}; });
-        throw new Error((pErr.error || 'Video generation failed (' + pResp.status + ')'));
-      }
-      var pData = await pResp.json();
-      if(!pData.taskId) throw new Error('No task ID returned from video API');
-
-      var taskId   = pData.taskId;
-      var provider = pData.provider || (taskId.startsWith('kling') ? 'kling' : 'heygen');
-      allResults.push({ label: label, taskId: taskId, provider: provider });
-      toast(label + ' submitted ✓ (' + provider + ')','ok');
-
-      if(status) status.innerHTML = '✅ <b>'+label+'</b> submitted to '+provider+'!<br>'
-        + '<small>Task ID: <code style="background:#f3f4f6;padding:1px 4px;border-radius:3px;">'+taskId+'</code></small><br>'
-        + '<small style="color:#6b7280;">Video generates in 2-5 min. Click "Check status" below when done.</small>';
-
-    } catch(err){
-      var msg = err.message || 'Unknown error';
-      toast('✗ ' + label + ': ' + msg, 'error');
-      if(status) status.innerHTML = '✗ <b>'+label+'</b> failed: ' + msg
-        + '<br><small style="color:#9ca3af;font-size:11px;">Check Railway environment: KLING_API_KEY and ELEVENLABS_API_KEY must be set</small>';
-      console.error('AI Presenter error on', label, ':', err);
-    }
-  }
-
-  if(btn) btn.disabled = false;
-
-  if(allResults.length){
-    window._aiPresenterTasks = allResults;
-
-    var taskRows = allResults.map(function(r){
-      var sid = 'ait' + r.taskId.replace(/[^a-z0-9]/gi,'');
-      return '<div style="padding:5px 0;font-size:12px;border-bottom:.5px solid #e5e7eb;">'
-        + '⏳ <b>' + r.label + '</b> '
-        + '<span id="' + sid + '" style="color:#9ca3af;">generating — 2-5 min…</span>'
-        + '</div>';
-    }).join('');
-
-    var summary = '<div style="background:#f0fdf4;border:.5px solid #86efac;border-radius:8px;padding:14px;margin-top:8px;">'
-      + '<div style="font-weight:700;color:#166534;font-size:13px;margin-bottom:8px;">✅ '
-      + allResults.length + ' scene' + (allResults.length>1?'s':'') + ' submitted to HeyGen!'
-      + '</div>'
-      + '<div style="margin-bottom:10px;">' + taskRows + '</div>'
-      + '<div style="font-size:11px;color:#6b7280;margin-bottom:10px;">Auto-checking every 20s. Each video takes 2–5 min.</div>'
-      + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
-      + '<button onclick="(window.checkAIPresenterStatus||function(){})(); return false;" style="background:#00d4ff;color:#0a0e1a;border:none;padding:7px 16px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:Sora,sans-serif;">↻ Check now</button>'
-      + '<a href="https://app.heygen.com/videos" target="_blank" style="display:inline-flex;align-items:center;background:#111;color:#fff;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;">HeyGen dashboard ↗</a>'
-      + '</div></div>';
-
-    if(status){ status.style.display='block'; status.innerHTML = summary; }
-
-    // Auto-poll every 20 seconds, stop after 15 min
-    var _pollTick = 0;
-    var _autoPoll = setInterval(async function(){
-      _pollTick++;
-      if(_pollTick > 45){ clearInterval(_autoPoll); return; }
-      var allDone = true;
-      for(var pi=0; pi<allResults.length; pi++){
-        var t = allResults[pi];
-        var sid = 'ait' + t.taskId.replace(/[^a-z0-9]/gi,'');
-        try {
-          var pr = await fetch(API + '/api/presenter-status?taskId=' + encodeURIComponent(t.taskId));
-          var pd = await pr.json();
-          var span = document.getElementById(sid);
-          if(pd.done && pd.videoUrl){
-            if(span) span.innerHTML = '✅ <a href="'+pd.videoUrl+'" target="_blank" style="color:#00d4ff;font-weight:700;">Download video →</a>';
-            toast(t.label + ' video ready!','ok');
-          } else if(pd.failed){
-            if(span) span.innerHTML = '<span style="color:#ef4444;">✗ Failed</span>';
-          } else {
-            allDone = false;
-            if(span) span.textContent = (pd.status||'generating') + '…';
-          }
-        } catch(e){ allDone = false; }
-      }
-      if(allDone) clearInterval(_autoPoll);
-    }, 20000);
-    window._aiAutoPoll = _autoPoll;
-  }
-}
 
 function openStudioSettings(){
   // Populate device dropdowns
@@ -5939,34 +6378,8 @@ function initTpDrag(){
   document.addEventListener('mouseup', function(){ isDragging = false; });
 }
 
-async function checkAIPresenterStatus(){
-  var tasks = window._aiPresenterTasks || [];
-  if(!tasks.length){ toast('No pending tasks','info'); return; }
-  var status = document.getElementById('ai-presenter-status');
-  if(status) status.innerHTML = '⏳ Checking status…';
-  var results = '';
-  for(var i=0; i<tasks.length; i++){
-    var t = tasks[i];
-    try{
-      var r = await fetch(API + '/api/presenter-status?taskId=' + encodeURIComponent(t.taskId));
-      var d = await r.json();
-      var icon = d.done ? '✅' : d.failed ? '✗' : '⏳';
-      var info = d.done
-        ? ('<a href="'+d.videoUrl+'" target="_blank" style="color:#00d4ff;font-weight:600;">Download video →</a>')
-        : (d.failed ? 'Failed — try again' : 'Still processing…');
-      results += '<div style="padding:6px 0;border-bottom:.5px solid #e5e7eb;">'
-        + icon + ' <b>'+t.label+'</b>: ' + (d.status||'unknown') + ' — ' + info
-        + '</div>';
-    } catch(e){
-      results += '<div style="padding:6px 0;">✗ <b>'+t.label+'</b>: ' + e.message + '</div>';
-    }
-  }
-  if(status) status.innerHTML = '<div style="background:#f9fafb;border-radius:8px;padding:12px;">'
-    + '<div style="font-weight:600;margin-bottom:8px;">Video Status</div>'
-    + results
-    + '<div style="margin-top:8px;"><button onclick="(window.checkAIPresenterStatus||function(){})(); return false;" style="background:#e5e7eb;border:none;padding:5px 12px;border-radius:5px;cursor:pointer;font-size:11px;">↻ Refresh</button></div>'
-    + '</div>';
-}
+// [replaced by AI Presenter Studio]
+
 
 var EXPORT_METHOD = 'browser'; // 'browser' | 'creatomate' | 'runway'
 
@@ -6307,69 +6720,205 @@ async function syncAndLoadProjects(){
 
 
 <!-- AI PRESENTER MODAL -->
-<div class="modal-overlay" id="ai-presenter-modal">
-  <div class="modal-box" style="max-width:600px;">
+<!-- ══ AI PRESENTER STUDIO (full-page overlay) ════════════════════════════════ -->
+<div id="ai-presenter-studio" class="pg-full" style="background:#0a0e1a;flex-direction:column;overflow:hidden;">
 
-    <!-- Header -->
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
-      <div>
-        <div style="font-size:18px;font-weight:700;color:var(--ink);">🤖 AI Presenter</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:2px;">Voice your scenes with ElevenLabs · Generate presenter video with HeyGen</div>
+  <!-- Top bar -->
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:52px;background:#111827;border-bottom:.5px solid #1f2937;flex-shrink:0;">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span style="font-size:15px;font-weight:800;color:#fff;letter-spacing:-.3px;">🤖 AI Presenter Studio</span>
+      <span id="aps-project-name" style="font-size:11px;color:#6b7280;background:#1f2937;padding:3px 10px;border-radius:10px;"></span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <button onclick="aps_generateSelected()" id="aps-gen-sel-btn" style="background:#1f2937;color:#e5e7eb;border:none;padding:7px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">▶ Generate Selected</button>
+      <button onclick="aps_generateAll()" id="aps-gen-all-btn" style="background:#00d4ff;color:#000;border:none;padding:7px 16px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;">⚡ Generate All</button>
+      <button onclick="aps_stopQueue()" id="aps-stop-btn" style="display:none;background:#ef4444;color:#fff;border:none;padding:7px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">■ Stop</button>
+      <button onclick="closeAIPresenterStudio()" style="background:none;border:none;color:#6b7280;font-size:20px;cursor:pointer;line-height:1;margin-left:6px;">✕</button>
+    </div>
+  </div>
+
+  <!-- Main 3-panel layout -->
+  <div style="display:flex;flex:1;overflow:hidden;">
+
+    <!-- LEFT: Scene list -->
+    <div style="width:280px;flex-shrink:0;border-right:.5px solid #1f2937;display:flex;flex-direction:column;background:#111827;">
+      <div style="padding:12px 14px;border-bottom:.5px solid #1f2937;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <span style="font-size:11px;font-weight:700;color:#9ca3af;letter-spacing:.05em;">SCENES</span>
+          <span id="aps-scene-count" style="font-size:11px;color:#6b7280;"></span>
+        </div>
+        <input id="aps-search" placeholder="Search scenes…" oninput="aps_filterScenes(this.value)" style="width:100%;padding:6px 10px;border:.5px solid #374151;border-radius:6px;background:#1f2937;color:#e5e7eb;font-size:12px;font-family:Sora,sans-serif;box-sizing:border-box;">
+        <div style="display:flex;gap:6px;margin-top:8px;">
+          <button onclick="aps_selectAll(true)" style="flex:1;background:#1f2937;color:#9ca3af;border:.5px solid #374151;padding:4px;border-radius:5px;cursor:pointer;font-size:11px;">All</button>
+          <button onclick="aps_selectAll(false)" style="flex:1;background:#1f2937;color:#9ca3af;border:.5px solid #374151;padding:4px;border-radius:5px;cursor:pointer;font-size:11px;">None</button>
+          <button onclick="aps_filterScenes('failed')" style="flex:1;background:#1f2937;color:#ef4444;border:.5px solid #374151;padding:4px;border-radius:5px;cursor:pointer;font-size:11px;">Failed</button>
+        </div>
       </div>
-      <button onclick="closeModal('ai-presenter-modal')" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);line-height:1;">✕</button>
+      <div id="aps-scene-list" style="flex:1;overflow-y:auto;padding:6px;"></div>
     </div>
 
-    <!-- Step 1: Photo -->
-    <div style="display:flex;gap:16px;margin-bottom:18px;align-items:flex-start;">
-      <div style="flex:1;">
-        <div style="font-size:12px;font-weight:700;color:var(--ink);margin-bottom:8px;">1. Your photo <span style="font-weight:400;color:var(--muted);">(optional — uses default avatar if skipped)</span></div>
-        <label style="display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border:1.5px dashed #d1d5db;border-radius:8px;cursor:pointer;font-size:12px;color:var(--muted);transition:border-color .15s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='#d1d5db'">
-          📷 Choose photo
-          <input type="file" accept="image/*" style="display:none;" onchange="loadAIPhoto(this)">
+    <!-- CENTER: Preview stage -->
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;background:#0d1117;position:relative;">
+      <div id="aps-preview-wrap" style="position:relative;width:100%;max-width:640px;aspect-ratio:16/9;background:#1a2535;border-radius:10px;overflow:hidden;border:.5px solid #1f2937;display:flex;align-items:center;justify-content:center;">
+        <!-- Background -->
+        <div id="aps-preview-bg" style="position:absolute;inset:0;background:linear-gradient(135deg,#0f2027,#203a43,#2c5364);transition:background .3s;"></div>
+        <!-- Presenter placeholder -->
+        <div id="aps-preview-presenter" style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;">
+          <div id="aps-presenter-img-wrap" style="width:200px;height:260px;background:rgba(255,255,255,.05);border-radius:100px 100px 0 0;display:flex;align-items:center;justify-content:center;border:1px dashed #374151;">
+            <span style="font-size:48px;">👤</span>
+          </div>
+        </div>
+        <!-- Script overlay -->
+        <div id="aps-preview-script" style="position:absolute;bottom:10px;left:10px;right:10px;background:rgba(0,0,0,.7);padding:8px 12px;border-radius:6px;font-size:11px;color:#e5e7eb;line-height:1.5;max-height:60px;overflow:hidden;display:none;"></div>
+        <!-- Status badge -->
+        <div id="aps-preview-badge" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.6);color:#9ca3af;font-size:10px;padding:3px 8px;border-radius:10px;"></div>
+      </div>
+
+      <!-- Scene info bar -->
+      <div style="display:flex;align-items:center;gap:16px;margin-top:12px;width:100%;max-width:640px;">
+        <div id="aps-preview-scene-num" style="font-size:12px;font-weight:700;color:#6b7280;"></div>
+        <div id="aps-preview-duration" style="font-size:11px;color:#4b5563;"></div>
+        <div style="flex:1;"></div>
+        <button onclick="aps_generateCurrent()" id="aps-gen-one-btn" style="background:#1f2937;color:#00d4ff;border:.5px solid #374151;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">▶ Generate this scene</button>
+        <button onclick="aps_regenerateCurrent()" id="aps-regen-btn" style="display:none;background:#1f2937;color:#f59e0b;border:.5px solid #374151;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;">↻ Regenerate</button>
+      </div>
+
+      <!-- Progress bar -->
+      <div id="aps-progress-wrap" style="display:none;width:100%;max-width:640px;margin-top:12px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+          <span id="aps-progress-label" style="font-size:11px;color:#9ca3af;"></span>
+          <span id="aps-progress-pct" style="font-size:11px;color:#9ca3af;"></span>
+        </div>
+        <div style="height:4px;background:#1f2937;border-radius:2px;overflow:hidden;">
+          <div id="aps-progress-bar" style="height:100%;background:#00d4ff;width:0%;transition:width .3s;border-radius:2px;"></div>
+        </div>
+        <div id="aps-queue-status" style="margin-top:8px;font-size:11px;color:#6b7280;text-align:center;"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Settings panel -->
+    <div style="width:300px;flex-shrink:0;border-left:.5px solid #1f2937;background:#111827;overflow-y:auto;padding:14px;">
+
+      <!-- 1. Presenter -->
+      <div class="aps-section">
+        <div class="aps-section-hdr">👤 Presenter</div>
+        <label style="display:flex;align-items:center;gap:8px;padding:8px;border:1.5px dashed #374151;border-radius:8px;cursor:pointer;font-size:12px;color:#9ca3af;margin-bottom:8px;transition:border-color .15s;" onmouseover="this.style.borderColor='#00d4ff'" onmouseout="this.style.borderColor='#374151'">
+          📷 Upload presenter photo
+          <input type="file" accept="image/*" style="display:none;" onchange="aps_loadPhoto(this)">
+        </label>
+        <img id="aps-photo-preview" style="display:none;width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid #00d4ff;margin-bottom:8px;">
+        <div class="aps-label">Framing</div>
+        <select id="aps-framing" class="aps-select">
+          <option value="medium">Medium shot (chest up)</option>
+          <option value="close">Close-up (face only)</option>
+          <option value="wide">Wide shot (full body)</option>
+          <option value="news-desk">News desk seated</option>
+          <option value="podcast">Podcast close</option>
+        </select>
+        <div class="aps-label">Gesture Style</div>
+        <select id="aps-gesture" class="aps-select">
+          <option value="professional">Professional calm</option>
+          <option value="news-anchor">News anchor</option>
+          <option value="teacher">Teaching / explaining</option>
+          <option value="investigative">Investigative serious</option>
+          <option value="energetic">Energetic creator</option>
+          <option value="presenter">Presenter / host</option>
+        </select>
+      </div>
+
+      <!-- 2. Voice -->
+      <div class="aps-section">
+        <div class="aps-section-hdr">🎙 Voice</div>
+        <div class="aps-label">Provider</div>
+        <select id="aps-voice-provider" class="aps-select" onchange="aps_updateVoiceList()">
+          <option value="elevenlabs">ElevenLabs</option>
+        </select>
+        <div class="aps-label">Voice</div>
+        <select id="aps-voice-sel" class="aps-select">
+          <option value="pNInz6obpgDQGcFmaJgB" data-gender="male">Adam — Professional male</option>
+          <option value="TxGEqnHWrfWFTfGW9XjX" data-gender="male">Josh — Warm male</option>
+          <option value="yoZ06aMxZJJ28mfd3POQ" data-gender="male">Sam — Casual male</option>
+          <option value="GBv7mTt0atIp3Br8iCZE" data-gender="male">Thomas — Calm male</option>
+          <option value="VR6AewLTigWG4xSOukaG" data-gender="male">Arnold — Deep male</option>
+          <option value="EXAVITQu4vr4xnSDxMaL" data-gender="female">Rachel — Natural female</option>
+          <option value="AZnzlk1XvdvUeBnXmlld" data-gender="female">Domi — Energetic female</option>
+          <option value="MF3mGyEYCl7XYWbV9V6O" data-gender="female">Elli — Calm female</option>
+          <option value="21m00Tcm4TlvDq8ikWAM" data-gender="female">Rachel Classic — female</option>
+        </select>
+        <div id="aps-voice-gender-warn" style="display:none;font-size:10px;color:#f59e0b;margin-top:4px;padding:4px 8px;background:rgba(245,158,11,.1);border-radius:4px;"></div>
+        <div style="display:flex;gap:6px;margin-top:8px;">
+          <button onclick="aps_previewVoice()" style="flex:1;background:#1f2937;color:#9ca3af;border:.5px solid #374151;padding:6px;border-radius:6px;cursor:pointer;font-size:11px;">▶ Preview voice</button>
+          <button onclick="aps_applyVoiceAll()" style="flex:1;background:#1f2937;color:#9ca3af;border:.5px solid #374151;padding:6px;border-radius:6px;cursor:pointer;font-size:11px;">Apply to all</button>
+        </div>
+        <div class="aps-label" style="margin-top:10px;">Stability</div>
+        <input type="range" id="aps-voice-stability" min="0" max="100" value="50" class="aps-slider">
+        <div class="aps-label">Clarity</div>
+        <input type="range" id="aps-voice-clarity" min="0" max="100" value="75" class="aps-slider">
+      </div>
+
+      <!-- 3. Studio Background -->
+      <div class="aps-section">
+        <div class="aps-section-hdr">🏛 Studio Background</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;" id="aps-bg-grid">
+          <button class="aps-bg-btn active" data-bg="news-studio" onclick="aps_setBg(this)" style="background:linear-gradient(135deg,#0f1b4c,#1a3a6b);">📺 News Studio</button>
+          <button class="aps-bg-btn" data-bg="podcast" onclick="aps_setBg(this)" style="background:linear-gradient(135deg,#1a0a2e,#3b0764);">🎙 Podcast</button>
+          <button class="aps-bg-btn" data-bg="office" onclick="aps_setBg(this)" style="background:linear-gradient(135deg,#0f1f0f,#1a3a1a);">💼 Office</button>
+          <button class="aps-bg-btn" data-bg="classroom" onclick="aps_setBg(this)" style="background:linear-gradient(135deg,#1a1a0f,#3a3a10);">🎓 Classroom</button>
+          <button class="aps-bg-btn" data-bg="courtroom" onclick="aps_setBg(this)" style="background:linear-gradient(135deg,#2a1a0a,#5a3010);">⚖ Courtroom</button>
+          <button class="aps-bg-btn" data-bg="documentary" onclick="aps_setBg(this)" style="background:linear-gradient(135deg,#050505,#1a0a0a);">🎬 Documentary</button>
+          <button class="aps-bg-btn" data-bg="cooking" onclick="aps_setBg(this)" style="background:linear-gradient(135deg,#0f1a10,#2a3a15);">🍳 Cooking Show</button>
+          <button class="aps-bg-btn" data-bg="custom" onclick="aps_triggerCustomBg()" style="background:#1f2937;border-style:dashed;">📁 Custom</button>
+        </div>
+        <input type="file" id="aps-bg-file" accept="image/*,video/*" style="display:none;" onchange="aps_loadCustomBg(this)">
+        <div class="aps-label">Apply same background to all scenes</div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#9ca3af;cursor:pointer;">
+          <input type="checkbox" id="aps-bg-lock" checked style="accent-color:#00d4ff;"> Lock background across all scenes
         </label>
       </div>
-      <img id="ai-photo-preview" style="display:none;width:64px;height:64px;border-radius:50%;object-fit:cover;border:2.5px solid var(--accent);flex-shrink:0;">
-    </div>
 
-    <!-- Step 2: Voice -->
-    <div style="margin-bottom:18px;">
-      <div style="font-size:12px;font-weight:700;color:var(--ink);margin-bottom:8px;">2. Choose voice (ElevenLabs)</div>
-      <select id="ai-voice-sel" style="width:100%;padding:9px 12px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:var(--surface);color:var(--ink);">
-        <option value="EXAVITQu4vr4xnSDxMaL">Rachel — Natural female</option>
-        <option value="21m00Tcm4TlvDq8ikWAM">Adam — Professional male</option>
-        <option value="AZnzlk1XvdvUeBnXmlld">Domi — Energetic female</option>
-        <option value="MF3mGyEYCl7XYWbV9V6O">Elli — Calm &amp; Clear</option>
-        <option value="TxGEqnHWrfWFTfGW9XjX">Josh — Warm male</option>
-        <option value="yoZ06aMxZJJ28mfd3POQ">Sam — Casual male</option>
-        <option value="pNInz6obpgDQGcFmaJgB">Arnold — Deep male</option>
-        <option value="GBv7mTt0atIp3Br8iCZE">Thomas — Calm male</option>
-      </select>
-    </div>
-
-    <!-- Step 3: Scenes -->
-    <div style="margin-bottom:14px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-        <div style="font-size:12px;font-weight:700;color:var(--ink);">3. Select scenes to generate</div>
-        <span id="ai-scene-count" style="font-size:11px;color:var(--muted);background:var(--surface);padding:2px 8px;border-radius:10px;border:.5px solid var(--bdr2);"></span>
+      <!-- 4. Camera -->
+      <div class="aps-section">
+        <div class="aps-section-hdr">🎥 Camera & Motion</div>
+        <div class="aps-label">Shot type</div>
+        <select id="aps-shot" class="aps-select">
+          <option value="medium">Medium shot</option>
+          <option value="close-up">Close-up</option>
+          <option value="wide">Wide studio shot</option>
+          <option value="news-desk">News desk</option>
+          <option value="push-in">Slow push-in</option>
+        </select>
+        <div class="aps-label">Motion</div>
+        <select id="aps-motion" class="aps-select">
+          <option value="static">Static</option>
+          <option value="slow-push">Subtle slow push-in</option>
+          <option value="handheld">Slight handheld</option>
+        </select>
       </div>
-      <div style="max-height:220px;overflow-y:auto;border:.5px solid #e5e7eb;border-radius:8px;padding:6px;background:#fafafa;" id="ai-scenes-list">
-        <div style="font-size:12px;color:var(--muted);padding:12px;text-align:center;">Loading your scenes…</div>
+
+      <!-- 5. Video Provider -->
+      <div class="aps-section">
+        <div class="aps-section-hdr">⚙ Video Provider</div>
+        <select id="aps-provider" class="aps-select">
+          <option value="kling">Kling AI (recommended)</option>
+          <option value="heygen">HeyGen</option>
+          <option value="runway">Runway ML (fallback)</option>
+        </select>
+        <div class="aps-label">Aspect Ratio</div>
+        <select id="aps-ratio" class="aps-select">
+          <option value="16:9">16:9 — YouTube / LinkedIn</option>
+          <option value="9:16">9:16 — TikTok / Reels</option>
+          <option value="1:1">1:1 — Instagram</option>
+        </select>
       </div>
-      <button onclick="(window.loadAISceneList||function(){})(); return false;" style="margin-top:5px;font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;padding:2px 0;">↻ Reload scenes</button>
-    </div>
 
-    <!-- Status / results area -->
-    <div id="ai-presenter-status" style="display:none;font-size:12px;margin-bottom:14px;line-height:1.6;max-height:220px;overflow-y:auto;"></div>
-
-    <!-- Actions -->
-    <div style="display:flex;gap:10px;align-items:center;">
-      <button class="btn btn-primary" onclick="(window.startAIPresenter||function(){})(); return false;" id="ai-gen-btn" style="flex:1;">🎬 Generate AI video</button>
-      <button class="btn btn-ghost" onclick="closeModal('ai-presenter-modal')" style="padding:9px 16px;">Cancel</button>
     </div>
+  </div>
 
-    <div style="margin-top:12px;padding:8px 12px;background:rgba(245,158,11,.06);border:.5px solid rgba(245,158,11,.2);border-radius:6px;font-size:11px;color:rgba(245,158,11,.85);line-height:1.5;">
-      ⚠️ Requires <b>ELEVENLABS_API_KEY</b> and <b>HEYGEN_API_KEY</b> in Railway. Each scene takes 2–5 minutes to generate.
-    </div>
+  <!-- Bottom: Generated clips timeline strip -->
+  <div id="aps-clips-bar" style="height:80px;background:#0d1117;border-top:.5px solid #1f2937;display:flex;align-items:center;padding:0 14px;gap:8px;overflow-x:auto;flex-shrink:0;">
+    <span style="font-size:11px;color:#4b5563;white-space:nowrap;margin-right:4px;">GENERATED CLIPS</span>
+    <div id="aps-clips-list" style="display:flex;gap:8px;align-items:center;"></div>
+    <div id="aps-clips-empty" style="font-size:11px;color:#374151;">No clips yet — generate scenes above</div>
   </div>
 </div>
 
@@ -7596,7 +8145,7 @@ button,input,select,textarea{font-family:inherit;}
         <button class="btn btn-dark btn-sm" onclick="nav('script-pg')">← Edit script</button>
         <button class="btn btn-dark btn-sm" onclick="exportFullScript()">↓ Script</button>
         <button class="btn btn-dark btn-sm" onclick="generateSubtitles()">↓ .SRT</button>
-        <button class="btn btn-dark btn-sm" id="ai-pres-btn" onclick="openAIPresenter()">🤖 AI presenter</button>
+        <button class="btn btn-dark btn-sm" id="ai-pres-btn" onclick="window.openAIPresenterStudio ? window.openAIPresenterStudio() : window.openAIPresenter()">🤖 AI presenter</button>
         <button class="btn btn-primary btn-sm" onclick="openRecordingStudio()">🎙 Record →</button>
       </div>
     </div>
@@ -8426,12 +8975,12 @@ button,input,select,textarea{font-family:inherit;}
     // Move pages trapped inside export-pg back to body
     var exportPg = document.getElementById('export-pg');
     if(exportPg){
-      ['teleprompter-pg','remote-pg','pricing-pg','privacy-pg','terms-pg'].forEach(function(id){
+      ['teleprompter-pg','remote-pg','pricing-pg','privacy-pg','terms-pg','ai-presenter-studio'].forEach(function(id){
         var el = document.getElementById(id);
         if(el && exportPg.contains(el)) document.body.appendChild(el);
       });
       // Move modals too
-      ['mode-picker-modal','upgrade-modal','ai-presenter-modal','studio-settings-modal'].forEach(function(id){
+      ['mode-picker-modal','upgrade-modal','ai-presenter-modal','ai-presenter-studio','studio-settings-modal'].forEach(function(id){
         var el = document.getElementById(id);
         if(el && exportPg.contains(el)) document.body.appendChild(el);
       });
