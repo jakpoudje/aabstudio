@@ -258,6 +258,88 @@ app.get('/api/creatomate/status/:renderId', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+
+// ════════════════════════════════════════════════════════════════════════════
+// PROJECT SYNC — save/load projects to Supabase so they work across all devices
+// ════════════════════════════════════════════════════════════════════════════
+app.post('/api/project/save', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No auth token' });
+    const token = authHeader.replace('Bearer ', '');
+
+    // Verify user via Supabase
+    const sb = getSupabase();
+    const { data: { user }, error: authErr } = await sb.auth.getUser(token);
+    if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
+
+    const { project } = req.body;
+    if (!project || !project.id) return res.status(400).json({ error: 'project.id required' });
+
+    // Upsert project into projects table
+    const { error } = await sb.from('projects').upsert({
+      id:         project.id,
+      user_id:    user.id,
+      title:      project.title || 'My Video',
+      data:       project,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('project/save:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/project/list', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No auth token' });
+    const token = authHeader.replace('Bearer ', '');
+
+    const sb = getSupabase();
+    const { data: { user }, error: authErr } = await sb.auth.getUser(token);
+    if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
+
+    const { data, error } = await sb.from('projects')
+      .select('id, title, data, updated_at')
+      .eq('user_id', user.id)
+      .order('updated_at', { ascending: false })
+      .limit(50);
+
+    if (error) throw error;
+    res.json({ projects: (data || []).map(function(r){ return r.data; }) });
+  } catch (e) {
+    console.error('project/list:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/project/:id', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No auth token' });
+    const token = authHeader.replace('Bearer ', '');
+
+    const sb = getSupabase();
+    const { data: { user }, error: authErr } = await sb.auth.getUser(token);
+    if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
+
+    const { error } = await sb.from('projects')
+      .delete()
+      .eq('id', req.params.id)
+      .eq('user_id', user.id);
+
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
 app.get('/health', (req, res) => res.json({
   status:     'ok',
   version:    '2.2',
