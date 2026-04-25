@@ -3688,7 +3688,7 @@ window.addEventListener('load',function(){
       setUser(session.user);
       // On sign in: push all local projects to cloud, then pull cloud projects
       setTimeout(function(){
-        pushAllLocalProjectsToCloud().then(function(){
+        (window.pushAllLocalProjectsToCloud || function(){ return Promise.resolve(); })().then(function(){
           if(typeof loadDashboard==='function') loadDashboard();
         }).catch(function(){
           if(typeof loadDashboard==='function') loadDashboard();
@@ -9167,7 +9167,11 @@ button,input,select,textarea{font-family:inherit;}
       if(!vd.audio) throw new Error('Voice failed: '+(vd.error||'no audio'));
       var pr=await fetch(API+'/api/presenter',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({audioBase64:vd.audio,referenceImageBase64:APS.photoB64||null,customBgBase64:APS.customBgB64||null,studioType:APS.settings.bg,ratio:APS.settings.ratio,sceneText:sc.narration,provider:APS.settings.provider,prompt:{studioType:APS.settings.bg,presenter:{framing:APS.settings.framing},voice:{id:APS.settings.voiceId,name:APS.settings.voiceName,gender:APS.settings.voiceGender}}})});
       var pd=await pr.json();
-      if(pd.error) throw new Error(pd.error);
+      if(pd.error) {
+        // Show the actual error message to user
+        if(typeof toast==='function') toast(pd.error.slice(0,100), 'error');
+        throw new Error(pd.error);
+      }
       sc.taskId=pd.taskId; sc.status='generating';
       if(typeof toast==='function') toast('Scene '+sc.num+' submitted…','info');
       for(var i=0;i<60;i++){
@@ -9189,8 +9193,13 @@ button,input,select,textarea{font-family:inherit;}
       throw new Error('Timed out');
     }catch(e){
       sc.status='failed';
-      if(row) row.className='aps-scene-row failed'+(idx===APS.currentIdx?' active':'');
-      if(typeof toast==='function') toast('Scene '+sc.num+' failed: '+e.message.slice(0,50),'error');
+      if(row){ row.className='aps-scene-row failed'+(idx===APS.currentIdx?' active':''); }
+      var msg = e.message || 'Unknown error';
+      // Show full error prominently
+      if(typeof toast==='function') toast('⚠️ Scene '+sc.num+': '+msg.slice(0,120),'error');
+      // Update badge
+      var badgeEl=document.getElementById('aps-preview-badge');
+      if(badgeEl&&idx===APS.currentIdx){ badgeEl.textContent='✗ '+msg.slice(0,40); badgeEl.style.color='#ef4444'; }
       return false;
     }
   };
