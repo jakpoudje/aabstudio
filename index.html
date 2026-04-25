@@ -1664,6 +1664,10 @@ button,input,select,textarea{font-family:inherit;}
     </div>
   </div>
 
+
+
+
+
 <!-- ══ TELEPROMPTER SOLO ════════════════════════════════════════════════════════ -->
 <div id="teleprompter-pg" class="pg-full" style="background:#000;">
   <div class="tp-ctrl-bar">
@@ -3602,30 +3606,31 @@ function grantCreatorAccess(){
 }
 
 // ══ AI PRESENTER ══════════════════════════════════════════════════════════════
-async function openAIPresenter(){
+function openAIPresenter(){
+  // NOT async - Safari drops async onclick handlers silently
   if(!APP.user){
     toast('Sign in first to use AI Presenter','info');
     setTimeout(function(){ nav('auth-pg'); }, 1500);
     return;
   }
   if(APP.plan === 'free'){
-    showUpgradeModalPro('AI Presenter generates a realistic AI video of a presenter reading your script. Requires Creator or Pro Studio plan.');
+    showUpgradeModalPro('AI Presenter requires Creator or Pro Studio plan.');
     return;
   }
 
-  // Load scenes from cloud or localStorage if PROJECT is empty
+  // Restore project from localStorage if empty
   if(!PROJECT.scenes || PROJECT.scenes.length === 0){
-    var projects = await syncAndLoadProjects();
+    var saved = JSON.parse(localStorage.getItem('aab_projects')||'[]');
     var best = null;
-    (projects||[]).forEach(function(p){
+    saved.forEach(function(p){
       if(p.scenes && p.scenes.length > 0){
         if(!best || p.scenes.length > best.scenes.length) best = p;
       }
     });
     if(best){
-      PROJECT.id = best.id; PROJECT.title = best.title;
-      PROJECT.scenes = best.scenes; PROJECT.assets = best.assets||[];
-      PROJECT.wpm = best.wpm||150; PROJECT.clips = {};
+      PROJECT.id=best.id; PROJECT.title=best.title;
+      PROJECT.scenes=best.scenes; PROJECT.assets=best.assets||[];
+      PROJECT.wpm=best.wpm||150; PROJECT.clips={};
     }
   }
 
@@ -3634,8 +3639,13 @@ async function openAIPresenter(){
     return;
   }
 
+  // Open modal SYNCHRONOUSLY - no awaiting
   openModal('ai-presenter-modal');
-  setTimeout(window.loadAISceneList, 80);
+  
+  // Load scenes after modal is visible - use setTimeout not await
+  setTimeout(function(){ 
+    if(typeof window.loadAISceneList === 'function') window.loadAISceneList();
+  }, 80);
 }
 function loadAIPhoto(inp){if(!inp.files.length)return;var f=inp.files[0];var rd=new FileReader();rd.onload=function(e){var img=document.getElementById('ai-photo-preview');if(img){img.src=e.target.result;img.style.display='block';}window._aiPhotoB64=e.target.result.split(',')[1];};rd.readAsDataURL(f);}// ══ KEYBOARD SHORTCUTS ════════════════════════════════════════════════════════
 document.addEventListener('keydown',function(e){
@@ -8372,14 +8382,18 @@ button,input,select,textarea{font-family:inherit;}
 </style>
 <script>
 (function(){
-  // Move pages that got trapped inside export-pg back to body level
+  // Move ALL pages and modals trapped inside export-pg back to body level
   function fixPageNesting() {
     var exportPg = document.getElementById('export-pg');
     if (!exportPg) return;
-    var trapped = ['teleprompter-pg','remote-pg','pricing-pg','privacy-pg','terms-pg'];
-    trapped.forEach(function(id) {
+    // Move trapped pages
+    ['teleprompter-pg','remote-pg','pricing-pg','privacy-pg','terms-pg'].forEach(function(id){
       var el = document.getElementById(id);
-      if (el && exportPg.contains(el)) {
+      if(el && exportPg.contains(el)) document.body.appendChild(el);
+    });
+    // Move ALL modals to body level so they're not hidden by parent display:none
+    document.querySelectorAll('.modal-overlay').forEach(function(el){
+      if(exportPg.contains(el) || (el.parentElement && el.parentElement !== document.body)){
         document.body.appendChild(el);
       }
     });
