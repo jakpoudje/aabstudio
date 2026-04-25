@@ -3693,7 +3693,14 @@ window.addEventListener('load',function(){
     if(event==='SIGNED_IN'&&session){ 
       window._sbSession = session;
       setUser(session.user);
-      setTimeout(syncAndLoadProjects, 800);
+      // On sign in: push all local projects to cloud, then pull cloud projects
+      setTimeout(function(){
+        pushAllLocalProjectsToCloud().then(function(){
+          if(typeof loadDashboard==='function') loadDashboard();
+        }).catch(function(){
+          if(typeof loadDashboard==='function') loadDashboard();
+        });
+      }, 1000);
     }
     if(event==='SIGNED_OUT'){ window._sbSession=null; APP.user=null; APP.plan='free'; updateNavState(); navFree('home'); }
     if(event==='TOKEN_REFRESHED'&&session){ setUser(session.user); }
@@ -3705,6 +3712,30 @@ window.addEventListener('load',function(){
       supa.auth.signOut().then(function(){
         APP.user=null; APP.plan='free'; updateNavState(); navFree('home');
         console.log('Stale session cleared — please sign in again');
+
+async function pushAllLocalProjectsToCloud(){
+  // Push every project from localStorage to Supabase
+  // Called on sign-in so all devices see all projects
+  try {
+    var session = window._sbSession;
+    if(!session || !session.access_token) return;
+    var projects = JSON.parse(localStorage.getItem('aab_projects')||'[]');
+    if(!projects.length) return;
+    console.log('Pushing', projects.length, 'projects to cloud...');
+    for(var i=0; i<projects.length; i++){
+      var p = projects[i];
+      if(!p.id) continue;
+      try {
+        await fetch(API + '/api/project/save', {
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
+          body: JSON.stringify({project: p})
+        });
+      } catch(e){ /* fail silently per project */ }
+    }
+    console.log('All projects pushed to cloud ✓');
+  } catch(e){ console.warn('pushAllLocalProjectsToCloud:', e.message); }
+}
 
 // ── SAFARI COMPATIBILITY: Explicitly expose all handler functions on window ──
 // Safari with strict scripts can lose inline handler access to closured functions
@@ -3838,6 +3869,7 @@ window.confirmMode           = confirmMode;
 window.showUpgradeModal      = showUpgradeModal;
 window.showUpgradeModalPro   = showUpgradeModalPro;
 window.syncProjectToCloud   = syncProjectToCloud;
+window.pushAllLocalProjectsToCloud = pushAllLocalProjectsToCloud;
 window.loadProjectsFromCloud  = loadProjectsFromCloud;
 window.syncAndLoadProjects    = syncAndLoadProjects;
 window.renderProjectGrid      = renderProjectGrid;
@@ -8356,7 +8388,7 @@ button,input,select,textarea{font-family:inherit;}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 
-<!-- AABStudio Critical Fix - Teleprompter & Page Structure -->
+<!-- AABStudio Critical Fix v2 - Structural + Modal Fix -->
 <style id="aab-critical-fix">
   .pg-full {
     display: none;
@@ -8373,74 +8405,104 @@ button,input,select,textarea{font-family:inherit;}
     display: flex !important;
     flex-direction: column !important;
   }
-  #proj-list .proj-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px,1fr));
-    gap: 16px;
-    padding: 4px;
+  .modal-overlay {
+    display: none;
+    position: fixed !important;
+    inset: 0 !important;
+    background: rgba(0,0,0,0.6) !important;
+    backdrop-filter: blur(6px) !important;
+    z-index: 50000 !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 20px !important;
+  }
+  .modal-overlay.on {
+    display: flex !important;
   }
 </style>
 <script>
 (function(){
-  // Move ALL pages and modals trapped inside export-pg back to body level
-  function fixPageNesting() {
+  function applyFixes(){
+    // Move pages trapped inside export-pg back to body
     var exportPg = document.getElementById('export-pg');
-    if (!exportPg) return;
-    // Move trapped pages
-    ['teleprompter-pg','remote-pg','pricing-pg','privacy-pg','terms-pg'].forEach(function(id){
-      var el = document.getElementById(id);
-      if(el && exportPg.contains(el)) document.body.appendChild(el);
-    });
-    // Move ALL modals to body level so they're not hidden by parent display:none
-    document.querySelectorAll('.modal-overlay').forEach(function(el){
-      if(exportPg.contains(el) || (el.parentElement && el.parentElement !== document.body)){
-        document.body.appendChild(el);
-      }
-    });
-  }
-  
-  // Fix loadDashboard to use proj-list not proj-grid
-  function fixDashboard() {
-    var orig = window.loadDashboard;
-    window.loadDashboard = function() {
+    if(exportPg){
+      ['teleprompter-pg','remote-pg','pricing-pg','privacy-pg','terms-pg'].forEach(function(id){
+        var el = document.getElementById(id);
+        if(el && exportPg.contains(el)) document.body.appendChild(el);
+      });
+      // Move modals too
+      ['mode-picker-modal','upgrade-modal','ai-presenter-modal','studio-settings-modal'].forEach(function(id){
+        var el = document.getElementById(id);
+        if(el && exportPg.contains(el)) document.body.appendChild(el);
+      });
+    }
+
+    // Fix loadDashboard to use proj-list
+    var origDash = window.loadDashboard;
+    window.loadDashboard = function(){
       var grid = document.getElementById('proj-list');
-      if (!grid) { if(orig) orig(); return; }
-      var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
-      if (!projects.length) {
-        grid.innerHTML = '<div style="padding:40px;text-align:center;color:#9ca3af;font-size:14px;">No projects yet.<br><br>Click + New project to start.</div>';
+      if(!grid){ if(origDash) origDash(); return; }
+      var projects = JSON.parse(localStorage.getItem('aab_projects')||'[]');
+      if(!projects.length){
+        grid.innerHTML = '<div style="padding:40px;text-align:center;color:#9ca3af;font-size:14px;">No projects yet. Click + New project to start.</div>';
         return;
       }
       var inner = document.createElement('div');
-      inner.className = 'proj-grid';
       inner.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;padding:4px;';
-      projects.forEach(function(p, i) {
+      projects.forEach(function(p,i){
         var card = document.createElement('div');
         card.className = 'proj-card';
-        var scenes = p.scenes ? p.scenes.length : 0;
-        var clips = Object.keys(p.clipsMeta || p.clips || {}).length;
         card.innerHTML =
           '<div style="height:110px;background:linear-gradient(135deg,#0f172a,#1a3a5f);border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:10px;font-size:32px;">🎬</div>'
-          + '<div style="font-weight:700;font-size:14px;margin-bottom:4px;color:var(--ink,#111);">' + (p.title || 'Untitled') + '</div>'
-          + '<div style="font-size:12px;color:#9ca3af;margin-bottom:10px;">' + scenes + ' scenes · ' + (p.date || '') + (clips ? ' · ' + clips + ' recorded' : '') + '</div>'
-          + '<div style="display:flex;gap:8px;">'
-          + '<button onclick="loadProject(' + i + ')" style="flex:1;background:#00d4ff;color:#000;border:none;padding:7px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;">Open →</button>'
-          + '<button onclick="deleteProject(' + i + ')" style="background:none;border:1px solid #e5e7eb;padding:7px 10px;border-radius:6px;cursor:pointer;font-size:11px;color:#9ca3af;">✕</button>'
-          + '</div>';
+          +'<div style="font-weight:700;font-size:14px;margin-bottom:4px;">'+(p.title||'Untitled')+'</div>'
+          +'<div style="font-size:12px;color:#9ca3af;margin-bottom:10px;">'+(p.scenes?p.scenes.length:0)+' scenes · '+(p.date||'')+'</div>'
+          +'<div style="display:flex;gap:8px;">'
+          +'<button onclick="loadProject('+i+')" style="flex:1;background:#00d4ff;color:#000;border:none;padding:7px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;">Open →</button>'
+          +'<button onclick="deleteProject('+i+')" style="background:none;border:1px solid #e5e7eb;padding:7px 10px;border-radius:6px;cursor:pointer;font-size:11px;color:#9ca3af;">✕</button>'
+          +'</div>';
         inner.appendChild(card);
       });
       grid.innerHTML = '';
       grid.appendChild(inner);
     };
+
+    // Fix openAIPresenter to be synchronous (async breaks Safari onclick)
+    window.openAIPresenter = function(){
+      if(!window.APP || !APP.user){
+        if(typeof toast==='function') toast('Sign in first','info');
+        setTimeout(function(){ if(typeof nav==='function') nav('auth-pg'); }, 1500);
+        return;
+      }
+      if(APP.plan === 'free'){
+        if(typeof showUpgradeModalPro==='function') showUpgradeModalPro('AI Presenter requires Creator or Pro Studio plan.');
+        return;
+      }
+      // Restore project from localStorage if empty
+      if(!PROJECT.scenes || PROJECT.scenes.length === 0){
+        var saved = JSON.parse(localStorage.getItem('aab_projects')||'[]');
+        var best = null;
+        saved.forEach(function(p){
+          if(p.scenes && p.scenes.length > 0 && (!best || p.scenes.length > best.scenes.length)) best = p;
+        });
+        if(best){ PROJECT.id=best.id; PROJECT.title=best.title; PROJECT.scenes=best.scenes; PROJECT.assets=best.assets||[]; PROJECT.clips={}; }
+      }
+      if(!PROJECT.scenes || PROJECT.scenes.length === 0){
+        if(typeof toast==='function') toast('No scenes — split your script first','error');
+        return;
+      }
+      if(typeof openModal==='function') openModal('ai-presenter-modal');
+      setTimeout(function(){
+        if(typeof window.loadAISceneList==='function') window.loadAISceneList();
+      }, 100);
+    };
   }
 
-  // Run fixes immediately and after DOM ready
-  fixPageNesting();
-  fixDashboard();
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', fixPageNesting);
+  // Run immediately and after DOM loads
+  applyFixes();
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', applyFixes);
   }
-  // Also run after a short delay to catch any late-rendered content
-  setTimeout(fixPageNesting, 100);
+  setTimeout(applyFixes, 200);
 })();
 </script>
 
