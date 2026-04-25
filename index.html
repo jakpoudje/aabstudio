@@ -2121,25 +2121,52 @@ function dashNav(sec, el) {
   document.querySelectorAll('.dash-sec').forEach(function(s){s.classList.remove('on');});
   var s=document.getElementById('dash-'+sec); if(s) s.classList.add('on');
 }
-async function loadDashboard(){
-  var projects = await syncAndLoadProjects();
+function loadDashboard(){
   var grid = document.getElementById('proj-grid');
   if(!grid) return;
-  if(!projects.length){
-    grid.innerHTML = '<div class="proj-empty"><div class="proj-empty-icon">🎬</div><div>No projects yet</div><div style="font-size:13px;color:var(--muted);margin-top:4px;">Create a new project to get started</div></div>';
+
+  // Show local projects IMMEDIATELY — no waiting for cloud
+  var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+  renderProjectGrid(projects);
+
+  // Then silently sync cloud in background and refresh if more found
+  if(window._sbSession && window._sbSession.access_token){
+    loadProjectsFromCloud().then(function(cloudProjects){
+      if(!cloudProjects || !cloudProjects.length) return;
+      // Merge cloud into local
+      cloudProjects.forEach(function(cp){
+        var idx = projects.findIndex(function(p){ return p.id === cp.id; });
+        if(idx > -1){ projects[idx] = cp; } else { projects.unshift(cp); }
+      });
+      projects.sort(function(a,b){ return (b.date||'') > (a.date||'') ? 1 : -1; });
+      localStorage.setItem('aab_projects', JSON.stringify(projects.slice(0,25)));
+      // Refresh grid only if cloud had more or different projects
+      renderProjectGrid(projects);
+    }).catch(function(e){ console.warn('Cloud sync skipped:', e.message); });
+  }
+}
+
+function renderProjectGrid(projects){
+  var grid = document.getElementById('proj-grid');
+  if(!grid) return;
+  if(!projects || !projects.length){
+    grid.innerHTML = '<div class="proj-empty"><div class="proj-empty-icon">🎬</div>'
+      + '<div style="font-size:16px;font-weight:600;color:var(--ink);">No projects yet</div>'
+      + '<div style="font-size:13px;color:var(--muted);margin-top:6px;">Create a new project to get started</div></div>';
     return;
   }
   grid.innerHTML = '';
   projects.forEach(function(p, i){
+    var sceneCount = p.scenes ? p.scenes.length : 0;
+    var clipCount  = Object.keys(p.clipsMeta || p.clips || {}).length;
     var card = document.createElement('div');
     card.className = 'proj-card';
-    card.innerHTML =
-      '<div class="proj-title">' + (p.title||'Untitled') + '</div>'
-      + '<div class="proj-meta">' + (p.scenes?p.scenes.length:0) + ' scenes · ' + (p.date||'') + '</div>'
-      + '<div class="proj-clips">' + Object.keys(p.clipsMeta||p.clips||{}).length + ' recorded</div>'
+    card.innerHTML = '<div class="proj-thumb"><div class="proj-thumb-icon">🎬</div></div>'
+      + '<div class="proj-title">' + (p.title||'Untitled') + '</div>'
+      + '<div class="proj-meta">' + sceneCount + ' scenes · ' + (p.date||'') + (clipCount ? ' · '+clipCount+' recorded' : '') + '</div>'
       + '<div class="proj-actions">'
-      +   '<button class="btn btn-primary btn-sm" onclick="loadProject('+i+')">Open →</button>'
-      +   '<button class="btn btn-ghost btn-sm" onclick="deleteProject('+i+')" style="color:var(--muted);">Delete</button>'
+      + '<button class="btn btn-primary btn-sm" onclick="loadProject('+i+')">Open →</button>'
+      + '<button class="btn btn-ghost btn-sm" onclick="deleteProject('+i+')" style="color:var(--muted);">Delete</button>'
       + '</div>';
     grid.appendChild(card);
   });
@@ -3787,6 +3814,7 @@ window.showUpgradeModalPro   = showUpgradeModalPro;
 window.syncProjectToCloud   = syncProjectToCloud;
 window.loadProjectsFromCloud  = loadProjectsFromCloud;
 window.syncAndLoadProjects    = syncAndLoadProjects;
+window.renderProjectGrid      = renderProjectGrid;
 window.syncLabelScroll       = syncLabelScroll;
 window.saveSceneEditorAndClose = saveSceneEditorAndClose;
 window.closeSceneEditor      = closeSceneEditor;
@@ -6058,16 +6086,20 @@ async function doExport(){
 async function syncProjectToCloud(projectData){
   try {
     var session = window._sbSession;
-    if(!session || !session.access_token) return; // not logged in
-    await fetch(API + '/api/project/save', {
+    if(!session || !session.access_token) return;
+    var r = await fetch(API + '/api/project/save', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type':  'application/json',
         'Authorization': 'Bearer ' + session.access_token
       },
       body: JSON.stringify({ project: projectData })
     });
-  } catch(e){ console.warn('Cloud sync failed:', e.message); }
+    if(r.ok) console.log('Project synced to cloud ✓');
+    else console.warn('Cloud save failed:', r.status, '(API may not be deployed yet)');
+  } catch(e){
+    console.warn('Cloud save skipped:', e.message);
+  }
 }
 
 async function loadProjectsFromCloud(){
@@ -6077,36 +6109,32 @@ async function loadProjectsFromCloud(){
     var r = await fetch(API + '/api/project/list', {
       headers: { 'Authorization': 'Bearer ' + session.access_token }
     });
-    if(!r.ok) return null;
+    if(!r.ok) return null; // 404 if route not deployed yet
     var d = await r.json();
     return d.projects || [];
   } catch(e){
-    console.warn('Cloud load failed:', e.message);
-    return null;
+    return null; // fail silently
   }
 }
 
 async function syncAndLoadProjects(){
-  // Try cloud first, fall back to localStorage
-  var cloudProjects = await loadProjectsFromCloud();
-  if(cloudProjects && cloudProjects.length > 0){
-    // Merge cloud projects into localStorage
-    var local = JSON.parse(localStorage.getItem('aab_projects') || '[]');
-    cloudProjects.forEach(function(cp){
-      var idx = local.findIndex(function(p){ return p.id === cp.id; });
-      if(idx > -1){
-        // Keep whichever is newer
-        var localDate = local[idx].date || '';
-        var cloudDate = cp.date || '';
-        if(cloudDate >= localDate) local[idx] = cp;
-      } else {
-        local.unshift(cp);
-      }
-    });
-    localStorage.setItem('aab_projects', JSON.stringify(local.slice(0,25)));
-    return local;
+  // Always return local immediately
+  var local = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+  // Try cloud in parallel — don't block on it
+  try {
+    var cloudProjects = await loadProjectsFromCloud();
+    if(cloudProjects && cloudProjects.length > 0){
+      cloudProjects.forEach(function(cp){
+        var idx = local.findIndex(function(p){ return p.id === cp.id; });
+        if(idx > -1){ local[idx] = cp; } else { local.unshift(cp); }
+      });
+      local.sort(function(a,b){ return (b.date||'') > (a.date||'') ? 1 : -1; });
+      localStorage.setItem('aab_projects', JSON.stringify(local.slice(0,25)));
+    }
+  } catch(e){
+    console.warn('Cloud sync unavailable (API not deployed yet):', e.message);
   }
-  return JSON.parse(localStorage.getItem('aab_projects') || '[]');
+  return local;
 }
 
 </script>
