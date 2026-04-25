@@ -3562,36 +3562,30 @@ function openAIPresenter(){
     return;
   }
 
-  // ── Ensure scenes are in PROJECT ──────────────────────────────────────────
-  // If PROJECT has no scenes, pull from localStorage (user may have refreshed)
-  if(!PROJECT.scenes || PROJECT.scenes.length === 0){
-    var saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
-    // Find project with most scenes (most likely the user's real project)
-    var best = null;
-    saved.forEach(function(p){
-      if(p.scenes && p.scenes.length > 0){
-        if(!best || p.scenes.length > best.scenes.length) best = p;
-      }
-    });
-    if(best){
-      PROJECT.id     = best.id;
-      PROJECT.title  = best.title;
-      PROJECT.scenes = best.scenes;
-      PROJECT.assets = best.assets || [];
-      PROJECT.wpm    = best.wpm || 150;
-      PROJECT.clips  = {};
-      console.log('AI Presenter: loaded project "' + best.title + '" with ' + best.scenes.length + ' scenes');
+  // Always try to restore project from localStorage first
+  var saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+  // Pick project with most scenes (the user's real work)
+  var best = null;
+  saved.forEach(function(p){
+    if(p.scenes && p.scenes.length > 0){
+      if(!best || p.scenes.length > best.scenes.length) best = p;
     }
+  });
+
+  if(best && (!PROJECT.scenes || PROJECT.scenes.length < best.scenes.length)){
+    PROJECT.id = best.id; PROJECT.title = best.title;
+    PROJECT.scenes = best.scenes; PROJECT.assets = best.assets || [];
+    PROJECT.wpm = best.wpm || 150; PROJECT.clips = {};
   }
 
   if(!PROJECT.scenes || PROJECT.scenes.length === 0){
-    toast('No scenes found. Split your script into scenes first, then open AI Presenter.','error');
+    toast('No scenes found. Split your script first, then open AI Presenter.','error');
     return;
   }
 
   openModal('ai-presenter-modal');
-  // Load scenes after modal is visible in DOM
-  setTimeout(loadAISceneList, 80);
+  // Load immediately — no button click needed
+  setTimeout(loadAISceneList, 50);
 }
 function loadAIPhoto(inp){if(!inp.files.length)return;var f=inp.files[0];var rd=new FileReader();rd.onload=function(e){var img=document.getElementById('ai-photo-preview');if(img){img.src=e.target.result;img.style.display='block';}window._aiPhotoB64=e.target.result.split(',')[1];};rd.readAsDataURL(f);}// ══ KEYBOARD SHORTCUTS ════════════════════════════════════════════════════════
 document.addEventListener('keydown',function(e){
@@ -4598,6 +4592,10 @@ function loadAISceneList(){
   hdr.appendChild(btnWrap);
   list.appendChild(hdr);
 
+  // Update count badge
+  var countBadge = document.getElementById('ai-scene-count');
+  if(countBadge) countBadge.textContent = PROJECT.scenes.length + ' scenes loaded';
+
   // Scene rows
   PROJECT.scenes.forEach(function(scene, i){
     var narration = (scene.narration || '').trim();
@@ -4737,18 +4735,56 @@ async function startAIPresenter(){
   if(btn) btn.disabled = false;
 
   if(allResults.length){
-    var taskList = allResults.map(function(r){
-      return r.label + ' → <code style="background:#f3f4f6;padding:1px 5px;border-radius:3px;font-size:10px;">' + r.taskId + '</code>';
-    }).join('<br>');
+    window._aiPresenterTasks = allResults;
 
-    var summary = '<div style="background:#f0fdf4;border:.5px solid #86efac;border-radius:8px;padding:12px;margin-top:8px;">'
-      + '<div style="font-weight:600;color:#166534;margin-bottom:6px;">✅ '+allResults.length+' scene'+(allResults.length>1?'s':'')+' submitted!</div>'
-      + '<div style="font-size:11px;color:#374151;margin-bottom:8px;">'+taskList+'</div>'
-      + '<button onclick="checkAIPresenterStatus()" style="background:#00d4ff;color:#0a0e1a;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;font-family:Sora,sans-serif;">↻ Check video status</button>'
-      + '</div>';
+    var taskRows = allResults.map(function(r){
+      var sid = 'ait' + r.taskId.replace(/[^a-z0-9]/gi,'');
+      return '<div style="padding:5px 0;font-size:12px;border-bottom:.5px solid #e5e7eb;">'
+        + '⏳ <b>' + r.label + '</b> '
+        + '<span id="' + sid + '" style="color:#9ca3af;">generating — 2-5 min…</span>'
+        + '</div>';
+    }).join('');
+
+    var summary = '<div style="background:#f0fdf4;border:.5px solid #86efac;border-radius:8px;padding:14px;margin-top:8px;">'
+      + '<div style="font-weight:700;color:#166534;font-size:13px;margin-bottom:8px;">✅ '
+      + allResults.length + ' scene' + (allResults.length>1?'s':'') + ' submitted to HeyGen!'
+      + '</div>'
+      + '<div style="margin-bottom:10px;">' + taskRows + '</div>'
+      + '<div style="font-size:11px;color:#6b7280;margin-bottom:10px;">Auto-checking every 20s. Each video takes 2–5 min.</div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+      + '<button onclick="checkAIPresenterStatus()" style="background:#00d4ff;color:#0a0e1a;border:none;padding:7px 16px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;font-family:Sora,sans-serif;">↻ Check now</button>'
+      + '<a href="https://app.heygen.com/videos" target="_blank" style="display:inline-flex;align-items:center;background:#111;color:#fff;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;">HeyGen dashboard ↗</a>'
+      + '</div></div>';
 
     if(status){ status.style.display='block'; status.innerHTML = summary; }
-    window._aiPresenterTasks = allResults;
+
+    // Auto-poll every 20 seconds, stop after 15 min
+    var _pollTick = 0;
+    var _autoPoll = setInterval(async function(){
+      _pollTick++;
+      if(_pollTick > 45){ clearInterval(_autoPoll); return; }
+      var allDone = true;
+      for(var pi=0; pi<allResults.length; pi++){
+        var t = allResults[pi];
+        var sid = 'ait' + t.taskId.replace(/[^a-z0-9]/gi,'');
+        try {
+          var pr = await fetch(API + '/api/presenter-status?taskId=' + encodeURIComponent(t.taskId));
+          var pd = await pr.json();
+          var span = document.getElementById(sid);
+          if(pd.done && pd.videoUrl){
+            if(span) span.innerHTML = '✅ <a href="'+pd.videoUrl+'" target="_blank" style="color:#00d4ff;font-weight:700;">Download video →</a>';
+            toast(t.label + ' video ready!','ok');
+          } else if(pd.failed){
+            if(span) span.innerHTML = '<span style="color:#ef4444;">✗ Failed</span>';
+          } else {
+            allDone = false;
+            if(span) span.textContent = (pd.status||'generating') + '…';
+          }
+        } catch(e){ allDone = false; }
+      }
+      if(allDone) clearInterval(_autoPoll);
+    }, 20000);
+    window._aiAutoPoll = _autoPoll;
   }
 }
 
@@ -6116,59 +6152,67 @@ async function doExport(){
 
 <!-- AI PRESENTER MODAL -->
 <div class="modal-overlay" id="ai-presenter-modal">
-  <div class="modal-box" style="max-width:560px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+  <div class="modal-box" style="max-width:600px;">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
       <div>
         <div style="font-size:18px;font-weight:700;color:var(--ink);">🤖 AI Presenter</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:3px;">Generate an AI video presenter from your script scenes</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px;">Voice your scenes with ElevenLabs · Generate presenter video with HeyGen</div>
       </div>
-      <button onclick="closeModal('ai-presenter-modal')" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);">✕</button>
+      <button onclick="closeModal('ai-presenter-modal')" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);line-height:1;">✕</button>
     </div>
 
-    <!-- Step 1: Upload photo -->
-    <div style="margin-bottom:18px;">
-      <div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">1. Upload your photo or avatar</div>
-      <div style="display:flex;align-items:center;gap:12px;">
-        <label style="display:flex;align-items:center;gap:8px;padding:10px 16px;border:1.5px dashed #d1d5db;border-radius:10px;cursor:pointer;font-size:13px;color:var(--muted);">
+    <!-- Step 1: Photo -->
+    <div style="display:flex;gap:16px;margin-bottom:18px;align-items:flex-start;">
+      <div style="flex:1;">
+        <div style="font-size:12px;font-weight:700;color:var(--ink);margin-bottom:8px;">1. Your photo <span style="font-weight:400;color:var(--muted);">(optional — uses default avatar if skipped)</span></div>
+        <label style="display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border:1.5px dashed #d1d5db;border-radius:8px;cursor:pointer;font-size:12px;color:var(--muted);transition:border-color .15s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='#d1d5db'">
           📷 Choose photo
           <input type="file" accept="image/*" style="display:none;" onchange="loadAIPhoto(this)">
         </label>
-        <img id="ai-photo-preview" style="display:none;width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid var(--accent);">
       </div>
+      <img id="ai-photo-preview" style="display:none;width:64px;height:64px;border-radius:50%;object-fit:cover;border:2.5px solid var(--accent);flex-shrink:0;">
     </div>
 
-    <!-- Step 2: Voice selection -->
+    <!-- Step 2: Voice -->
     <div style="margin-bottom:18px;">
-      <div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">2. Choose voice</div>
-      <select id="ai-voice-sel" style="width:100%;padding:9px 12px;border:.5px solid var(--border);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:var(--surface);">
+      <div style="font-size:12px;font-weight:700;color:var(--ink);margin-bottom:8px;">2. Choose voice (ElevenLabs)</div>
+      <select id="ai-voice-sel" style="width:100%;padding:9px 12px;border:.5px solid var(--bdr2);border-radius:8px;font-size:13px;font-family:Sora,sans-serif;background:var(--surface);color:var(--ink);">
         <option value="EXAVITQu4vr4xnSDxMaL">Rachel — Natural female</option>
         <option value="21m00Tcm4TlvDq8ikWAM">Adam — Professional male</option>
         <option value="AZnzlk1XvdvUeBnXmlld">Domi — Energetic female</option>
-        <option value="MF3mGyEYCl7XYWbV9V6O">Elli — Calm female</option>
+        <option value="MF3mGyEYCl7XYWbV9V6O">Elli — Calm &amp; Clear</option>
         <option value="TxGEqnHWrfWFTfGW9XjX">Josh — Warm male</option>
         <option value="yoZ06aMxZJJ28mfd3POQ">Sam — Casual male</option>
+        <option value="pNInz6obpgDQGcFmaJgB">Arnold — Deep male</option>
+        <option value="GBv7mTt0atIp3Br8iCZE">Thomas — Calm male</option>
       </select>
     </div>
 
-    <!-- Step 3: Scene selection -->
-    <div style="margin-bottom:18px;">
-      <div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:8px;">3. Select scenes to generate</div>
-      <div style="max-height:180px;overflow-y:auto;border:.5px solid #e5e7eb;border-radius:8px;padding:8px;" id="ai-scenes-list">
-        <div style="font-size:12px;color:var(--muted);padding:8px;">Click "Load scenes" to see your scenes</div>
+    <!-- Step 3: Scenes -->
+    <div style="margin-bottom:14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div style="font-size:12px;font-weight:700;color:var(--ink);">3. Select scenes to generate</div>
+        <span id="ai-scene-count" style="font-size:11px;color:var(--muted);background:var(--surface);padding:2px 8px;border-radius:10px;border:.5px solid var(--bdr2);"></span>
       </div>
-      <button onclick="loadAISceneList()" style="margin-top:6px;font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;">↻ Load scenes</button>
+      <div style="max-height:220px;overflow-y:auto;border:.5px solid #e5e7eb;border-radius:8px;padding:6px;background:#fafafa;" id="ai-scenes-list">
+        <div style="font-size:12px;color:var(--muted);padding:12px;text-align:center;">Loading your scenes…</div>
+      </div>
+      <button onclick="loadAISceneList()" style="margin-top:5px;font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;padding:2px 0;">↻ Reload scenes</button>
     </div>
 
-    <!-- Status -->
-    <div id="ai-presenter-status" style="display:none;font-size:12px;color:var(--muted);padding:10px;background:#f9fafb;border-radius:8px;margin-bottom:14px;line-height:1.6;"></div>
+    <!-- Status / results area -->
+    <div id="ai-presenter-status" style="display:none;font-size:12px;margin-bottom:14px;line-height:1.6;max-height:220px;overflow-y:auto;"></div>
 
-    <div style="display:flex;gap:10px;justify-content:flex-end;">
-      <button class="btn btn-ghost" onclick="closeModal('ai-presenter-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="startAIPresenter()" id="ai-gen-btn">🎬 Generate AI video</button>
+    <!-- Actions -->
+    <div style="display:flex;gap:10px;align-items:center;">
+      <button class="btn btn-primary" onclick="startAIPresenter()" id="ai-gen-btn" style="flex:1;">🎬 Generate AI video</button>
+      <button class="btn btn-ghost" onclick="closeModal('ai-presenter-modal')" style="padding:9px 16px;">Cancel</button>
     </div>
 
-    <div style="margin-top:14px;padding:10px;background:rgba(245,158,11,.06);border:.5px solid rgba(245,158,11,.2);border-radius:8px;font-size:11px;color:rgba(245,158,11,.8);line-height:1.5;">
-      ⚠️ Requires ElevenLabs (voice) and HeyGen (video) API keys in Railway. Each scene takes 1–3 minutes to generate.
+    <div style="margin-top:12px;padding:8px 12px;background:rgba(245,158,11,.06);border:.5px solid rgba(245,158,11,.2);border-radius:6px;font-size:11px;color:rgba(245,158,11,.85);line-height:1.5;">
+      ⚠️ Requires <b>ELEVENLABS_API_KEY</b> and <b>HEYGEN_API_KEY</b> in Railway. Each scene takes 2–5 minutes to generate.
     </div>
   </div>
 </div>
