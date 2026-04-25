@@ -277,12 +277,23 @@ app.post('/api/project/save', async (req, res) => {
     if (!project || !project.id) return res.status(400).json({ error: 'project.id required' });
 
     // Upsert project into projects table
-    const { error } = await sb.from('projects').upsert({
-      id:         project.id,
-      user_id:    user.id,
-      title:      project.title || 'My Video',
-      data:       project,
-      updated_at: new Date().toISOString()
+    // Strip large binary data before saving to Supabase (5MB limit per row)
+    var projectData = JSON.parse(JSON.stringify(project));
+    if(projectData.assets) projectData.assets = projectData.assets.map(function(a){ 
+      var clean = Object.assign({}, a); delete clean.dataUrl; return clean; 
+    });
+    if(projectData.scenes) projectData.scenes = projectData.scenes.map(function(s){
+      var sc = Object.assign({}, s);
+      if(sc.assets) sc.assets = sc.assets.map(function(a){ var c=Object.assign({},a); delete c.dataUrl; return c; });
+      return sc;
+    });
+    delete projectData.clips;
+    
+    const { error } = await sb.from('aab_projects').upsert({
+      id:      project.id,
+      user_id: user.id,
+      title:   project.title || 'My Video',
+      data:    projectData
     }, { onConflict: 'id' });
 
     if (error) throw error;
@@ -303,7 +314,7 @@ app.get('/api/project/list', async (req, res) => {
     const { data: { user }, error: authErr } = await sb.auth.getUser(token);
     if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
 
-    const { data, error } = await sb.from('projects')
+    const { data, error } = await sb.from('aab_projects')
       .select('id, title, data, updated_at')
       .eq('user_id', user.id)
       .order('updated_at', { ascending: false })
@@ -327,7 +338,7 @@ app.delete('/api/project/:id', async (req, res) => {
     const { data: { user }, error: authErr } = await sb.auth.getUser(token);
     if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
 
-    const { error } = await sb.from('projects')
+    const { error } = await sb.from('aab_projects')
       .delete()
       .eq('id', req.params.id)
       .eq('user_id', user.id);
@@ -340,9 +351,80 @@ app.delete('/api/project/:id', async (req, res) => {
 });
 
 
+
+// ── Auto-setup: create aab_projects table if missing ─────────────────────────
+app.post('/api/setup-db', async (req, res) => {
+  try {
+    const sb = getSupabase();
+    if (!sb) return res.status(500).json({ error: 'Supabase not configured' });
+    
+    // Try to create table via raw SQL using Supabase's rpc
+    const sql = `
+      CREATE TABLE IF NOT EXISTS aab_projects (
+        id       TEXT PRIMARY KEY,
+        user_id  UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+        title    TEXT,
+        data     JSONB
+      );
+      ALTER TABLE aab_projects ENABLE ROW LEVEL SECURITY;
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_policies WHERE tablename='aab_projects' AND policyname='users_own_aab_projects'
+        ) THEN
+          CREATE POLICY "users_own_aab_projects" ON aab_projects
+            FOR ALL USING (auth.uid() = user_id);
+        END IF;
+      END $$;
+    `;
+    
+    const { error } = await sb.rpc('exec_sql', { sql_query: sql }).catch(() => ({ error: { message: 'rpc not available' } }));
+    
+    // Verify table exists by querying it
+    const { error: checkErr } = await sb.from('aab_projects').select('id').limit(1);
+    
+    if (checkErr && checkErr.code === 'PGRST205') {
+      return res.status(500).json({ error: 'Table does not exist - run SQL manually in Supabase', sql });
+    }
+    
+    res.json({ ok: true, tableExists: !checkErr });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Save multiple projects at once (for cross-device sync)
+app.post('/api/project/save-all', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No auth token' });
+    const token = authHeader.replace('Bearer ', '');
+    const sb = getSupabase();
+    const { data: { user }, error: authErr } = await sb.auth.getUser(token);
+    if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
+
+    const { projects } = req.body;
+    if (!projects || !Array.isArray(projects)) return res.status(400).json({ error: 'projects array required' });
+
+    const results = [];
+    for (const project of projects) {
+      if (!project.id) continue;
+      try {
+        // Strip binary data
+        const p = JSON.parse(JSON.stringify(project));
+        if (p.assets) p.assets = p.assets.map(a => { const c={...a}; delete c.dataUrl; return c; });
+        if (p.scenes) p.scenes = p.scenes.map(s => { const sc={...s}; if(sc.assets) sc.assets=sc.assets.map(a=>{const c={...a};delete c.dataUrl;return c;}); return sc; });
+        delete p.clips;
+        const { error } = await sb.from('aab_projects').upsert({ id: p.id, user_id: user.id, title: p.title||'My Video', data: p }, { onConflict: 'id' });
+        results.push({ id: project.id, title: project.title, ok: !error, error: error ? error.message : null });
+      } catch(e) { results.push({ id: project.id, ok: false, error: e.message }); }
+    }
+    res.json({ results, saved: results.filter(r=>r.ok).length, total: results.length });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/health', (req, res) => res.json({
   status:     'ok',
-  version:    '2.2',
+  version:    '2.3',
   platform:   'AABStudio.ai',
   model:      MODEL,
   anthropic:  !!process.env.ANTHROPIC_API_KEY,
@@ -1012,7 +1094,59 @@ app.post('/api/script/improve', async (req, res) => {
 });
 
 // ── START ─────────────────────────────────────────────────────────────────────
+// Auto-create aab_projects table on startup
+async function ensureAabProjectsTable() {
+  try {
+    const sb = getSupabase();
+    if (!sb) return;
+    // Test if table exists
+    const { error } = await sb.from('aab_projects').select('id').limit(1);
+    if (error && error.code === 'PGRST205') {
+      // Table doesn't exist - log instructions
+      console.warn('⚠ aab_projects table missing. Run this SQL in Supabase:');
+      console.warn('create table aab_projects (id text primary key, user_id uuid references auth.users(id) on delete cascade, title text, data jsonb); alter table aab_projects enable row level security; create policy "users_own_aab_projects" on aab_projects for all using (auth.uid() = user_id);');
+    } else {
+      console.log('✓ aab_projects table ready');
+    }
+  } catch(e) { /* silent */ }
+}
+ensureAabProjectsTable();
+
+// ── Auto-create aab_projects table on startup ────────────────────────────────
+async function ensureAabProjectsTable() {
+  try {
+    const sb = getSupabase();
+    if (!sb) return;
+    // Test if table exists
+    const { error } = await sb.from('aab_projects').select('id').limit(1);
+    if (!error) { console.log('✓ aab_projects table exists'); return; }
+    if (error.code !== 'PGRST205') { console.log('aab_projects check:', error.message); return; }
+    // Table doesn't exist - create it via pg REST
+    console.log('Creating aab_projects table...');
+    const createSQL = `
+      CREATE TABLE IF NOT EXISTS aab_projects (
+        id       TEXT PRIMARY KEY,
+        user_id  UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+        title    TEXT,
+        data     JSONB
+      );
+      ALTER TABLE aab_projects ENABLE ROW LEVEL SECURITY;
+      CREATE POLICY IF NOT EXISTS "users_own_aab_projects" ON aab_projects
+        FOR ALL USING (auth.uid() = user_id);
+      CREATE INDEX IF NOT EXISTS aab_projects_user_idx ON aab_projects(user_id);
+    `;
+    // Use pg directly via supabase-js rpc if available
+    const { error: rpcErr } = await sb.rpc('query', { query: createSQL }).catch(() => ({ error: { message: 'no rpc' } }));
+    if (rpcErr) {
+      console.log('Table auto-create via rpc failed:', rpcErr.message);
+      console.log('Run this SQL in Supabase dashboard:');
+      console.log('CREATE TABLE IF NOT EXISTS aab_projects (id TEXT PRIMARY KEY, user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE, title TEXT, data JSONB); ALTER TABLE aab_projects ENABLE ROW LEVEL SECURITY; CREATE POLICY "users_own_aab_projects" ON aab_projects FOR ALL USING (auth.uid() = user_id);');
+    }
+  } catch(e) { console.warn('ensureAabProjectsTable:', e.message); }
+}
+
 app.listen(PORT, () => {
+  ensureAabProjectsTable();
   console.log(`AABStudio v2.2 running on port ${PORT}`);
   console.log(`Anthropic: ${!!process.env.ANTHROPIC_API_KEY ? 'configured' : 'MISSING'}`);
   console.log(`Stripe:    ${!!STRIPE_KEY ? 'configured' : 'MISSING'}`);
