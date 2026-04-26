@@ -297,7 +297,20 @@ app.post('/api/project/save', async (req, res) => {
       data:    projectData
     }, { onConflict: 'id' });
 
-    if (error) throw error;
+    if (error) {
+      // If table doesn't exist, auto-create it then retry
+      if (error.code === 'PGRST205' || error.message?.includes('aab_projects')) {
+        console.log('aab_projects table missing — creating it now...');
+        await ensureAabProjectsTable();
+        const { error: e2 } = await sb.from('aab_projects').upsert({
+          id: project.id, user_id: user.id,
+          title: project.title || 'My Video', data: projectData
+        }, { onConflict: 'id' });
+        if (e2) throw e2;
+      } else {
+        throw error;
+      }
+    }
     res.json({ ok: true });
   } catch (e) {
     console.error('project/save:', e.message);
@@ -1040,6 +1053,8 @@ app.post('/api/presenter', async (req, res) => {
 
     // ── STEP 1: Generate background image ─────────────────────────────────────
     console.log('\n=== AI Presenter Pipeline ===');
+    console.log('Received: referenceImage=', referenceImageBase64 ? (referenceImageBase64.length+' chars') : 'NONE (will use default avatar)');
+    console.log('Received: customBg=', customBgBase64 ? 'yes' : 'no', 'bgType=', bgType, 'provider=', requestedProvider);
     console.log('Step 1: Generating background image...');
     const bgResult = await generateBackgroundImage(bgType, customBgBase64, ratio);
     const bgB64 = bgResult?.b64 || null;
@@ -1099,7 +1114,12 @@ app.post('/api/presenter', async (req, res) => {
 
     console.log(`Step 4: Animating with ${chosen}...`);
 
-    const args = { compositeImageB64, audioBase64, ratio, sceneText, prompt, sceneCamera };
+    // args always includes compositeImageB64 — this is presenter photo ON studio background
+    // Every provider receives the composited image, not the raw photo
+    const args = { compositeImageB64, audioBase64, ratio, sceneText, prompt, sceneCamera,
+                   referenceImageBase64: compositeImageB64 || referenceImageBase64 };
+
+    console.log('Step 4: Provider =', chosen, '| compositeImage =', compositeImageB64 ? compositeImageB64.length+'chars' : 'NONE');
 
     if (chosen === 'kling')  return await generateWithKling(req, res, args);
     if (chosen === 'heygen') return await generateWithHeyGen(req, res, args);
@@ -1267,94 +1287,85 @@ async function generateWithKling(req, res, { referenceImageBase64, audioBase64, 
 }
 
 // ── generateWithHeyGen ────────────────────────────────────────────────────────
-async function generateWithHeyGen(req, res, { referenceImageBase64, audioBase64, ratio, studioType, customBgBase64, prompt, bgPrompt }) {
-  const framingStyle = prompt?.presenter?.framing || 'medium';
+async function generateWithHeyGen(req, res, { compositeImageB64, referenceImageBase64, audioBase64, ratio, sceneText, prompt, sceneCamera }) {
+  if (!HEYGEN_KEY) throw new Error('HEYGEN_API_KEY not configured in Railway');
 
-  // Step A: Get background
-  const bgB64 = await getStudioBackgroundB64(studioType, customBgBase64, ratio);
+  // Use compositeImageB64 (presenter ON background) — this is what must animate
+  // Fall back to raw photo only if composite failed
+  const imageToAnimate = compositeImageB64 || referenceImageBase64;
 
-  // Step B: Composite presenter onto background
-  const sceneImageB64 = await buildSceneImage(referenceImageBase64 || null, bgB64, framingStyle, ratio);
-
-  // Upload audio as RAW BINARY
+  // ── Upload audio as RAW BINARY ─────────────────────────────────────────────
   const audioBuffer = Buffer.from(audioBase64, 'base64');
-  console.log('HeyGen: uploading audio', audioBuffer.length, 'bytes...');
+  console.log(`HeyGen: uploading audio ${audioBuffer.length} bytes...`);
 
   const audioUpload = await fetch('https://upload.heygen.com/v1/asset', {
-    method: 'POST',
+    method:  'POST',
     headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'audio/mpeg' },
-    body: audioBuffer
+    body:    audioBuffer
   });
-
   if (!audioUpload.ok) {
     const err = await audioUpload.text();
-    throw new Error('HeyGen audio upload failed: ' + audioUpload.status + ' — ' + err.slice(0,200));
+    throw new Error(`HeyGen audio upload failed: ${audioUpload.status} — ${err.slice(0,200)}`);
   }
-
   const audioData    = await audioUpload.json();
   const audioAssetId = audioData.data?.id || audioData.data?.asset_id || audioData.asset_id || audioData.id;
-  if (!audioAssetId) throw new Error('HeyGen: no audio asset_id. ' + JSON.stringify(audioData).slice(0,200));
+  if (!audioAssetId) throw new Error(`HeyGen: no audio asset_id. ${JSON.stringify(audioData).slice(0,200)}`);
   console.log('HeyGen audio asset_id:', audioAssetId);
 
-  // Upload composited scene image as talking photo
-  let tpId = null;
-  if (sceneImageB64) {
-    try {
-      const imgBuffer = Buffer.from(sceneImageB64, 'base64');
-      console.log('HeyGen: uploading composited scene image', imgBuffer.length, 'bytes...');
+  // ── Upload composited scene image as talking photo ─────────────────────────
+  let talkingPhotoId = null;
+  if (imageToAnimate) {
+    const imgBuffer = Buffer.from(imageToAnimate, 'base64');
+    console.log(`HeyGen: uploading composited scene image ${imgBuffer.length} bytes...`);
 
-      const photoUp = await fetch('https://upload.heygen.com/v1/talking_photo', {
-        method: 'POST',
-        headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'image/jpeg' },
-        body: imgBuffer
-      });
-
-      if (photoUp.ok) {
-        const pd = await photoUp.json();
-        tpId = pd.data?.talking_photo_id || pd.talking_photo_id;
-        console.log('HeyGen talking_photo_id:', tpId);
-      } else {
-        const err = await photoUp.text();
-        console.warn('HeyGen photo upload failed:', err.slice(0,100), '— using default avatar');
-      }
-    } catch(e) {
-      console.warn('HeyGen photo error:', e.message);
+    const photoUpload = await fetch('https://upload.heygen.com/v1/talking_photo', {
+      method:  'POST',
+      headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'image/jpeg' },
+      body:    imgBuffer
+    });
+    if (photoUpload.ok) {
+      const pd = await photoUpload.json();
+      talkingPhotoId = pd.data?.talking_photo_id || pd.talking_photo_id;
+      console.log('HeyGen talking_photo_id:', talkingPhotoId);
+    } else {
+      const err = await photoUpload.text();
+      console.warn('HeyGen photo upload failed:', photoUpload.status, err.slice(0,100));
     }
   }
 
-  // If no photo, use default HeyGen avatar (Anna - valid current avatar)
-  const character = tpId
-    ? { type: 'talking_photo', talking_photo_id: tpId, talking_style: 'expressive' }
+  // ── Character: ALWAYS use talking_photo when we have an image ─────────────
+  // talking_photo = the user's composited scene image animated with their audio
+  // If no image at all, use Anna avatar as last resort
+  const character = talkingPhotoId
+    ? { type: 'talking_photo', talking_photo_id: talkingPhotoId, talking_style: 'expressive' }
     : { type: 'avatar', avatar_id: HEYGEN_AVATAR_ID, avatar_style: 'normal' };
-  console.log('HeyGen character:', character.type, tpId ? '(user photo)' : '(default avatar)');
 
-  console.log('HeyGen: generating video, character:', character.type);
+  console.log('HeyGen character:', character.type, talkingPhotoId ? '(user composite scene)' : '(fallback avatar - no image was provided)');
 
-  const vr = await fetch('https://api.heygen.com/v2/video/generate', {
-    method: 'POST',
+  // ── Generate video ─────────────────────────────────────────────────────────
+  const videoResp = await fetch('https://api.heygen.com/v2/video/generate', {
+    method:  'POST',
     headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       video_inputs: [{
         character,
         voice: { type: 'audio', audio_asset_id: audioAssetId },
-        background: { type: 'color', value: '#1a2a3a' }
+        background: { type: 'color', value: '#000000' }  // bg is already in the composite image
       }],
-      aspect_ratio: ratio,
+      aspect_ratio: ratio || '16:9',
       test: false
     })
   });
-
-  if (!vr.ok) {
-    const err = await vr.text();
-    throw new Error('HeyGen video generate failed: ' + vr.status + ' — ' + err.slice(0,200));
+  if (!videoResp.ok) {
+    const err = await videoResp.text();
+    throw new Error(`HeyGen video generate failed: ${videoResp.status} — ${err.slice(0,300)}`);
   }
+  const videoData = await videoResp.json();
+  const videoId   = videoData.data?.video_id || videoData.video_id;
+  if (!videoId) throw new Error(`HeyGen: no video_id. ${JSON.stringify(videoData).slice(0,200)}`);
 
-  const vd  = await vr.json();
-  const vid = vd.data?.video_id || vd.video_id;
-  if (!vid) throw new Error('HeyGen: no video_id. ' + JSON.stringify(vd).slice(0,200));
-
-  console.log('HeyGen video_id:', vid);
-  return res.json({ taskId: 'heygen-' + vid, provider: 'heygen', composited: !!tpId, audioAssetId });
+  console.log('HeyGen video_id:', videoId, '| used composite:', !!talkingPhotoId);
+  return res.json({ taskId: 'heygen-' + videoId, provider: 'heygen', usedComposite: !!talkingPhotoId });
 }
 
 // ── generateWithRunway ────────────────────────────────────────────────────────
@@ -1412,6 +1423,47 @@ app.get('/api/heygen/avatars', async (req, res) => {
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+
+// ── Presenter pipeline test endpoint ─────────────────────────────────────────
+app.post('/api/presenter-test', async (req, res) => {
+  const { audioBase64, referenceImageBase64, studioType, bgType, ratio, provider } = req.body;
+  const bg = bgType || studioType || 'news-studio';
+  
+  // Try compositing
+  let compositeResult = null;
+  let compositeError = null;
+  try {
+    const bgResult = await generateBackgroundImage(bg, null, ratio || '16:9');
+    if (referenceImageBase64 && bgResult?.b64) {
+      compositeResult = await compositePresenterOnBackground({
+        presenterB64: referenceImageBase64,
+        backgroundB64: bgResult.b64,
+        framing: 'medium',
+        ratio: ratio || '16:9'
+      });
+    }
+  } catch(e) { compositeError = e.message; }
+
+  res.json({
+    received: {
+      hasAudio: !!audioBase64,
+      audioLen: audioBase64?.length || 0,
+      hasPhoto: !!referenceImageBase64,
+      photoLen: referenceImageBase64?.length || 0,
+      studioType: bg,
+      provider: provider || 'auto'
+    },
+    compositing: {
+      success: !!compositeResult,
+      outputLen: compositeResult?.length || 0,
+      error: compositeError
+    },
+    heygenKey: !!HEYGEN_KEY,
+    klingKey: !!KLING_KEY,
+    runwayKey: !!RUNWAY_KEY
+  });
 });
 
 app.get('/health', (req, res) => res.json({
