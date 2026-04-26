@@ -1244,6 +1244,108 @@ async function buildSceneImage(presenterB64, bgB64, framingStyle, ratio) {
 // ── generateWithKling ─────────────────────────────────────────────────────────
 async function generateWithKling(req, res, { referenceImageBase64, audioBase64, ratio, sceneText, bgPrompt, prompt, studioType, customBgBase64 }) {
   try {
+    if (!KLING_ACCESS_KEY || !KLING_SECRET_KEY) {
+      console.log('No Kling keys — falling back to HeyGen');
+      return generateWithHeyGen(req, res, { referenceImageBase64, audioBase64, ratio, sceneText, prompt, studioType, customBgBase64 });
+    }
+
+    const framingStyle = prompt?.presenter?.framing || 'medium';
+    const bgB64 = await getStudioBackgroundB64(studioType, customBgBase64, ratio);
+    const sceneImageB64 = await buildSceneImage(referenceImageBase64 || null, bgB64, framingStyle, ratio);
+    if (!sceneImageB64) {
+      console.log('No scene image — falling back to HeyGen');
+      return generateWithHeyGen(req, res, { referenceImageBase64, audioBase64, ratio, sceneText, prompt, studioType, customBgBase64 });
+    }
+
+    const klingToken = buildKlingJWT(KLING_ACCESS_KEY, KLING_SECRET_KEY);
+    const ratioMap = { '16:9':'16:9', '9:16':'9:16', '1:1':'1:1' };
+
+    // STEP 1: Image → Video (Kling image2video)
+    console.log('Kling: Step 1 — image to video...');
+    const i2vResp = await fetch('https://api.klingai.com/v1/images/image2video', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + klingToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model_name: 'kling-v1-5',
+        mode: 'pro',
+        duration: '5',
+        aspect_ratio: ratioMap[ratio] || '16:9',
+        image: 'data:image/jpeg;base64,' + sceneImageB64,
+        prompt: 'Professional TV presenter speaking to camera. Natural head movement. Realistic breathing. Subtle body movement. Professional studio setting. High quality broadcast video.'
+      })
+    });
+
+    if (!i2vResp.ok) {
+      const err = await i2vResp.text();
+      console.error('Kling image2video failed:', i2vResp.status, err.slice(0,200));
+      console.log('Falling back to HeyGen...');
+      return generateWithHeyGen(req, res, { referenceImageBase64, audioBase64, ratio, sceneText, prompt, studioType, customBgBase64 });
+    }
+
+    const i2vData = await i2vResp.json();
+    const i2vTaskId = i2vData.data?.task_id;
+    if (!i2vTaskId) {
+      console.error('Kling: no i2v task_id:', JSON.stringify(i2vData).slice(0,200));
+      return generateWithHeyGen(req, res, { referenceImageBase64, audioBase64, ratio, sceneText, prompt, studioType, customBgBase64 });
+    }
+
+    console.log('Kling i2v task:', i2vTaskId);
+
+    // STEP 2: Poll until video ready (max 3 min)
+    let videoUrl = null;
+    for (let i = 0; i < 18; i++) {
+      await new Promise(r => setTimeout(r, 10000));
+      const pollResp = await fetch(`https://api.klingai.com/v1/images/image2video/${i2vTaskId}`, {
+        headers: { 'Authorization': 'Bearer ' + buildKlingJWT() }
+      });
+      const pollData = await pollResp.json();
+      const status = pollData.data?.task_status;
+      videoUrl = pollData.data?.task_result?.videos?.[0]?.url;
+      console.log('Kling i2v poll:', status, videoUrl ? '✓' : '...');
+      if (status === 'succeed' && videoUrl) break;
+      if (status === 'failed') throw new Error('Kling image2video failed: ' + JSON.stringify(pollData).slice(0,200));
+    }
+
+    if (!videoUrl) throw new Error('Kling image2video timed out');
+
+    // STEP 3: Lip-sync the video with audio
+    console.log('Kling: Step 2 — lip-sync with audio...');
+    const lsResp = await fetch('https://api.klingai.com/v1/videos/lip-sync', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + buildKlingJWT(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        inputs: [{ type: 'video', url: videoUrl }],
+        audio_type: 'base64',
+        audio: audioBase64,
+        model_name: 'kling-v1-5',
+        mode: 'pro'
+      })
+    });
+
+    if (!lsResp.ok) {
+      const err = await lsResp.text();
+      console.error('Kling lip-sync failed:', lsResp.status, err.slice(0,200));
+      // Return the silent video as fallback — better than nothing
+      return res.json({ taskId: 'kling-done-' + i2vTaskId, provider: 'kling', videoUrl, done: true });
+    }
+
+    const lsData = await lsResp.json();
+    const lsTaskId = lsData.data?.task_id;
+    if (!lsTaskId) return res.json({ taskId: 'kling-done-' + i2vTaskId, provider: 'kling', videoUrl, done: true });
+
+    console.log('Kling lip-sync task:', lsTaskId);
+    return res.json({ taskId: 'kling-' + lsTaskId, provider: 'kling', composited: true });
+
+  } catch(e) {
+    console.error('generateWithKling:', e.message);
+    if (HEYGEN_KEY) {
+      console.log('Falling back to HeyGen...');
+      return generateWithHeyGen(req, res, { referenceImageBase64, audioBase64, ratio, sceneText, prompt, studioType, customBgBase64 });
+    }
+    return res.status(500).json({ error: e.message });
+  }
+}
+  try {
     const framingStyle = prompt?.presenter?.framing || 'medium';
 
     // Step A: Get background
