@@ -270,7 +270,7 @@ app.post('/api/project/save', async (req, res) => {
     const token = authHeader.replace('Bearer ', '');
 
     // Verify user via Supabase
-    const sb = getSupabase();
+    const sb = getSupaAdmin();
     const { data: { user }, error: authErr } = await sb.auth.getUser(token);
     if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
 
@@ -324,7 +324,7 @@ app.get('/api/project/list', async (req, res) => {
     if (!authHeader) return res.status(401).json({ error: 'No auth token' });
     const token = authHeader.replace('Bearer ', '');
 
-    const sb = getSupabase();
+    const sb = getSupaAdmin();
     const { data: { user }, error: authErr } = await sb.auth.getUser(token);
     if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
 
@@ -348,7 +348,7 @@ app.delete('/api/project/:id', async (req, res) => {
     if (!authHeader) return res.status(401).json({ error: 'No auth token' });
     const token = authHeader.replace('Bearer ', '');
 
-    const sb = getSupabase();
+    const sb = getSupaAdmin();
     const { data: { user }, error: authErr } = await sb.auth.getUser(token);
     if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
 
@@ -369,7 +369,7 @@ app.delete('/api/project/:id', async (req, res) => {
 // ── Auto-setup: create aab_projects table if missing ─────────────────────────
 app.post('/api/setup-db', async (req, res) => {
   try {
-    const sb = getSupabase();
+    const sb = getSupaAdmin();
     if (!sb) return res.status(500).json({ error: 'Supabase not configured' });
     
     // Try to create table via raw SQL using Supabase's rpc
@@ -412,7 +412,7 @@ app.post('/api/project/save-all', async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No auth token' });
     const token = authHeader.replace('Bearer ', '');
-    const sb = getSupabase();
+    const sb = getSupaAdmin();
     const { data: { user }, error: authErr } = await sb.auth.getUser(token);
     if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
 
@@ -1956,7 +1956,7 @@ async function discoverHeyGenAvatar() {
 
 async function ensureAabProjectsTable() {
   try {
-    const sb = getSupabase();
+    const sb = getSupaAdmin();
     if (!sb) return;
     // Test if table exists
     const { error } = await sb.from('aab_projects').select('id').limit(1);
@@ -1997,7 +1997,7 @@ async function discoverHeyGenAvatar() {
 
 async function ensureAabProjectsTable() {
   try {
-    const sb = getSupabase();
+    const sb = getSupaAdmin();
     if (!sb) return;
     // Test if table exists
     const { error } = await sb.from('aab_projects').select('id').limit(1);
