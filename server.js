@@ -1,6 +1,6 @@
 'use strict';
 /*
-  AABStudio.ai — Server v2.2
+  AABStudio.ai â Server v2.2
   Clean, production-ready. All endpoints verified against frontend.
 */
 
@@ -12,7 +12,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// ── CORS — must be first, before all routes ───────────────────────────────────
+// ââ CORS â must be first, before all routes âââââââââââââââââââââââââââââââââââ
 const corsOpts = {
   origin: '*',
   methods: ['GET','POST','OPTIONS'],
@@ -21,13 +21,13 @@ const corsOpts = {
 app.use(cors(corsOpts));
 app.options('*', cors(corsOpts));
 
-// ── Stripe webhook needs raw body — before json parser ────────────────────────
-// ── Supabase admin client (server-side only, uses service role key) ──────────
+// ââ Stripe webhook needs raw body â before json parser ââââââââââââââââââââââââ
+// ââ Supabase admin client (server-side only, uses service role key) ââââââââââ
 function getSupaAdmin() {
   const { createClient } = require('@supabase/supabase-js');
   return createClient(
     process.env.SUPABASE_URL      || 'https://phjlxkyloafogznhyyig.supabase.co',
-    process.env.SUPABASE_SERVICE_KEY,  // service role key — set in Railway env vars
+    process.env.SUPABASE_SERVICE_KEY,  // service role key â set in Railway env vars
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
 }
@@ -45,7 +45,7 @@ const PRICE_TO_PLAN = {
 
 async function updateUserPlan(email, plan) {
   if (!process.env.SUPABASE_SERVICE_KEY) {
-    console.warn('SUPABASE_SERVICE_KEY not set — cannot update user plan');
+    console.warn('SUPABASE_SERVICE_KEY not set â cannot update user plan');
     return;
   }
   try {
@@ -59,7 +59,7 @@ async function updateUserPlan(email, plan) {
     await supa.auth.admin.updateUserById(user.id, {
       user_metadata: { ...user.user_metadata, plan }
     });
-    console.log('Plan updated:', email, '→', plan);
+    console.log('Plan updated:', email, 'â', plan);
   } catch (e) {
     console.error('updateUserPlan error:', e.message);
   }
@@ -84,7 +84,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
     }
 
     if (event.type === 'customer.subscription.deleted') {
-      // Subscription cancelled — downgrade to free
+      // Subscription cancelled â downgrade to free
       const stripe2   = require('stripe')(process.env.STRIPE_SECRET_KEY);
       const customer  = await stripe2.customers.retrieve(obj.customer);
       const email     = customer.email;
@@ -105,7 +105,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
 
 app.use(express.json({ limit: '25mb' }));
 
-// ── RATE LIMITING — simple in-memory, protects Anthropic credits ──────────────
+// ââ RATE LIMITING â simple in-memory, protects Anthropic credits ââââââââââââââ
 const rateCounts = {};
 const RATE_WINDOW = 60 * 1000; // 1 minute
 const RATE_LIMIT  = 10;        // max 10 AI calls per IP per minute
@@ -117,7 +117,7 @@ function checkRate(req, res) {
   if (now > rateCounts[ip].reset) rateCounts[ip] = { count: 0, reset: now + RATE_WINDOW };
   rateCounts[ip].count++;
   if (rateCounts[ip].count > RATE_LIMIT) {
-    res.status(429).json({ error: 'Too many requests — please wait a moment and try again.' });
+    res.status(429).json({ error: 'Too many requests â please wait a moment and try again.' });
     return false;
   }
   return true;
@@ -128,7 +128,7 @@ setInterval(() => {
   Object.keys(rateCounts).forEach(ip => { if (rateCounts[ip].reset < now) delete rateCounts[ip]; });
 }, 5 * 60 * 1000);
 
-// ── API CLIENTS ───────────────────────────────────────────────────────────────
+// ââ API CLIENTS âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 const anthropic      = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const ELEVENLABS_KEY = process.env.ELEVENLABS_API_KEY;
 const HEYGEN_KEY     = process.env.HEYGEN_API_KEY;
@@ -140,16 +140,16 @@ const STRIPE_KEY     = process.env.STRIPE_SECRET_KEY;
 const MODEL          = 'claude-sonnet-4-6';
 const MODEL_FALLBACK = 'claude-sonnet-4-5-20250929';
 
-// ── HEALTH ────────────────────────────────────────────────────────────────────
+// ââ HEALTH ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 // Check Supabase service key is set
 if (!process.env.SUPABASE_SERVICE_KEY) {
-  console.warn('⚠ SUPABASE_SERVICE_KEY not set — plan updates after payment will not work');
+  console.warn('â  SUPABASE_SERVICE_KEY not set â plan updates after payment will not work');
 }
 
 
-// ════════════════════════════════════════════════════════════════════════════
-// RUNWAY ML — AI video generation from images/text
-// ════════════════════════════════════════════════════════════════════════════
+// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// RUNWAY ML â AI video generation from images/text
+// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 app.post('/api/runway/generate', async (req, res) => {
   try {
     if(!RUNWAY_KEY) return res.status(503).json({ error: 'Runway API key not configured. Add RUNWAY_API_KEY to Railway.' });
@@ -192,9 +192,9 @@ app.get('/api/runway/status/:taskId', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// ════════════════════════════════════════════════════════════════════════════
-// CREATOMATE — Professional video stitching, rendering, subtitle burn-in
-// ════════════════════════════════════════════════════════════════════════════
+// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// CREATOMATE â Professional video stitching, rendering, subtitle burn-in
+// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 app.post('/api/creatomate/stitch', async (req, res) => {
   try {
     if(!CREATOMATE_KEY) return res.status(503).json({ error: 'Creatomate API key not configured. Add CREATOMATE_API_KEY to Railway.' });
@@ -260,9 +260,9 @@ app.get('/api/creatomate/status/:renderId', async (req, res) => {
 });
 
 
-// ════════════════════════════════════════════════════════════════════════════
-// PROJECT SYNC — save/load projects to Supabase so they work across all devices
-// ════════════════════════════════════════════════════════════════════════════
+// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// PROJECT SYNC â save/load projects to Supabase so they work across all devices
+// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 app.post('/api/project/save', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
@@ -300,7 +300,7 @@ app.post('/api/project/save', async (req, res) => {
     if (error) {
       // If table doesn't exist, auto-create it then retry
       if (error.code === 'PGRST205' || error.message?.includes('aab_projects')) {
-        console.log('aab_projects table missing — creating it now...');
+        console.log('aab_projects table missing â creating it now...');
         await ensureAabProjectsTable();
         const { error: e2 } = await sb.from('aab_projects').upsert({
           id: project.id, user_id: user.id,
@@ -366,7 +366,7 @@ app.delete('/api/project/:id', async (req, res) => {
 
 
 
-// ── Auto-setup: create aab_projects table if missing ─────────────────────────
+// ââ Auto-setup: create aab_projects table if missing âââââââââââââââââââââââââ
 app.post('/api/setup-db', async (req, res) => {
   try {
     const sb = getSupaAdmin();
@@ -438,14 +438,14 @@ app.post('/api/project/save-all', async (req, res) => {
 
 
 
-// ══════════════════════════════════════════════════════════════════════════════
-// SCENE IMAGE COMPOSITING — Sharp-based presenter + background compositor
+// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// SCENE IMAGE COMPOSITING â Sharp-based presenter + background compositor
 // Puts the uploaded presenter photo IN FRONT of the selected background
-// ══════════════════════════════════════════════════════════════════════════════
+// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 
 
-// Background definitions — gradient colors for each studio type
+// Background definitions â gradient colors for each studio type
 const STUDIO_BACKGROUNDS = {
   'news-studio':   { r: 8,  g: 18, b: 60 },   // deep navy blue
   'podcast':       { r: 12, g: 4,  b: 28 },   // dark purple
@@ -478,7 +478,7 @@ const FRAMING_CONFIG = {
 };
 
 async function generateStudioBackground(studioType, W, H) {
-  // SVG-based studio background — tested, no external API needed
+  // SVG-based studio background â tested, no external API needed
   const configs = {
     'news-studio':  { base: [8,18,60],    accent: [20,60,180],  desk: true  },
     'podcast':      { base: [12,4,28],    accent: [80,20,120],  desk: false },
@@ -526,7 +526,7 @@ async function generateStudioBackground(studioType, W, H) {
 
 
 
-// ── Studio background images (generated via DALL-E) ───────────────────────────
+// ââ Studio background images (generated via DALL-E) âââââââââââââââââââââââââââ
 // Cache generated backgrounds to avoid re-generating same studio across scenes
 const BG_CACHE = {};
 
@@ -566,7 +566,7 @@ async function generateBackgroundImage(bgType, customBgB64, ratio = '16:9') {
         const data = await resp.json();
         const b64 = data.data?.[0]?.b64_json;
         if (b64) {
-          console.log(`Background "${bgType}" generated via DALL-E 3 ✓`);
+          console.log(`Background "${bgType}" generated via DALL-E 3 â`);
           const result = { b64, provider: 'dalle3' };
           BG_CACHE[bgType] = result; // cache it
           return result;
@@ -591,7 +591,7 @@ async function generateBackgroundImage(bgType, customBgB64, ratio = '16:9') {
         if (url) {
           const dlBuf = await (await fetch(url)).arrayBuffer();
           const b64 = Buffer.from(dlBuf).toString('base64');
-          console.log(`Background "${bgType}" generated via FAL ✓`);
+          console.log(`Background "${bgType}" generated via FAL â`);
           const result = { b64, provider: 'fal' };
           BG_CACHE[bgType] = result;
           return result;
@@ -621,7 +621,7 @@ async function removePresenterBackground(presenterB64) {
       if (resp.ok) {
         const pngBuf = await resp.arrayBuffer();
         const b64 = Buffer.from(pngBuf).toString('base64');
-        console.log('Background removed via remove.bg ✓');
+        console.log('Background removed via remove.bg â');
         return { b64, format: 'png', provider: 'remove.bg' };
       } else {
         console.warn('remove.bg failed:', resp.status);
@@ -648,15 +648,15 @@ async function removePresenterBackground(presenterB64) {
         if (url) {
           const dlBuf = await (await fetch(url)).arrayBuffer();
           const b64 = Buffer.from(dlBuf).toString('base64');
-          console.log('Background removed via FAL rembg ✓');
+          console.log('Background removed via FAL rembg â');
           return { b64, format: 'png', provider: 'fal-rembg' };
         }
       }
     } catch(e) { console.warn('FAL rembg error:', e.message); }
   }
 
-  // Method 3: No removal API — use presenter as-is (still better than nothing)
-  console.log('No background removal API — using presenter photo as-is');
+  // Method 3: No removal API â use presenter as-is (still better than nothing)
+  console.log('No background removal API â using presenter photo as-is');
   return null;
 }
 
@@ -696,7 +696,7 @@ async function compositePresenterOnBackground({
 
   // STEP B: If no presenter photo, return background only
   if (!presenterPhotoBase64) {
-    console.log('No presenter photo — returning background only');
+    console.log('No presenter photo â returning background only');
     return bgBuffer.toString('base64');
   }
 
@@ -735,7 +735,7 @@ async function compositePresenterOnBackground({
     <ellipse cx="${left + fitW/2}" cy="${H}" rx="${Math.round(fitW * 0.38)}" ry="${Math.round(H * 0.038)}" fill="url(#s)"/>
   </svg>`;
 
-  // STEP F: Final composite — background + shadow + presenter on top
+  // STEP F: Final composite â background + shadow + presenter on top
   const result = await sharp(bgBuffer)
     .composite([
       { input: Buffer.from(shadowSvg), blend: 'multiply' },
@@ -750,41 +750,41 @@ async function compositePresenterOnBackground({
 
 
 
-// ── MAIN scene image builder ──────────────────────────────────────────────────
+// ââ MAIN scene image builder ââââââââââââââââââââââââââââââââââââââââââââââââââ
 // This is the correct flow:
 // 1. Generate empty studio background image
 // 2. Remove background from presenter photo
 // 3. Composite presenter IN FRONT of background
 // 4. Return composited scene image for animation
 
-// ── AI Video Pipeline
+// ââ AI Video Pipeline
 
-// ══════════════════════════════════════════════════════════════════════════════
-// AI PRESENTER PIPELINE — Correct 4-step flow
-// Step 1: Voice (ElevenLabs) → audio
-// Step 2: Scene Image (DALL-E 3 / FAL) → presenter + background composite image  
-// Step 3: Animate (Kling lipsync / HeyGen / Runway) → video from image + audio
+// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// AI PRESENTER PIPELINE â Correct 4-step flow
+// Step 1: Voice (ElevenLabs) â audio
+// Step 2: Scene Image (DALL-E 3 / FAL) â presenter + background composite image  
+// Step 3: Animate (Kling lipsync / HeyGen / Runway) â video from image + audio
 // Step 4: Return video URL
-// ══════════════════════════════════════════════════════════════════════════════
+// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 
-// ── STEP 3: Animate image with audio (Kling lip-sync) ─────────────────────────
+// ââ STEP 3: Animate image with audio (Kling lip-sync) âââââââââââââââââââââââââ
 
-// ── UPDATED generateWithKling — uses 4-step pipeline ──────────────────────────
+// ââ UPDATED generateWithKling â uses 4-step pipeline ââââââââââââââââââââââââââ
 
-// ── UPDATED generateWithHeyGen — uses scene image if available ─────────────────
+// ââ UPDATED generateWithHeyGen â uses scene image if available âââââââââââââââââ
 
-// ── generateWithRunway — uses scene image ──────────────────────────────────────
+// ââ generateWithRunway â uses scene image ââââââââââââââââââââââââââââââââââââââ
 
 
 
-// ══════════════════════════════════════════════════════════════════════════════
-// AI PRESENTER PIPELINE v3 — Correct compositing flow:
+// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// AI PRESENTER PIPELINE v3 â Correct compositing flow:
 // Step 1: Generate background image (DALL-E 3 / FAL)
 // Step 2: Composite presenter photo ON TOP of background (sharp)
 // Step 3: Generate voice audio (ElevenLabs)
 // Step 4: Animate composite image with audio (Kling / HeyGen / Runway)
-// ══════════════════════════════════════════════════════════════════════════════
+// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
 const FAL_KEY    = process.env.FAL_KEY;
@@ -801,7 +801,7 @@ const BG_PROMPTS = {
   'outdoor':       'Beautiful outdoor location. Lush greenery, natural daylight. Clean background, slightly blurred bokeh. No people.'
 };
 
-// ── STEP 1: Generate background image ─────────────────────────────────────────
+// ââ STEP 1: Generate background image âââââââââââââââââââââââââââââââââââââââââ
 async function generateBackgroundImage(bgType, customBgB64, ratio) {
   // If user uploaded a custom background, use it directly
   if (bgType === 'custom' && customBgB64) {
@@ -829,7 +829,7 @@ async function generateBackgroundImage(bgType, customBgB64, ratio) {
       if (resp.ok) {
         const d = await resp.json();
         const b64 = d.data?.[0]?.b64_json;
-        if (b64) { console.log('Background generated via DALL-E 3 ✓'); return { b64, source: 'dalle3' }; }
+        if (b64) { console.log('Background generated via DALL-E 3 â'); return { b64, source: 'dalle3' }; }
       } else {
         console.warn('DALL-E 3 background failed:', (await resp.text()).slice(0,100));
       }
@@ -852,18 +852,18 @@ async function generateBackgroundImage(bgType, customBgB64, ratio) {
           const dl = await fetch(url);
           const buf = await dl.arrayBuffer();
           const b64 = Buffer.from(buf).toString('base64');
-          console.log('Background generated via FAL.ai ✓');
+          console.log('Background generated via FAL.ai â');
           return { b64, source: 'fal' };
         }
       }
     } catch(e) { console.warn('FAL error:', e.message); }
   }
 
-  console.log('No image generation API — using solid colour background');
+  console.log('No image generation API â using solid colour background');
   return null;
 }
 
-// ── STEP 2: Composite presenter photo ON TOP of background ────────────────────
+// ââ STEP 2: Composite presenter photo ON TOP of background ââââââââââââââââââââ
 async function compositePresenterOnBackground({ presenterB64, backgroundB64, framing, ratio }) {
   const sharp = require('sharp');
 
@@ -937,9 +937,9 @@ async function compositePresenterOnBackground({ presenterB64, backgroundB64, fra
   return compositedB64;
 }
 
-// ── MASTER PRESENTER ROUTE — orchestrates all 4 steps ─────────────────────────
+// ââ MASTER PRESENTER ROUTE â orchestrates all 4 steps âââââââââââââââââââââââââ
 
-// ── Industry-standard camera selection per studio type ────────────────────────
+// ââ Industry-standard camera selection per studio type ââââââââââââââââââââââââ
 const STUDIO_CAMERA_RULES = {
   'news-studio': {
     shots: ['medium shot', 'medium close-up', 'wide establishing shot', 'over-shoulder cut'],
@@ -1032,7 +1032,7 @@ app.post('/api/presenter', async (req, res) => {
       referenceImageBase64,        // presenter photo uploaded by user
       customBgBase64,              // custom background uploaded by user
       bgType: bgTypeRaw,           // background type
-      studioType,                  // alias — frontend may send either
+      studioType,                  // alias â frontend may send either
       ratio        = '16:9',
       framing      = 'medium',
       sceneText    = '',
@@ -1051,7 +1051,7 @@ app.post('/api/presenter', async (req, res) => {
 
     if (!audioBase64) return res.status(400).json({ error: 'audioBase64 required' });
 
-    // ── STEP 1: Generate background image ─────────────────────────────────────
+    // ââ STEP 1: Generate background image âââââââââââââââââââââââââââââââââââââ
     console.log('\n=== AI Presenter Pipeline ===');
     console.log('Received: referenceImage=', referenceImageBase64 ? (referenceImageBase64.length+' chars') : 'NONE (will use default avatar)');
     console.log('Received: customBg=', customBgBase64 ? 'yes' : 'no', 'bgType=', bgType, 'provider=', requestedProvider);
@@ -1060,7 +1060,7 @@ app.post('/api/presenter', async (req, res) => {
     const bgB64 = bgResult?.b64 || null;
     console.log('Background source:', bgResult?.source || 'none');
 
-    // ── STEP 2: Composite presenter photo on background ────────────────────────
+    // ââ STEP 2: Composite presenter photo on background ââââââââââââââââââââââââ
     let compositeImageB64 = null;
     if (referenceImageBase64) {
       console.log('Step 2: Compositing presenter photo on background...');
@@ -1071,25 +1071,25 @@ app.post('/api/presenter', async (req, res) => {
           framing:       prompt?.presenter?.framing || framing,
           ratio
         });
-        console.log('Composite scene image created ✓');
+        console.log('Composite scene image created â');
       } catch(e) {
         console.warn('Compositing failed, using photo directly:', e.message);
         compositeImageB64 = referenceImageBase64;
       }
     } else if (bgB64) {
-      // No presenter photo — use just the background
+      // No presenter photo â use just the background
       compositeImageB64 = bgB64;
-      console.log('Step 2: No presenter photo — using background only');
+      console.log('Step 2: No presenter photo â using background only');
     }
 
     if (!compositeImageB64) {
-      console.log('Step 2: No image available — video provider will use default avatar');
+      console.log('Step 2: No image available â video provider will use default avatar');
     }
 
-    // ── STEP 3: Already done (voice generated client-side or in /api/voice) ───
+    // ââ STEP 3: Already done (voice generated client-side or in /api/voice) âââ
     // audioBase64 is already provided
 
-    // ── STEP 4: Animate composite image with audio ─────────────────────────────
+    // ââ STEP 4: Animate composite image with audio âââââââââââââââââââââââââââââ
     console.log('Step 4: Selecting video provider...');
 
     const providers = {
@@ -1107,14 +1107,14 @@ app.post('/api/presenter', async (req, res) => {
     if (!chosen) {
       return res.status(503).json({
         error: 'No video generation API configured. Add KLING_API_KEY or HEYGEN_API_KEY in Railway.',
-        note: 'Composite scene image was generated successfully — just needs a video provider to animate it.',
+        note: 'Composite scene image was generated successfully â just needs a video provider to animate it.',
         compositeGenerated: !!compositeImageB64
       });
     }
 
     console.log(`Step 4: Animating with ${chosen}...`);
 
-    // args always includes compositeImageB64 — this is presenter photo ON studio background
+    // args always includes compositeImageB64 â this is presenter photo ON studio background
     // Every provider receives the composited image, not the raw photo
     const args = { compositeImageB64, audioBase64, ratio, sceneText, prompt, sceneCamera,
                    referenceImageBase64: compositeImageB64 || referenceImageBase64 };
@@ -1130,12 +1130,12 @@ app.post('/api/presenter', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 })
-// ══════════════════════════════════════════════════════════════════════════════
+// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 // AI PRESENTER GENERATOR FUNCTIONS
-// Each function: composites presenter+background → animates with audio → returns taskId
-// ══════════════════════════════════════════════════════════════════════════════
+// Each function: composites presenter+background â animates with audio â returns taskId
+// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-// ── Step A: Get or generate studio background image ───────────────────────────
+// ââ Step A: Get or generate studio background image âââââââââââââââââââââââââââ
 async function getStudioBackgroundB64(studioType, customBgBase64, ratio) {
   // If user uploaded a custom background, use that
   if (customBgBase64) {
@@ -1155,8 +1155,8 @@ async function getStudioBackgroundB64(studioType, customBgBase64, ratio) {
   return buf.toString('base64');
 }
 
-// ── Step B: Composite presenter photo onto background ─────────────────────────
-// This is the KEY step — places uploaded photo IN FRONT of background
+// ââ Step B: Composite presenter photo onto background âââââââââââââââââââââââââ
+// This is the KEY step â places uploaded photo IN FRONT of background
 async function buildSceneImage(presenterB64, bgB64, framingStyle, ratio) {
   if (!presenterB64 && !bgB64) return null;
 
@@ -1222,11 +1222,11 @@ async function buildSceneImage(presenterB64, bgB64, framingStyle, ratio) {
     .jpeg({ quality:93 })
     .toBuffer();
 
-  console.log(`Scene image composited: ${composited.length} bytes ✓`);
+  console.log(`Scene image composited: ${composited.length} bytes â`);
   return composited.toString('base64');
 }
 
-// ── generateWithKling ─────────────────────────────────────────────────────────
+// ââ generateWithKling âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 async function generateWithKling(req, res, { referenceImageBase64, audioBase64, ratio, sceneText, bgPrompt, prompt, studioType, customBgBase64 }) {
   try {
     const framingStyle = prompt?.presenter?.framing || 'medium';
@@ -1239,15 +1239,15 @@ async function generateWithKling(req, res, { referenceImageBase64, audioBase64, 
     if (!sceneImageB64) return res.status(400).json({ error: 'Cannot generate scene image. Upload a presenter photo.' });
 
     if (!KLING_KEY) {
-      // No Kling — use HeyGen with the composited image
-      console.log('No Kling key — using HeyGen with composited scene image');
+      // No Kling â use HeyGen with the composited image
+      console.log('No Kling key â using HeyGen with composited scene image');
       return generateWithHeyGen(req, res, { referenceImageBase64: sceneImageB64, audioBase64, ratio, studioType:'custom', customBgBase64: null, prompt, bgPrompt });
     }
 
     // Kling JWT
     const klingToken = buildKlingJWT(KLING_KEY);
 
-    // Kling lip-sync: image + audio → video
+    // Kling lip-sync: image + audio â video
     const lsResp = await fetch('https://api.klingai.com/v1/videos/lip-sync', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + klingToken, 'Content-Type': 'application/json' },
@@ -1266,7 +1266,7 @@ async function generateWithKling(req, res, { referenceImageBase64, audioBase64, 
 
     if (!lsResp.ok) {
       const err = await lsResp.text();
-      throw new Error('Kling lip-sync failed: ' + lsResp.status + ' — ' + err.slice(0,200));
+      throw new Error('Kling lip-sync failed: ' + lsResp.status + ' â ' + err.slice(0,200));
     }
 
     const lsData = await lsResp.json();
@@ -1286,15 +1286,15 @@ async function generateWithKling(req, res, { referenceImageBase64, audioBase64, 
   }
 }
 
-// ── generateWithHeyGen ────────────────────────────────────────────────────────
+// ââ generateWithHeyGen ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 async function generateWithHeyGen(req, res, { compositeImageB64, referenceImageBase64, audioBase64, ratio, sceneText, prompt, sceneCamera }) {
   if (!HEYGEN_KEY) throw new Error('HEYGEN_API_KEY not configured in Railway');
 
-  // Use compositeImageB64 (presenter ON background) — this is what must animate
+  // Use compositeImageB64 (presenter ON background) â this is what must animate
   // Fall back to raw photo only if composite failed
   const imageToAnimate = compositeImageB64 || referenceImageBase64;
 
-  // ── Upload audio as RAW BINARY ─────────────────────────────────────────────
+  // ââ Upload audio as RAW BINARY âââââââââââââââââââââââââââââââââââââââââââââ
   const audioBuffer = Buffer.from(audioBase64, 'base64');
   console.log(`HeyGen: uploading audio ${audioBuffer.length} bytes...`);
 
@@ -1305,18 +1305,25 @@ async function generateWithHeyGen(req, res, { compositeImageB64, referenceImageB
   });
   if (!audioUpload.ok) {
     const err = await audioUpload.text();
-    throw new Error(`HeyGen audio upload failed: ${audioUpload.status} — ${err.slice(0,200)}`);
+    throw new Error(`HeyGen audio upload failed: ${audioUpload.status} â ${err.slice(0,200)}`);
   }
   const audioData    = await audioUpload.json();
   const audioAssetId = audioData.data?.id || audioData.data?.asset_id || audioData.asset_id || audioData.id;
   if (!audioAssetId) throw new Error(`HeyGen: no audio asset_id. ${JSON.stringify(audioData).slice(0,200)}`);
   console.log('HeyGen audio asset_id:', audioAssetId);
 
-  // ── Upload composited scene image as talking photo ─────────────────────────
+  // ââ Upload composited scene image as talking photo âââââââââââââââââââââââââ
   let talkingPhotoId = null;
   if (imageToAnimate) {
     const imgBuffer = Buffer.from(imageToAnimate, 'base64');
-    console.log(`HeyGen: uploading composited scene image ${imgBuffer.length} bytes...`);
+    console.log(`HeyGen: composited scene image ${imgBuffer.length} bytes`);
+    // Reuse existing talking photo to avoid HeyGen 3-photo limit
+    let existingPhotoId = null;
+    try {
+      const listResp = await fetch('https://api.heygen.com/v2/talking_photo?limit=10', { headers: { 'X-Api-Key': HEYGEN_KEY } });
+      if (listResp.ok) { const ld = await listResp.json(); const photos = ld.data?.list || ld.data || []; if (photos.length > 0) { existingPhotoId = photos[0].talking_photo_id || photos[0].id; console.log('HeyGen: reusing photo_id:', existingPhotoId); } }
+    } catch(e) { console.warn('HeyGen list photos failed:', e.message); }
+    if (existingPhotoId) { talkingPhotoId = existingPhotoId; } else {
 
     const photoUpload = await fetch('https://upload.heygen.com/v1/talking_photo', {
       method:  'POST',
@@ -1331,9 +1338,10 @@ async function generateWithHeyGen(req, res, { compositeImageB64, referenceImageB
       const err = await photoUpload.text();
       console.warn('HeyGen photo upload failed:', photoUpload.status, err.slice(0,100));
     }
+    } // end else (no existing photo)
   }
 
-  // ── Character: ALWAYS use talking_photo when we have an image ─────────────
+  // ââ Character: ALWAYS use talking_photo when we have an image âââââââââââââ
   // talking_photo = the user's composited scene image animated with their audio
   // If no image at all, use Anna avatar as last resort
   const character = talkingPhotoId
@@ -1342,7 +1350,7 @@ async function generateWithHeyGen(req, res, { compositeImageB64, referenceImageB
 
   console.log('HeyGen character:', character.type, talkingPhotoId ? '(user composite scene)' : '(fallback avatar - no image was provided)');
 
-  // ── Generate video ─────────────────────────────────────────────────────────
+  // ââ Generate video âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   const videoResp = await fetch('https://api.heygen.com/v2/video/generate', {
     method:  'POST',
     headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'application/json' },
@@ -1358,7 +1366,7 @@ async function generateWithHeyGen(req, res, { compositeImageB64, referenceImageB
   });
   if (!videoResp.ok) {
     const err = await videoResp.text();
-    throw new Error(`HeyGen video generate failed: ${videoResp.status} — ${err.slice(0,300)}`);
+    throw new Error(`HeyGen video generate failed: ${videoResp.status} â ${err.slice(0,300)}`);
   }
   const videoData = await videoResp.json();
   const videoId   = videoData.data?.video_id || videoData.video_id;
@@ -1368,7 +1376,7 @@ async function generateWithHeyGen(req, res, { compositeImageB64, referenceImageB
   return res.json({ taskId: 'heygen-' + videoId, provider: 'heygen', usedComposite: !!talkingPhotoId });
 }
 
-// ── generateWithRunway ────────────────────────────────────────────────────────
+// ââ generateWithRunway ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 async function generateWithRunway(req, res, { referenceImageBase64, audioBase64, ratio, sceneText, studioType, customBgBase64, prompt }) {
   if (!RUNWAY_KEY) throw new Error('RUNWAY_API_KEY not set');
   const framingStyle = prompt?.presenter?.framing || 'medium';
@@ -1396,7 +1404,7 @@ async function generateWithRunway(req, res, { referenceImageBase64, audioBase64,
     })
   });
 
-  if (!rnResp.ok) throw new Error('Runway: ' + rnResp.status + ' — ' + (await rnResp.text()).slice(0,200));
+  if (!rnResp.ok) throw new Error('Runway: ' + rnResp.status + ' â ' + (await rnResp.text()).slice(0,200));
   const rnData = await rnResp.json();
   const taskId = rnData.id;
   if (!taskId) throw new Error('Runway: no task id. ' + JSON.stringify(rnData).slice(0,200));
@@ -1408,7 +1416,7 @@ async function generateWithRunway(req, res, { referenceImageBase64, audioBase64,
 
 
 
-// ── List valid HeyGen avatars ─────────────────────────────────────────────────
+// ââ List valid HeyGen avatars âââââââââââââââââââââââââââââââââââââââââââââââââ
 app.get('/api/heygen/avatars', async (req, res) => {
   try {
     if (!HEYGEN_KEY) return res.status(503).json({ error: 'HeyGen not configured' });
@@ -1426,7 +1434,7 @@ app.get('/api/heygen/avatars', async (req, res) => {
 });
 
 
-// ── Presenter pipeline test endpoint ─────────────────────────────────────────
+// ââ Presenter pipeline test endpoint âââââââââââââââââââââââââââââââââââââââââ
 app.post('/api/presenter-test', async (req, res) => {
   const { audioBase64, referenceImageBase64, studioType, bgType, ratio, provider } = req.body;
   const bg = bgType || studioType || 'news-studio';
@@ -1480,7 +1488,7 @@ app.get('/health', (req, res) => res.json({
   stripe:     !!STRIPE_KEY
 }));
 
-// ── EXTRACT TEXT FROM FILE ────────────────────────────────────────────────────
+// ââ EXTRACT TEXT FROM FILE ââââââââââââââââââââââââââââââââââââââââââââââââââââ
 // Frontend handles PDF (PDF.js) and TXT (FileReader) client-side.
 // This endpoint only handles DOCX and cleans up any text sent.
 app.post('/api/extract-text', async (req, res) => {
@@ -1503,7 +1511,7 @@ app.post('/api/extract-text', async (req, res) => {
       return res.json({ text: t, words: t.split(/\s+/).filter(Boolean).length });
     }
 
-    // DOCX — extract XML text nodes
+    // DOCX â extract XML text nodes
     if (mimeType?.includes('wordprocessingml') || fileName?.endsWith('.docx')) {
       const raw     = buf.toString('utf8');
       const matches = raw.match(/<w:t[^>]*>([^<]+)<\/w:t>/g) || [];
@@ -1536,7 +1544,7 @@ app.post('/api/extract-text', async (req, res) => {
   }
 });
 
-// ── SCENE SEGMENTATION ────────────────────────────────────────────────────────
+// ââ SCENE SEGMENTATION ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 app.post('/api/segment', async (req, res) => {
   if (!checkRate(req, res)) return;
   try {
@@ -1560,7 +1568,7 @@ app.post('/api/segment', async (req, res) => {
     const maxWords = MAX_SCENES_PER_CALL * wordsPerScene;
     const words = fullText.split(/\s+/);
     const text = words.length > maxWords 
-      ? words.slice(0, maxWords).join(' ') + ' [Script continues — remaining scenes will use local segmentation]'
+      ? words.slice(0, maxWords).join(' ') + ' [Script continues â remaining scenes will use local segmentation]'
       : fullText;
     const isLongScript = words.length > maxWords;
 
@@ -1574,8 +1582,8 @@ Split the provided script into presenter scenes for teleprompter recording.
 DO NOT analyse, critique, or rewrite. Preserve exact wording from the script.
 
 RULES:
-- Each scene ≈ ${wordsPerScene} words (${wpm} WPM × ${sceneDuration}s)
-- Split ONLY at sentence or paragraph boundaries — never mid-sentence
+- Each scene â ${wordsPerScene} words (${wpm} WPM Ã ${sceneDuration}s)
+- Split ONLY at sentence or paragraph boundaries â never mid-sentence
 - Use the script's own headings and paragraphs as natural break points
 - Scene types: INTRO, MAIN, TRANSITION, SUMMARY, CONCLUSION, HOOK
 - Max scene duration: 10 seconds. No scene should exceed 10s worth of words.
@@ -1616,7 +1624,7 @@ RESPOND WITH ONLY THIS JSON:
     const j   = raw.indexOf('{');
     if (j === -1) throw new Error('AI returned no valid JSON');
 
-    // Smart JSON extraction — handles truncated responses
+    // Smart JSON extraction â handles truncated responses
     // Try finding last complete scene by looking for last valid "}" before any trailing text
     let depth = 0, k = -1, lastValidK = -1;
     for (let ci = j; ci < raw.length; ci++) {
@@ -1629,7 +1637,7 @@ RESPOND WITH ONLY THIS JSON:
     }
     // If full JSON not found (truncated), try to repair by closing open braces
     if (k === -1 && lastValidK > -1) {
-      // Truncated response — close the arrays and objects
+      // Truncated response â close the arrays and objects
       k = lastValidK;
       // We'll repair below
     }
@@ -1674,7 +1682,7 @@ RESPOND WITH ONLY THIS JSON:
     }
     let scenes   = result.scenes || [];
 
-    // Normalise every scene — enforce max 10s duration
+    // Normalise every scene â enforce max 10s duration
     scenes = scenes.map((s, i) => ({
       id:          s.id          || ('s_' + (i + 1)),
       sceneNumber: s.sceneNumber || (i + 1),
@@ -1727,13 +1735,13 @@ RESPOND WITH ONLY THIS JSON:
     const isCredits = e.message?.includes('credit') || e.message?.includes('billing') || e.status === 400;
     const isNoKey   = !process.env.ANTHROPIC_API_KEY;
     const errMsg    = isNoKey ? 'ANTHROPIC_API_KEY not set in Railway environment variables' : 
-                      isCredits ? 'Anthropic API credits exhausted — top up at console.anthropic.com' :
+                      isCredits ? 'Anthropic API credits exhausted â top up at console.anthropic.com' :
                       (e.message || 'AI segmentation failed');
     res.status(500).json({ error: errMsg, detail: e.message });
   }
 });
 
-// ── VOICE (ElevenLabs TTS) ────────────────────────────────────────────────────
+// ââ VOICE (ElevenLabs TTS) ââââââââââââââââââââââââââââââââââââââââââââââââââââ
 app.post('/api/voice', async (req, res) => {
   try {
     const { text, voiceId = 'EXAVITQu4vr4xnSDxMaL', stability = 0.5, similarityBoost = 0.75 } = req.body;
@@ -1758,7 +1766,7 @@ app.post('/api/voice', async (req, res) => {
   }
 });
 
-// ── SCENE IMAGE (DALL-E 3) ────────────────────────────────────────────────────
+// ââ SCENE IMAGE (DALL-E 3) ââââââââââââââââââââââââââââââââââââââââââââââââââââ
 app.post('/api/image', async (req, res) => {
   if (!checkRate(req, res)) return;
   try {
@@ -1789,20 +1797,20 @@ app.post('/api/image', async (req, res) => {
   }
 });
 
-// ── AI PRESENTER (HeyGen) ─────────────────────────────────────────────────────
+// ââ AI PRESENTER (HeyGen) âââââââââââââââââââââââââââââââââââââââââââââââââââââ
 // Sends clean audio for accurate phoneme/viseme/lipsync.
 // No text overlays, no watermark, seamless transitions via talking_style: expressive.
 ;
 ;
 
 
-// ── HeyGen: correct API flow ──────────────────────────────────────────────
-// HeyGen v2 requires: upload audio → get asset_id → use in video/generate
-// ── HeyGen: correct API flow per official docs ────────────────────────────
+// ââ HeyGen: correct API flow ââââââââââââââââââââââââââââââââââââââââââââââ
+// HeyGen v2 requires: upload audio â get asset_id â use in video/generate
+// ââ HeyGen: correct API flow per official docs ââââââââââââââââââââââââââââ
 // Docs: https://docs.heygen.com/reference/upload-asset
 // Asset upload = RAW BINARY body, Content-Type: audio/mpeg, NO form fields
 
-// ── Poll status for Kling tasks ────────────────────────────────────────────
+// ââ Poll status for Kling tasks ââââââââââââââââââââââââââââââââââââââââââââ
 app.get('/api/presenter-status', async (req, res) => {
   const { taskId } = req.query;
   if (!taskId) return res.status(400).json({ error: 'taskId required' });
@@ -1858,10 +1866,10 @@ app.get('/api/presenter-status', async (req, res) => {
   }
 });
 
-// ── Dummy for old route reference ─────────────────────────────────────────
+// ââ Dummy for old route reference âââââââââââââââââââââââââââââââââââââââââ
 // (route already handled above, this line kept for clarity));
 
-// ── AI PRESENTER STATUS ───────────────────────────────────────────────────────
+// ââ AI PRESENTER STATUS âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 app.get('/api/presenter/status/:taskId', async (req, res) => {
   try {
     const id = req.params.taskId.replace('heygen-', '');
@@ -1880,7 +1888,7 @@ app.get('/api/presenter/status/:taskId', async (req, res) => {
   }
 });
 
-// ── STRIPE CHECKOUT ───────────────────────────────────────────────────────────
+// ââ STRIPE CHECKOUT âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 app.post('/api/stripe/checkout', async (req, res) => {
   try {
     if (!STRIPE_KEY) return res.status(503).json({ error: 'Stripe not configured.' });
@@ -1911,7 +1919,7 @@ app.post('/api/stripe/checkout', async (req, res) => {
   }
 });
 
-// ── IMPROVE SCRIPT (AI helper) ────────────────────────────────────────────────
+// ââ IMPROVE SCRIPT (AI helper) ââââââââââââââââââââââââââââââââââââââââââââââââ
 app.post('/api/script/improve', async (req, res) => {
   if (!checkRate(req, res)) return;
   try {
@@ -1929,7 +1937,7 @@ app.post('/api/script/improve', async (req, res) => {
   }
 });
 
-// ── START ─────────────────────────────────────────────────────────────────────
+// ââ START âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 // Auto-create aab_projects table on startup
 // Valid HeyGen avatar ID (discovered at startup)
 
@@ -1962,16 +1970,16 @@ async function ensureAabProjectsTable() {
     const { error } = await sb.from('aab_projects').select('id').limit(1);
     if (error && error.code === 'PGRST205') {
       // Table doesn't exist - log instructions
-      console.warn('⚠ aab_projects table missing. Run this SQL in Supabase:');
+      console.warn('â  aab_projects table missing. Run this SQL in Supabase:');
       console.warn('create table aab_projects (id text primary key, user_id uuid references auth.users(id) on delete cascade, title text, data jsonb); alter table aab_projects enable row level security; create policy "users_own_aab_projects" on aab_projects for all using (auth.uid() = user_id);');
     } else {
-      console.log('✓ aab_projects table ready');
+      console.log('â aab_projects table ready');
     }
   } catch(e) { /* silent */ }
 }
 ensureAabProjectsTable();
 
-// ── Auto-create aab_projects table on startup ────────────────────────────────
+// ââ Auto-create aab_projects table on startup ââââââââââââââââââââââââââââââââ
 // Valid HeyGen avatar ID (discovered at startup)
 
 
@@ -2001,7 +2009,7 @@ async function ensureAabProjectsTable() {
     if (!sb) return;
     // Test if table exists
     const { error } = await sb.from('aab_projects').select('id').limit(1);
-    if (!error) { console.log('✓ aab_projects table exists'); return; }
+    if (!error) { console.log('â aab_projects table exists'); return; }
     if (error.code !== 'PGRST205') { console.log('aab_projects check:', error.message); return; }
     // Table doesn't exist - create it via pg REST
     console.log('Creating aab_projects table...');
