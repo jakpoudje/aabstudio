@@ -1241,8 +1241,7 @@ async function buildSceneImage(presenterB64, bgB64, framingStyle, ratio) {
   return composited.toString('base64');
 }
 
-// ── generateWithKling ─────────────────────────────────────────────────────────
-async function generateWithKling(req, res, { referenceImageBase64, audioBase64, ratio, sceneText, bgPrompt, prompt, studioType, customBgBase64 }) {
+// ── generateWithKling ─────────────────────────────────────────────────────────tomBgBase64 } = args;
   try {
     if (!KLING_ACCESS_KEY || !KLING_SECRET_KEY) {
       console.log('No Kling keys — falling back to HeyGen');
@@ -1345,63 +1344,7 @@ async function generateWithKling(req, res, { referenceImageBase64, audioBase64, 
     return res.status(500).json({ error: e.message });
   }
 }
-  try {
-    const framingStyle = prompt?.presenter?.framing || 'medium';
-
-    // Step A: Get background
-    const bgB64 = await getStudioBackgroundB64(studioType, customBgBase64, ratio);
-
-    // Step B: Composite presenter onto background
-    const sceneImageB64 = await buildSceneImage(referenceImageBase64 || null, bgB64, framingStyle, ratio);
-    if (!sceneImageB64) return res.status(400).json({ error: 'Cannot generate scene image. Upload a presenter photo.' });
-
-    if (!KLING_ACCESS_KEY || !KLING_SECRET_KEY) {
-      // No Kling — use HeyGen with the composited image
-      console.log('No Kling key — using HeyGen with composited scene image');
-      return generateWithHeyGen(req, res, { referenceImageBase64: sceneImageB64, audioBase64, ratio, studioType:'custom', customBgBase64: null, prompt, bgPrompt });
-    }
-
-    // Kling JWT
-    const klingToken = buildKlingJWT(KLING_ACCESS_KEY, KLING_SECRET_KEY);
-
-    // Kling lip-sync: image + audio → video
-    const lsResp = await fetch('https://api.klingai.com/v1/videos/lip-sync', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + klingToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model_name: 'kling-v1-5',
-        mode: 'pro',
-        inputs: [{
-          type: 'image',
-          image_type: 'base64',
-          image: sceneImageB64
-        }],
-        audio_type: 'base64',
-        audio: audioBase64
-      })
-    });
-
-    if (!lsResp.ok) {
-      const err = await lsResp.text();
-      throw new Error('Kling lip-sync failed: ' + lsResp.status + ' — ' + err.slice(0,200));
-    }
-
-    const lsData = await lsResp.json();
-    const taskId = lsData.data?.task_id || lsData.task_id;
-    if (!taskId) throw new Error('Kling: no task_id. Response: ' + JSON.stringify(lsData).slice(0,200));
-
-    console.log('Kling task:', taskId);
-    return res.json({ taskId: 'kling-' + taskId, provider: 'kling', composited: true });
-
-  } catch(e) {
-    console.error('generateWithKling:', e.message);
-    if (HEYGEN_KEY) {
-      console.log('Falling back to HeyGen...');
-      return generateWithHeyGen(req, res, { referenceImageBase64, audioBase64, ratio, studioType, customBgBase64, prompt, bgPrompt });
-    }
-    return res.status(500).json({ error: e.message });
-  }
-}
+  
 
 // ── generateWithHeyGen ────────────────────────────────────────────────────────
 async function generateWithHeyGen(req, res, { compositeImageB64, referenceImageBase64, audioBase64, ratio, sceneText, prompt, sceneCamera }) {
