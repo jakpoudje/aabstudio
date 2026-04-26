@@ -3161,7 +3161,7 @@ function setBg(el){
   }
 
   document.querySelectorAll('.bg-btn[data-bg]').forEach(function(b){ b.classList.remove('on'); });
-  if(el) el.classList.add('on');
+  if(el && el.classList) el.classList.add('on');
   _currentBg = newBg;
 
   var cam    = document.getElementById('studio-cam');
@@ -5686,7 +5686,7 @@ var EXPORT_METHOD = 'browser'; // 'browser' | 'creatomate' | 'runway'
 
 function pickExportMethod(el){
   document.querySelectorAll('[data-method]').forEach(function(b){ b.classList.remove('on'); });
-  if(el) el.classList.add('on');
+  if(el && el.classList) el.classList.add('on');
   EXPORT_METHOD = el ? el.dataset.method : 'browser';
   document.getElementById('creatomate-opts').style.display = EXPORT_METHOD === 'creatomate' ? '' : 'none';
   document.getElementById('runway-opts').style.display     = EXPORT_METHOD === 'runway'     ? '' : 'none';
@@ -6026,10 +6026,44 @@ function openAIPresenterStudio(){
   aps_selectScene(0);
   aps_syncSettingsUI();
 
-  // Restore saved settings
+  // Restore persisted state (photo, custom bg, settings, results)
   try {
-    var saved = JSON.parse(localStorage.getItem('aps_settings')||'{}');
-    if(saved.voiceId){ APS.settings = Object.assign(APS.settings, saved); aps_syncSettingsUI(); }
+    var savedSettings = JSON.parse(localStorage.getItem('aps_settings')||'{}');
+    if(savedSettings.voiceId){ APS.settings = Object.assign(APS.settings, savedSettings); aps_syncSettingsUI(); }
+  } catch(e){}
+
+  // Restore presenter photo
+  try {
+    if(!APS.photoB64){
+      var savedPhoto = localStorage.getItem('aps_presenter_photo');
+      if(savedPhoto){
+        APS.photoB64 = savedPhoto.split(',')[1];
+        var photoPreview = document.getElementById('aps-photo-preview');
+        if(photoPreview){ photoPreview.src = savedPhoto; photoPreview.style.display='block'; }
+        var presWrap = document.getElementById('aps-presenter-img-wrap');
+        if(presWrap) presWrap.innerHTML = '<img src="'+savedPhoto+'" style="width:100%;height:100%;object-fit:cover;border-radius:100px 100px 0 0;">';
+        console.log('Presenter photo restored from localStorage ✓');
+      }
+    }
+  } catch(e){}
+
+  // Restore custom background
+  try {
+    if(!APS.customBgB64){
+      var savedBg = localStorage.getItem('aps_custom_bg');
+      if(savedBg){
+        APS.customBgB64 = savedBg.split(',')[1];
+        var bgEl = document.getElementById('aps-preview-bg');
+        if(bgEl){ bgEl.style.background='none'; bgEl.style.backgroundImage='url('+savedBg+')'; bgEl.style.backgroundSize='cover'; }
+      }
+    }
+  } catch(e){}
+
+  // Restore generated results (so done scenes stay green)
+  try {
+    var savedResults = JSON.parse(localStorage.getItem('aps_results_'+PROJECT.id)||'{}');
+    Object.assign(APS.results, savedResults);
+    Object.assign(APS.clips, JSON.parse(localStorage.getItem('aps_clips_'+PROJECT.id)||'{}'));
   } catch(e){}
 }
 window.openAIPresenterStudio = openAIPresenterStudio;
@@ -6239,11 +6273,13 @@ function aps_loadPhoto(input){
   var reader = new FileReader();
   reader.onload = function(e){
     APS.photoB64 = e.target.result.split(',')[1];
+    // Persist photo so it survives studio close/reopen
+    try { localStorage.setItem('aps_presenter_photo', e.target.result); } catch(ex){}
     var preview = document.getElementById('aps-photo-preview');
     if(preview){ preview.src = e.target.result; preview.style.display='block'; }
-    // Update presenter placeholder
     var presenterWrap = document.getElementById('aps-presenter-img-wrap');
     if(presenterWrap){ presenterWrap.innerHTML = '<img src="'+e.target.result+'" style="width:100%;height:100%;object-fit:cover;border-radius:100px 100px 0 0;">'; }
+    toast('Presenter photo saved ✓','ok');
   };
   reader.readAsDataURL(file);
 }
@@ -6324,6 +6360,16 @@ async function aps_generateScene(sceneIdx){
     aps_saveSettings();
     var s = APS.settings;
     var prompt = aps_buildPrompt(sc);
+
+    // Recover photo and custom bg from localStorage if cleared from memory
+    if(!APS.photoB64){
+      var _rp = localStorage.getItem('aps_presenter_photo');
+      if(_rp) APS.photoB64 = _rp.split(',')[1];
+    }
+    if(!APS.customBgB64 && APS.settings.bg === 'custom'){
+      var _rcb = localStorage.getItem('aps_custom_bg');
+      if(_rcb) APS.customBgB64 = _rcb.split(',')[1];
+    }
 
     // ── STEP 1: Generate voice audio ──────────────────────────
     aps_showStep(sc.num, 1, 3, 'Generating voice audio…');
@@ -6574,7 +6620,6 @@ function aps_addClipToBar(sc){
 }
 
 function aps_addClipToTimeline(sc){
-  // Add generated clip to the main project timeline
   if(!PROJECT.clips) PROJECT.clips = {};
   PROJECT.clips[sc.id] = {
     sceneId: sc.id,
@@ -6587,6 +6632,13 @@ function aps_addClipToTimeline(sc){
     bg: APS.settings.bg,
     generatedAt: new Date().toISOString()
   };
+  // Persist results so they survive page refresh
+  APS.results[sc.id] = sc.videoUrl;
+  APS.clips[sc.id] = sc.taskId;
+  try {
+    localStorage.setItem('aps_results_'+PROJECT.id, JSON.stringify(APS.results));
+    localStorage.setItem('aps_clips_'+PROJECT.id,   JSON.stringify(APS.clips));
+  } catch(ex){}
   saveProject();
 }
 
@@ -9080,6 +9132,24 @@ button,input,select,textarea{font-family:inherit;}
       if(numEl) numEl.textContent='Scene 01 / '+sc1.total+' — '+sc1.type;
       if(badgeEl) badgeEl.textContent='Ready';
     }
+    // Restore photo from localStorage if not already set
+    if(!APS.photoB64){
+      var sp=localStorage.getItem('aps_presenter_photo');
+      if(sp){
+        APS.photoB64=sp.split(',')[1];
+        var pp=document.getElementById('aps-photo-preview');
+        if(pp){ pp.src=sp; pp.style.display='block'; }
+        var pw=document.getElementById('aps-presenter-img-wrap');
+        if(pw) pw.innerHTML='<img src="'+sp+'" style="width:100%;height:100%;object-fit:cover;border-radius:100px 100px 0 0;">';
+      }
+    }
+    // Restore results
+    try {
+      var sr=JSON.parse(localStorage.getItem('aps_results_'+(PROJECT.id||''))||'{}');
+      Object.assign(APS.results, sr);
+      // Update scene statuses
+      APS.scenes.forEach(function(sc){ if(APS.results[sc.id]){ sc.status='done'; sc.videoUrl=APS.results[sc.id]; } });
+    } catch(ex){}
     console.log('AI Presenter Studio opened: '+APS.scenes.length+' scenes ✓');
   };
 
@@ -9162,10 +9232,17 @@ button,input,select,textarea{font-family:inherit;}
     if(row) row.className='aps-scene-row generating'+(idx===APS.currentIdx?' active':'');
     try{
       aps_saveSettings();
+      // Recover photo from localStorage if cleared
+      if(!APS.photoB64){ var _rfp=localStorage.getItem('aps_presenter_photo'); if(_rfp) APS.photoB64=_rfp.split(',')[1]; }
+      if(!APS.customBgB64 && APS.settings.bg==='custom'){ var _rfb=localStorage.getItem('aps_custom_bg'); if(_rfb) APS.customBgB64=_rfb.split(',')[1]; }
       var vr=await fetch(API+'/api/voice',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:sc.narration,voiceId:APS.settings.voiceId,stability:APS.settings.stability||0.5})});
       var vd=await vr.json();
       if(!vd.audio) throw new Error('Voice failed: '+(vd.error||'no audio'));
-      var pr=await fetch(API+'/api/presenter',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({audioBase64:vd.audio,referenceImageBase64:APS.photoB64||null,customBgBase64:APS.customBgB64||null,studioType:APS.settings.bg,ratio:APS.settings.ratio,sceneText:sc.narration,provider:APS.settings.provider,prompt:{studioType:APS.settings.bg,presenter:{framing:APS.settings.framing},voice:{id:APS.settings.voiceId,name:APS.settings.voiceName,gender:APS.settings.voiceGender}}})});
+      // Recover photo and bg from localStorage if cleared from memory
+      if(!APS.photoB64){ var _sp=localStorage.getItem('aps_presenter_photo'); if(_sp) APS.photoB64=_sp.split(',')[1]; }
+      if(!APS.customBgB64&&APS.settings.bg==='custom'){ var _sb=localStorage.getItem('aps_custom_bg'); if(_sb) APS.customBgB64=_sb.split(',')[1]; }
+      var pr=await fetch(API+'/api/presenter',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({audioBase64:vd.audio,referenceImageBase64:APS.photoB64||null,customBgBase64:APS.customBgB64||null,studioType:APS.settings.bg,ratio:APS.settings.ratio,sceneText:sc.narration,provider:APS.settings.provider,prompt:{studioType:APS.settings.bg,presenter:{framing:APS.settings.framing},voice:{id:APS.settings.voiceId,name:APS.settings.voiceName,gender:APS.settings.voiceGender}}})});
       var pd=await pr.json();
       if(pd.error) {
         // Show the actual error message to user
