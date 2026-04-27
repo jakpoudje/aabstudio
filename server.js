@@ -114,6 +114,36 @@ let HG_AVATAR_ID = process.env.HEYGEN_AVATAR_ID || 'Anna_public_3_20240108';
 // Session cache — reset on restart
 let CACHED_HG_IMAGE_KEY = null;  // HeyGen image_key for AV4 (safe to reuse)
 
+// ── Scene queue — only ONE scene renders at a time ────────────────────────────
+// HeyGen takes 3-8 min per scene. If all 49 fire at once, scenes time out.
+// This queue serialises them: scene 2 waits for scene 1 to get its video_id.
+// The actual rendering still happens async in HeyGen's cloud.
+let _sceneQueueBusy = false;
+const _sceneQueue = [];
+
+function enqueueScene(fn) {
+  return new Promise((resolve, reject) => {
+    _sceneQueue.push({ fn, resolve, reject });
+    processSceneQueue();
+  });
+}
+
+async function processSceneQueue() {
+  if (_sceneQueueBusy || _sceneQueue.length === 0) return;
+  _sceneQueueBusy = true;
+  const { fn, resolve, reject } = _sceneQueue.shift();
+  try {
+    const result = await fn();
+    resolve(result);
+  } catch(e) {
+    reject(e);
+  } finally {
+    _sceneQueueBusy = false;
+    // Small delay between scenes so HeyGen doesn't rate-limit
+    setTimeout(processSceneQueue, 2000);
+  }
+}
+
 const KLING_BASE = 'https://api2.klingai.com';
 
 function buildKlingJWT() {
@@ -432,8 +462,10 @@ app.post('/api/presenter', async (req, res) => {
       sceneText, sceneNum, sceneTotal, duration
     };
 
-    if (chosen === 'heygen') return await generateWithHeyGen(req, res, args);
-    if (chosen === 'kling')  return await generateWithKling(req, res, args);
+    // Queue all scene submissions — only one processes at a time
+    // This prevents all 49 scenes firing simultaneously and timing out
+    if (chosen === 'heygen') return await enqueueScene(() => generateWithHeyGen(req, res, args));
+    if (chosen === 'kling')  return await enqueueScene(() => generateWithKling(req, res, args));
     if (chosen === 'runway') return await generateWithRunway(req, res, args);
 
   } catch(e) {
@@ -461,9 +493,17 @@ app.post('/api/voice', async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// HEYGEN
-// AV4: audio_asset_id TOP-LEVEL (not in voice), voice only has voice_id
-// v2 fallback: background color (not image_key — different asset system)
+// HEYGEN — Correct flow for Creator plan with photo reference
+//
+// Flow:
+// 1. Upload audio → audio_asset_id
+// 2. If reference photo provided: use photo avatar flow (type: 'photo')
+//    Upload image → get image_asset_id → generate with photo character
+// 3. If no photo: use stock avatar with audio
+//
+// The previous AV4 flow was wrong — AV4 needs a pre-created Photo Avatar ID,
+// not a raw image_key. The correct approach for dynamic photos is
+// v2/video/generate with character type 'photo'.
 // ══════════════════════════════════════════════════════════════════════════════
 async function generateWithHeyGen(req, res, args) {
   const { compositeImageB64, referenceImageBase64, audioBase64, ratio, sceneText, gender } = args;
@@ -471,35 +511,45 @@ async function generateWithHeyGen(req, res, args) {
     if (!HEYGEN_KEY) throw new Error('HEYGEN_API_KEY not configured');
     const H = { 'X-Api-Key': HEYGEN_KEY };
 
-    // Upload audio
+    // Step 1: Upload audio → audio_asset_id
     const audioBuf = Buffer.from(audioBase64, 'base64');
     console.log('HeyGen: uploading audio', audioBuf.length, 'bytes...');
     const audioResp = await fetch('https://upload.heygen.com/v1/asset', {
       method: 'POST', headers: { ...H, 'Content-Type': 'audio/mpeg' }, body: audioBuf
     });
-    if (!audioResp.ok) throw new Error('HeyGen audio upload: ' + audioResp.status + ' — ' + (await audioResp.text()).slice(0, 300));
+    if (!audioResp.ok) throw new Error('HeyGen audio upload: ' + audioResp.status + ' — ' + (await audioResp.text()).slice(0,300));
     const audioData    = await audioResp.json();
     const audioAssetId = audioData.data?.id || audioData.data?.asset_id;
-    if (!audioAssetId) throw new Error('HeyGen: no audio asset_id. ' + JSON.stringify(audioData).slice(0, 200));
+    if (!audioAssetId) throw new Error('HeyGen: no audio_asset_id in response: ' + JSON.stringify(audioData).slice(0,200));
     console.log('HeyGen audio_asset_id:', audioAssetId);
 
-    // Upload image → image_key (cached)
-    const imageToUse = compositeImageB64 || referenceImageBase64;
-    let imageKey = CACHED_HG_IMAGE_KEY;
-    if (!imageKey && imageToUse) {
+    // Step 2: Upload presenter image → image_asset_id (cached per session)
+    // Use the composited image (presenter on background) or raw reference photo
+    const imageToUse = referenceImageBase64 || compositeImageB64;
+    let imageAssetId = CACHED_HG_IMAGE_KEY; // reuse field for image asset id
+
+    if (!imageAssetId && imageToUse) {
       const imgBuf = Buffer.from(imageToUse, 'base64');
-      console.log('HeyGen: uploading image', imgBuf.length, 'bytes...');
+      console.log('HeyGen: uploading presenter image', imgBuf.length, 'bytes...');
       const imgResp = await fetch('https://upload.heygen.com/v1/asset', {
         method: 'POST', headers: { ...H, 'Content-Type': 'image/jpeg' }, body: imgBuf
       });
       if (imgResp.ok) {
         const imgData = await imgResp.json();
-        imageKey = imgData.data?.image_key || imgData.data?.id;
-        if (imageKey) { CACHED_HG_IMAGE_KEY = imageKey; console.log('HeyGen image_key:', imageKey); }
-      } else { console.warn('HeyGen image upload failed:', imgResp.status); }
-    } else if (imageKey) { console.log('HeyGen: cached image_key:', imageKey); }
+        // For photo avatar: we need the asset id, not image_key
+        imageAssetId = imgData.data?.id || imgData.data?.image_key;
+        if (imageAssetId) {
+          CACHED_HG_IMAGE_KEY = imageAssetId;
+          console.log('HeyGen image asset_id:', imageAssetId);
+        }
+      } else {
+        console.warn('HeyGen image upload failed:', imgResp.status, (await imgResp.text()).slice(0,200));
+      }
+    } else if (imageAssetId) {
+      console.log('HeyGen: using cached image asset_id:', imageAssetId);
+    }
 
-    // Pick a HeyGen voice matching requested gender
+    // Step 3: Pick voice matching gender
     let hgVoiceId = null;
     try {
       const vr = await fetch('https://api.heygen.com/v2/voices', { headers: H });
@@ -512,37 +562,60 @@ async function generateWithHeyGen(req, res, args) {
           voices.find(v => v.gender === (wantMale ? 'male' : 'female')) ||
           voices.find(v => v.language === 'English') ||
           voices[0];
-        if (found) { hgVoiceId = found.voice_id; console.log('HeyGen voice:', found.name || found.voice_id, '| gender:', found.gender); }
+        if (found) {
+          hgVoiceId = found.voice_id;
+          console.log('HeyGen voice:', found.name || found.voice_id, '| gender:', found.gender);
+        }
       }
     } catch(e) { console.warn('HeyGen voice discovery:', e.message); }
     if (!hgVoiceId) hgVoiceId = '2d5b0e6cf36f460aa7fc47e3eee4ba54';
 
-    // AV4 — audio_asset_id TOP-LEVEL, voice only has voice_id
-    if (imageKey) {
-      console.log('HeyGen: Avatar IV...');
-      const av4Payload = {
-        video_title:    'AABStudio Scene',
-        image_key:      imageKey,
-        voice:          { voice_id: hgVoiceId },
-        audio_asset_id: audioAssetId,     // TOP-LEVEL
-        script:         sceneText || 'Presenting.',
-        aspect_ratio:   ratio || '16:9'
+    // Step 4: Generate video
+    // If we have a reference photo → use photo character (Talking Photo)
+    // This is the correct Creator plan flow for custom face videos
+    if (imageAssetId && imageToUse) {
+      console.log('HeyGen: generating with Talking Photo (photo character)...');
+      const photoPayload = {
+        video_inputs: [{
+          character: {
+            type:            'photo',
+            photo_asset_id:  imageAssetId,
+            // expression: 'natural' — only on Pro plan, skip for Creator
+          },
+          voice: {
+            type:           'audio',
+            audio_asset_id: audioAssetId
+          },
+          background: {
+            type:  'color',
+            value: '#1a2035'
+          }
+        }],
+        aspect_ratio: ratio || '16:9',
+        test:         false
       };
-      const av4Resp = await fetch('https://api.heygen.com/v2/video/av4/generate', {
-        method: 'POST', headers: { ...H, 'Content-Type': 'application/json' }, body: JSON.stringify(av4Payload)
+      console.log('HeyGen photo payload:', JSON.stringify(photoPayload).slice(0,300));
+      const photoResp = await fetch('https://api.heygen.com/v2/video/generate', {
+        method: 'POST', headers: { ...H, 'Content-Type': 'application/json' },
+        body: JSON.stringify(photoPayload)
       });
-      if (av4Resp.ok) {
-        const av4Data = await av4Resp.json();
-        const videoId = av4Data.data?.video_id || av4Data.video_id;
-        if (videoId) { console.log('HeyGen AV4 video_id:', videoId); return res.json({ taskId: 'heygen-' + videoId, provider: 'heygen', engine: 'av4' }); }
-        console.warn('HeyGen AV4 no video_id:', JSON.stringify(av4Data).slice(0, 300));
+      const photoText = await photoResp.text();
+      console.log('HeyGen photo response:', photoResp.status, photoText.slice(0,300));
+      if (photoResp.ok) {
+        const photoData = JSON.parse(photoText);
+        const videoId   = photoData.data?.video_id || photoData.video_id;
+        if (videoId) {
+          console.log('HeyGen Talking Photo video_id:', videoId);
+          return res.json({ taskId: 'heygen-' + videoId, provider: 'heygen', engine: 'photo' });
+        }
+        console.warn('HeyGen photo: no video_id in response:', photoText.slice(0,300));
       } else {
-        console.warn('HeyGen AV4 failed:', av4Resp.status, (await av4Resp.text()).slice(0, 400));
+        console.warn('HeyGen photo failed:', photoResp.status, photoText.slice(0,400));
       }
     }
 
-    // v2 fallback — color background (NOT image_key)
-    console.log('HeyGen: v2/video/generate fallback...');
+    // Fallback: stock avatar with audio (no reference photo)
+    console.log('HeyGen: stock avatar fallback...');
     const v2Resp = await fetch('https://api.heygen.com/v2/video/generate', {
       method: 'POST', headers: { ...H, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -552,15 +625,17 @@ async function generateWithHeyGen(req, res, args) {
           background: { type: 'color', value: '#1a2035' }
         }],
         aspect_ratio: ratio || '16:9',
-        test: false
+        test:         false
       })
     });
-    if (!v2Resp.ok) throw new Error('HeyGen v2 failed: ' + v2Resp.status + ' — ' + (await v2Resp.text()).slice(0, 400));
-    const v2Data  = await v2Resp.json();
+    const v2Text = await v2Resp.text();
+    console.log('HeyGen stock avatar response:', v2Resp.status, v2Text.slice(0,300));
+    if (!v2Resp.ok) throw new Error('HeyGen stock avatar failed: ' + v2Resp.status + ' — ' + v2Text.slice(0,400));
+    const v2Data  = JSON.parse(v2Text);
     const videoId = v2Data.data?.video_id || v2Data.video_id;
-    if (!videoId) throw new Error('HeyGen v2: no video_id. ' + JSON.stringify(v2Data).slice(0, 300));
-    console.log('HeyGen v2 video_id:', videoId);
-    return res.json({ taskId: 'heygen-' + videoId, provider: 'heygen', engine: 'v2' });
+    if (!videoId) throw new Error('HeyGen: no video_id. Response: ' + v2Text.slice(0,300));
+    console.log('HeyGen stock avatar video_id:', videoId);
+    return res.json({ taskId: 'heygen-' + videoId, provider: 'heygen', engine: 'stock' });
 
   } catch(e) {
     console.error('generateWithHeyGen:', e.message);
@@ -698,6 +773,52 @@ async function generateWithRunway(req, res, args) {
     return res.status(500).json({ error: e.message });
   }
 }
+
+// ── Presenter wait — server polls HeyGen until done (max 10 min) ─────────────
+// Frontend calls this ONCE and waits up to 10 min for the response.
+// Avoids the frontend timing out from short HTTP timeouts.
+app.get('/api/presenter-wait', async (req, res) => {
+  const { taskId } = req.query;
+  if (!taskId) return res.status(400).json({ error: 'taskId required' });
+  
+  // Set a very long timeout on this response
+  req.socket.setTimeout(620000); // 10 min + 20s buffer
+  res.setTimeout(620000);
+  
+  const maxPolls = 40; // 40 × 15s = 10 min
+  for (let i = 0; i < maxPolls; i++) {
+    await new Promise(r => setTimeout(r, 15000));
+    try {
+      let status, videoUrl, failed;
+      if (taskId.startsWith('heygen-')) {
+        const id = taskId.replace('heygen-', '');
+        const sr = await fetch('https://api.heygen.com/v1/video_status.get?video_id=' + id, { headers: { 'X-Api-Key': HEYGEN_KEY } });
+        const sd = await sr.json();
+        status   = sd.data?.status;
+        videoUrl = sd.data?.video_url || null;
+        failed   = status === 'failed';
+        console.log('HeyGen wait poll', i+1, '/', maxPolls, ':', status, videoUrl ? '✓' : '');
+        if (status === 'completed' && videoUrl) return res.json({ done: true, videoUrl, status });
+        if (failed) return res.json({ done: false, failed: true, error: sd.data?.error || 'HeyGen failed', status });
+      } else if (taskId.startsWith('kling-piapi-')) {
+        const id = taskId.replace('kling-piapi-', '');
+        const r  = await fetch('https://api.piapi.ai/api/v1/task/' + id, { headers: { 'x-api-key': PIAPI_KEY } });
+        const d  = await r.json();
+        status   = d.data?.status;
+        videoUrl = d.data?.output?.works?.[0]?.video?.resource_without_watermark || d.data?.output?.works?.[0]?.video?.resource || null;
+        failed   = status === 'failed';
+        console.log('PiAPI wait poll', i+1, '/', maxPolls, ':', status, videoUrl ? '✓' : '');
+        if ((status === 'completed' || status === 'succeed') && videoUrl) return res.json({ done: true, videoUrl, status });
+        if (failed) return res.json({ done: false, failed: true, error: 'PiAPI failed', status });
+      } else {
+        return res.status(400).json({ error: 'Unknown provider for wait endpoint' });
+      }
+    } catch(e) {
+      console.warn('presenter-wait poll error:', e.message);
+    }
+  }
+  res.json({ done: false, failed: false, timedOut: true, error: 'Timed out after 10 min' });
+});
 
 // ── Status polling ────────────────────────────────────────────────────────────
 app.get('/api/presenter-status', async (req, res) => {
