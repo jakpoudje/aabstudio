@@ -9845,5 +9845,433 @@ console.log('AABStudio v5 \u2713 \u2014 all fixes applied, no markdown corruptio
   console.log('APS Fix v2: sequential, 15min timeout, correct polling');
 })();
 </script>
+<script> 
+// AABStudio Platform Fix v1.0
+// Fixes: AI Presenter clips → timeline, teleprompter smooth scroll,
+//        phone remote via BroadcastChannel, recording → timeline pipeline
+// Paste entire contents inside <script></script> just before </body>
+
+(function() {
+'use strict';
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 1. AI PRESENTER → TIMELINE AUTO-FLOW
+// When a scene completes, add it to PROJECT.clips and refresh the edit suite
+// ══════════════════════════════════════════════════════════════════════════════
+
+window.aps_addClipToTimeline = function(sc) {
+  if (!sc || !sc.videoUrl) return;
+  if (!PROJECT.clips) PROJECT.clips = {};
+
+  PROJECT.clips[sc.id] = {
+    sceneId:   sc.id,
+    sceneNum:  sc.num,
+    url:       sc.videoUrl,
+    videoUrl:  sc.videoUrl,
+    duration:  sc.duration || 8,
+    source:    'ai-presenter',
+    provider:  (window.APS && APS.settings.provider) || 'heygen',
+    sceneName: sc.type || 'MAIN',
+    recorded:  true
+  };
+
+  // Mark the scene as recorded in PROJECT.scenes too
+  if (PROJECT.scenes) {
+    var scene = PROJECT.scenes.find(function(s) { return s.id === sc.id; });
+    if (scene) scene.status = 'recorded';
+  }
+
+  // Save project
+  if (typeof saveProject === 'function') saveProject();
+
+  // Refresh edit suite if it's open
+  if (typeof renderEditSuite === 'function') {
+    try { renderEditSuite(); } catch(e) {}
+  }
+  if (typeof renderEditClips === 'function') {
+    try { renderEditClips(); } catch(e) {}
+  }
+  if (typeof tl_buildTracksFromProject === 'function') {
+    try { tl_buildTracksFromProject(); } catch(e) {}
+  }
+
+  console.log('Timeline: Scene ' + sc.num + ' added →', sc.videoUrl.slice(0, 60));
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 2. RECORDING STUDIO → TIMELINE AUTO-FLOW
+// When a scene is recorded, auto-add to timeline
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Patch stopRec to auto-add clip to timeline after saving
+var _origStopRec = window.stopRec;
+window.stopRec = function() {
+  if (typeof STUDIO === 'undefined') {
+    if (typeof _origStopRec === 'function') _origStopRec();
+    return;
+  }
+
+  var sceneIdx = STUDIO.currentScene;
+  var scene    = PROJECT.scenes && PROJECT.scenes[sceneIdx];
+
+  if (STUDIO.mr && STUDIO.mr.state !== 'inactive') {
+    var origOnStop = STUDIO.mr.onstop;
+    STUDIO.mr.onstop = function() {
+      if (typeof origOnStop === 'function') origOnStop.call(this);
+
+      // After original handler saves the clip, add to timeline
+      setTimeout(function() {
+        if (!scene) return;
+        var clip = PROJECT.clips && PROJECT.clips[scene.id];
+        if (!clip || !clip.url) return;
+
+        // Add to timeline tracks
+        if (typeof tl_addClipToTimeline === 'function') {
+          tl_addClipToTimeline({
+            sceneId:  scene.id,
+            sceneNum: sceneIdx + 1,
+            url:      clip.url,
+            duration: clip.duration || STUDIO.recSecs || 8,
+            source:   'recording'
+          });
+        }
+
+        // Refresh edit suite
+        if (typeof renderEditClips === 'function') renderEditClips();
+        if (typeof tl_render === 'function') tl_render();
+
+        // Show success notification
+        var bar = document.getElementById('studio-retake-bar');
+        if (bar) {
+          bar.style.display = 'block';
+          bar.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:10px 18px;background:rgba(16,185,129,.15);border-top:1px solid rgba(16,185,129,.3);">'
+            + '<span style="font-size:13px;color:#10b981;font-weight:700;">✓ Scene ' + (sceneIdx+1) + ' saved & added to timeline</span>'
+            + '<div style="flex:1;"></div>'
+            + '<button onclick="retakeScene()" class="s-btn" style="color:#f59e0b;border-color:rgba(245,158,11,.3);">↺ Retake</button>'
+            + '<button onclick="(function(){if(typeof studioNext===\'function\')studioNext();var b=document.getElementById(\'studio-retake-bar\');if(b)b.style.display=\'none\';})()" class="s-btn" style="color:#10b981;border-color:rgba(16,185,129,.3);">Next scene →</button>'
+            + '<button onclick="nav(\'edit-pg\')" class="s-btn s-btn-teal">🎥 Go to timeline</button>'
+            + '</div>';
+        }
+      }, 500);
+    };
+  }
+
+  if (typeof _origStopRec === 'function') _origStopRec();
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 3. SMOOTH TELEPROMPTER SCROLL
+// Replace robotic word-jump with smooth CSS scroll animation
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Override the studio teleprompter to use smooth scrolling
+var _origStartTpAutoTimer = window.startTpAutoTimer;
+window.startTpAutoTimer = function() {
+  var scene = PROJECT.scenes && PROJECT.scenes[STUDIO.currentScene];
+  if (!scene) return;
+
+  var words    = (scene.narration || '').trim().split(/\s+/);
+  if (!words.length) return;
+
+  var wpm      = STUDIO.tpSpeed || 80;
+  var msPerW   = 60000 / wpm;
+  var startTs  = null;
+  var lastWi   = -1;
+
+  // Get the teleprompter container
+  var tpCur    = document.getElementById('tp-cur');
+  var tpPrev   = document.getElementById('tp-prev');
+  var tpNext   = document.getElementById('tp-next');
+
+  if (!tpCur) {
+    if (typeof _origStartTpAutoTimer === 'function') _origStartTpAutoTimer();
+    return;
+  }
+
+  // Render word spans
+  tpCur.innerHTML = '<div id="tp-smooth-inner" style="display:inline-block;white-space:nowrap;transition:transform 0.3s ease;">'
+    + words.map(function(w, i) {
+        return '<span id="tpw' + i + '" style="display:inline-block;margin-right:10px;color:rgba(255,255,255,.5);transition:color 0.2s,transform 0.2s,opacity 0.2s;">' + w + '</span>';
+      }).join('')
+    + '</div>';
+
+  if (window._tpAutoTimer) { cancelAnimationFrame(window._tpAutoTimer); }
+
+  function frame(ts) {
+    if (!window.STUDIO_TP || !window.STUDIO_TP.running) return;
+    if (!startTs) startTs = ts;
+
+    var elapsed  = ts - startTs;
+    var wi       = Math.min(Math.floor(elapsed / msPerW), words.length - 1);
+    var progress = Math.min(elapsed / (words.length * msPerW), 1);
+
+    if (wi !== lastWi) {
+      lastWi = wi;
+
+      words.forEach(function(_, k) {
+        var span = document.getElementById('tpw' + k);
+        if (!span) return;
+        if (k < wi) {
+          // Past words — fade out smoothly
+          span.style.color     = 'rgba(255,255,255,.15)';
+          span.style.transform = '';
+        } else if (k === wi) {
+          // Current word — highlight gold, slightly larger
+          span.style.color     = '#f59e0b';
+          span.style.transform = 'scale(1.08)';
+          // Smooth scroll: translate the inner div so current word stays centred
+          var inner = document.getElementById('tp-smooth-inner');
+          if (inner && tpCur) {
+            var containerW = tpCur.offsetWidth;
+            var spanLeft   = span.offsetLeft;
+            var shift      = Math.max(0, spanLeft - containerW * 0.25);
+            inner.style.transition = 'transform 0.4s cubic-bezier(0.25,0.46,0.45,0.94)';
+            inner.style.transform  = 'translateX(-' + shift + 'px)';
+          }
+        } else {
+          // Upcoming words
+          span.style.color     = 'rgba(255,255,255,.5)';
+          span.style.transform = '';
+        }
+      });
+
+      // Update progress bar
+      var pf = document.getElementById('scene-prog-fill');
+      if (pf) pf.style.width = (progress * 100) + '%';
+    }
+
+    if (progress < 1) {
+      window._tpAutoTimer = requestAnimationFrame(frame);
+    } else {
+      window.STUDIO_TP.running = false;
+      var btn = document.getElementById('btn-tp-start');
+      if (btn) { btn.textContent = '▶ Practice'; btn.style.background = ''; }
+      // Auto-advance to next scene
+      if (STUDIO.currentScene < PROJECT.scenes.length - 1) {
+        setTimeout(function() {
+          if (typeof studioNext === 'function') studioNext();
+          if (window.STUDIO_TP && window.STUDIO_TP.running) startTpAutoTimer();
+        }, 500);
+      }
+    }
+  }
+
+  window._tpAutoTimer = requestAnimationFrame(frame);
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 4. PHONE REMOTE — BroadcastChannel + fallback localStorage
+// ══════════════════════════════════════════════════════════════════════════════
+
+var _bc = null;
+try { _bc = new BroadcastChannel('aab_tp_remote'); } catch(e) {}
+
+// Handle incoming remote commands (from phone page)
+function handleRemoteCommand(cmd, val) {
+  console.log('Remote cmd:', cmd, val || '');
+  var pg = document.getElementById('teleprompter-pg');
+  var inTp = pg && pg.classList.contains('on');
+  var inStudio = document.getElementById('record-pg') && document.getElementById('record-pg').classList.contains('on');
+
+  if (cmd === 'play')    { if (inTp && typeof tpToggle==='function') { if (!TP.playing) tpToggle(); } else if (inStudio && typeof studioTpToggle==='function') studioTpToggle(); }
+  if (cmd === 'pause')   { if (inTp && typeof tpToggle==='function') { if (TP.playing)  tpToggle(); } else if (inStudio && typeof studioTpToggle==='function') studioTpToggle(); }
+  if (cmd === 'toggle')  { if (inTp && typeof tpToggle==='function') tpToggle(); else if (inStudio && typeof studioTpToggle==='function') studioTpToggle(); }
+  if (cmd === 'restart') { if (inTp) { TP.currentWord = 0; clearInterval(TP.scrollTimer); if (TP.playing) tpScroll(); } }
+  if (cmd === 'next')    { if (inStudio && typeof studioNext==='function') studioNext(); }
+  if (cmd === 'prev')    { if (inStudio && typeof studioPrev==='function') studioPrev(); }
+  if (cmd === 'rec')     { if (inStudio && typeof toggleRecording==='function') toggleRecording(); }
+  if (cmd === 'speed' && val) {
+    var spd = parseInt(val);
+    if (inTp) {
+      TP.speed = spd;
+      var sl = document.getElementById('tp-spd'); if (sl) sl.value = spd;
+      var sd = document.getElementById('tp-spd-disp'); if (sd) sd.textContent = spd;
+      if (TP.playing) { clearInterval(TP.scrollTimer); tpScroll(); }
+    }
+    if (inStudio) {
+      STUDIO.tpSpeed = spd;
+      var sdr = document.getElementById('tp-spd-range'); if (sdr) sdr.value = spd;
+      var sdv = document.getElementById('tp-spd-val'); if (sdv) sdv.textContent = spd + 'wpm';
+    }
+  }
+  if (cmd === 'slower') { handleRemoteCommand('speed', Math.max(20, ((inTp ? TP.speed : STUDIO.tpSpeed) || 80) - 15)); }
+  if (cmd === 'faster') { handleRemoteCommand('speed', Math.min(300, ((inTp ? TP.speed : STUDIO.tpSpeed) || 80) + 15)); }
+  if (cmd === 'fontup')   { if (typeof increaseTpFont==='function') increaseTpFont(); }
+  if (cmd === 'fontdown') { if (typeof decreaseTpFont==='function') decreaseTpFont(); }
+}
+
+// Listen via BroadcastChannel (same device/browser — instant)
+if (_bc) {
+  _bc.onmessage = function(e) {
+    if (e.data && e.data.cmd) handleRemoteCommand(e.data.cmd, e.data.val);
+  };
+}
+
+// Listen via localStorage polling (cross-device — QR code phone control)
+var _remoteLastSeen = '';
+var _remotePollInterval = setInterval(function() {
+  try {
+    var sid = window._remoteSessionId || localStorage.getItem('aab_remote_session');
+    if (!sid) return;
+    var key = 'aab_remote_cmd_' + sid;
+    var val = localStorage.getItem(key);
+    if (val && val !== _remoteLastSeen) {
+      _remoteLastSeen = val;
+      var parts = val.split(':');
+      handleRemoteCommand(parts[0], parts[1]);
+    }
+  } catch(e) {}
+}, 250);
+
+// Override tpShowRemote to generate proper QR with session ID
+window.tpShowRemote = function() {
+  var modal = document.getElementById('tp-remote-modal');
+  if (!modal) return;
+  modal.classList.add('on');
+
+  // Create unique session ID
+  var sid = 'tp_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+  window._remoteSessionId = sid;
+  localStorage.setItem('aab_remote_session', sid);
+
+  var remoteUrl = window.location.origin + window.location.pathname + '?remote=' + sid;
+
+  // QR code
+  var qrEl = document.getElementById('tp-qr');
+  if (qrEl) {
+    qrEl.innerHTML = '<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(remoteUrl) + '" style="width:180px;height:180px;border-radius:8px;display:block;">';
+  }
+
+  // URL display
+  var urlEl = document.getElementById('tp-remote-url-disp');
+  if (urlEl) urlEl.textContent = remoteUrl;
+
+  // Connection status polling
+  var dot = document.getElementById('tp-conn-dot');
+  var txt = document.getElementById('tp-conn-txt');
+  var connCheck = setInterval(function() {
+    var lastCmd = localStorage.getItem('aab_remote_cmd_' + sid);
+    if (lastCmd) {
+      if (dot) dot.style.background = '#10b981';
+      if (txt) txt.textContent = '✓ Phone connected';
+      clearInterval(connCheck);
+    }
+  }, 500);
+  setTimeout(function() { clearInterval(connCheck); }, 120000);
+};
+
+// Override remoteSend for the phone remote page
+window.remoteSend = function(cmd, val) {
+  var sid = new URLSearchParams(window.location.search).get('remote')
+         || window._remoteSessionId
+         || localStorage.getItem('aab_remote_session');
+  if (!sid) return;
+
+  var payload = cmd + (val !== undefined ? ':' + val : '');
+  localStorage.setItem('aab_remote_cmd_' + sid, payload);
+
+  // Also try BroadcastChannel for same-device control
+  if (_bc) _bc.postMessage({ cmd: cmd, val: val });
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 5. SOLO TELEPROMPTER — smooth scroll (replaces robotic word jumps)
+// ══════════════════════════════════════════════════════════════════════════════
+
+window.tpScroll = function() {
+  clearInterval(TP.scrollTimer);
+  var wrap = document.getElementById('tp-text');
+  if (!wrap) return;
+  var spans = wrap.querySelectorAll('span[id^="tpw"]');
+  if (!spans.length) return;
+
+  var total = spans.length;
+  var msPerW = 60000 / (TP.speed || 80);
+
+  TP.scrollTimer = setInterval(function() {
+    // Un-highlight previous
+    if (TP.currentWord > 0) {
+      var prev = document.getElementById('tpw' + (TP.currentWord - 1));
+      if (prev) {
+        prev.style.color      = 'rgba(255,255,255,.2)';
+        prev.style.fontWeight = '';
+        prev.style.textShadow = '';
+      }
+    }
+
+    // Highlight current — smooth scroll into view
+    var cur = document.getElementById('tpw' + TP.currentWord);
+    if (cur) {
+      cur.style.color      = '#f59e0b';
+      cur.style.fontWeight = '700';
+      cur.style.textShadow = '0 0 20px rgba(245,158,11,0.5)';
+      cur.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    }
+
+    TP.currentWord++;
+    if (TP.currentWord >= total) {
+      clearInterval(TP.scrollTimer);
+      TP.playing = false;
+      var btn = document.getElementById('tp-play-btn');
+      if (btn) btn.textContent = '▶ Play';
+    }
+  }, msPerW);
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 6. INIT REMOTE PAGE — when ?remote=xxx in URL
+// ══════════════════════════════════════════════════════════════════════════════
+
+var _urlSid = new URLSearchParams(window.location.search).get('remote');
+if (_urlSid) {
+  window._remoteSessionId = _urlSid;
+  // Show remote page
+  document.querySelectorAll('.pg,.pg-flex,.pg-full').forEach(function(p) { p.classList.remove('on'); });
+  var rp = document.getElementById('remote-pg');
+  if (rp) rp.classList.add('on');
+  var tn = document.getElementById('topnav'); if (tn) tn.style.display = 'none';
+
+  // Wire remote buttons to send commands
+  document.querySelectorAll('[onclick*="remoteSend"]').forEach(function(el) {
+    // Already wired via onclick attributes — remoteSend is now overridden above
+  });
+
+  // Speed slider
+  var spd = document.getElementById('remote-spd');
+  if (spd) {
+    spd.oninput = function() {
+      var disp = document.getElementById('remote-spd-disp');
+      if (disp) disp.textContent = this.value;
+      remoteSend('speed', this.value);
+    };
+  }
+
+  // Show connected indicator
+  setTimeout(function() {
+    var conn = document.querySelector('#remote-pg [style*="Connected"]');
+    if (conn) conn.textContent = '● Connected';
+  }, 500);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 7. EDIT SUITE — ensure clips from both recording and AI presenter show up
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Override nav to 'edit-pg' to always refresh the suite
+var _origNav = window.nav;
+window.nav = function(pg) {
+  if (typeof _origNav === 'function') _origNav(pg);
+  if (pg === 'edit-pg') {
+    setTimeout(function() {
+      if (typeof renderEditSuite === 'function') renderEditSuite();
+      if (typeof tl_buildTracksFromProject === 'function') tl_buildTracksFromProject();
+    }, 100);
+  }
+};
+
+console.log('AABStudio Platform Fix v1.0: timeline flow, smooth TP, phone remote ✓');
+
+})();
+</script> 
 </body>
 </html>
