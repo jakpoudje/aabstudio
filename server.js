@@ -854,7 +854,21 @@ app.get('/api/presenter-status', async (req, res) => {
       const id = taskId.replace('heygen-', '');
       const sr = await fetch('https://api.heygen.com/v1/video_status.get?video_id=' + id, { headers: { 'X-Api-Key': HEYGEN_KEY } });
       const sd = await sr.json();
-      return res.json({ status: sd.data?.status, videoUrl: sd.data?.video_url || null, done: sd.data?.status === 'completed', failed: sd.data?.status === 'failed', error: sd.data?.error || null });
+      const hgStatus = sd.data?.status;
+      const hgError  = sd.data?.error;
+      // Log full error so we can see what HeyGen is rejecting
+      if (hgStatus === 'failed') {
+        console.error('HeyGen video FAILED:', JSON.stringify(sd.data).slice(0, 500));
+      } else {
+        console.log('HeyGen status:', hgStatus, '| video_id:', id);
+      }
+      return res.json({
+        status:   hgStatus,
+        videoUrl: sd.data?.video_url || null,
+        done:     hgStatus === 'completed',
+        failed:   hgStatus === 'failed',
+        error:    typeof hgError === 'object' ? JSON.stringify(hgError) : (hgError || null)
+      });
     }
     if (taskId.startsWith('runway-')) {
       const id = taskId.replace('runway-', '');
