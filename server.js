@@ -1,14 +1,11 @@
 'use strict';
 /*
-  AABStudio.ai — Server v3.6
+  AABStudio.ai — Server v3.7
   Fixed:
-  - PiAPI image: upload to Imgur (free, truly public CDN) instead of HeyGen CDN (private)
-  - BadRequestError request aborted: moved stripe raw body route AFTER json middleware
-    with a bodyParser exclusion, and bumped json limit to 30mb
-  - Voice: uses voiceId from frontend exactly
-  - HeyGen AV4: audio_asset_id top-level, voice only has voice_id for lip-sync
-  - HeyGen v2 fallback: color background (not image_key)
-  - All side panel selections wired through
+  - PiAPI: do NOT cache Imgur URL between scenes — upload fresh each time
+    (reusing the same URL causes PiAPI 500 on second call)
+  - BadRequestError: add global error handler to swallow client-disconnect errors
+  - All previous fixes retained
 */
 const sharp    = require('sharp');
 const express  = require('express');
@@ -115,8 +112,7 @@ const MODEL_FALLBACK = 'claude-sonnet-4-5-20250929';
 let HG_AVATAR_ID = process.env.HEYGEN_AVATAR_ID || 'Anna_public_3_20240108';
 
 // Session cache — reset on restart
-let CACHED_HG_IMAGE_KEY    = null;  // HeyGen image_key for AV4
-let CACHED_PUBLIC_IMAGE_URL = null;  // Truly public URL for PiAPI
+let CACHED_HG_IMAGE_KEY = null;  // HeyGen image_key for AV4 (safe to reuse)
 
 const KLING_BASE = 'https://api2.klingai.com';
 
@@ -589,22 +585,16 @@ async function generateWithKling(req, res, args) {
     if (PIAPI_KEY) {
       console.log('Kling via PiAPI: image2video...');
 
-      // Get a truly public URL — Imgur is free and public
-      // Cache it per server session (same image all scenes)
-      let imageUrl = CACHED_PUBLIC_IMAGE_URL;
+      // Upload fresh to Imgur for each scene.
+      // PiAPI rejects reused URLs with 500 — each task needs a unique image URL.
+      // Imgur anonymous upload is fast (~1s) and each upload gets a unique URL.
+      console.log('PiAPI: uploading image to Imgur...');
+      const imageUrl = await uploadToImgur(imageToUse);
       if (!imageUrl) {
-        console.log('PiAPI: uploading image to Imgur for public URL...');
-        imageUrl = await uploadToImgur(imageToUse);
-        if (imageUrl) {
-          CACHED_PUBLIC_IMAGE_URL = imageUrl;
-          console.log('PiAPI: Imgur URL cached:', imageUrl);
-        } else {
-          console.warn('PiAPI: Imgur upload failed — falling back to HeyGen');
-          return await generateWithHeyGen(req, res, args);
-        }
-      } else {
-        console.log('PiAPI: using cached Imgur URL:', imageUrl);
+        console.warn('PiAPI: Imgur upload failed — falling back to HeyGen');
+        return await generateWithHeyGen(req, res, args);
       }
+      console.log('PiAPI: Imgur URL:', imageUrl);
 
       const prompt = [
         'Professional TV presenter speaking to camera.',
@@ -645,30 +635,10 @@ async function generateWithKling(req, res, args) {
       }
       console.log('PiAPI Kling i2v task:', i2vTaskId);
 
-      // Poll until complete
-      let videoUrl = null;
-      for (let i = 0; i < 18; i++) {
-        await new Promise(r => setTimeout(r, 10000));
-        const poll = await fetch('https://api.piapi.ai/api/v1/task/' + i2vTaskId, { headers: { 'x-api-key': PIAPI_KEY } });
-        const pd   = await poll.json();
-        const status = pd.data?.status;
-        videoUrl     = pd.data?.output?.video_url;
-        console.log('PiAPI poll:', status, videoUrl ? 'ready' : 'waiting...');
-        if ((status === 'completed' || status === 'succeed') && videoUrl) break;
-        if (status === 'failed') {
-          const err = JSON.stringify(pd.data?.error || pd.data?.message || pd.data).slice(0, 300);
-          console.error('PiAPI task failed:', err);
-          return await generateWithHeyGen(req, res, args);
-        }
-      }
-
-      if (!videoUrl) {
-        console.error('PiAPI timed out — falling back to HeyGen');
-        return await generateWithHeyGen(req, res, args);
-      }
-
-      console.log('PiAPI Kling video ready:', videoUrl);
-      return res.json({ taskId: 'kling-done-piapi', provider: 'kling', videoUrl, done: true });
+      // Return taskId immediately — client polls /api/presenter-status
+      // Do NOT poll inline: 2-3 min block causes client timeout (BadRequestError)
+      console.log('PiAPI: returning taskId to client for polling');
+      return res.json({ taskId: 'kling-piapi-' + i2vTaskId, provider: 'kling', done: false });
 
     } else {
       // Direct Kling (geo-blocked from Railway but kept)
@@ -731,6 +701,18 @@ app.get('/api/presenter-status', async (req, res) => {
   try {
     if (taskId === 'kling-done-piapi' || taskId.startsWith('kling-done-')) {
       return res.json({ status: 'succeed', done: true, failed: false, videoUrl: req.query.videoUrl || null });
+    }
+    // PiAPI task polling — taskId format: kling-piapi-{uuid}
+    if (taskId.startsWith('kling-piapi-')) {
+      const id = taskId.replace('kling-piapi-', '');
+      const r  = await fetch('https://api.piapi.ai/api/v1/task/' + id, { headers: { 'x-api-key': PIAPI_KEY } });
+      const d  = await r.json();
+      const status   = d.data?.status;
+      const videoUrl = d.data?.output?.video_url || null;
+      const done     = status === 'completed' || status === 'succeed';
+      const failed   = status === 'failed';
+      console.log('PiAPI status poll:', id.slice(0,8), '->', status, videoUrl ? 'ready' : '');
+      return res.json({ status, videoUrl, done, failed, error: failed ? (d.data?.error_message || 'PiAPI task failed') : null });
     }
     if (taskId.startsWith('kling-')) {
       const id    = taskId.replace('kling-', '');
@@ -908,7 +890,7 @@ async function ensureAabProjectsTable() {
 }
 
 app.listen(PORT, () => {
-  console.log('AABStudio v3.6 running on port', PORT);
+  console.log('AABStudio v3.7 running on port', PORT);
   console.log('Anthropic:    ', !!process.env.ANTHROPIC_API_KEY ? '✓' : '✗ MISSING');
   console.log('ElevenLabs:   ', !!ELEVENLABS_KEY  ? '✓' : '✗ MISSING');
   console.log('HeyGen:       ', !!HEYGEN_KEY       ? '✓ (primary)' : '✗');
@@ -920,3 +902,14 @@ app.listen(PORT, () => {
   discoverHeyGenAvatar();
 });
 
+// Global error handler — catches BadRequestError from client disconnects mid-upload
+// These are harmless (client closed connection) and should not crash the server
+app.use((err, req, res, next) => {
+  if (err && (err.type === 'entity.too.large' || err.message?.includes('request aborted') || err.status === 400)) {
+    console.warn('Request error (client likely disconnected):', err.message);
+    if (!res.headersSent) res.status(400).json({ error: 'Request aborted or too large' });
+    return;
+  }
+  console.error('Unhandled error:', err?.message || err);
+  if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
+});
