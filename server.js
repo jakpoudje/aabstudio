@@ -616,7 +616,12 @@ async function generateWithKling(req, res, args) {
             cfg_scale:       0.5,
             duration:        5,
             aspect_ratio:    ratioMap[ratio] || '16:9',
-            mode:            'std'
+            mode:            'std',
+            version:         '1.6'
+          },
+          config: {
+            service_mode: 'public',
+            webhook_config: { endpoint: '', secret: '' }
           }
         })
       });
@@ -708,7 +713,7 @@ app.get('/api/presenter-status', async (req, res) => {
       const r  = await fetch('https://api.piapi.ai/api/v1/task/' + id, { headers: { 'x-api-key': PIAPI_KEY } });
       const d  = await r.json();
       const status   = d.data?.status;
-      const videoUrl = d.data?.output?.video_url || null;
+      const videoUrl = d.data?.output?.works?.[0]?.video?.resource_without_watermark || d.data?.output?.works?.[0]?.video?.resource || d.data?.output?.video_url || null;
       const done     = status === 'completed' || status === 'succeed';
       const failed   = status === 'failed';
       console.log('PiAPI status poll:', id.slice(0,8), '->', status, videoUrl ? 'ready' : '');
