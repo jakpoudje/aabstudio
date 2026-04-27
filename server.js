@@ -1,54 +1,59 @@
 'use strict';
 /*
-  AABStudio.ai — Server v3.5
+  AABStudio.ai — Server v3.6
   Fixed:
-  - Voice: uses voiceId sent from frontend (APS.settings.voiceId), not server-discovered voice
-  - HeyGen AV4: audio_asset_id top-level, voice only has voice_id
-  - HeyGen v2 fallback: background is color (not image_key)
-  - PiAPI/Kling: uploads image to HeyGen first to get a public URL, then passes to PiAPI
-  - All frontend selections wired: framing, gesture, shot, motion, voiceGender, ratio, provider
+  - PiAPI image: upload to Imgur (free, truly public CDN) instead of HeyGen CDN (private)
+  - BadRequestError request aborted: moved stripe raw body route AFTER json middleware
+    with a bodyParser exclusion, and bumped json limit to 30mb
+  - Voice: uses voiceId from frontend exactly
+  - HeyGen AV4: audio_asset_id top-level, voice only has voice_id for lip-sync
+  - HeyGen v2 fallback: color background (not image_key)
+  - All side panel selections wired through
 */
-const sharp     = require('sharp');
-const express   = require('express');
-const cors      = require('cors');
-const Anthropic  = require('@anthropic-ai/sdk');
+const sharp    = require('sharp');
+const express  = require('express');
+const cors     = require('cors');
+const Anthropic = require('@anthropic-ai/sdk');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-const corsOpts = {
-  origin: '*',
-  methods: ['GET','POST','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization']
-};
+const corsOpts = { origin: '*', methods: ['GET','POST','DELETE','OPTIONS'], allowedHeaders: ['Content-Type','Authorization'] };
 app.use(cors(corsOpts));
 app.options('*', cors(corsOpts));
 
-// Stripe webhook — raw body must come before json middleware
-app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-  const sig    = req.headers['stripe-signature'];
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!secret) return res.json({ received: true });
-  try {
-    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-    const event  = stripe.webhooks.constructEvent(req.body, sig, secret);
-    const obj    = event.data.object;
-    if (event.type === 'checkout.session.completed') {
-      const email   = obj.customer_email || obj.customer_details?.email;
-      const priceId = obj.line_items?.data?.[0]?.price?.id;
-      const plan    = PRICE_TO_PLAN[priceId] || 'creator';
-      if (email) await updateUserPlan(email, plan);
-    }
-    if (event.type === 'customer.subscription.deleted') {
-      const s2 = require('stripe')(process.env.STRIPE_SECRET_KEY);
-      const c  = await s2.customers.retrieve(obj.customer);
-      if (c.email) await updateUserPlan(c.email, 'free');
-    }
-    res.json({ received: true });
-  } catch(e) { res.status(400).send('Webhook error: ' + e.message); }
-});
+// Stripe webhook — MUST use raw body, skip JSON middleware for this route
+app.post('/api/stripe/webhook',
+  express.raw({ type: 'application/json' }),
+  async (req, res) => {
+    const sig    = req.headers['stripe-signature'];
+    const secret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!secret) return res.json({ received: true });
+    try {
+      const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+      const event  = stripe.webhooks.constructEvent(req.body, sig, secret);
+      const obj    = event.data.object;
+      if (event.type === 'checkout.session.completed') {
+        const email   = obj.customer_email || obj.customer_details?.email;
+        const priceId = obj.line_items?.data?.[0]?.price?.id;
+        const plan    = PRICE_TO_PLAN[priceId] || 'creator';
+        if (email) await updateUserPlan(email, plan);
+      }
+      if (event.type === 'customer.subscription.deleted') {
+        const s2 = require('stripe')(process.env.STRIPE_SECRET_KEY);
+        const c  = await s2.customers.retrieve(obj.customer);
+        if (c.email) await updateUserPlan(c.email, 'free');
+      }
+      res.json({ received: true });
+    } catch(e) { res.status(400).send('Webhook error: ' + e.message); }
+  }
+);
 
-app.use(express.json({ limit: '25mb' }));
+// JSON body parser — 30mb to handle base64 images
+app.use((req, res, next) => {
+  if (req.path === '/api/stripe/webhook') return next();
+  express.json({ limit: '30mb' })(req, res, next);
+});
 
 function getSupaAdmin() {
   const { createClient } = require('@supabase/supabase-js');
@@ -90,10 +95,7 @@ function checkRate(req, res) {
   if (rateCounts[ip].count > 10) { res.status(429).json({ error: 'Too many requests' }); return false; }
   return true;
 }
-setInterval(() => {
-  const n = Date.now();
-  Object.keys(rateCounts).forEach(ip => { if (rateCounts[ip].reset < n) delete rateCounts[ip]; });
-}, 300000);
+setInterval(() => { const n = Date.now(); Object.keys(rateCounts).forEach(ip => { if (rateCounts[ip].reset < n) delete rateCounts[ip]; }); }, 300000);
 
 const anthropic      = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const ELEVENLABS_KEY = process.env.ELEVENLABS_API_KEY;
@@ -104,15 +106,17 @@ const KLING_SK       = process.env.KLING_SECRET_KEY;
 const RUNWAY_KEY     = process.env.RUNWAY_API_KEY;
 const CREATOMATE_KEY = process.env.CREATOMATE_API_KEY;
 const STRIPE_KEY     = process.env.STRIPE_SECRET_KEY;
+// Imgur client ID — free, no auth needed, images are truly public
+const IMGUR_CLIENT_ID = process.env.IMGUR_CLIENT_ID || '546c25a59c58ad7';
+
 const MODEL          = 'claude-sonnet-4-6';
 const MODEL_FALLBACK = 'claude-sonnet-4-5-20250929';
 
-// HeyGen defaults — overridden by frontend voice selection
 let HG_AVATAR_ID = process.env.HEYGEN_AVATAR_ID || 'Anna_public_3_20240108';
 
-// Session caches
-let CACHED_HG_IMAGE_KEY = null;  // image/abc/original.jpg  — for AV4
-let CACHED_HG_IMAGE_URL = null;  // public URL returned by AV4 or status — for PiAPI
+// Session cache — reset on restart
+let CACHED_HG_IMAGE_KEY    = null;  // HeyGen image_key for AV4
+let CACHED_PUBLIC_IMAGE_URL = null;  // Truly public URL for PiAPI
 
 const KLING_BASE = 'https://api2.klingai.com';
 
@@ -126,13 +130,45 @@ function buildKlingJWT() {
   return `${header}.${payload}.${sig}`;
 }
 
+// ── Upload image to Imgur → get public URL ────────────────────────────────────
+// Imgur is free, no signup needed for anonymous uploads, images are truly public CDN
+async function uploadToImgur(base64Image) {
+  try {
+    const r = await fetch('https://api.imgur.com/3/image', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Client-ID ' + IMGUR_CLIENT_ID,
+        'Content-Type':  'application/json'
+      },
+      body: JSON.stringify({ image: base64Image, type: 'base64' })
+    });
+    if (!r.ok) {
+      const e = await r.text();
+      throw new Error('Imgur upload failed: ' + r.status + ' ' + e.slice(0, 200));
+    }
+    const d = await r.json();
+    const url = d.data?.link;
+    if (!url) throw new Error('Imgur: no link in response');
+    console.log('Imgur upload OK:', url);
+    return url;
+  } catch(e) {
+    console.warn('uploadToImgur failed:', e.message);
+    return null;
+  }
+}
+
 // ── Health ────────────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({
-  status: 'ok', version: '3.5',
-  anthropic: !!process.env.ANTHROPIC_API_KEY, elevenlabs: !!ELEVENLABS_KEY,
-  heygen: !!HEYGEN_KEY, kling_piapi: !!PIAPI_KEY,
-  kling_direct: !!(KLING_AK && KLING_SK), runway: !!RUNWAY_KEY,
-  creatomate: !!CREATOMATE_KEY, stripe: !!STRIPE_KEY
+  status: 'ok', version: '3.6',
+  anthropic: !!process.env.ANTHROPIC_API_KEY,
+  elevenlabs: !!ELEVENLABS_KEY,
+  heygen: !!HEYGEN_KEY,
+  kling_piapi: !!PIAPI_KEY,
+  kling_direct: !!(KLING_AK && KLING_SK),
+  runway: !!RUNWAY_KEY,
+  creatomate: !!CREATOMATE_KEY,
+  stripe: !!STRIPE_KEY,
+  imgur: !!IMGUR_CLIENT_ID
 }));
 
 // ── Project CRUD ──────────────────────────────────────────────────────────────
@@ -238,12 +274,7 @@ app.post('/api/creatomate/stitch', async (req, res) => {
     const elements = []; let time = 0;
     clips.forEach((clip, i) => {
       elements.push({ type: 'video', source: clip.url, time, duration: clip.duration || 8, fit: 'cover', volume: 1 });
-      if (subtitles[i]) elements.push({
-        type: 'text', text: subtitles[i], time, duration: clip.duration || 8,
-        x: '50%', y: '88%', width: '85%', font_size: '5 vmin', font_weight: '600',
-        color: '#ffffff', background_color: 'rgba(0,0,0,0.68)', font_family: 'Open Sans',
-        x_anchor: '50%', y_anchor: '100%'
-      });
+      if (subtitles[i]) elements.push({ type: 'text', text: subtitles[i], time, duration: clip.duration || 8, x: '50%', y: '88%', width: '85%', font_size: '5 vmin', font_weight: '600', color: '#ffffff', background_color: 'rgba(0,0,0,0.68)', font_family: 'Open Sans', x_anchor: '50%', y_anchor: '100%' });
       time += (clip.duration || 8);
     });
     if (musicUrl) elements.push({ type: 'audio', source: musicUrl, time: 0, duration: time, volume: 0.25, audio_fade_out: 3 });
@@ -262,9 +293,7 @@ app.post('/api/creatomate/stitch', async (req, res) => {
 app.get('/api/creatomate/status/:renderId', async (req, res) => {
   try {
     if (!CREATOMATE_KEY) return res.status(503).json({ error: 'CREATOMATE_API_KEY not configured' });
-    const r = await fetch('https://api.creatomate.com/v1/renders/' + req.params.renderId, {
-      headers: { 'Authorization': 'Bearer ' + CREATOMATE_KEY }
-    });
+    const r = await fetch('https://api.creatomate.com/v1/renders/' + req.params.renderId, { headers: { 'Authorization': 'Bearer ' + CREATOMATE_KEY } });
     const data = await r.json();
     res.json({ taskId: req.params.renderId, status: data.status, progress: data.percent || 0, outputUrl: data.url || null, provider: 'creatomate' });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -273,13 +302,13 @@ app.get('/api/creatomate/status/:renderId', async (req, res) => {
 // ── Sharp compositing ─────────────────────────────────────────────────────────
 async function generateStudioBackground(studioType, W, H) {
   const configs = {
-    'news-studio': { base: [8,18,60],   accent: [20,60,180],  desk: true  },
-    'podcast':     { base: [12,4,28],   accent: [80,20,120],  desk: false },
-    'office':      { base: [10,20,10],  accent: [20,100,40],  desk: false },
-    'classroom':   { base: [20,18,8],   accent: [100,90,20],  desk: true  },
-    'courtroom':   { base: [25,12,4],   accent: [120,60,20],  desk: true  },
-    'documentary': { base: [5,5,5],     accent: [60,10,10],   desk: false },
-    'cooking':     { base: [8,22,8],    accent: [40,130,20],  desk: true  },
+    'news-studio': { base: [8,18,60],  accent: [20,60,180],  desk: true  },
+    'podcast':     { base: [12,4,28],  accent: [80,20,120],  desk: false },
+    'office':      { base: [10,20,10], accent: [20,100,40],  desk: false },
+    'classroom':   { base: [20,18,8],  accent: [100,90,20],  desk: true  },
+    'courtroom':   { base: [25,12,4],  accent: [120,60,20],  desk: true  },
+    'documentary': { base: [5,5,5],    accent: [60,10,10],   desk: false },
+    'cooking':     { base: [8,22,8],   accent: [40,130,20],  desk: true  },
   };
   const cfg = configs[studioType] || configs['news-studio'];
   const [br, bg_, bb] = cfg.base, [ar, ag, ab] = cfg.accent;
@@ -349,34 +378,21 @@ async function buildSceneImage(presenterB64, bgB64, framingStyle, ratio) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// AI PRESENTER — main route
+// AI PRESENTER
 // ══════════════════════════════════════════════════════════════════════════════
 app.post('/api/presenter', async (req, res) => {
   try {
     const {
-      // Core
-      audioBase64,
-      referenceImageBase64,
-      customBgBase64,
-      // Studio
+      audioBase64, referenceImageBase64, customBgBase64,
       studioType, bgType,
       ratio         = '16:9',
-      // Presenter selections from side panel
-      framingStyle,
-      framing,
-      gestureStyle,
-      gesture,
-      shotType,
-      shot,
-      motionStyle,
-      motion,
+      framingStyle, framing,
+      gestureStyle,  gesture,
+      shotType,      shot,
+      motionStyle,   motion,
       voiceGender,
-      // Scene
       sceneText     = '',
-      sceneNum,
-      sceneTotal,
-      duration,
-      // Provider
+      sceneNum, sceneTotal, duration,
       provider: requestedProvider = null,
     } = req.body;
 
@@ -385,9 +401,8 @@ app.post('/api/presenter', async (req, res) => {
 
     if (!audioBase64) return res.status(400).json({ error: 'audioBase64 required' });
 
-    console.log(`\n=== AI Presenter v3.5 | bg:${bgTypeResolved} | provider:${requestedProvider} | ratio:${ratio} | framing:${framingResolved} | gender:${voiceGender||'?'} | scene:${sceneNum||'?'}/${sceneTotal||'?'}`);
+    console.log(`\n=== AI Presenter v3.6 | bg:${bgTypeResolved} | provider:${requestedProvider} | ratio:${ratio} | framing:${framingResolved} | gender:${voiceGender||'?'} | scene:${sceneNum||'?'}/${sceneTotal||'?'}`);
 
-    // Build composited scene image (presenter on background)
     const bgB64 = await getStudioBackgroundB64(bgTypeResolved, customBgBase64, ratio);
     let compositeImageB64 = null;
     try {
@@ -398,7 +413,6 @@ app.post('/api/presenter', async (req, res) => {
       compositeImageB64 = referenceImageBase64 || bgB64;
     }
 
-    // Choose provider
     const hasHeygen = !!HEYGEN_KEY;
     const hasKling  = !!(PIAPI_KEY || (KLING_AK && KLING_SK));
     const hasRunway = !!RUNWAY_KEY;
@@ -408,25 +422,18 @@ app.post('/api/presenter', async (req, res) => {
     if (chosen === 'heygen' && !hasHeygen) chosen = null;
     if (chosen === 'runway' && !hasRunway) chosen = null;
     if (!chosen) chosen = hasHeygen ? 'heygen' : hasKling ? 'kling' : hasRunway ? 'runway' : null;
-
     if (!chosen) return res.status(503).json({ error: 'No video provider configured.' });
     console.log('Provider chosen:', chosen);
 
     const args = {
-      compositeImageB64,
-      referenceImageBase64,
-      audioBase64,
-      ratio,
+      compositeImageB64, referenceImageBase64, audioBase64, ratio,
       framing:  framingResolved,
       gesture:  gestureStyle || gesture || 'professional',
       shot:     shotType || shot || 'medium',
       motion:   motionStyle || motion || 'static',
       gender:   voiceGender || 'unknown',
       studioType: bgTypeResolved,
-      sceneText,
-      sceneNum,
-      sceneTotal,
-      duration
+      sceneText, sceneNum, sceneTotal, duration
     };
 
     if (chosen === 'heygen') return await generateWithHeyGen(req, res, args);
@@ -439,33 +446,17 @@ app.post('/api/presenter', async (req, res) => {
   }
 });
 
-// ══════════════════════════════════════════════════════════════════════════════
-// VOICE — ElevenLabs TTS
-// Frontend sends: voiceId (from APS.settings.voiceId, e.g. pNInz6obpgDQGcFmaJgB)
-// Server uses that exact voiceId — does NOT override with its own
-// ══════════════════════════════════════════════════════════════════════════════
+// ── ElevenLabs voice ──────────────────────────────────────────────────────────
 app.post('/api/voice', async (req, res) => {
   try {
-    const {
-      text,
-      voiceId       = 'EXAVITQu4vr4xnSDxMaL',  // fallback only if none sent
-      stability     = 0.5,
-      similarityBoost = 0.75,
-      style         = 0.3
-    } = req.body;
+    const { text, voiceId = 'EXAVITQu4vr4xnSDxMaL', stability = 0.5, similarityBoost = 0.75, style = 0.3 } = req.body;
     if (!text)           return res.status(400).json({ error: 'No text provided.' });
     if (!ELEVENLABS_KEY) return res.status(503).json({ error: 'ElevenLabs API key not configured.' });
-
     console.log('ElevenLabs TTS | voice:', voiceId, '| chars:', text.length);
-
     const r = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + voiceId, {
       method: 'POST',
       headers: { 'xi-api-key': ELEVENLABS_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text,
-        model_id: 'eleven_multilingual_v2',
-        voice_settings: { stability, similarity_boost: similarityBoost, style, use_speaker_boost: true }
-      })
+      body: JSON.stringify({ text, model_id: 'eleven_multilingual_v2', voice_settings: { stability, similarity_boost: similarityBoost, style, use_speaker_boost: true } })
     });
     if (!r.ok) throw new Error('ElevenLabs ' + r.status + ' ' + (await r.text()).slice(0, 200));
     const buf = await r.arrayBuffer();
@@ -474,15 +465,9 @@ app.post('/api/voice', async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// HEYGEN — Avatar IV + v2 fallback
-//
-// AV4 correct payload:
-//   { video_title, image_key, voice:{ voice_id }, audio_asset_id, script, aspect_ratio }
-//   audio_asset_id is TOP-LEVEL — not inside voice
-//
-// v2 fallback correct payload:
-//   { video_inputs:[{ character, voice:{ type:'audio', audio_asset_id }, background:{ type:'color' } }] }
-//   background uses color — NOT image_key (different asset system)
+// HEYGEN
+// AV4: audio_asset_id TOP-LEVEL (not in voice), voice only has voice_id
+// v2 fallback: background color (not image_key — different asset system)
 // ══════════════════════════════════════════════════════════════════════════════
 async function generateWithHeyGen(req, res, args) {
   const { compositeImageB64, referenceImageBase64, audioBase64, ratio, sceneText, gender } = args;
@@ -490,126 +475,91 @@ async function generateWithHeyGen(req, res, args) {
     if (!HEYGEN_KEY) throw new Error('HEYGEN_API_KEY not configured');
     const H = { 'X-Api-Key': HEYGEN_KEY };
 
-    // Step 1: Upload audio → audio_asset_id
+    // Upload audio
     const audioBuf = Buffer.from(audioBase64, 'base64');
     console.log('HeyGen: uploading audio', audioBuf.length, 'bytes...');
     const audioResp = await fetch('https://upload.heygen.com/v1/asset', {
-      method: 'POST',
-      headers: { ...H, 'Content-Type': 'audio/mpeg' },
-      body: audioBuf
+      method: 'POST', headers: { ...H, 'Content-Type': 'audio/mpeg' }, body: audioBuf
     });
-    if (!audioResp.ok) {
-      const e = await audioResp.text();
-      throw new Error('HeyGen audio upload: ' + audioResp.status + ' — ' + e.slice(0, 300));
-    }
+    if (!audioResp.ok) throw new Error('HeyGen audio upload: ' + audioResp.status + ' — ' + (await audioResp.text()).slice(0, 300));
     const audioData    = await audioResp.json();
     const audioAssetId = audioData.data?.id || audioData.data?.asset_id;
     if (!audioAssetId) throw new Error('HeyGen: no audio asset_id. ' + JSON.stringify(audioData).slice(0, 200));
     console.log('HeyGen audio_asset_id:', audioAssetId);
 
-    // Step 2: Upload presenter image → image_key (cached per session)
+    // Upload image → image_key (cached)
     const imageToUse = compositeImageB64 || referenceImageBase64;
     let imageKey = CACHED_HG_IMAGE_KEY;
-
     if (!imageKey && imageToUse) {
       const imgBuf = Buffer.from(imageToUse, 'base64');
       console.log('HeyGen: uploading image', imgBuf.length, 'bytes...');
       const imgResp = await fetch('https://upload.heygen.com/v1/asset', {
-        method: 'POST',
-        headers: { ...H, 'Content-Type': 'image/jpeg' },
-        body: imgBuf
+        method: 'POST', headers: { ...H, 'Content-Type': 'image/jpeg' }, body: imgBuf
       });
       if (imgResp.ok) {
         const imgData = await imgResp.json();
         imageKey = imgData.data?.image_key || imgData.data?.id;
-        if (imageKey) {
-          CACHED_HG_IMAGE_KEY = imageKey;
-          console.log('HeyGen image_key:', imageKey);
-        }
-      } else {
-        console.warn('HeyGen image upload failed:', imgResp.status);
-      }
-    } else if (imageKey) {
-      console.log('HeyGen: cached image_key:', imageKey);
-    }
+        if (imageKey) { CACHED_HG_IMAGE_KEY = imageKey; console.log('HeyGen image_key:', imageKey); }
+      } else { console.warn('HeyGen image upload failed:', imgResp.status); }
+    } else if (imageKey) { console.log('HeyGen: cached image_key:', imageKey); }
 
-    // Step 3: Pick a HeyGen voice that matches the requested gender
-    // Uses voice list to find a matching voice — doesn't hardcode IDs
+    // Pick a HeyGen voice matching requested gender
     let hgVoiceId = null;
     try {
       const vr = await fetch('https://api.heygen.com/v2/voices', { headers: H });
       if (vr.ok) {
         const vd     = await vr.json();
         const voices = vd.data?.voices || vd.data || [];
-        const wantMale = gender === 'male' || !gender || gender === 'unknown';
-        // Try to match gender, language English first
+        const wantMale = gender !== 'female';
         const found =
           voices.find(v => v.language === 'English' && v.gender === (wantMale ? 'male' : 'female')) ||
           voices.find(v => v.gender === (wantMale ? 'male' : 'female')) ||
           voices.find(v => v.language === 'English') ||
           voices[0];
-        if (found) {
-          hgVoiceId = found.voice_id;
-          console.log('HeyGen voice:', found.name || found.voice_id, '| gender:', found.gender);
-        }
+        if (found) { hgVoiceId = found.voice_id; console.log('HeyGen voice:', found.name || found.voice_id, '| gender:', found.gender); }
       }
     } catch(e) { console.warn('HeyGen voice discovery:', e.message); }
+    if (!hgVoiceId) hgVoiceId = '2d5b0e6cf36f460aa7fc47e3eee4ba54';
 
-    if (!hgVoiceId) hgVoiceId = '2d5b0e6cf36f460aa7fc47e3eee4ba54'; // last-resort fallback
-
-    // Step 4a: Avatar IV
+    // AV4 — audio_asset_id TOP-LEVEL, voice only has voice_id
     if (imageKey) {
       console.log('HeyGen: Avatar IV...');
       const av4Payload = {
         video_title:    'AABStudio Scene',
         image_key:      imageKey,
-        voice: {
-          voice_id: hgVoiceId  // HeyGen voice for lip-sync timing
-        },
-        audio_asset_id: audioAssetId,  // TOP-LEVEL — the actual audio content
+        voice:          { voice_id: hgVoiceId },
+        audio_asset_id: audioAssetId,     // TOP-LEVEL
         script:         sceneText || 'Presenting.',
         aspect_ratio:   ratio || '16:9'
       };
-      console.log('HeyGen AV4 payload (first 300):', JSON.stringify(av4Payload).slice(0, 300));
-
       const av4Resp = await fetch('https://api.heygen.com/v2/video/av4/generate', {
-        method: 'POST',
-        headers: { ...H, 'Content-Type': 'application/json' },
-        body: JSON.stringify(av4Payload)
+        method: 'POST', headers: { ...H, 'Content-Type': 'application/json' }, body: JSON.stringify(av4Payload)
       });
       if (av4Resp.ok) {
         const av4Data = await av4Resp.json();
         const videoId = av4Data.data?.video_id || av4Data.video_id;
-        if (videoId) {
-          console.log('HeyGen AV4 video_id:', videoId);
-          return res.json({ taskId: 'heygen-' + videoId, provider: 'heygen', engine: 'av4' });
-        }
+        if (videoId) { console.log('HeyGen AV4 video_id:', videoId); return res.json({ taskId: 'heygen-' + videoId, provider: 'heygen', engine: 'av4' }); }
         console.warn('HeyGen AV4 no video_id:', JSON.stringify(av4Data).slice(0, 300));
       } else {
-        const e = await av4Resp.text();
-        console.warn('HeyGen AV4 failed:', av4Resp.status, e.slice(0, 400));
+        console.warn('HeyGen AV4 failed:', av4Resp.status, (await av4Resp.text()).slice(0, 400));
       }
     }
 
-    // Step 4b: v2 fallback — use a public avatar, color background
+    // v2 fallback — color background (NOT image_key)
     console.log('HeyGen: v2/video/generate fallback...');
     const v2Resp = await fetch('https://api.heygen.com/v2/video/generate', {
-      method: 'POST',
-      headers: { ...H, 'Content-Type': 'application/json' },
+      method: 'POST', headers: { ...H, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         video_inputs: [{
-          character: { type: 'avatar', avatar_id: HG_AVATAR_ID, avatar_style: 'normal' },
-          voice:     { type: 'audio', audio_asset_id: audioAssetId },
-          background: { type: 'color', value: '#1a2035' }  // color NOT image_key
+          character:  { type: 'avatar', avatar_id: HG_AVATAR_ID, avatar_style: 'normal' },
+          voice:      { type: 'audio', audio_asset_id: audioAssetId },
+          background: { type: 'color', value: '#1a2035' }
         }],
         aspect_ratio: ratio || '16:9',
         test: false
       })
     });
-    if (!v2Resp.ok) {
-      const e = await v2Resp.text();
-      throw new Error('HeyGen v2 failed: ' + v2Resp.status + ' — ' + e.slice(0, 400));
-    }
+    if (!v2Resp.ok) throw new Error('HeyGen v2 failed: ' + v2Resp.status + ' — ' + (await v2Resp.text()).slice(0, 400));
     const v2Data  = await v2Resp.json();
     const videoId = v2Data.data?.video_id || v2Data.video_id;
     if (!videoId) throw new Error('HeyGen v2: no video_id. ' + JSON.stringify(v2Data).slice(0, 300));
@@ -624,12 +574,12 @@ async function generateWithHeyGen(req, res, args) {
 
 // ══════════════════════════════════════════════════════════════════════════════
 // KLING via PiAPI
-// PiAPI requires a real hosted URL for image_url, not a base64 data URI.
-// Fix: upload the image to HeyGen first → get image_key → use HeyGen CDN URL.
-// PiAPI model: 'kling-v1-5', task_type: 'video_generation'
+// PiAPI needs a TRULY PUBLIC image URL (not HeyGen CDN which is private).
+// Strategy: upload to Imgur (free anonymous upload, public CDN).
+// Fallback: if Imgur fails, fall back to HeyGen.
 // ══════════════════════════════════════════════════════════════════════════════
 async function generateWithKling(req, res, args) {
-  const { compositeImageB64, referenceImageBase64, audioBase64, ratio, sceneText, gender } = args;
+  const { compositeImageB64, referenceImageBase64, audioBase64, ratio, gesture } = args;
   try {
     const imageToUse = compositeImageB64 || referenceImageBase64;
     if (!imageToUse) return await generateWithHeyGen(req, res, args);
@@ -639,54 +589,29 @@ async function generateWithKling(req, res, args) {
     if (PIAPI_KEY) {
       console.log('Kling via PiAPI: image2video...');
 
-      // PiAPI needs a hosted URL. Upload to HeyGen to get one.
-      let imageUrl = CACHED_HG_IMAGE_URL;
-      if (!imageUrl && HEYGEN_KEY) {
-        try {
-          const imgBuf = Buffer.from(imageToUse, 'base64');
-          console.log('PiAPI: uploading image to HeyGen for hosted URL...');
-          const imgResp = await fetch('https://upload.heygen.com/v1/asset', {
-            method: 'POST',
-            headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'image/jpeg' },
-            body: imgBuf
-          });
-          if (imgResp.ok) {
-            const imgData = await imgResp.json();
-            // Store image_key for AV4 too
-            const imageKey = imgData.data?.image_key || imgData.data?.id;
-            if (imageKey) {
-              CACHED_HG_IMAGE_KEY = imageKey;
-              // Construct HeyGen CDN URL from image_key
-              imageUrl = `https://resource.heygen.com/${imageKey}`;
-              CACHED_HG_IMAGE_URL = imageUrl;
-              console.log('PiAPI: got hosted image URL:', imageUrl);
-            }
-          }
-        } catch(e) { console.warn('PiAPI image upload to HeyGen failed:', e.message); }
-      } else if (imageUrl) {
-        console.log('PiAPI: using cached image URL:', imageUrl);
+      // Get a truly public URL — Imgur is free and public
+      // Cache it per server session (same image all scenes)
+      let imageUrl = CACHED_PUBLIC_IMAGE_URL;
+      if (!imageUrl) {
+        console.log('PiAPI: uploading image to Imgur for public URL...');
+        imageUrl = await uploadToImgur(imageToUse);
+        if (imageUrl) {
+          CACHED_PUBLIC_IMAGE_URL = imageUrl;
+          console.log('PiAPI: Imgur URL cached:', imageUrl);
+        } else {
+          console.warn('PiAPI: Imgur upload failed — falling back to HeyGen');
+          return await generateWithHeyGen(req, res, args);
+        }
+      } else {
+        console.log('PiAPI: using cached Imgur URL:', imageUrl);
       }
 
-      // If still no URL, try imgbb as a free host
-      if (!imageUrl) {
-        try {
-          const FormData = require('form-data');
-          const form = new FormData();
-          form.append('key', '2e0ab31b85fba3a9b9b0ab3124ab64ef'); // public imgbb demo key
-          form.append('image', imageToUse);
-          const iR = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: form });
-          if (iR.ok) {
-            const iD = await iR.json();
-            imageUrl = iD.data?.url;
-            if (imageUrl) console.log('PiAPI: imgbb URL:', imageUrl);
-          }
-        } catch(e) { console.warn('imgbb upload failed:', e.message); }
-      }
-
-      if (!imageUrl) {
-        console.warn('PiAPI: no hosted URL available — falling back to HeyGen');
-        return await generateWithHeyGen(req, res, args);
-      }
+      const prompt = [
+        'Professional TV presenter speaking to camera.',
+        gesture && gesture !== 'professional' ? gesture + ' delivery style.' : 'Professional calm delivery.',
+        'Natural head movement. Realistic breathing. Subtle body language.',
+        'Broadcast quality studio video. Photorealistic. No watermarks.'
+      ].join(' ');
 
       const i2vResp = await fetch('https://api.piapi.ai/api/v1/task', {
         method: 'POST',
@@ -696,8 +621,8 @@ async function generateWithKling(req, res, args) {
           task_type: 'video_generation',
           input: {
             image_url:       imageUrl,
-            prompt:          `Professional TV presenter speaking to camera. ${args.gesture || 'Professional calm'} delivery. Natural head movement. Realistic breathing. Broadcast quality studio video.`,
-            negative_prompt: 'blurry, static, low quality, watermark, text, frozen, distorted',
+            prompt:          prompt,
+            negative_prompt: 'blurry, static, low quality, watermark, text, frozen, distorted face, bad lips',
             cfg_scale:       0.5,
             duration:        5,
             aspect_ratio:    ratioMap[ratio] || '16:9',
@@ -720,20 +645,19 @@ async function generateWithKling(req, res, args) {
       }
       console.log('PiAPI Kling i2v task:', i2vTaskId);
 
-      // Poll until complete (max 3 min)
+      // Poll until complete
       let videoUrl = null;
       for (let i = 0; i < 18; i++) {
         await new Promise(r => setTimeout(r, 10000));
-        const poll = await fetch('https://api.piapi.ai/api/v1/task/' + i2vTaskId, {
-          headers: { 'x-api-key': PIAPI_KEY }
-        });
-        const pd     = await poll.json();
+        const poll = await fetch('https://api.piapi.ai/api/v1/task/' + i2vTaskId, { headers: { 'x-api-key': PIAPI_KEY } });
+        const pd   = await poll.json();
         const status = pd.data?.status;
         videoUrl     = pd.data?.output?.video_url;
         console.log('PiAPI poll:', status, videoUrl ? 'ready' : 'waiting...');
         if ((status === 'completed' || status === 'succeed') && videoUrl) break;
         if (status === 'failed') {
-          console.error('PiAPI task failed:', JSON.stringify(pd.data?.error || pd.data).slice(0, 200));
+          const err = JSON.stringify(pd.data?.error || pd.data?.message || pd.data).slice(0, 300);
+          console.error('PiAPI task failed:', err);
           return await generateWithHeyGen(req, res, args);
         }
       }
@@ -747,41 +671,29 @@ async function generateWithKling(req, res, args) {
       return res.json({ taskId: 'kling-done-piapi', provider: 'kling', videoUrl, done: true });
 
     } else {
-      // Direct Kling API (geo-blocked from Railway but kept as option)
-      console.log('Kling direct API...');
+      // Direct Kling (geo-blocked from Railway but kept)
       const token = buildKlingJWT();
       if (!token) return await generateWithHeyGen(req, res, args);
-
       const i2vResp = await fetch(KLING_BASE + '/v1/images/image2video', {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model_name: 'kling-v1-5', mode: 'pro', duration: '5',
-          aspect_ratio: ratioMap[ratio] || '16:9',
-          image: 'data:image/jpeg;base64,' + imageToUse,
-          prompt: 'Professional TV presenter speaking to camera. Natural head movement. Broadcast quality.'
-        })
+        body: JSON.stringify({ model_name: 'kling-v1-5', mode: 'std', duration: '5', aspect_ratio: ratioMap[ratio] || '16:9', image: 'data:image/jpeg;base64,' + imageToUse, prompt: 'Professional TV presenter speaking to camera. Natural head movement.' })
       }).catch(e => { throw new Error('Kling direct blocked: ' + e.message); });
-
-      if (!i2vResp.ok) { console.error('Kling direct failed:', i2vResp.status); return await generateWithHeyGen(req, res, args); }
-      const i2vData   = await i2vResp.json();
-      const i2vTaskId = i2vData.data?.task_id;
-      if (!i2vTaskId) return await generateWithHeyGen(req, res, args);
-
+      if (!i2vResp.ok) return await generateWithHeyGen(req, res, args);
+      const i2vData = await i2vResp.json();
+      const taskId  = i2vData.data?.task_id;
+      if (!taskId) return await generateWithHeyGen(req, res, args);
       let videoUrl = null;
       for (let i = 0; i < 18; i++) {
         await new Promise(r => setTimeout(r, 10000));
-        const poll = await fetch(KLING_BASE + '/v1/images/image2video/' + i2vTaskId, { headers: { 'Authorization': 'Bearer ' + buildKlingJWT() } });
+        const poll = await fetch(KLING_BASE + '/v1/images/image2video/' + taskId, { headers: { 'Authorization': 'Bearer ' + buildKlingJWT() } });
         const pd   = await poll.json();
-        const stat = pd.data?.task_status;
-        videoUrl   = pd.data?.task_result?.videos?.[0]?.url;
-        if (stat === 'succeed' && videoUrl) break;
-        if (stat === 'failed') throw new Error('Kling i2v failed');
+        if (pd.data?.task_status === 'succeed') { videoUrl = pd.data.task_result?.videos?.[0]?.url; break; }
+        if (pd.data?.task_status === 'failed') break;
       }
-      if (!videoUrl) throw new Error('Kling direct timed out');
-      return res.json({ taskId: 'kling-done-' + i2vTaskId, provider: 'kling', videoUrl, done: true });
+      if (!videoUrl) return await generateWithHeyGen(req, res, args);
+      return res.json({ taskId: 'kling-done-' + taskId, provider: 'kling', videoUrl, done: true });
     }
-
   } catch(e) {
     console.error('generateWithKling:', e.message);
     if (HEYGEN_KEY) return await generateWithHeyGen(req, res, args);
@@ -800,38 +712,25 @@ async function generateWithRunway(req, res, args) {
     const r = await fetch('https://api.dev.runwayml.com/v1/image_to_video', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + RUNWAY_KEY, 'Content-Type': 'application/json', 'X-Runway-Version': '2024-11-06' },
-      body: JSON.stringify({
-        promptImage: 'data:image/jpeg;base64,' + imageToUse,
-        model:       'gen4_turbo',
-        promptText:  'Professional TV presenter speaking to camera. Natural head movement. High quality broadcast video.',
-        ratio:       ratioMap[ratio] || '1280:768',
-        duration:    10
-      })
+      body: JSON.stringify({ promptImage: 'data:image/jpeg;base64,' + imageToUse, model: 'gen4_turbo', promptText: 'Professional TV presenter speaking to camera. Natural movement. Broadcast quality.', ratio: ratioMap[ratio] || '1280:768', duration: 10 })
     });
     if (!r.ok) throw new Error('Runway: ' + r.status + ' ' + (await r.text()).slice(0, 200));
     const data = await r.json();
     if (!data.id) throw new Error('Runway: no task id');
-    return res.json({ taskId: 'runway-' + data.id, provider: 'runway', composited: true });
+    return res.json({ taskId: 'runway-' + data.id, provider: 'runway' });
   } catch(e) {
     console.error('generateWithRunway:', e.message);
     return res.status(500).json({ error: e.message });
   }
 }
 
-// ── Presenter status polling ──────────────────────────────────────────────────
+// ── Status polling ────────────────────────────────────────────────────────────
 app.get('/api/presenter-status', async (req, res) => {
   const { taskId } = req.query;
   if (!taskId) return res.status(400).json({ error: 'taskId required' });
   try {
     if (taskId === 'kling-done-piapi' || taskId.startsWith('kling-done-')) {
       return res.json({ status: 'succeed', done: true, failed: false, videoUrl: req.query.videoUrl || null });
-    }
-    if (taskId.startsWith('kling-piapi-')) {
-      const id = taskId.replace('kling-piapi-', '');
-      const r  = await fetch('https://api.piapi.ai/api/v1/task/' + id, { headers: { 'x-api-key': PIAPI_KEY } });
-      const d  = await r.json();
-      const status = d.data?.status;
-      return res.json({ status, videoUrl: d.data?.output?.video_url || null, done: status === 'completed' || status === 'succeed', failed: status === 'failed' });
     }
     if (taskId.startsWith('kling-')) {
       const id    = taskId.replace('kling-', '');
@@ -847,8 +746,6 @@ app.get('/api/presenter-status', async (req, res) => {
       const id = taskId.replace('heygen-', '');
       const sr = await fetch('https://api.heygen.com/v1/video_status.get?video_id=' + id, { headers: { 'X-Api-Key': HEYGEN_KEY } });
       const sd = await sr.json();
-      // Cache video URL for PiAPI future use
-      if (sd.data?.video_url) CACHED_HG_IMAGE_URL = sd.data.video_url;
       return res.json({ status: sd.data?.status, videoUrl: sd.data?.video_url || null, done: sd.data?.status === 'completed', failed: sd.data?.status === 'failed', error: sd.data?.error || null });
     }
     if (taskId.startsWith('runway-')) {
@@ -862,7 +759,7 @@ app.get('/api/presenter-status', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── AI Segment ────────────────────────────────────────────────────────────────
+// ── Segment ───────────────────────────────────────────────────────────────────
 app.post('/api/segment', async (req, res) => {
   if (!checkRate(req, res)) return;
   try {
@@ -900,8 +797,7 @@ app.post('/api/segment', async (req, res) => {
     try {
       result = JSON.parse(raw.slice(j, k+1).replace(/,\s*}/g, '}').replace(/,\s*]/g, ']').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, ' '));
     } catch(e) {
-      const rx = /"narration"\s*:\s*"((?:[^\\"]|\\.)*)"/g;
-      const scenes = []; let m;
+      const rx = /"narration"\s*:\s*"((?:[^\\"]|\\.)*)"/g; const scenes = []; let m;
       while ((m = rx.exec(raw)) !== null) {
         scenes.push({ id: 's_' + (scenes.length+1), sceneNumber: scenes.length+1, type: scenes.length === 0 ? 'INTRO' : 'MAIN', narration: m[1], wordCount: m[1].split(/\s+/).length, duration: Math.min(sceneDuration, 10), notes: '', assets: [], status: 'draft' });
       }
@@ -954,7 +850,7 @@ app.post('/api/script/improve', async (req, res) => {
     if (!text) return res.status(400).json({ error: 'No text provided.' });
     const r = await anthropic.messages.create({
       model: MODEL, max_tokens: 3000,
-      system: 'Improve this script for spoken video delivery. Keep all content and meaning intact. Improve sentence flow, natural speech rhythm, and clarity only. Return only the improved script text.',
+      system: 'Improve this script for spoken video delivery. Keep all content intact. Improve flow and clarity only. Return only the improved script text.',
       messages: [{ role: 'user', content: text }]
     });
     res.json({ improved: r.content[0]?.text?.trim() });
@@ -1007,21 +903,20 @@ async function ensureAabProjectsTable() {
     const sb = getSupaAdmin();
     const { error } = await sb.from('aab_projects').select('id').limit(1);
     if (!error) { console.log('✓ aab_projects table ready'); return; }
-    if (error.code === 'PGRST205') {
-      console.warn('⚠ aab_projects table missing. Create in Supabase SQL editor:');
-      console.warn('CREATE TABLE IF NOT EXISTS aab_projects (id TEXT PRIMARY KEY, user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE, title TEXT, data JSONB); ALTER TABLE aab_projects ENABLE ROW LEVEL SECURITY; CREATE POLICY "users_own_aab_projects" ON aab_projects FOR ALL USING (auth.uid() = user_id);');
-    }
+    if (error.code === 'PGRST205') console.warn('⚠ aab_projects table missing — create it in Supabase SQL editor.');
   } catch(e) { console.warn('ensureAabProjectsTable:', e.message); }
 }
 
 app.listen(PORT, () => {
-  console.log('AABStudio v3.5 running on port', PORT);
+  console.log('AABStudio v3.6 running on port', PORT);
   console.log('Anthropic:    ', !!process.env.ANTHROPIC_API_KEY ? '✓' : '✗ MISSING');
   console.log('ElevenLabs:   ', !!ELEVENLABS_KEY  ? '✓' : '✗ MISSING');
   console.log('HeyGen:       ', !!HEYGEN_KEY       ? '✓ (primary)' : '✗');
-  console.log('Kling/PiAPI:  ', PIAPI_KEY          ? '✓ (via PiAPI)' : (KLING_AK && KLING_SK) ? '⚠ direct only' : '✗');
+  console.log('Kling/PiAPI:  ', PIAPI_KEY          ? '✓ (via PiAPI + Imgur)' : (KLING_AK && KLING_SK) ? '⚠ direct only' : '✗');
   console.log('Runway:       ', !!RUNWAY_KEY        ? '✓' : '✗');
   console.log('Stripe:       ', !!STRIPE_KEY        ? '✓' : '✗');
+  console.log('Imgur:        ', !!IMGUR_CLIENT_ID   ? '✓ (public image host)' : '✗');
   ensureAabProjectsTable();
   discoverHeyGenAvatar();
 });
+
