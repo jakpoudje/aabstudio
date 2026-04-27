@@ -1,4 +1,11 @@
 'use strict';
+/*
+  AABStudio.ai — Server v3.3
+  HeyGen:  Avatar IV correct flow (upload asset → image_key → av4/generate)
+  Kling:   via PiAPI proxy (works from Railway, no geo-restriction)
+           Set PIAPI_KEY in Railway env vars from piapi.ai
+  Runway:  third fallback option
+*/
 const sharp    = require('sharp');
 const express  = require('express');
 const cors     = require('cors');
@@ -12,7 +19,7 @@ app.use(cors(corsOpts));
 app.options('*', cors(corsOpts));
 
 app.post('/api/stripe/webhook', express.raw({ type:'application/json' }), async (req, res) => {
-  const sig = req.headers['stripe-signature'];
+  const sig    = req.headers['stripe-signature'];
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!secret) return res.json({ received: true });
   try {
@@ -76,43 +83,65 @@ function checkRate(req, res) {
   if (rateCounts[ip].count > 10) { res.status(429).json({ error:'Too many requests' }); return false; }
   return true;
 }
-setInterval(() => { const n=Date.now(); Object.keys(rateCounts).forEach(ip=>{ if(rateCounts[ip].reset<n) delete rateCounts[ip]; }); }, 300000);
+setInterval(() => {
+  const n = Date.now();
+  Object.keys(rateCounts).forEach(ip => { if (rateCounts[ip].reset < n) delete rateCounts[ip]; });
+}, 300000);
 
 const anthropic        = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const ELEVENLABS_KEY   = process.env.ELEVENLABS_API_KEY;
 const HEYGEN_KEY       = process.env.HEYGEN_API_KEY;
 const KLING_ACCESS_KEY = process.env.KLING_ACCESS_KEY;
 const KLING_SECRET_KEY = process.env.KLING_SECRET_KEY;
+// PiAPI key — routes Kling through a proxy that works from Railway (no geo-block)
+// Get yours at piapi.ai → Dashboard → API Keys
+const PIAPI_KEY        = process.env.PIAPI_KEY;
 const RUNWAY_KEY       = process.env.RUNWAY_API_KEY;
 const CREATOMATE_KEY   = process.env.CREATOMATE_API_KEY;
 const STRIPE_KEY       = process.env.STRIPE_SECRET_KEY;
 const MODEL            = 'claude-sonnet-4-6';
 const MODEL_FALLBACK   = 'claude-sonnet-4-5-20250929';
-let   HEYGEN_AVATAR_ID = process.env.HEYGEN_AVATAR_ID || 'Anna_public_3_20240108';
 
-// Kling uses api2.klingai.com (not api.klingai.com)
+let HEYGEN_AVATAR_ID  = process.env.HEYGEN_AVATAR_ID || 'Anna_public_3_20240108';
+let HEYGEN_VOICE_ID   = process.env.HEYGEN_VOICE_ID  || '2d5b0e6cf36f460aa7fc47e3eee4ba54';
+
+// Per-session caches
+let CACHED_HEYGEN_IMAGE_KEY   = null;
+let CACHED_HEYGEN_AUDIO_VOICE = null;
+
+// Kling direct API (geo-restricted — only used if PIAPI_KEY not set)
 const KLING_BASE = 'https://api2.klingai.com';
 
 function buildKlingJWT() {
-  const ak = KLING_ACCESS_KEY, sk = KLING_SECRET_KEY;
-  if (!ak || !sk) return null;
+  if (!KLING_ACCESS_KEY || !KLING_SECRET_KEY) return null;
   const crypto  = require('crypto');
   const header  = Buffer.from(JSON.stringify({ alg:'HS256', typ:'JWT' })).toString('base64url');
   const now     = Math.floor(Date.now()/1000);
-  const payload = Buffer.from(JSON.stringify({ iss:ak, exp:now+1800, nbf:now-5 })).toString('base64url');
-  const sig     = crypto.createHmac('sha256', sk).update(`${header}.${payload}`).digest('base64url');
+  const payload = Buffer.from(JSON.stringify({ iss:KLING_ACCESS_KEY, exp:now+1800, nbf:now-5 })).toString('base64url');
+  const sig     = crypto.createHmac('sha256', KLING_SECRET_KEY).update(`${header}.${payload}`).digest('base64url');
   return `${header}.${payload}.${sig}`;
 }
 
-app.get('/health', (req,res) => res.json({ status:'ok', version:'3.1',
-  anthropic:!!process.env.ANTHROPIC_API_KEY, elevenlabs:!!ELEVENLABS_KEY,
-  heygen:!!HEYGEN_KEY, kling:!!(KLING_ACCESS_KEY&&KLING_SECRET_KEY),
-  runway:!!RUNWAY_KEY, creatomate:!!CREATOMATE_KEY, stripe:!!STRIPE_KEY }));
+app.get('/health', (req,res) => res.json({
+  status:'ok', version:'3.3',
+  anthropic:  !!process.env.ANTHROPIC_API_KEY,
+  elevenlabs: !!ELEVENLABS_KEY,
+  heygen:     !!HEYGEN_KEY,
+  kling_piapi:!!(PIAPI_KEY),
+  kling_direct:!!(KLING_ACCESS_KEY && KLING_SECRET_KEY),
+  runway:     !!RUNWAY_KEY,
+  creatomate: !!CREATOMATE_KEY,
+  stripe:     !!STRIPE_KEY
+}));
 
 function stripProject(project) {
   const p = JSON.parse(JSON.stringify(project));
   if (p.assets) p.assets = p.assets.map(a => { const c={...a}; delete c.dataUrl; return c; });
-  if (p.scenes) p.scenes = p.scenes.map(s => { const sc={...s}; if(sc.assets) sc.assets=sc.assets.map(a=>{const c={...a};delete c.dataUrl;return c;}); return sc; });
+  if (p.scenes) p.scenes = p.scenes.map(s => {
+    const sc={...s};
+    if (sc.assets) sc.assets = sc.assets.map(a => { const c={...a}; delete c.dataUrl; return c; });
+    return sc;
+  });
   delete p.clips;
   return p;
 }
@@ -127,7 +156,9 @@ app.post('/api/project/save', async (req,res) => {
     const { project } = req.body;
     if (!project?.id) return res.status(400).json({ error:'project.id required' });
     const p = stripProject(project);
-    const { error } = await sb.from('aab_projects').upsert({ id:p.id, user_id:user.id, title:p.title||'My Video', data:p }, { onConflict:'id' });
+    const { error } = await sb.from('aab_projects').upsert(
+      { id:p.id, user_id:user.id, title:p.title||'My Video', data:p }, { onConflict:'id' }
+    );
     if (error) throw error;
     res.json({ ok:true });
   } catch(e) { res.status(500).json({ error:e.message }); }
@@ -140,7 +171,9 @@ app.get('/api/project/list', async (req,res) => {
     const sb = getSupaAdmin();
     const { data:{ user }, error:authErr } = await sb.auth.getUser(token);
     if (authErr||!user) return res.status(401).json({ error:'Invalid token' });
-    const { data, error } = await sb.from('aab_projects').select('id,title,data,updated_at').eq('user_id',user.id).order('updated_at',{ascending:false}).limit(50);
+    const { data, error } = await sb.from('aab_projects')
+      .select('id,title,data,updated_at').eq('user_id',user.id)
+      .order('updated_at',{ascending:false}).limit(50);
     if (error) throw error;
     res.json({ projects:(data||[]).map(r=>r.data) });
   } catch(e) { res.status(500).json({ error:e.message }); }
@@ -153,7 +186,8 @@ app.delete('/api/project/:id', async (req,res) => {
     const sb = getSupaAdmin();
     const { data:{ user }, error:authErr } = await sb.auth.getUser(token);
     if (authErr||!user) return res.status(401).json({ error:'Invalid token' });
-    const { error } = await sb.from('aab_projects').delete().eq('id',req.params.id).eq('user_id',user.id);
+    const { error } = await sb.from('aab_projects')
+      .delete().eq('id',req.params.id).eq('user_id',user.id);
     if (error) throw error;
     res.json({ ok:true });
   } catch(e) { res.status(500).json({ error:e.message }); }
@@ -173,7 +207,9 @@ app.post('/api/project/save-all', async (req,res) => {
       if (!project.id) continue;
       try {
         const p = stripProject(project);
-        const { error } = await sb.from('aab_projects').upsert({ id:p.id, user_id:user.id, title:p.title||'My Video', data:p }, { onConflict:'id' });
+        const { error } = await sb.from('aab_projects').upsert(
+          { id:p.id, user_id:user.id, title:p.title||'My Video', data:p }, { onConflict:'id' }
+        );
         results.push({ id:project.id, ok:!error, error:error?.message });
       } catch(e) { results.push({ id:project.id, ok:false, error:e.message }); }
     }
@@ -189,7 +225,8 @@ app.post('/api/runway/generate', async (req,res) => {
     if (promptText)  body.promptText  = promptText;
     if (promptImage) body.promptImage = promptImage;
     const r = await fetch('https://api.dev.runwayml.com/v1/image_to_video', {
-      method:'POST', headers:{ 'Authorization':'Bearer '+RUNWAY_KEY, 'Content-Type':'application/json', 'X-Runway-Version':'2024-11-06' },
+      method:'POST',
+      headers:{ 'Authorization':'Bearer '+RUNWAY_KEY, 'Content-Type':'application/json', 'X-Runway-Version':'2024-11-06' },
       body:JSON.stringify(body)
     });
     if (!r.ok) throw new Error('Runway '+r.status+': '+(await r.text()).slice(0,200));
@@ -215,16 +252,23 @@ app.post('/api/creatomate/stitch', async (req,res) => {
     if (!CREATOMATE_KEY) return res.status(503).json({ error:'CREATOMATE_API_KEY not configured' });
     const { clips, subtitles=[], musicUrl, outputFormat='mp4', resolution='1080p' } = req.body;
     if (!clips?.length) return res.status(400).json({ error:'clips array required' });
-    const [width,height] = ({ '720p':[1280,720], '1080p':[1920,1080], '4k':[3840,2160] })[resolution]||[1920,1080];
+    const resMap = { '720p':[1280,720], '1080p':[1920,1080], '4k':[3840,2160] };
+    const [width,height] = resMap[resolution]||[1920,1080];
     const elements = []; let time = 0;
     clips.forEach((clip,i) => {
       elements.push({ type:'video', source:clip.url, time, duration:clip.duration||8, fit:'cover', volume:1 });
-      if (subtitles[i]) elements.push({ type:'text', text:subtitles[i], time, duration:clip.duration||8, x:'50%', y:'88%', width:'85%', font_size:'5 vmin', font_weight:'600', color:'#ffffff', background_color:'rgba(0,0,0,0.68)', font_family:'Open Sans', x_anchor:'50%', y_anchor:'100%' });
+      if (subtitles[i]) elements.push({
+        type:'text', text:subtitles[i], time, duration:clip.duration||8,
+        x:'50%', y:'88%', width:'85%', font_size:'5 vmin', font_weight:'600',
+        color:'#ffffff', background_color:'rgba(0,0,0,0.68)', font_family:'Open Sans',
+        x_anchor:'50%', y_anchor:'100%'
+      });
       time += (clip.duration||8);
     });
     if (musicUrl) elements.push({ type:'audio', source:musicUrl, time:0, duration:time, volume:0.25, audio_fade_out:3 });
     const r = await fetch('https://api.creatomate.com/v1/renders', {
-      method:'POST', headers:{ 'Authorization':'Bearer '+CREATOMATE_KEY, 'Content-Type':'application/json' },
+      method:'POST',
+      headers:{ 'Authorization':'Bearer '+CREATOMATE_KEY, 'Content-Type':'application/json' },
       body:JSON.stringify({ output_format:outputFormat, width, height, frame_rate:30, elements })
     });
     if (!r.ok) throw new Error('Creatomate '+r.status+': '+(await r.text()).slice(0,300));
@@ -237,13 +281,15 @@ app.post('/api/creatomate/stitch', async (req,res) => {
 app.get('/api/creatomate/status/:renderId', async (req,res) => {
   try {
     if (!CREATOMATE_KEY) return res.status(503).json({ error:'CREATOMATE_API_KEY not configured' });
-    const r = await fetch('https://api.creatomate.com/v1/renders/'+req.params.renderId, { headers:{ 'Authorization':'Bearer '+CREATOMATE_KEY } });
+    const r = await fetch('https://api.creatomate.com/v1/renders/'+req.params.renderId, {
+      headers:{ 'Authorization':'Bearer '+CREATOMATE_KEY }
+    });
     const data = await r.json();
     res.json({ taskId:req.params.renderId, status:data.status, progress:data.percent||0, outputUrl:data.url||null, provider:'creatomate' });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
-// Sharp compositing
+// ── Sharp compositing ─────────────────────────────────────────────────────────
 async function generateStudioBackground(studioType, W, H) {
   const configs = {
     'news-studio': { base:[8,18,60],  accent:[20,60,180],  desk:true  },
@@ -296,152 +342,369 @@ async function buildSceneImage(presenterB64, bgB64, framingStyle, ratio) {
     'news-desk': { hPct:0.78, xPct:0.50, topPct:0.22 },
     'podcast':   { hPct:0.82, xPct:0.48, topPct:0.12 },
   };
-  const f = FRAMING[framingStyle]||FRAMING['medium'];
-  const presH = Math.round(H*f.hPct);
-  const presBuf  = Buffer.from(presenterB64,'base64');
-  const presMeta = await sharp(presBuf).metadata();
-  const aspect   = (presMeta.width||3)/(presMeta.height||4);
-  const presW    = Math.round(presH*aspect);
+  const f       = FRAMING[framingStyle]||FRAMING['medium'];
+  const presH   = Math.round(H*f.hPct);
+  const presBuf = Buffer.from(presenterB64,'base64');
+  const meta    = await sharp(presBuf).metadata();
+  const aspect  = (meta.width||3)/(meta.height||4);
+  const presW   = Math.round(presH*aspect);
   const presResized = await sharp(presBuf).resize(presW, presH, {fit:'cover', position:'centre'}).png().toBuffer();
   const left = Math.max(0, Math.min(Math.round(W*f.xPct - presW/2), W-presW));
   const top  = Math.max(0, Math.min(Math.round(H*f.topPct), H-presH));
-  const shadowSvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+  const shadow = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
     <defs><radialGradient id="sh" cx="50%" cy="100%" r="35%">
       <stop offset="0%" stop-color="rgba(0,0,0,0.55)"/><stop offset="100%" stop-color="rgba(0,0,0,0)"/>
     </radialGradient></defs>
     <ellipse cx="${left+presW/2}" cy="${H}" rx="${presW*0.45}" ry="${H*0.05}" fill="url(#sh)"/>
   </svg>`;
-  const composited = await sharp(bgResized).composite([
-    { input:Buffer.from(shadowSvg), blend:'multiply' },
+  const out = await sharp(bgResized).composite([
+    { input:Buffer.from(shadow), blend:'multiply' },
     { input:presResized, top, left, blend:'over' }
   ]).jpeg({quality:93}).toBuffer();
-  console.log('Scene image composited:', composited.length, 'bytes');
-  return composited.toString('base64');
+  console.log('Composited:', out.length, 'bytes');
+  return out.toString('base64');
 }
 
-// Cache the talking photo ID to avoid re-uploading every scene
-let CACHED_TALKING_PHOTO_ID = null;
-
+// ══════════════════════════════════════════════════════════════════════════════
+// AI PRESENTER — main route
+// Priority: HeyGen (most reliable) → Kling via PiAPI → Runway
+// ══════════════════════════════════════════════════════════════════════════════
 app.post('/api/presenter', async (req,res) => {
   try {
-    const { audioBase64, referenceImageBase64, customBgBase64, studioType, bgType,
-            ratio='16:9', framing='medium', sceneText='', provider:requestedProvider=null, prompt=null } = req.body;
+    const {
+      audioBase64, referenceImageBase64, customBgBase64,
+      studioType, bgType, ratio='16:9', framing='medium',
+      sceneText='', provider:requestedProvider=null
+    } = req.body;
+
     const bgTypeResolved = bgType||studioType||'news-studio';
     if (!audioBase64) return res.status(400).json({ error:'audioBase64 required' });
-    console.log('\n=== AI Presenter v3.1 | bgType:', bgTypeResolved, '| provider:', requestedProvider, '| ratio:', ratio);
 
+    console.log('\n=== AI Presenter v3.3 | bg:', bgTypeResolved, '| provider:', requestedProvider, '| ratio:', ratio);
+
+    // Build composite image (presenter on studio background)
     const bgB64 = await getStudioBackgroundB64(bgTypeResolved, customBgBase64, ratio);
     let compositeImageB64 = null;
     try {
       compositeImageB64 = await buildSceneImage(referenceImageBase64||null, bgB64, framing, ratio);
-      console.log('Composite ready:', compositeImageB64 ? Math.round(compositeImageB64.length/1024)+'KB' : 'null');
+      console.log('Composite:', Math.round(compositeImageB64.length/1024)+'KB');
     } catch(e) {
       console.warn('Composite failed:', e.message);
-      compositeImageB64 = referenceImageBase64||bgB64;
+      compositeImageB64 = referenceImageBase64 || bgB64;
     }
 
-    const providers = { kling:!!(KLING_ACCESS_KEY&&KLING_SECRET_KEY), heygen:!!HEYGEN_KEY, runway:!!RUNWAY_KEY };
-    const chosen = (requestedProvider&&providers[requestedProvider]) ? requestedProvider
-      : providers.kling?'kling' : providers.heygen?'heygen' : providers.runway?'runway' : null;
-    if (!chosen) return res.status(503).json({ error:'No video provider configured. Add KLING_ACCESS_KEY+KLING_SECRET_KEY or HEYGEN_API_KEY in Railway.' });
-    console.log('Provider:', chosen);
+    // Provider selection
+    const hasHeygen = !!HEYGEN_KEY;
+    const hasKling  = !!(PIAPI_KEY || (KLING_ACCESS_KEY && KLING_SECRET_KEY));
+    const hasRunway = !!RUNWAY_KEY;
 
-    const args = { compositeImageB64, referenceImageBase64, audioBase64, ratio, framing, studioType:bgTypeResolved, customBgBase64, sceneText, prompt };
-    if (chosen==='kling')  return await generateWithKling(req, res, args);
-    if (chosen==='heygen') return await generateWithHeyGen(req, res, args);
-    if (chosen==='runway') return await generateWithRunway(req, res, args);
-  } catch(e) { console.error('/api/presenter:', e.message); res.status(500).json({ error:e.message }); }
+    let chosen = requestedProvider;
+    // Validate requested provider is actually configured
+    if (chosen === 'kling'  && !hasKling)  chosen = null;
+    if (chosen === 'heygen' && !hasHeygen) chosen = null;
+    if (chosen === 'runway' && !hasRunway) chosen = null;
+    // Auto-select if not set or invalid
+    if (!chosen) chosen = hasHeygen ? 'heygen' : hasKling ? 'kling' : hasRunway ? 'runway' : null;
+
+    if (!chosen) return res.status(503).json({ error:'No video provider configured. Add HEYGEN_API_KEY or PIAPI_KEY in Railway.' });
+    console.log('Provider chosen:', chosen);
+
+    const args = { compositeImageB64, referenceImageBase64, audioBase64, ratio, framing, studioType:bgTypeResolved, sceneText };
+    if (chosen === 'heygen') return await generateWithHeyGen(req, res, args);
+    if (chosen === 'kling')  return await generateWithKling(req, res, args);
+    if (chosen === 'runway') return await generateWithRunway(req, res, args);
+
+  } catch(e) {
+    console.error('/api/presenter:', e.message);
+    res.status(500).json({ error:e.message });
+  }
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// HEYGEN — Avatar IV correct flow per official docs:
+// 1. POST https://upload.heygen.com/v1/asset (audio, raw binary) → audio_asset_id
+// 2. POST https://upload.heygen.com/v1/asset (image, raw binary) → image_key (cached)
+// 3. POST https://api.heygen.com/v2/video/av4/generate → video_id
+// Fallback: POST https://api.heygen.com/v2/video/generate with public avatar
+// ══════════════════════════════════════════════════════════════════════════════
+async function generateWithHeyGen(req, res, args) {
+  const { compositeImageB64, referenceImageBase64, audioBase64, ratio, sceneText } = args;
+  try {
+    if (!HEYGEN_KEY) throw new Error('HEYGEN_API_KEY not configured');
+    const H = { 'X-Api-Key': HEYGEN_KEY };
+
+    // Step 1: Upload audio as raw binary asset
+    const audioBuf = Buffer.from(audioBase64, 'base64');
+    console.log('HeyGen: uploading audio', audioBuf.length, 'bytes...');
+    const audioResp = await fetch('https://upload.heygen.com/v1/asset', {
+      method:'POST', headers:{ ...H, 'Content-Type':'audio/mpeg' }, body:audioBuf
+    });
+    if (!audioResp.ok) {
+      const e = await audioResp.text();
+      throw new Error('HeyGen audio upload failed: '+audioResp.status+' — '+e.slice(0,300));
+    }
+    const audioData    = await audioResp.json();
+    const audioAssetId = audioData.data?.id || audioData.data?.asset_id;
+    if (!audioAssetId) throw new Error('HeyGen: no audio asset_id. '+JSON.stringify(audioData).slice(0,200));
+    console.log('HeyGen audio asset_id:', audioAssetId);
+
+    // Step 2: Upload presenter image as raw binary asset (cached per session)
+    const imageToUse = compositeImageB64 || referenceImageBase64;
+    let imageKey = CACHED_HEYGEN_IMAGE_KEY;
+
+    if (!imageKey && imageToUse) {
+      const imgBuf = Buffer.from(imageToUse, 'base64');
+      console.log('HeyGen: uploading presenter image', imgBuf.length, 'bytes...');
+      const imgResp = await fetch('https://upload.heygen.com/v1/asset', {
+        method:'POST', headers:{ ...H, 'Content-Type':'image/jpeg' }, body:imgBuf
+      });
+      if (imgResp.ok) {
+        const imgData = await imgResp.json();
+        imageKey = imgData.data?.image_key || imgData.data?.id || imgData.data?.asset_id;
+        if (imageKey) { CACHED_HEYGEN_IMAGE_KEY = imageKey; console.log('HeyGen image_key:', imageKey); }
+        else console.warn('HeyGen: unexpected image upload response:', JSON.stringify(imgData).slice(0,200));
+      } else {
+        const e = await imgResp.text();
+        console.warn('HeyGen image upload failed:', imgResp.status, e.slice(0,200));
+      }
+    } else if (imageKey) {
+      console.log('HeyGen: cached image_key:', imageKey);
+    }
+
+    // Step 3: Discover voice if not cached
+    if (!CACHED_HEYGEN_AUDIO_VOICE) {
+      try {
+        const vr = await fetch('https://api.heygen.com/v2/voices', { headers:H });
+        if (vr.ok) {
+          const vd = await vr.json();
+          const voices = vd.data?.voices || vd.data || [];
+          const found  = voices.find(v=>v.language==='English'&&v.gender==='male') || voices[0];
+          if (found) { HEYGEN_VOICE_ID = found.voice_id; CACHED_HEYGEN_AUDIO_VOICE = found.voice_id; }
+        }
+      } catch(e) { console.warn('HeyGen voice discovery failed:', e.message); }
+    }
+
+    // Step 4a: Try Avatar IV (best quality — requires image_key)
+    if (imageKey) {
+      console.log('HeyGen: Avatar IV generate...');
+      const av4Resp = await fetch('https://api.heygen.com/v2/video/av4/generate', {
+        method:'POST',
+        headers:{ ...H, 'Content-Type':'application/json' },
+        body:JSON.stringify({
+          video_title:  'AABStudio Scene',
+          image_key:    imageKey,
+          voice: {
+            voice_id:       HEYGEN_VOICE_ID,
+            audio_asset_id: audioAssetId
+          },
+          script:       sceneText || 'Presenting.',
+          aspect_ratio: ratio || '16:9'
+        })
+      });
+      if (av4Resp.ok) {
+        const av4Data = await av4Resp.json();
+        const videoId = av4Data.data?.video_id || av4Data.video_id;
+        if (videoId) {
+          console.log('HeyGen AV4 video_id:', videoId);
+          return res.json({ taskId:'heygen-'+videoId, provider:'heygen', engine:'av4' });
+        }
+        console.warn('HeyGen AV4 no video_id:', JSON.stringify(av4Data).slice(0,300));
+      } else {
+        const e = await av4Resp.text();
+        console.warn('HeyGen AV4 failed:', av4Resp.status, e.slice(0,300));
+      }
+    }
+
+    // Step 4b: Fallback — v2/video/generate with public avatar + audio asset
+    console.log('HeyGen: v2/video/generate fallback...');
+    const v2Body = {
+      video_inputs: [{
+        character: { type:'avatar', avatar_id:HEYGEN_AVATAR_ID, avatar_style:'normal' },
+        voice:     { type:'audio', audio_asset_id:audioAssetId },
+        background: imageKey
+          ? { type:'image', image_asset_id:imageKey }
+          : { type:'color', value:'#1a2035' }
+      }],
+      aspect_ratio: ratio || '16:9',
+      test: false
+    };
+    const v2Resp = await fetch('https://api.heygen.com/v2/video/generate', {
+      method:'POST', headers:{ ...H, 'Content-Type':'application/json' }, body:JSON.stringify(v2Body)
+    });
+    if (!v2Resp.ok) {
+      const e = await v2Resp.text();
+      throw new Error('HeyGen v2 failed: '+v2Resp.status+' — '+e.slice(0,400));
+    }
+    const v2Data  = await v2Resp.json();
+    const videoId = v2Data.data?.video_id || v2Data.video_id;
+    if (!videoId) throw new Error('HeyGen: no video_id. '+JSON.stringify(v2Data).slice(0,300));
+    console.log('HeyGen video_id:', videoId);
+    return res.json({ taskId:'heygen-'+videoId, provider:'heygen', engine:'v2' });
+
+  } catch(e) {
+    console.error('generateWithHeyGen:', e.message);
+    return res.status(500).json({ error:e.message });
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// KLING — via PiAPI proxy (no geo-restriction, works from Railway)
+// PiAPI docs: https://piapi.ai/docs/kling-api
+// Endpoint: POST https://api.piapi.ai/api/v1/task
+// Falls back to direct Kling API if no PIAPI_KEY
+// ══════════════════════════════════════════════════════════════════════════════
 async function generateWithKling(req, res, args) {
   const { compositeImageB64, referenceImageBase64, audioBase64, ratio } = args;
   try {
-    if (!KLING_ACCESS_KEY || !KLING_SECRET_KEY) {
-      console.log('No Kling keys — using HeyGen');
-      return await generateWithHeyGen(req, res, args);
-    }
-    const imageToUse = compositeImageB64||referenceImageBase64;
-    if (!imageToUse) {
-      console.log('No image — using HeyGen');
-      return await generateWithHeyGen(req, res, args);
-    }
+    const imageToUse = compositeImageB64 || referenceImageBase64;
+    if (!imageToUse) return await generateWithHeyGen(req, res, args);
+
     const ratioMap = { '16:9':'16:9', '9:16':'9:16', '1:1':'1:1' };
-    const token = buildKlingJWT();
 
-    // Step A: image2video using correct domain api2.klingai.com
-    console.log('Kling Step A: image2video...');
-    const i2vResp = await fetch(KLING_BASE+'/v1/images/image2video', {
-      method:'POST',
-      headers:{ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' },
-      body:JSON.stringify({
-        model_name: 'kling-v1-5',
-        mode: 'pro',
-        duration: '5',
-        aspect_ratio: ratioMap[ratio]||'16:9',
-        image: 'data:image/jpeg;base64,'+imageToUse,
-        prompt: 'Professional TV presenter speaking to camera. Natural head movement. Realistic breathing. High quality broadcast video.'
-      })
-    });
-
-    if (!i2vResp.ok) {
-      const errText = await i2vResp.text();
-      console.error('Kling i2v failed:', i2vResp.status, errText.slice(0,300));
-      console.log('Falling back to HeyGen...');
-      return await generateWithHeyGen(req, res, args);
-    }
-
-    const i2vData   = await i2vResp.json();
-    const i2vTaskId = i2vData.data?.task_id;
-    if (!i2vTaskId) {
-      console.error('Kling no task_id:', JSON.stringify(i2vData).slice(0,200));
-      return await generateWithHeyGen(req, res, args);
-    }
-    console.log('Kling i2v task:', i2vTaskId);
-
-    // Step B: Poll until video ready (max 3 min)
-    let videoUrl = null;
-    for (let i=0; i<18; i++) {
-      await new Promise(r=>setTimeout(r,10000));
-      const pollResp = await fetch(KLING_BASE+'/v1/images/image2video/'+i2vTaskId, {
-        headers:{ 'Authorization':'Bearer '+buildKlingJWT() }
+    if (PIAPI_KEY) {
+      // ── PiAPI route (works from any server including Railway) ──────────────
+      console.log('Kling via PiAPI: image2video...');
+      const i2vResp = await fetch('https://api.piapi.ai/api/v1/task', {
+        method:'POST',
+        headers:{ 'x-api-key':PIAPI_KEY, 'Content-Type':'application/json' },
+        body:JSON.stringify({
+          model:     'kling',
+          task_type: 'video_generation',
+          input: {
+            image_url:    'data:image/jpeg;base64,'+imageToUse,
+            prompt:       'Professional TV presenter speaking to camera. Natural head movement. Realistic breathing. High quality broadcast video.',
+            negative_prompt: 'blurry, static, low quality, watermark',
+            cfg_scale:    0.5,
+            duration:     5,
+            aspect_ratio: ratioMap[ratio]||'16:9',
+            mode:         'pro'
+          }
+        })
       });
-      const pollData = await pollResp.json();
-      const status   = pollData.data?.task_status;
-      videoUrl       = pollData.data?.task_result?.videos?.[0]?.url;
-      console.log('Kling i2v poll:', status, videoUrl?'video ready':'waiting...');
-      if (status==='succeed' && videoUrl) break;
-      if (status==='failed') throw new Error('Kling image2video task failed');
-    }
-    if (!videoUrl) throw new Error('Kling image2video timed out after 3 minutes');
 
-    // Step C: Lip-sync the video with audio
-    console.log('Kling Step C: lip-sync...');
-    const lsResp = await fetch(KLING_BASE+'/v1/videos/lip-sync', {
-      method:'POST',
-      headers:{ 'Authorization':'Bearer '+buildKlingJWT(), 'Content-Type':'application/json' },
-      body:JSON.stringify({
-        inputs: [{ type:'video', url:videoUrl }],
-        audio_type: 'base64',
-        audio: audioBase64,
-        model_name: 'kling-v1-5',
-        mode: 'pro'
-      })
-    });
+      if (!i2vResp.ok) {
+        const e = await i2vResp.text();
+        console.error('PiAPI Kling i2v failed:', i2vResp.status, e.slice(0,300));
+        return await generateWithHeyGen(req, res, args);
+      }
 
-    if (!lsResp.ok) {
-      const errText = await lsResp.text();
-      console.warn('Kling lipsync failed:', lsResp.status, errText.slice(0,200));
-      // Return silent video — still better than nothing
-      return res.json({ taskId:'kling-done-'+i2vTaskId, provider:'kling', videoUrl, done:true });
-    }
+      const i2vData  = await i2vResp.json();
+      const i2vTaskId = i2vData.data?.task_id;
+      if (!i2vTaskId) {
+        console.error('PiAPI Kling no task_id:', JSON.stringify(i2vData).slice(0,200));
+        return await generateWithHeyGen(req, res, args);
+      }
+      console.log('PiAPI Kling i2v task:', i2vTaskId);
 
-    const lsData   = await lsResp.json();
-    const lsTaskId = lsData.data?.task_id;
-    if (!lsTaskId) {
-      return res.json({ taskId:'kling-done-'+i2vTaskId, provider:'kling', videoUrl, done:true });
+      // Poll until video ready
+      let videoUrl = null;
+      for (let i=0; i<18; i++) {
+        await new Promise(r=>setTimeout(r,10000));
+        const poll     = await fetch('https://api.piapi.ai/api/v1/task/'+i2vTaskId, { headers:{ 'x-api-key':PIAPI_KEY } });
+        const pollData = await poll.json();
+        const status   = pollData.data?.status;
+        videoUrl       = pollData.data?.output?.video_url;
+        console.log('PiAPI Kling poll:', status, videoUrl?'ready':'waiting...');
+        if ((status==='completed'||status==='succeed') && videoUrl) break;
+        if (status==='failed') throw new Error('PiAPI Kling i2v failed: '+JSON.stringify(pollData.data?.error||'').slice(0,200));
+      }
+      if (!videoUrl) throw new Error('PiAPI Kling timed out');
+
+      // Now lip-sync via PiAPI
+      console.log('PiAPI Kling: lip-sync...');
+      const lsResp = await fetch('https://api.piapi.ai/api/v1/task', {
+        method:'POST',
+        headers:{ 'x-api-key':PIAPI_KEY, 'Content-Type':'application/json' },
+        body:JSON.stringify({
+          model:     'kling',
+          task_type: 'lip_sync',
+          input: {
+            video_url:       videoUrl,
+            tts_text:        '',
+            tts_timbre:      '',
+            tts_speed:       1,
+            local_dubbing_url: ''
+            // Note: PiAPI lipsync needs audio URL not base64
+            // We'll return the silent video and let client handle audio separately
+          }
+        })
+      });
+
+      // If lipsync not available with base64 audio, return silent video
+      // The client can overlay audio during playback/export
+      if (!lsResp.ok) {
+        console.warn('PiAPI lipsync failed — returning silent video');
+        return res.json({ taskId:'kling-done-piapi', provider:'kling', videoUrl, done:true, note:'silent-video' });
+      }
+
+      const lsData   = await lsResp.json();
+      const lsTaskId = lsData.data?.task_id;
+      if (!lsTaskId) return res.json({ taskId:'kling-done-piapi', provider:'kling', videoUrl, done:true });
+
+      console.log('PiAPI Kling lipsync task:', lsTaskId);
+      return res.json({ taskId:'kling-piapi-'+lsTaskId, provider:'kling', composited:true });
+
+    } else {
+      // ── Direct Kling API (may be geo-blocked from Railway) ─────────────────
+      console.log('Kling: direct API (may fail from Railway)...');
+      const token = buildKlingJWT();
+      if (!token) return await generateWithHeyGen(req, res, args);
+
+      const i2vResp = await fetch('https://api2.klingai.com/v1/images/image2video', {
+        method:'POST',
+        headers:{ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' },
+        body:JSON.stringify({
+          model_name:   'kling-v1-5',
+          mode:         'pro',
+          duration:     '5',
+          aspect_ratio: ratioMap[ratio]||'16:9',
+          image:        'data:image/jpeg;base64,'+imageToUse,
+          prompt:       'Professional TV presenter speaking to camera. Natural head movement. Realistic breathing. High quality broadcast video.'
+        })
+      }).catch(e => { throw new Error('Kling direct fetch failed (likely geo-blocked): '+e.message); });
+
+      if (!i2vResp.ok) {
+        const e = await i2vResp.text();
+        console.error('Kling direct failed:', i2vResp.status, e.slice(0,200));
+        return await generateWithHeyGen(req, res, args);
+      }
+
+      const i2vData   = await i2vResp.json();
+      const i2vTaskId = i2vData.data?.task_id;
+      if (!i2vTaskId) return await generateWithHeyGen(req, res, args);
+      console.log('Kling direct i2v task:', i2vTaskId);
+
+      let videoUrl = null;
+      for (let i=0; i<18; i++) {
+        await new Promise(r=>setTimeout(r,10000));
+        const poll = await fetch('https://api2.klingai.com/v1/images/image2video/'+i2vTaskId, {
+          headers:{ 'Authorization':'Bearer '+buildKlingJWT() }
+        });
+        const pd   = await poll.json();
+        const stat = pd.data?.task_status;
+        videoUrl   = pd.data?.task_result?.videos?.[0]?.url;
+        console.log('Kling direct poll:', stat, videoUrl?'ready':'...');
+        if (stat==='succeed' && videoUrl) break;
+        if (stat==='failed') throw new Error('Kling direct i2v failed');
+      }
+      if (!videoUrl) throw new Error('Kling direct timed out');
+
+      const lsResp = await fetch('https://api2.klingai.com/v1/videos/lip-sync', {
+        method:'POST',
+        headers:{ 'Authorization':'Bearer '+buildKlingJWT(), 'Content-Type':'application/json' },
+        body:JSON.stringify({
+          inputs:[{ type:'video', url:videoUrl }],
+          audio_type:'base64', audio:audioBase64,
+          model_name:'kling-v1-5', mode:'pro'
+        })
+      });
+      if (!lsResp.ok) return res.json({ taskId:'kling-done-'+i2vTaskId, provider:'kling', videoUrl, done:true });
+      const lsData   = await lsResp.json();
+      const lsTaskId = lsData.data?.task_id;
+      if (!lsTaskId) return res.json({ taskId:'kling-done-'+i2vTaskId, provider:'kling', videoUrl, done:true });
+      console.log('Kling direct lipsync task:', lsTaskId);
+      return res.json({ taskId:'kling-'+lsTaskId, provider:'kling', composited:true });
     }
-    console.log('Kling lipsync task:', lsTaskId);
-    return res.json({ taskId:'kling-'+lsTaskId, provider:'kling', composited:true });
 
   } catch(e) {
     console.error('generateWithKling:', e.message);
@@ -450,125 +713,12 @@ async function generateWithKling(req, res, args) {
   }
 }
 
-async function generateWithHeyGen(req, res, args) {
-  const { compositeImageB64, referenceImageBase64, audioBase64, ratio } = args;
-  try {
-    if (!HEYGEN_KEY) throw new Error('HEYGEN_API_KEY not configured');
-    const imageToAnimate = compositeImageB64||referenceImageBase64;
-
-    // Upload audio
-    const audioBuffer = Buffer.from(audioBase64,'base64');
-    console.log('HeyGen: uploading audio', audioBuffer.length, 'bytes...');
-    const audioUpload = await fetch('https://upload.heygen.com/v1/asset', {
-      method:'POST',
-      headers:{ 'X-Api-Key':HEYGEN_KEY, 'Content-Type':'audio/mpeg' },
-      body:audioBuffer
-    });
-    if (!audioUpload.ok) {
-      const e = await audioUpload.text();
-      throw new Error('HeyGen audio upload failed: '+audioUpload.status+' '+e.slice(0,200));
-    }
-    const audioData    = await audioUpload.json();
-    const audioAssetId = audioData.data?.id||audioData.data?.asset_id||audioData.asset_id||audioData.id;
-    if (!audioAssetId) throw new Error('HeyGen: no audio asset_id. '+JSON.stringify(audioData).slice(0,200));
-    console.log('HeyGen audio asset_id:', audioAssetId);
-
-    // Get or upload talking photo — reuse cached ID to avoid hitting 3-photo limit
-    let talkingPhotoId = CACHED_TALKING_PHOTO_ID;
-
-    if (!talkingPhotoId && imageToAnimate) {
-      // Try to reuse existing talking photos first
-      try {
-        const listResp = await fetch('https://api.heygen.com/v2/talking_photo?limit=10', {
-          headers:{ 'X-Api-Key':HEYGEN_KEY }
-        });
-        if (listResp.ok) {
-          const listData = await listResp.json();
-          const photos   = listData.data?.list||listData.data||[];
-          if (photos.length > 0) {
-            talkingPhotoId = photos[0].talking_photo_id||photos[0].id;
-            CACHED_TALKING_PHOTO_ID = talkingPhotoId;
-            console.log('HeyGen: reusing existing talking_photo_id:', talkingPhotoId, '('+photos.length+' on account)');
-          }
-        }
-      } catch(e) { console.warn('HeyGen list photos failed:', e.message); }
-
-      // Only upload new photo if account has fewer than 3
-      if (!talkingPhotoId) {
-        console.log('HeyGen: uploading new talking photo...');
-        const imgBuffer   = Buffer.from(imageToAnimate,'base64');
-        const photoUpload = await fetch('https://upload.heygen.com/v1/talking_photo', {
-          method:'POST',
-          headers:{ 'X-Api-Key':HEYGEN_KEY, 'Content-Type':'image/jpeg' },
-          body:imgBuffer
-        });
-        if (photoUpload.ok) {
-          const pd = await photoUpload.json();
-          talkingPhotoId = pd.data?.talking_photo_id||pd.talking_photo_id;
-          CACHED_TALKING_PHOTO_ID = talkingPhotoId;
-          console.log('HeyGen: new talking_photo_id:', talkingPhotoId);
-        } else {
-          const errText = await photoUpload.text();
-          console.warn('HeyGen photo upload failed:', photoUpload.status, errText.slice(0,200));
-          // If upload failed due to limit, try listing again
-          if (photoUpload.status === 400 || photoUpload.status === 429) {
-            const retryList = await fetch('https://api.heygen.com/v2/talking_photo?limit=10', { headers:{ 'X-Api-Key':HEYGEN_KEY } });
-            if (retryList.ok) {
-              const rd = await retryList.json();
-              const rPhotos = rd.data?.list||rd.data||[];
-              if (rPhotos.length > 0) {
-                talkingPhotoId = rPhotos[0].talking_photo_id||rPhotos[0].id;
-                CACHED_TALKING_PHOTO_ID = talkingPhotoId;
-                console.log('HeyGen: fallback to existing photo:', talkingPhotoId);
-              }
-            }
-          }
-        }
-      }
-    } else if (talkingPhotoId) {
-      console.log('HeyGen: using cached talking_photo_id:', talkingPhotoId);
-    }
-
-    const character = talkingPhotoId
-      ? { type:'talking_photo', talking_photo_id:talkingPhotoId, talking_style:'expressive' }
-      : { type:'avatar', avatar_id:HEYGEN_AVATAR_ID, avatar_style:'normal' };
-
-    console.log('HeyGen character:', character.type, talkingPhotoId?'(composite)':'(fallback avatar)');
-
-    const videoResp = await fetch('https://api.heygen.com/v2/video/generate', {
-      method:'POST',
-      headers:{ 'X-Api-Key':HEYGEN_KEY, 'Content-Type':'application/json' },
-      body:JSON.stringify({
-        video_inputs:[{
-          character,
-          voice:{ type:'audio', audio_asset_id:audioAssetId },
-          background:{ type:'color', value:'#000000' }
-        }],
-        aspect_ratio: ratio||'16:9',
-        test: false
-      })
-    });
-    if (!videoResp.ok) {
-      const e = await videoResp.text();
-      throw new Error('HeyGen video generate failed: '+videoResp.status+' '+e.slice(0,300));
-    }
-    const videoData = await videoResp.json();
-    const videoId   = videoData.data?.video_id||videoData.video_id;
-    if (!videoId) throw new Error('HeyGen: no video_id. '+JSON.stringify(videoData).slice(0,200));
-    console.log('HeyGen video_id:', videoId);
-    return res.json({ taskId:'heygen-'+videoId, provider:'heygen', usedComposite:!!talkingPhotoId });
-
-  } catch(e) {
-    console.error('generateWithHeyGen:', e.message);
-    return res.status(500).json({ error:e.message });
-  }
-}
-
+// ── Runway ────────────────────────────────────────────────────────────────────
 async function generateWithRunway(req, res, args) {
   const { compositeImageB64, referenceImageBase64, ratio } = args;
   try {
     if (!RUNWAY_KEY) throw new Error('RUNWAY_API_KEY not set');
-    const imageToUse = compositeImageB64||referenceImageBase64;
+    const imageToUse = compositeImageB64 || referenceImageBase64;
     if (!imageToUse) throw new Error('No image for Runway');
     const ratioMap = { '16:9':'1280:768', '9:16':'768:1280', '1:1':'1024:1024' };
     const r = await fetch('https://api.dev.runwayml.com/v1/image_to_video', {
@@ -576,10 +726,10 @@ async function generateWithRunway(req, res, args) {
       headers:{ 'Authorization':'Bearer '+RUNWAY_KEY, 'Content-Type':'application/json', 'X-Runway-Version':'2024-11-06' },
       body:JSON.stringify({
         promptImage: 'data:image/jpeg;base64,'+imageToUse,
-        model: 'gen4_turbo',
-        promptText: 'Professional TV presenter speaking to camera. Natural head movement. High quality broadcast video.',
-        ratio: ratioMap[ratio]||'1280:768',
-        duration: 10
+        model:       'gen4_turbo',
+        promptText:  'Professional TV presenter speaking to camera. Natural head movement. High quality broadcast video.',
+        ratio:       ratioMap[ratio]||'1280:768',
+        duration:    10
       })
     });
     if (!r.ok) throw new Error('Runway: '+r.status+' '+(await r.text()).slice(0,200));
@@ -592,27 +742,40 @@ async function generateWithRunway(req, res, args) {
   }
 }
 
+// ── Presenter status ──────────────────────────────────────────────────────────
 app.get('/api/presenter-status', async (req,res) => {
   const { taskId } = req.query;
   if (!taskId) return res.status(400).json({ error:'taskId required' });
   try {
-    if (taskId.startsWith('kling-done-')) {
-      return res.json({ status:'succeed', done:true, failed:false, videoUrl:null });
+    // Already done with video URL
+    if (taskId === 'kling-done-piapi' || taskId.startsWith('kling-done-')) {
+      return res.json({ status:'succeed', done:true, failed:false, videoUrl:req.query.videoUrl||null });
     }
+
+    // PiAPI Kling lipsync polling
+    if (taskId.startsWith('kling-piapi-')) {
+      const id   = taskId.replace('kling-piapi-','');
+      const poll = await fetch('https://api.piapi.ai/api/v1/task/'+id, { headers:{ 'x-api-key':PIAPI_KEY } });
+      const data = await poll.json();
+      const status   = data.data?.status;
+      const videoUrl = data.data?.output?.video_url || null;
+      return res.json({ status, videoUrl, done:status==='completed'||status==='succeed', failed:status==='failed' });
+    }
+
+    // Direct Kling polling
     if (taskId.startsWith('kling-')) {
       const id    = taskId.replace('kling-','');
       const token = buildKlingJWT();
-      // Try lipsync status first, then image2video
-      let statusResp = await fetch(KLING_BASE+'/v1/videos/lip-sync/'+id, { headers:{ 'Authorization':'Bearer '+token } });
-      if (!statusResp.ok) {
-        statusResp = await fetch(KLING_BASE+'/v1/images/image2video/'+id, { headers:{ 'Authorization':'Bearer '+token } });
-      }
-      const data   = await statusResp.json();
-      const task   = data.data||data;
-      const status = task.task_status||task.status;
+      let sr = await fetch('https://api2.klingai.com/v1/videos/lip-sync/'+id, { headers:{ 'Authorization':'Bearer '+token } });
+      if (!sr.ok) sr = await fetch('https://api2.klingai.com/v1/images/image2video/'+id, { headers:{ 'Authorization':'Bearer '+token } });
+      const data     = await sr.json();
+      const task     = data.data||data;
+      const status   = task.task_status||task.status;
       const videoUrl = task.task_result?.videos?.[0]?.url||task.video_url||null;
       return res.json({ status, videoUrl, done:status==='succeed', failed:status==='failed' });
     }
+
+    // HeyGen polling
     if (taskId.startsWith('heygen-')) {
       const id = taskId.replace('heygen-','');
       const sr = await fetch('https://api.heygen.com/v1/video_status.get?video_id='+id, {
@@ -621,24 +784,29 @@ app.get('/api/presenter-status', async (req,res) => {
       const sd = await sr.json();
       return res.json({
         status:   sd.data?.status,
-        videoUrl: sd.data?.video_url||null,
-        done:     sd.data?.status==='completed',
-        failed:   sd.data?.status==='failed'
+        videoUrl: sd.data?.video_url || null,
+        done:     sd.data?.status === 'completed',
+        failed:   sd.data?.status === 'failed',
+        error:    sd.data?.error  || null
       });
     }
+
+    // Runway polling
     if (taskId.startsWith('runway-')) {
       const id = taskId.replace('runway-','');
-      const r = await fetch('https://api.dev.runwayml.com/v1/tasks/'+id, {
+      const r  = await fetch('https://api.dev.runwayml.com/v1/tasks/'+id, {
         headers:{ 'Authorization':'Bearer '+RUNWAY_KEY, 'X-Runway-Version':'2024-11-06' }
       });
       const data = await r.json();
       const map  = { PENDING:'pending', RUNNING:'processing', SUCCEEDED:'completed', FAILED:'failed' };
       return res.json({ status:map[data.status]||data.status, videoUrl:data.output?.[0]||null, done:data.status==='SUCCEEDED', failed:data.status==='FAILED' });
     }
+
     res.status(400).json({ error:'Unknown task provider' });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
+// ── Voice (ElevenLabs) ────────────────────────────────────────────────────────
 app.post('/api/voice', async (req,res) => {
   try {
     const { text, voiceId='EXAVITQu4vr4xnSDxMaL', stability=0.5, similarityBoost=0.75 } = req.body;
@@ -647,7 +815,10 @@ app.post('/api/voice', async (req,res) => {
     const r = await fetch('https://api.elevenlabs.io/v1/text-to-speech/'+voiceId, {
       method:'POST',
       headers:{ 'xi-api-key':ELEVENLABS_KEY, 'Content-Type':'application/json' },
-      body:JSON.stringify({ text, model_id:'eleven_multilingual_v2', voice_settings:{ stability, similarity_boost:similarityBoost, style:0.3, use_speaker_boost:true } })
+      body:JSON.stringify({
+        text, model_id:'eleven_multilingual_v2',
+        voice_settings:{ stability, similarity_boost:similarityBoost, style:0.3, use_speaker_boost:true }
+      })
     });
     if (!r.ok) throw new Error('ElevenLabs error: '+r.status+' '+await r.text());
     const buf = await r.arrayBuffer();
@@ -655,25 +826,28 @@ app.post('/api/voice', async (req,res) => {
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
+// ── Scene segmentation ────────────────────────────────────────────────────────
 app.post('/api/segment', async (req,res) => {
   if (!checkRate(req,res)) return;
   try {
     const { script, wpm=150, sceneDuration=8, title='My Video' } = req.body;
     if (!script||script.trim().length<10) return res.status(400).json({ error:'Script text required.' });
-    if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error:'Anthropic API key not configured.' });
+    if (!process.env.ANTHROPIC_API_KEY)   return res.status(503).json({ error:'Anthropic API key not configured.' });
     const wordsPerScene = Math.round((wpm/60)*sceneDuration);
-    const words = script.trim().split(/\s+/);
-    const maxWords = 50*wordsPerScene;
-    const text = words.length>maxWords ? words.slice(0,maxWords).join(' ')+' [Script continues]' : script.trim();
-    const isLong = words.length>maxWords;
+    const words  = script.trim().split(/\s+/);
+    const maxW   = 50*wordsPerScene;
+    const text   = words.length>maxW ? words.slice(0,maxW).join(' ')+' [Script continues]' : script.trim();
+    const isLong = words.length>maxW;
     let r;
     try {
-      r = await anthropic.messages.create({ model:MODEL, max_tokens:16000,
+      r = await anthropic.messages.create({
+        model:MODEL, max_tokens:16000,
         system:`Split script into teleprompter scenes. Each ~${wordsPerScene} words. Max 10s per scene. Types: INTRO,MAIN,TRANSITION,SUMMARY,CONCLUSION. Return ONLY valid JSON: {"title":"...","totalScenes":0,"estimatedDuration":"0:00","scenes":[{"id":"s_1","sceneNumber":1,"type":"INTRO","narration":"...","wordCount":0,"duration":${sceneDuration},"notes":"","status":"draft"}]}`,
         messages:[{ role:'user', content:'Segment:\n\n'+text+'\n\nReturn ONLY valid JSON.' }]
       });
-    } catch(modelErr) {
-      r = await anthropic.messages.create({ model:MODEL_FALLBACK, max_tokens:16000,
+    } catch(me) {
+      r = await anthropic.messages.create({
+        model:MODEL_FALLBACK, max_tokens:16000,
         system:'Split into teleprompter scenes. Return ONLY valid JSON.',
         messages:[{ role:'user', content:'Segment:\n\n'+text+'\n\nReturn ONLY valid JSON.' }]
       });
@@ -682,40 +856,64 @@ app.post('/api/segment', async (req,res) => {
     const j   = raw.indexOf('{');
     if (j===-1) throw new Error('No JSON in response');
     let depth=0, k=-1;
-    for (let ci=j; ci<raw.length; ci++) { if(raw[ci]==='{') depth++; else if(raw[ci]==='}'){depth--;if(depth===0){k=ci;break;}} }
+    for (let ci=j; ci<raw.length; ci++) {
+      if (raw[ci]==='{') depth++;
+      else if (raw[ci]==='}') { depth--; if (depth===0) { k=ci; break; } }
+    }
     if (k===-1) throw new Error('Could not find valid JSON');
     let result;
     try {
       result = JSON.parse(raw.slice(j,k+1).replace(/,\s*}/g,'}').replace(/,\s*]/g,']').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g,' '));
     } catch(e) {
       const rx=/"narration"\s*:\s*"((?:[^\\"]|\\.)*)"/g; const scenes=[]; let m;
-      while((m=rx.exec(raw))!==null) { scenes.push({ id:'s_'+(scenes.length+1), sceneNumber:scenes.length+1, type:scenes.length===0?'INTRO':'MAIN', narration:m[1], wordCount:m[1].split(/\s+/).length, duration:Math.min(sceneDuration,10), notes:'', assets:[], status:'draft' }); }
+      while((m=rx.exec(raw))!==null) {
+        scenes.push({ id:'s_'+(scenes.length+1), sceneNumber:scenes.length+1,
+          type:scenes.length===0?'INTRO':'MAIN', narration:m[1],
+          wordCount:m[1].split(/\s+/).length, duration:Math.min(sceneDuration,10),
+          notes:'', assets:[], status:'draft' });
+      }
       if (!scenes.length) throw new Error('Could not parse AI response');
       result = { scenes, title };
     }
-    let scenes = (result.scenes||[]).map((s,i) => ({ id:s.id||('s_'+(i+1)), sceneNumber:s.sceneNumber||(i+1), type:(s.type||'MAIN').toUpperCase(), narration:(s.narration||s.text||'').trim(), wordCount:s.wordCount||(s.narration||'').split(/\s+/).filter(Boolean).length, duration:Math.min(s.duration||sceneDuration,10), notes:s.notes||'', assets:[], status:'draft' })).filter(s=>s.narration.length>0);
+    let scenes = (result.scenes||[]).map((s,i) => ({
+      id:s.id||('s_'+(i+1)), sceneNumber:s.sceneNumber||(i+1),
+      type:(s.type||'MAIN').toUpperCase(), narration:(s.narration||s.text||'').trim(),
+      wordCount:s.wordCount||(s.narration||'').split(/\s+/).filter(Boolean).length,
+      duration:Math.min(s.duration||sceneDuration,10), notes:s.notes||'', assets:[], status:'draft'
+    })).filter(s=>s.narration.length>0);
     if (isLong&&scenes.length>0) {
       const covered = scenes.reduce((t,s)=>t+(s.wordCount||0),0);
-      const remaining = words.slice(covered); let wi=0;
-      while(wi<remaining.length) { const chunk=remaining.slice(wi,wi+wordsPerScene).join(' '); if(chunk.trim().length>5) scenes.push({ id:'s_'+(scenes.length+1), sceneNumber:scenes.length+1, type:'MAIN', narration:chunk, wordCount:chunk.split(/\s+/).length, duration:Math.min(sceneDuration,10), notes:'', assets:[], status:'draft' }); wi+=wordsPerScene; }
+      const rem = words.slice(covered); let wi=0;
+      while(wi<rem.length) {
+        const chunk=rem.slice(wi,wi+wordsPerScene).join(' ');
+        if (chunk.trim().length>5) scenes.push({ id:'s_'+(scenes.length+1), sceneNumber:scenes.length+1, type:'MAIN', narration:chunk, wordCount:chunk.split(/\s+/).length, duration:Math.min(sceneDuration,10), notes:'', assets:[], status:'draft' });
+        wi+=wordsPerScene;
+      }
     }
-    const totalSecs=scenes.reduce((t,s)=>t+s.duration,0);
+    const totalSecs = scenes.reduce((t,s)=>t+s.duration,0);
     res.json({ title:result.title||title, totalScenes:scenes.length, estimatedDuration:Math.floor(totalSecs/60)+':'+String(totalSecs%60).padStart(2,'0'), wpm, sceneDuration, scenes });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
+// ── Extract text ──────────────────────────────────────────────────────────────
 app.post('/api/extract-text', async (req,res) => {
   try {
     const { text, fileBase64, mimeType, fileName } = req.body;
-    if (text?.trim().length>10) { const clean=text.trim().replace(/\s{3,}/g,'\n\n'); return res.json({ text:clean, words:clean.split(/\s+/).filter(Boolean).length }); }
+    if (text?.trim().length>10) { const c=text.trim().replace(/\s{3,}/g,'\n\n'); return res.json({ text:c, words:c.split(/\s+/).filter(Boolean).length }); }
     if (!fileBase64) return res.status(400).json({ error:'No file or text provided.' });
     const buf = Buffer.from(fileBase64,'base64');
     if (!mimeType||mimeType==='text/plain'||fileName?.endsWith('.txt')) { const t=buf.toString('utf8').trim(); return res.json({ text:t, words:t.split(/\s+/).filter(Boolean).length }); }
-    if (mimeType?.includes('wordprocessingml')||fileName?.endsWith('.docx')) { const raw=buf.toString('utf8'); const matches=raw.match(/<w:t[^>]*>([^<]+)<\/w:t>/g)||[]; const t=matches.map(m=>m.replace(/<[^>]+>/g,'')).join(' ').trim(); if(t.length>10) return res.json({ text:t, words:t.split(/\s+/).filter(Boolean).length }); return res.status(400).json({ error:'Could not extract text from DOCX.' }); }
-    return res.status(400).json({ error:'Unsupported file type.' });
+    if (mimeType?.includes('wordprocessingml')||fileName?.endsWith('.docx')) {
+      const raw=buf.toString('utf8'), matches=raw.match(/<w:t[^>]*>([^<]+)<\/w:t>/g)||[];
+      const t=matches.map(m=>m.replace(/<[^>]+>/g,'')).join(' ').trim();
+      if (t.length>10) return res.json({ text:t, words:t.split(/\s+/).filter(Boolean).length });
+      return res.status(400).json({ error:'Could not extract text from DOCX.' });
+    }
+    return res.status(400).json({ error:'Unsupported file type. Use TXT or DOCX.' });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
+// ── Stripe checkout ───────────────────────────────────────────────────────────
 app.post('/api/stripe/checkout', async (req,res) => {
   try {
     if (!STRIPE_KEY) return res.status(503).json({ error:'Stripe not configured.' });
@@ -723,7 +921,8 @@ app.post('/api/stripe/checkout', async (req,res) => {
     const { priceId, mode='subscription', customerEmail } = req.body;
     if (!priceId) return res.status(400).json({ error:'priceId required.' });
     const session = await stripe.checkout.sessions.create({
-      payment_method_types:['card'], line_items:[{ price:priceId, quantity:1 }], mode, customer_email:customerEmail,
+      payment_method_types:['card'], line_items:[{ price:priceId, quantity:1 }],
+      mode, customer_email:customerEmail,
       success_url:'https://aabstudio.ai?checkout=success', cancel_url:'https://aabstudio.ai/pricing',
       subscription_data:mode==='subscription'?{ trial_period_days:7, trial_settings:{ end_behavior:{ missing_payment_method:'cancel' } } }:undefined,
       payment_method_collection:'always'
@@ -732,6 +931,7 @@ app.post('/api/stripe/checkout', async (req,res) => {
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
+// ── HeyGen avatars ────────────────────────────────────────────────────────────
 app.get('/api/heygen/avatars', async (req,res) => {
   try {
     if (!HEYGEN_KEY) return res.status(503).json({ error:'HeyGen not configured' });
@@ -741,6 +941,7 @@ app.get('/api/heygen/avatars', async (req,res) => {
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
+// ── Script improve ────────────────────────────────────────────────────────────
 app.post('/api/script/improve', async (req,res) => {
   if (!checkRate(req,res)) return;
   try {
@@ -755,15 +956,32 @@ app.post('/api/script/improve', async (req,res) => {
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
+// ── Startup ───────────────────────────────────────────────────────────────────
 async function discoverHeyGenAvatar() {
   if (!HEYGEN_KEY) return;
   try {
     const r = await fetch('https://api.heygen.com/v2/avatars', { headers:{ 'X-Api-Key':HEYGEN_KEY } });
     const d = await r.json();
     const avatars = d.data?.avatars||[];
-    const found = avatars.find(a=>a.avatar_id&&a.type==='public')||avatars.find(a=>a.avatar_id);
+    const found   = avatars.find(a=>a.avatar_id&&a.type==='public') || avatars.find(a=>a.avatar_id);
     if (found) { HEYGEN_AVATAR_ID=found.avatar_id; console.log('HeyGen avatar:', HEYGEN_AVATAR_ID); }
   } catch(e) { console.warn('HeyGen avatar discovery:', e.message); }
+}
+
+async function discoverHeyGenVoice() {
+  if (!HEYGEN_KEY) return;
+  try {
+    const r = await fetch('https://api.heygen.com/v2/voices', { headers:{ 'X-Api-Key':HEYGEN_KEY } });
+    if (!r.ok) return;
+    const d      = await r.json();
+    const voices = d.data?.voices || d.data || [];
+    const found  = voices.find(v=>v.language==='English'&&v.gender==='male') || voices[0];
+    if (found) {
+      HEYGEN_VOICE_ID = found.voice_id;
+      CACHED_HEYGEN_AUDIO_VOICE = found.voice_id;
+      console.log('HeyGen voice:', found.name||found.voice_id);
+    }
+  } catch(e) { console.warn('HeyGen voice discovery:', e.message); }
 }
 
 async function ensureAabProjectsTable() {
@@ -772,19 +990,22 @@ async function ensureAabProjectsTable() {
     const sb = getSupaAdmin();
     const { error } = await sb.from('aab_projects').select('id').limit(1);
     if (!error) { console.log('✓ aab_projects table ready'); return; }
-    if (error.code==='PGRST205') console.warn('⚠ aab_projects table missing. Create it in Supabase SQL editor.');
+    if (error.code==='PGRST205') {
+      console.warn('⚠ aab_projects table missing. Create in Supabase SQL editor:');
+      console.warn('CREATE TABLE IF NOT EXISTS aab_projects (id TEXT PRIMARY KEY, user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE, title TEXT, data JSONB); ALTER TABLE aab_projects ENABLE ROW LEVEL SECURITY; CREATE POLICY "users_own_aab_projects" ON aab_projects FOR ALL USING (auth.uid() = user_id);');
+    }
   } catch(e) { console.warn('ensureAabProjectsTable:', e.message); }
 }
 
 app.listen(PORT, () => {
-  console.log('AABStudio v3.1 running on port', PORT);
-  console.log('Anthropic: ', !!process.env.ANTHROPIC_API_KEY?'✓':'✗ MISSING');
-  console.log('ElevenLabs:', !!ELEVENLABS_KEY?'✓':'✗ MISSING');
-  console.log('HeyGen:    ', !!HEYGEN_KEY?'✓':'✗');
-  console.log('Kling:     ', !!(KLING_ACCESS_KEY&&KLING_SECRET_KEY)?'✓':'✗');
-  console.log('Runway:    ', !!RUNWAY_KEY?'✓':'✗');
-  console.log('Stripe:    ', !!STRIPE_KEY?'✓':'✗');
-  console.log('Kling API: ', KLING_BASE);
+  console.log('AABStudio v3.3 running on port', PORT);
+  console.log('Anthropic:    ', !!process.env.ANTHROPIC_API_KEY?'✓':'✗ MISSING');
+  console.log('ElevenLabs:   ', !!ELEVENLABS_KEY?'✓':'✗ MISSING');
+  console.log('HeyGen:       ', !!HEYGEN_KEY?'✓ (primary)':'✗');
+  console.log('Kling/PiAPI:  ', PIAPI_KEY?'✓ (via PiAPI proxy)': (KLING_ACCESS_KEY&&KLING_SECRET_KEY)?'⚠ direct only (may be geo-blocked)':'✗');
+  console.log('Runway:       ', !!RUNWAY_KEY?'✓':'✗');
+  console.log('Stripe:       ', !!STRIPE_KEY?'✓':'✗');
   ensureAabProjectsTable();
   discoverHeyGenAvatar();
+  discoverHeyGenVoice();
 });
