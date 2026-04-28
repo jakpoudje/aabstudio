@@ -105,6 +105,7 @@ const CREATOMATE_KEY = process.env.CREATOMATE_API_KEY;
 const STRIPE_KEY     = process.env.STRIPE_SECRET_KEY;
 // Imgur client ID — free, no auth needed, images are truly public
 const IMGUR_CLIENT_ID = process.env.IMGUR_CLIENT_ID || '546c25a59c58ad7';
+const DID_API_KEY     = process.env.DID_API_KEY;  // D-ID API key from Railway env vars
 
 const MODEL          = 'claude-sonnet-4-6';
 const MODEL_FALLBACK = 'claude-sonnet-4-5-20250929';
@@ -525,7 +526,15 @@ app.post('/api/presenter', async (req, res) => {
     if (chosen === 'kling'  && !hasKling)  chosen = null;
     if (chosen === 'heygen' && !hasHeygen) chosen = null;
     if (chosen === 'runway' && !hasRunway) chosen = null;
-    if (!chosen) chosen = hasHeygen ? 'heygen' : hasKling ? 'kling' : hasRunway ? 'runway' : null;
+    const hasDID = !!DID_API_KEY;
+    // D-ID is preferred when reference image present — uses actual face, faster than HeyGen
+    if (!chosen) {
+      if (hasDID && (referenceImageBase64 || compositeImageB64)) chosen = 'did';
+      else if (hasHeygen) chosen = 'heygen';
+      else if (hasKling)  chosen = 'kling';
+      else if (hasRunway) chosen = 'runway';
+    }
+    if (chosen === 'did' && !hasDID) chosen = hasHeygen ? 'heygen' : null;
     if (!chosen) return res.status(503).json({ error: 'No video provider configured.' });
     console.log('Provider chosen:', chosen);
 
@@ -542,6 +551,7 @@ app.post('/api/presenter', async (req, res) => {
 
     // Queue all scene submissions — only one processes at a time
     // This prevents all 49 scenes firing simultaneously and timing out
+    if (chosen === 'did')    return await enqueueScene(() => generateWithDID(req, res, args));
     if (chosen === 'heygen') return await enqueueScene(() => generateWithHeyGen(req, res, args));
     if (chosen === 'kling')  return await enqueueScene(() => generateWithKling(req, res, args));
     if (chosen === 'runway') return await generateWithRunway(req, res, args);
@@ -768,6 +778,113 @@ async function generateWithRunway(req, res, args) {
   }
 }
 
+
+// ══════════════════════════════════════════════════════════════════════════════
+// D-ID — Talking Photo (animates reference image with audio)
+// Fast: 30-90 seconds per scene (vs HeyGen's 3-8 min)
+// Uses the uploaded reference photo as the presenter face
+// Docs: https://docs.d-id.com/reference/createtalk
+// ══════════════════════════════════════════════════════════════════════════════
+async function generateWithDID(req, res, args) {
+  const { referenceImageBase64, audioBase64, ratio, sceneText, gender } = args;
+  try {
+    if (!DID_API_KEY) throw new Error('DID_API_KEY not configured');
+
+    const H = {
+      'Authorization': 'Basic ' + DID_API_KEY,
+      'Content-Type': 'application/json',
+      'accept': 'application/json'
+    };
+
+    // Step 1: Upload presenter image to D-ID (or use base64 directly)
+    // D-ID accepts base64 data URIs as source_url
+    const imageDataUri = referenceImageBase64
+      ? 'data:image/jpeg;base64,' + referenceImageBase64
+      : null;
+
+    if (!imageDataUri) throw new Error('D-ID requires a reference image');
+
+    // Step 2: Upload audio to get a URL D-ID can use
+    // D-ID needs an audio URL, not base64. Upload to their clips endpoint first
+    // OR use ElevenLabs streaming URL. For now, upload audio to D-ID as blob
+    const audioBuf = Buffer.from(audioBase64, 'base64');
+
+    // Upload audio file to D-ID
+    const FormData = require('form-data');
+    const form = new FormData();
+    form.append('audio', audioBuf, { filename: 'audio.mp3', contentType: 'audio/mpeg' });
+
+    let audioUrl = null;
+    try {
+      const audioUpload = await fetch('https://api.d-id.com/audios', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + DID_API_KEY,
+          ...form.getHeaders()
+        },
+        body: form
+      });
+      if (audioUpload.ok) {
+        const audioData = await audioUpload.json();
+        audioUrl = audioData.url;
+        console.log('D-ID audio uploaded:', audioUrl);
+      } else {
+        console.warn('D-ID audio upload failed:', audioUpload.status, await audioUpload.text());
+      }
+    } catch(e) {
+      console.warn('D-ID audio upload error:', e.message);
+    }
+
+    if (!audioUrl) throw new Error('D-ID audio upload failed — cannot generate without audio URL');
+
+    // Step 3: Create talk (animate photo with audio)
+    const talkPayload = {
+      source_url: imageDataUri,
+      script: {
+        type:          'audio',
+        audio_url:     audioUrl,
+        reduce_noise:  false,
+        ssml:          false
+      },
+      config: {
+        fluent:        true,
+        pad_audio:     0,
+        stitch:        true,       // blend head into background
+        result_format: 'mp4'
+      },
+      presenter_config: {
+        crop: {
+          type: 'rectangle'
+        }
+      }
+    };
+
+    console.log('D-ID: creating talk...');
+    const talkResp = await fetch('https://api.d-id.com/talks', {
+      method: 'POST',
+      headers: H,
+      body: JSON.stringify(talkPayload)
+    });
+    const talkText = await talkResp.text();
+    console.log('D-ID talk response:', talkResp.status, talkText.slice(0, 300));
+
+    if (!talkResp.ok) throw new Error('D-ID talk failed: ' + talkResp.status + ' ' + talkText.slice(0, 300));
+
+    const talkData = JSON.parse(talkText);
+    const talkId   = talkData.id;
+    if (!talkId) throw new Error('D-ID: no talk id returned');
+
+    console.log('D-ID talk id:', talkId);
+    return res.json({ taskId: 'did-' + talkId, provider: 'did', done: false });
+
+  } catch(e) {
+    console.error('generateWithDID:', e.message);
+    // Fall back to HeyGen if D-ID fails
+    if (HEYGEN_KEY) return await generateWithHeyGen(req, res, args);
+    return res.status(500).json({ error: e.message });
+  }
+}
+
 // ── Presenter wait — server polls HeyGen until done (max 10 min) ─────────────
 // Frontend calls this ONCE and waits up to 10 min for the response.
 // Avoids the frontend timing out from short HTTP timeouts.
@@ -784,7 +901,22 @@ app.get('/api/presenter-wait', async (req, res) => {
     await new Promise(r => setTimeout(r, 15000));
     try {
       let status, videoUrl, failed;
-      if (taskId.startsWith('heygen-')) {
+      // D-ID talk status polling
+    if (taskId.startsWith('did-')) {
+      const id = taskId.replace('did-', '');
+      const r  = await fetch('https://api.d-id.com/talks/' + id, {
+        headers: { 'Authorization': 'Basic ' + DID_API_KEY, 'accept': 'application/json' }
+      });
+      const d  = await r.json();
+      const status   = d.status;
+      const videoUrl = d.result_url || null;
+      const done     = status === 'done';
+      const failed   = status === 'error';
+      console.log('D-ID status:', status, videoUrl ? '✓' : '');
+      return res.json({ status, videoUrl, done, failed, error: failed ? (d.error?.description || 'D-ID error') : null });
+    }
+
+    if (taskId.startsWith('heygen-')) {
         const id = taskId.replace('heygen-', '');
         const sr = await fetch('https://api.heygen.com/v1/video_status.get?video_id=' + id, { headers: { 'X-Api-Key': HEYGEN_KEY } });
         const sd = await sr.json();
@@ -844,6 +976,21 @@ app.get('/api/presenter-status', async (req, res) => {
       const status = task.task_status || task.status;
       return res.json({ status, videoUrl: task.task_result?.videos?.[0]?.url || null, done: status === 'succeed', failed: status === 'failed' });
     }
+    // D-ID talk status polling
+    if (taskId.startsWith('did-')) {
+      const id = taskId.replace('did-', '');
+      const r  = await fetch('https://api.d-id.com/talks/' + id, {
+        headers: { 'Authorization': 'Basic ' + DID_API_KEY, 'accept': 'application/json' }
+      });
+      const d  = await r.json();
+      const status   = d.status;
+      const videoUrl = d.result_url || null;
+      const done     = status === 'done';
+      const failed   = status === 'error';
+      console.log('D-ID status:', status, videoUrl ? '✓' : '');
+      return res.json({ status, videoUrl, done, failed, error: failed ? (d.error?.description || 'D-ID error') : null });
+    }
+
     if (taskId.startsWith('heygen-')) {
       const id = taskId.replace('heygen-', '');
       const sr = await fetch('https://api.heygen.com/v1/video_status.get?video_id=' + id, { headers: { 'X-Api-Key': HEYGEN_KEY } });
@@ -1024,7 +1171,7 @@ async function ensureAabProjectsTable() {
 }
 
 app.listen(PORT, () => {
-  console.log('AABStudio v3.7 running on port', PORT);
+  console.log('AABStudio v3.8 running on port', PORT);
   console.log('Anthropic:    ', !!process.env.ANTHROPIC_API_KEY ? '✓' : '✗ MISSING');
   console.log('ElevenLabs:   ', !!ELEVENLABS_KEY  ? '✓' : '✗ MISSING');
   console.log('HeyGen:       ', !!HEYGEN_KEY       ? '✓ (primary)' : '✗');
@@ -1032,6 +1179,7 @@ app.listen(PORT, () => {
   console.log('Runway:       ', !!RUNWAY_KEY        ? '✓' : '✗');
   console.log('Stripe:       ', !!STRIPE_KEY        ? '✓' : '✗');
   console.log('Imgur:        ', !!IMGUR_CLIENT_ID   ? '✓ (public image host)' : '✗');
+  console.log('D-ID:         ', !!DID_API_KEY        ? '✓ (talking photo — fast!)' : '✗ (add DID_API_KEY for faster generation)');
   ensureAabProjectsTable();
   discoverHeyGenAvatar();
 });
