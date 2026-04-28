@@ -9847,108 +9847,367 @@ console.log('AABStudio v5 \u2713 \u2014 all fixes applied, no markdown corruptio
 </script>
 <script> 
 // ════════════════════════════════════════════════════════════════════════════
-// AABStudio Platform v2.0
-// Complete fix: Studio → Timeline → Export pipeline
-// Smooth teleprompter, phone remote, AI Presenter → timeline auto-flow
-// Cache busting, colour-coded buttons, user guide, progress animations
+// AABStudio Studio Fixes v1.0
+// 1. Virtual background (canvas-based, MediaPipe body segmentation)
+// 2. Teleprompter smooth scroll (force override)
+// 3. Asset overlay placement on canvas
+// 4. AI Presenter clips → existing timeline
 // ════════════════════════════════════════════════════════════════════════════
 (function() {
 'use strict';
 
-// ── Cache busting: force fresh assets on deploy ───────────────────────────
-var _cv = '202504271'; // change this string on each deploy
-document.querySelectorAll('link[rel="stylesheet"]').forEach(function(l) {
-  if (l.href && !l.href.includes('fonts.googleapis')) l.href = l.href.split('?')[0] + '?v=' + _cv;
-});
-
-// ── Design tokens ─────────────────────────────────────────────────────────
-var CSS = `
-/* ── AABStudio v2 design tokens ── */
-:root {
-  --aab-teal:    #00d4aa;
-  --aab-gold:    #f59e0b;
-  --aab-red:     #ef4444;
-  --aab-blue:    #3b82f6;
-  --aab-purple:  #8b5cf6;
-  --aab-green:   #10b981;
-  --aab-ink:     #e2e8f0;
-  --aab-muted:   #64748b;
-  --aab-surface: #1a2035;
-  --aab-card:    rgba(255,255,255,0.04);
-  --aab-bdr:     rgba(255,255,255,0.08);
-}
-
-/* ── Colour-coded action buttons ── */
-.btn-primary   { background: linear-gradient(135deg,var(--aab-teal),#00b894)!important; color:#000!important; font-weight:700!important; border:none!important; border-radius:8px!important; padding:10px 20px!important; cursor:pointer!important; transition:all .2s!important; }
-.btn-primary:hover { transform:translateY(-1px); box-shadow:0 4px 20px rgba(0,212,170,.4)!important; }
-.btn-danger    { background: linear-gradient(135deg,var(--aab-red),#dc2626)!important; color:#fff!important; font-weight:700!important; border:none!important; border-radius:8px!important; padding:10px 20px!important; cursor:pointer!important; transition:all .2s!important; }
-.btn-danger:hover { transform:translateY(-1px); box-shadow:0 4px 20px rgba(239,68,68,.4)!important; }
-.btn-gold      { background: linear-gradient(135deg,var(--aab-gold),#d97706)!important; color:#000!important; font-weight:700!important; border:none!important; border-radius:8px!important; padding:10px 20px!important; cursor:pointer!important; transition:all .2s!important; }
-.btn-gold:hover { transform:translateY(-1px); box-shadow:0 4px 20px rgba(245,158,11,.4)!important; }
-.btn-ghost     { background:transparent!important; color:var(--aab-ink)!important; font-weight:600!important; border:1px solid var(--aab-bdr)!important; border-radius:8px!important; padding:10px 20px!important; cursor:pointer!important; transition:all .2s!important; }
-.btn-ghost:hover { background:var(--aab-card)!important; border-color:var(--aab-teal)!important; }
-
-/* ── Progress animation ── */
-@keyframes aab-pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
-@keyframes aab-slide { from{transform:translateX(-100%)} to{transform:translateX(100%)} }
-@keyframes aab-spin  { to{transform:rotate(360deg)} }
-.aab-spinner { width:20px;height:20px;border:2px solid var(--aab-bdr);border-top-color:var(--aab-teal);border-radius:50%;animation:aab-spin .8s linear infinite;display:inline-block;vertical-align:middle;margin-right:8px; }
-.aab-progress-bar { height:3px;background:var(--aab-bdr);border-radius:2px;overflow:hidden;position:relative; }
-.aab-progress-bar::after { content:'';position:absolute;top:0;left:0;height:100%;width:40%;background:linear-gradient(90deg,var(--aab-teal),var(--aab-blue));border-radius:2px;animation:aab-slide 1.5s ease-in-out infinite; }
-.aab-progress-bar.done::after { width:100%;animation:none;background:var(--aab-green); }
-
-/* ── User guide tooltip ── */
-.aab-guide { display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--aab-muted);background:rgba(255,255,255,.03);border:1px solid var(--aab-bdr);border-radius:6px;padding:6px 10px;margin:6px 0; }
-.aab-guide-icon { font-size:14px; }
-.aab-next-step { display:flex;align-items:center;gap:8px;font-size:13px;color:var(--aab-teal);background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:8px;padding:10px 14px;margin:8px 0;animation:aab-pulse 2s ease-in-out infinite; }
-.aab-next-step::before { content:'→'; font-weight:700; }
-
-/* ── Timeline clip ── */
-.tl-clip-card { background:var(--aab-card);border:1px solid var(--aab-bdr);border-radius:8px;padding:10px;cursor:grab;transition:all .2s;position:relative; }
-.tl-clip-card:hover { border-color:var(--aab-teal);transform:translateY(-1px); }
-.tl-clip-card.tl-ai { border-left:3px solid var(--aab-purple); }
-.tl-clip-card.tl-rec { border-left:3px solid var(--aab-red); }
-.tl-clip-card .tl-dur { font-size:11px;color:var(--aab-muted);margin-top:4px; }
-.tl-clip-card .tl-del { position:absolute;top:6px;right:6px;background:rgba(239,68,68,.15);color:var(--aab-red);border:none;border-radius:4px;padding:2px 6px;font-size:11px;cursor:pointer;opacity:0;transition:opacity .2s; }
-.tl-clip-card:hover .tl-del { opacity:1; }
-
-/* ── Export panel ── */
-#aab-export-panel { position:fixed;right:0;top:0;bottom:0;width:320px;background:#0d1117;border-left:1px solid var(--aab-bdr);z-index:9999;transform:translateX(100%);transition:transform .3s cubic-bezier(.4,0,.2,1);overflow-y:auto;padding:24px; }
-#aab-export-panel.open { transform:translateX(0); }
-#aab-export-panel h3 { font-size:16px;font-weight:700;color:var(--aab-ink);margin:0 0 20px; }
-.export-opt { background:var(--aab-card);border:1px solid var(--aab-bdr);border-radius:8px;padding:14px;margin-bottom:10px;cursor:pointer;transition:all .2s; }
-.export-opt:hover { border-color:var(--aab-teal);background:rgba(0,212,170,.06); }
-.export-opt h4 { font-size:13px;font-weight:700;color:var(--aab-ink);margin:0 0 4px; }
-.export-opt p  { font-size:11px;color:var(--aab-muted);margin:0; }
-.export-opt .export-badge { font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;float:right; }
-.badge-free  { background:rgba(16,185,129,.2);color:var(--aab-green); }
-.badge-pro   { background:rgba(139,92,246,.2);color:var(--aab-purple); }
-
-/* ── Teleprompter smooth ── */
-#tp-text span { transition:color .15s,font-weight .15s,text-shadow .15s; }
-#tp-text span.tp-done    { color:rgba(255,255,255,.18)!important; }
-#tp-text span.tp-current { color:#f59e0b!important;font-weight:700!important;text-shadow:0 0 20px rgba(245,158,11,.5)!important; }
-
-/* ── Studio retake bar ── */
-#studio-retake-bar { display:none;animation:slideUp .3s ease; }
-@keyframes slideUp { from{transform:translateY(20px);opacity:0} to{transform:translateY(0);opacity:1} }
-
-/* ── Scene status dots ── */
-.scene-dot-done   { background:var(--aab-green)!important; }
-.scene-dot-gen    { background:var(--aab-gold)!important;animation:aab-pulse 1s infinite; }
-.scene-dot-failed { background:var(--aab-red)!important; }
-`;
-
-var styleEl = document.createElement('style');
-styleEl.textContent = CSS;
-document.head.appendChild(styleEl);
+var isApp = !!document.getElementById('aab-v5');
+if (!isApp) return;
 
 // ══════════════════════════════════════════════════════════════════════════
-// 1. AI PRESENTER → TIMELINE AUTO-FLOW
+// 1. VIRTUAL BACKGROUND — canvas compositing
+// Replaces CSS filter approach with proper background removal
+// Uses MediaPipe Selfie Segmentation (runs in browser, no server needed)
+// ══════════════════════════════════════════════════════════════════════════
+
+var VBG = {
+  active:      false,
+  type:        'none',  // none | blur | image | color
+  imageUrl:    null,
+  color:       '#1a2035',
+  blurAmount:  12,
+  segmenter:   null,
+  canvas:      null,
+  ctx:         null,
+  bgCanvas:    null,
+  bgCtx:       null,
+  bgImage:     null,
+  stream:      null,
+  rafId:       null,
+  videoEl:     null
+};
+
+async function vbg_loadMediaPipe() {
+  if (VBG.segmenter) return true;
+  try {
+    // Load MediaPipe Selfie Segmentation from CDN
+    if (!window.SelfieSegmentation) {
+      await new Promise(function(resolve, reject) {
+        var s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js';
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+    VBG.segmenter = new window.SelfieSegmentation({
+      locateFile: function(file) {
+        return 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/' + file;
+      }
+    });
+    VBG.segmenter.setOptions({ modelSelection: 1, selfieMode: true });
+    await VBG.segmenter.initialize();
+    console.log('MediaPipe Selfie Segmentation loaded');
+    return true;
+  } catch(e) {
+    console.warn('MediaPipe load failed, falling back to CSS blur:', e.message);
+    return false;
+  }
+}
+
+async function vbg_apply(type, value) {
+  VBG.type = type;
+
+  // Find the studio video element
+  var videoEl = document.getElementById('studio-cam')
+    || document.getElementById('cam-preview')
+    || document.querySelector('#record-pg video');
+  if (!videoEl) { console.warn('VBG: no video element found'); return; }
+  VBG.videoEl = videoEl;
+
+  // Stop previous processing
+  if (VBG.rafId) { cancelAnimationFrame(VBG.rafId); VBG.rafId = null; }
+
+  if (type === 'none') {
+    VBG.active = false;
+    // Restore original stream display
+    videoEl.style.filter = '';
+    var overlay = document.getElementById('vbg-canvas-overlay');
+    if (overlay) overlay.style.display = 'none';
+    return;
+  }
+
+  // Load background image if needed
+  if (type === 'image' && value) {
+    VBG.imageUrl = value;
+    VBG.bgImage = new Image();
+    VBG.bgImage.crossOrigin = 'anonymous';
+    VBG.bgImage.src = value;
+    await new Promise(function(r){ VBG.bgImage.onload = r; VBG.bgImage.onerror = r; });
+  }
+
+  // If MediaPipe not available, fall back to CSS
+  var mpLoaded = await vbg_loadMediaPipe();
+  if (!mpLoaded) {
+    vbg_cssBlurFallback(type, value);
+    return;
+  }
+
+  // Create output canvas overlaid on top of video
+  var rect = videoEl.getBoundingClientRect();
+  var canvas = document.getElementById('vbg-canvas-overlay');
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.id = 'vbg-canvas-overlay';
+    canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:5;pointer-events:none;border-radius:inherit;';
+    videoEl.parentElement.style.position = 'relative';
+    videoEl.parentElement.appendChild(canvas);
+  }
+  canvas.style.display = 'block';
+  VBG.canvas = canvas;
+  VBG.ctx    = canvas.getContext('2d');
+
+  // Set up segmenter callback
+  VBG.segmenter.onResults(function(results) {
+    vbg_renderFrame(results, videoEl, canvas, VBG.ctx);
+  });
+
+  VBG.active = true;
+
+  // Process frames
+  async function processFrame() {
+    if (!VBG.active) return;
+    if (videoEl.readyState >= 2) {
+      canvas.width  = videoEl.videoWidth  || videoEl.clientWidth  || 640;
+      canvas.height = videoEl.videoHeight || videoEl.clientHeight || 480;
+      try {
+        await VBG.segmenter.send({ image: videoEl });
+      } catch(e) {}
+    }
+    VBG.rafId = requestAnimationFrame(processFrame);
+  }
+  processFrame();
+}
+
+function vbg_renderFrame(results, videoEl, canvas, ctx) {
+  var w = canvas.width, h = canvas.height;
+  ctx.save();
+  ctx.clearRect(0, 0, w, h);
+
+  // Draw segmentation mask to determine person pixels
+  ctx.globalCompositeOperation = 'source-over';
+
+  // Draw background first
+  if (VBG.type === 'blur') {
+    // Draw blurred video as background
+    ctx.filter = 'blur(' + VBG.blurAmount + 'px)';
+    ctx.drawImage(results.image, 0, 0, w, h);
+    ctx.filter = 'none';
+  } else if (VBG.type === 'image' && VBG.bgImage && VBG.bgImage.complete) {
+    ctx.drawImage(VBG.bgImage, 0, 0, w, h);
+  } else if (VBG.type === 'color') {
+    ctx.fillStyle = VBG.color;
+    ctx.fillRect(0, 0, w, h);
+  } else {
+    // News/Office/Dark — use preset gradient
+    var presets = {
+      'news':   ['#081840', '#0a2d6b'],
+      'office': ['#0a1a0a', '#1a3a1a'],
+      'dark':   ['#050810', '#0d1117'],
+      'green':  ['#00a000', '#004000']
+    };
+    var colors = presets[VBG.type] || presets['dark'];
+    var grad = ctx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, colors[0]);
+    grad.addColorStop(1, colors[1]);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  // Cut out person using segmentation mask
+  // The mask is white where the person is
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.drawImage(results.segmentationMask, 0, 0, w, h);
+
+  // Draw the actual person pixels back on top
+  ctx.globalCompositeOperation = 'destination-over';
+  ctx.drawImage(results.image, 0, 0, w, h);
+
+  ctx.restore();
+}
+
+function vbg_cssBlurFallback(type, value) {
+  // CSS-only fallback when MediaPipe unavailable
+  var videoEl = VBG.videoEl;
+  if (!videoEl) return;
+  var presets = {
+    'blur':   'blur(12px) brightness(0.7)',
+    'dark':   'brightness(0.3)',
+    'news':   'hue-rotate(200deg) saturate(0.3) brightness(0.4)',
+    'office': 'sepia(0.3) brightness(0.6)',
+    'green':  'hue-rotate(90deg) saturate(2)'
+  };
+  // Can't do real background removal in CSS, just apply to whole video
+  // Show user a message
+  if (typeof toast === 'function') toast('Full background removal loading... using blur for now', 'info');
+  videoEl.style.filter = presets[type] || '';
+}
+
+// Override background button clicks in studio
+function vbg_wireButtons() {
+  var bgBtns = document.querySelectorAll('.bg-btn, [data-bg], .s-btn[onclick*="setBg"], .s-btn[onclick*="bg"]');
+  // Map button text/data to background type
+  document.querySelectorAll('.studio-bg-btn, [class*="bg-opt"]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var t = (btn.dataset.bg || btn.textContent || '').toLowerCase().trim();
+      if (t.includes('blur'))   vbg_apply('blur');
+      if (t.includes('dark'))   vbg_apply('color', '#050810');
+      if (t.includes('news'))   vbg_apply('news');
+      if (t.includes('office')) vbg_apply('office');
+      if (t.includes('green'))  vbg_apply('green');
+      if (t.includes('live') || t.includes('none')) vbg_apply('none');
+    });
+  });
+}
+
+// Intercept setBg calls from existing code
+var _origSetBg = window.setBg || window.setBackground;
+window.setBg = window.setBackground = function(type, value) {
+  if (typeof _origSetBg === 'function') _origSetBg.apply(this, arguments);
+  // Also apply our canvas-based background removal
+  var typeMap = {
+    'blur': 'blur', 'dark': 'dark', 'news': 'news',
+    'office': 'office', 'green': 'green', 'live': 'none',
+    'none': 'none', '': 'none'
+  };
+  var mapped = typeMap[type] || type;
+  vbg_apply(mapped, value);
+};
+
+setTimeout(vbg_wireButtons, 1000);
+
+// ══════════════════════════════════════════════════════════════════════════
+// 2. TELEPROMPTER SMOOTH SCROLL — force override at document level
+// The issue is the existing tpScroll runs after our override
+// Solution: redefine on a timer AFTER all scripts load
+// ══════════════════════════════════════════════════════════════════════════
+
+function installSmoothTp() {
+  // Override tpScroll with CSS transition approach
+  window.tpScroll = function() {
+    var TP = window.TP;
+    if (!TP) return;
+    clearInterval(TP.scrollTimer);
+
+    var wrap = document.getElementById('tp-text');
+    if (!wrap) return;
+
+    // Add transition styles to all word spans
+    wrap.querySelectorAll('span[id^="tpw"]').forEach(function(s) {
+      s.style.transition = 'color .12s ease, font-weight .12s ease, text-shadow .15s ease';
+    });
+
+    var total  = (wrap.querySelectorAll('span[id^="tpw"]')).length;
+    var msPerW = 60000 / (TP.speed || 80);
+
+    TP.scrollTimer = setInterval(function() {
+      var wi = TP.currentWord;
+
+      // Previous word — fade out
+      if (wi > 0) {
+        var prev = document.getElementById('tpw' + (wi - 1));
+        if (prev) {
+          prev.style.color      = 'rgba(255,255,255,0.18)';
+          prev.style.fontWeight = '400';
+          prev.style.textShadow = 'none';
+        }
+      }
+
+      // Current word — highlight gold
+      var cur = document.getElementById('tpw' + wi);
+      if (cur) {
+        cur.style.color      = '#f59e0b';
+        cur.style.fontWeight = '700';
+        cur.style.textShadow = '0 0 28px rgba(245,158,11,0.7)';
+        // Smooth scroll into view — center of viewport
+        cur.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      }
+
+      TP.currentWord++;
+
+      if (TP.currentWord >= total) {
+        clearInterval(TP.scrollTimer);
+        TP.playing = false;
+        var btn = document.getElementById('tp-play-btn') || document.querySelector('[onclick*="tpToggle"]');
+        if (btn) btn.textContent = '▶ Play';
+      }
+    }, msPerW);
+  };
+
+  // Also override studio teleprompter (different scroll mechanism)
+  var _origStartTp = window.startTpAutoTimer || window.studioTpStart;
+  window.startTpAutoTimer = window.studioTpStart = function() {
+    var scene = PROJECT && PROJECT.scenes && PROJECT.scenes[window.STUDIO && STUDIO.currentScene || 0];
+    if (!scene) { if (typeof _origStartTp === 'function') return _origStartTp.apply(this, arguments); return; }
+
+    var words    = (scene.narration || '').trim().split(/\s+/).filter(Boolean);
+    var wpm      = (window.STUDIO && STUDIO.tpSpeed) || 80;
+    var msPerW   = 60000 / wpm;
+    var tpEl     = document.getElementById('tp-cur') || document.querySelector('.tp-cur-txt, .studio-tp-text');
+    if (!tpEl) { if (typeof _origStartTp === 'function') return _origStartTp.apply(this, arguments); return; }
+
+    // Render words as spans
+    tpEl.innerHTML = words.map(function(w, i) {
+      return '<span id="studio-tpw' + i + '" style="display:inline-block;margin-right:8px;transition:color .12s,font-weight .12s,text-shadow .15s;color:rgba(255,255,255,.5);">' + w + '</span>';
+    }).join('');
+
+    if (window._studioTpTimer) clearInterval(window._studioTpTimer);
+    var wi = 0;
+    var inner = tpEl;
+
+    window._studioTpTimer = setInterval(function() {
+      if (!window.STUDIO_TP || !window.STUDIO_TP.running) { clearInterval(window._studioTpTimer); return; }
+
+      // Previous
+      if (wi > 0) {
+        var p = document.getElementById('studio-tpw' + (wi-1));
+        if (p) { p.style.color='rgba(255,255,255,.15)'; p.style.fontWeight='400'; p.style.textShadow='none'; }
+      }
+      // Current
+      var c = document.getElementById('studio-tpw' + wi);
+      if (c) {
+        c.style.color      = '#f59e0b';
+        c.style.fontWeight = '700';
+        c.style.textShadow = '0 0 24px rgba(245,158,11,.65)';
+        // Smooth horizontal scroll
+        c.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' });
+      }
+      wi++;
+
+      if (wi >= words.length) {
+        clearInterval(window._studioTpTimer);
+        if (window.STUDIO_TP) window.STUDIO_TP.running = false;
+        // Auto-advance
+        setTimeout(function() {
+          if (typeof studioNext === 'function') studioNext();
+        }, 600);
+      }
+    }, msPerW);
+  };
+
+  console.log('Smooth teleprompter v3 installed');
+}
+
+// Install now and again after 2s (to beat any late-loading scripts)
+installSmoothTp();
+setTimeout(installSmoothTp, 2000);
+setTimeout(installSmoothTp, 5000);
+
+// ══════════════════════════════════════════════════════════════════════════
+// 3. AI PRESENTER CLIPS → EXISTING TIMELINE
+// The existing timeline uses tl_addClip() or similar
+// We need to find the correct function and call it
 // ══════════════════════════════════════════════════════════════════════════
 
 window.aps_addClipToTimeline = function(sc) {
   if (!sc || !sc.videoUrl) return;
+
+  // Store in PROJECT.clips
   if (!PROJECT.clips) PROJECT.clips = {};
   PROJECT.clips[sc.id] = {
     sceneId:   sc.id,
@@ -9957,595 +10216,134 @@ window.aps_addClipToTimeline = function(sc) {
     videoUrl:  sc.videoUrl,
     duration:  sc.duration || 8,
     source:    'ai-presenter',
-    provider:  (window.APS && APS.settings.provider) || 'heygen',
-    sceneName: (sc.type || 'MAIN') + ' · Scene ' + sc.num,
-    ts:        Date.now()
+    sceneName: 'Scene ' + sc.num
   };
-  if (PROJECT.scenes) {
-    var s = PROJECT.scenes.find(function(x){ return x.id === sc.id; });
-    if (s) s.status = 'recorded';
+
+  // Try all known timeline add functions in order
+  var added = false;
+
+  // Method 1: tl_addClipToTrack (most likely function name)
+  if (typeof tl_addClipToTrack === 'function') {
+    try { tl_addClipToTrack({ url: sc.videoUrl, duration: sc.duration, name: 'Scene ' + sc.num, track: 'main' }); added = true; } catch(e){}
   }
+
+  // Method 2: tl_addClip
+  if (!added && typeof tl_addClip === 'function') {
+    try { tl_addClip({ url: sc.videoUrl, duration: sc.duration, name: 'Scene ' + sc.num }); added = true; } catch(e){}
+  }
+
+  // Method 3: addClipToTimeline
+  if (!added && typeof addClipToTimeline === 'function') {
+    try { addClipToTimeline(sc.videoUrl, sc.duration, 'Scene ' + sc.num); added = true; } catch(e){}
+  }
+
+  // Method 4: tl_buildTracksFromProject (rebuilds from PROJECT.clips)
+  if (typeof tl_buildTracksFromProject === 'function') {
+    try { tl_buildTracksFromProject(); added = true; } catch(e){}
+  }
+
+  // Method 5: renderEditClips / renderEditSuite
+  if (typeof renderEditClips  === 'function') { try { renderEditClips();  } catch(e){} }
+  if (typeof renderEditSuite  === 'function') { try { renderEditSuite();  } catch(e){} }
+  if (typeof tl_render        === 'function') { try { tl_render();        } catch(e){} }
+
   if (typeof saveProject === 'function') saveProject();
-  aab_refreshTimeline();
-  aab_showNextStep('edit-pg', '🎥 Go to Edit Suite to review & export your clip');
-  console.log('Timeline: Scene ' + sc.num + ' added');
+  console.log('Timeline: Scene ' + sc.num + ' added' + (added ? ' via function' : ' via PROJECT.clips'));
+
+  // Show "go to timeline" hint
+  var hint = document.getElementById('aab-next-hint');
+  if (!hint) {
+    hint = document.createElement('div');
+    hint.id = 'aab-next-hint';
+    hint.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:rgba(0,212,170,.12);border:1px solid rgba(0,212,170,.3);color:#00d4aa;font-size:13px;padding:10px 18px;border-radius:8px;cursor:pointer;z-index:9000;animation:aab-pulse 2s ease infinite;';
+    hint.onclick = function(){ if(typeof nav==='function')nav('edit-pg'); hint.style.display='none'; };
+    document.body.appendChild(hint);
+  }
+  hint.textContent = '→ Scene ' + sc.num + ' ready — click to go to Edit Suite';
+  hint.style.display = 'block';
+  setTimeout(function(){ if(hint) hint.style.display='none'; }, 12000);
 };
 
 // ══════════════════════════════════════════════════════════════════════════
-// 2. RECORDING STUDIO → TIMELINE AUTO-FLOW
+// 4. RECORDING SAVE → TIMELINE
+// Wire the existing "Scene 1 saved — added to timeline" bar to actually
+// call our timeline function
 // ══════════════════════════════════════════════════════════════════════════
 
 var _origStopRec = window.stopRec;
 window.stopRec = function() {
   if (typeof _origStopRec === 'function') _origStopRec.apply(this, arguments);
   setTimeout(function() {
-    var scene = PROJECT.scenes && PROJECT.scenes[STUDIO && STUDIO.currentScene || 0];
+    var idx   = window.STUDIO && STUDIO.currentScene || 0;
+    var scene = PROJECT.scenes && PROJECT.scenes[idx];
     if (!scene) return;
-    var clip = PROJECT.clips && PROJECT.clips[scene.id];
+    var clip  = PROJECT.clips && PROJECT.clips[scene.id];
     if (!clip || !clip.url) return;
-    clip.source = clip.source || 'recording';
-    clip.sceneName = clip.sceneName || ('Scene ' + ((STUDIO && STUDIO.currentScene || 0) + 1));
-    clip.ts = Date.now();
+
+    // Trigger timeline rebuild
+    if (typeof tl_buildTracksFromProject === 'function') { try { tl_buildTracksFromProject(); } catch(e){} }
+    if (typeof renderEditClips  === 'function') { try { renderEditClips();  } catch(e){} }
+    if (typeof tl_render        === 'function') { try { tl_render();        } catch(e){} }
     if (typeof saveProject === 'function') saveProject();
-    aab_refreshTimeline();
-    aab_showRetakeBar(STUDIO && STUDIO.currentScene || 0);
-    aab_showNextStep('edit-pg', '🎬 Clip saved! Go to Edit Suite or record the next scene');
-  }, 600);
+  }, 800);
 };
 
 // ══════════════════════════════════════════════════════════════════════════
-// 3. TIMELINE / EDIT SUITE REFRESH
+// 5. ASSET OVERLAY — place assets on video canvas
 // ══════════════════════════════════════════════════════════════════════════
 
-function aab_refreshTimeline() {
-  if (typeof renderEditSuite  === 'function') { try { renderEditSuite();  } catch(e){} }
-  if (typeof renderEditClips  === 'function') { try { renderEditClips();  } catch(e){} }
-  if (typeof tl_render        === 'function') { try { tl_render();        } catch(e){} }
-  if (typeof tl_buildTracksFromProject === 'function') { try { tl_buildTracksFromProject(); } catch(e){} }
-  aab_buildClipsPanel();
-}
+window.aab_showAssetOverlay = function(assetUrl, position) {
+  // position: 'pip-right' | 'pip-left' | 'fullscreen' | 'lower-k'
+  var container = document.getElementById('studio-cam-wrap') || document.querySelector('#record-pg .cam-wrap, #record-pg .video-wrap');
+  if (!container) return;
 
-// Build our own clips panel if native one doesn't render
-function aab_buildClipsPanel() {
-  var clips = PROJECT.clips;
-  if (!clips) return;
-  var keys = Object.keys(clips).sort(function(a,b){ return (clips[a].sceneNum||0) - (clips[b].sceneNum||0); });
-  if (!keys.length) return;
+  // Remove existing overlay of same position
+  var existing = container.querySelector('[data-overlay-pos="' + position + '"]');
+  if (existing) { existing.remove(); return; } // toggle off
 
-  // Find or create clips container in edit suite
-  var container = document.getElementById('aab-clips-list');
-  if (!container) {
-    var editPg = document.getElementById('edit-pg');
-    if (!editPg) return;
-    var panel = document.createElement('div');
-    panel.id = 'aab-clips-list';
-    panel.style.cssText = 'padding:16px;display:flex;flex-wrap:wrap;gap:10px;';
-    var header = editPg.querySelector('.edit-clips-header, #clips-header, .clips-bar-inner');
-    if (header) header.after(panel);
-    else {
-      var firstChild = editPg.firstElementChild;
-      if (firstChild) firstChild.after(panel);
-      else editPg.appendChild(panel);
-    }
-    container = panel;
+  var el = document.createElement('div');
+  el.dataset.overlayPos = position;
+  el.style.position = 'absolute';
+  el.style.zIndex   = '10';
+
+  var isImg = /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(assetUrl);
+  var isVid = /\.(mp4|webm|mov)$/i.test(assetUrl);
+  var inner = isImg ? '<img src="' + assetUrl + '" style="width:100%;height:100%;object-fit:contain;">'
+            : isVid ? '<video src="' + assetUrl + '" autoplay loop muted style="width:100%;height:100%;object-fit:contain;"></video>'
+            : '<img src="' + assetUrl + '" style="width:100%;height:100%;object-fit:contain;">';
+
+  switch(position) {
+    case 'pip-right':
+      el.style.cssText += 'right:16px;bottom:80px;width:28%;height:auto;border-radius:10px;overflow:hidden;border:2px solid rgba(255,255,255,.3);box-shadow:0 4px 20px rgba(0,0,0,.5);';
+      break;
+    case 'pip-left':
+      el.style.cssText += 'left:16px;bottom:80px;width:28%;height:auto;border-radius:10px;overflow:hidden;border:2px solid rgba(255,255,255,.3);box-shadow:0 4px 20px rgba(0,0,0,.5);';
+      break;
+    case 'fullscreen':
+      el.style.cssText += 'inset:0;opacity:.4;pointer-events:none;';
+      break;
+    case 'lower-k':
+      el.style.cssText += 'left:0;right:0;bottom:0;height:18%;padding:0 20px;display:flex;align-items:center;background:linear-gradient(transparent,rgba(0,0,0,.7));';
+      break;
+    default:
+      el.style.cssText += 'top:50%;left:50%;transform:translate(-50%,-50%);width:60%;';
   }
 
-  container.innerHTML = keys.map(function(k) {
-    var c = clips[k];
-    var isAI = c.source === 'ai-presenter';
-    var dur = c.duration ? Math.round(c.duration) + 's' : '—';
-    return '<div class="tl-clip-card ' + (isAI ? 'tl-ai' : 'tl-rec') + '" onclick="aab_previewClip(\'' + k + '\')" style="width:160px;">'
-      + '<div style="font-size:11px;font-weight:700;color:' + (isAI ? '#8b5cf6' : '#ef4444') + ';margin-bottom:4px;">' + (isAI ? '🤖 AI' : '🎥 REC') + '</div>'
-      + '<div style="font-size:12px;color:#e2e8f0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (c.sceneName || 'Scene ' + c.sceneNum) + '</div>'
-      + '<div class="tl-dur">' + dur + '</div>'
-      + (c.url ? '<video src="' + c.url + '" style="width:100%;height:72px;object-fit:cover;border-radius:4px;margin-top:6px;" muted preload="metadata"></video>' : '')
-      + '<button class="tl-del" onclick="event.stopPropagation();aab_removeClip(\'' + k + '\')">✕</button>'
-      + '</div>';
-  }).join('');
-}
-
-window.aab_previewClip = function(id) {
-  var clip = PROJECT.clips && PROJECT.clips[id];
-  if (!clip || !clip.url) return;
-  var modal = document.createElement('div');
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:99999;display:flex;align-items:center;justify-content:center;';
-  modal.onclick = function(e){ if(e.target===modal) modal.remove(); };
-  modal.innerHTML = '<div style="max-width:900px;width:90%;background:#0d1117;border-radius:12px;overflow:hidden;">'
-    + '<video src="' + clip.url + '" controls autoplay style="width:100%;display:block;max-height:70vh;"></video>'
-    + '<div style="padding:14px;display:flex;justify-content:space-between;align-items:center;">'
-    + '<span style="color:#e2e8f0;font-size:13px;">' + (clip.sceneName||'Clip') + '</span>'
-    + '<div style="display:flex;gap:8px;">'
-    + '<a href="' + clip.url + '" download class="btn-gold" style="padding:8px 16px;font-size:13px;text-decoration:none;border-radius:6px;">⬇ Download</a>'
-    + '<button onclick="this.closest(\'[style*=fixed]\').remove()" class="btn-ghost" style="padding:8px 16px;font-size:13px;">Close</button>'
-    + '</div></div></div>';
-  document.body.appendChild(modal);
+  el.innerHTML = inner;
+  container.style.position = 'relative';
+  container.appendChild(el);
 };
 
-window.aab_removeClip = function(id) {
-  if (!confirm('Remove this clip?')) return;
-  if (PROJECT.clips) delete PROJECT.clips[id];
-  if (typeof saveProject === 'function') saveProject();
-  aab_refreshTimeline();
-};
-
-// ══════════════════════════════════════════════════════════════════════════
-// 4. EXPORT PIPELINE
-// ══════════════════════════════════════════════════════════════════════════
-
-function aab_buildExportPanel() {
-  if (document.getElementById('aab-export-panel')) return;
-  var panel = document.createElement('div');
-  panel.id = 'aab-export-panel';
-  panel.innerHTML = [
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">',
-      '<h3>🎬 Export Video</h3>',
-      '<button onclick="document.getElementById(\'aab-export-panel\').classList.remove(\'open\')" style="background:none;border:none;color:#64748b;font-size:20px;cursor:pointer;">✕</button>',
-    '</div>',
-    '<div id="aab-export-clip-count" style="font-size:12px;color:#64748b;margin-bottom:16px;"></div>',
-
-    '<div class="export-opt" onclick="aab_exportDirect()">',
-      '<span class="export-badge badge-free">FREE</span>',
-      '<h4>⬇ Download All Clips</h4>',
-      '<p>Download each clip individually as MP4 files</p>',
-    '</div>',
-
-    '<div class="export-opt" onclick="aab_exportStitch()">',
-      '<span class="export-badge badge-pro">CREATOMATE</span>',
-      '<h4>🎞 Stitch & Export</h4>',
-      '<p>Merge all clips into one final video with transitions</p>',
-    '</div>',
-
-    '<div class="export-opt" onclick="aab_exportSubtitles()">',
-      '<span class="export-badge badge-pro">PRO</span>',
-      '<h4>💬 Export with Subtitles</h4>',
-      '<p>Auto-generate captions and burn them into the video</p>',
-    '</div>',
-
-    '<div id="aab-export-status" style="margin-top:16px;display:none;">',
-      '<div class="aab-progress-bar" id="aab-export-bar"></div>',
-      '<p id="aab-export-msg" style="font-size:12px;color:#64748b;margin-top:8px;"></p>',
-    '</div>',
-
-    '<div id="aab-export-result" style="margin-top:16px;display:none;"></div>',
-  ].join('');
-  document.body.appendChild(panel);
-}
-
-window.aab_openExport = function() {
-  aab_buildExportPanel();
-  var clips = PROJECT.clips || {};
-  var count = Object.keys(clips).length;
-  var el = document.getElementById('aab-export-clip-count');
-  if (el) el.textContent = count + ' clip' + (count !== 1 ? 's' : '') + ' ready to export';
-  var result = document.getElementById('aab-export-result');
-  if (result) { result.style.display = 'none'; result.innerHTML = ''; }
-  document.getElementById('aab-export-panel').classList.add('open');
-};
-
-window.aab_exportDirect = function() {
-  var clips = PROJECT.clips || {};
-  var keys = Object.keys(clips);
-  if (!keys.length) { alert('No clips to export yet. Generate scenes or record first.'); return; }
-  keys.forEach(function(k, i) {
-    var clip = clips[k];
-    if (!clip.url) return;
-    setTimeout(function() {
-      var a = document.createElement('a');
-      a.href = clip.url;
-      a.download = 'aabstudio-' + (clip.sceneName || 'clip-' + (i+1)).replace(/[^a-z0-9]/gi, '-') + '.mp4';
-      a.click();
-    }, i * 800);
-  });
-  if (typeof toast === 'function') toast('Downloading ' + keys.length + ' clips...', 'ok');
-};
-
-window.aab_exportStitch = async function() {
-  var clips = PROJECT.clips || {};
-  var keys = Object.keys(clips).sort(function(a,b){ return (clips[a].sceneNum||0)-(clips[b].sceneNum||0); });
-  var validClips = keys.filter(function(k){ return clips[k].url; });
-  if (validClips.length < 2) { alert('Need at least 2 clips to stitch. Download individually instead.'); return; }
-
-  var statusEl = document.getElementById('aab-export-status');
-  var barEl    = document.getElementById('aab-export-bar');
-  var msgEl    = document.getElementById('aab-export-msg');
-  var resultEl = document.getElementById('aab-export-result');
-
-  statusEl.style.display = 'block';
-  msgEl.textContent = 'Submitting to Creatomate...';
-
-  try {
-    var res = await fetch(API + '/api/creatomate/stitch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        clips: validClips.map(function(k){ return { url: clips[k].url, duration: clips[k].duration || 8 }; }),
-        subtitles: validClips.map(function(k){ return clips[k].sceneName || ''; }),
-        resolution: '1080p',
-        outputFormat: 'mp4'
-      })
-    });
-    var data = await res.json();
-    if (data.error) throw new Error(data.error);
-
-    msgEl.textContent = 'Rendering... (this takes 1-3 minutes)';
-
-    // Poll for completion
-    var pollCount = 0;
-    var pollTimer = setInterval(async function() {
-      pollCount++;
-      if (pollCount > 60) { clearInterval(pollTimer); msgEl.textContent = 'Timed out — try again'; return; }
-      try {
-        var sr = await fetch(API + '/api/creatomate/status/' + data.taskId);
-        var sd = await sr.json();
-        msgEl.textContent = 'Rendering... ' + (sd.progress || 0) + '%';
-        if (sd.status === 'succeeded' && sd.outputUrl) {
-          clearInterval(pollTimer);
-          barEl.classList.add('done');
-          msgEl.textContent = 'Done!';
-          resultEl.style.display = 'block';
-          resultEl.innerHTML = '<a href="' + sd.outputUrl + '" target="_blank" class="btn-primary" style="display:block;text-align:center;padding:12px;text-decoration:none;">⬇ Download Final Video</a>';
-          if (typeof toast === 'function') toast('Export complete!', 'ok');
-        }
-        if (sd.status === 'failed') { clearInterval(pollTimer); msgEl.textContent = 'Export failed — try downloading individually'; }
-      } catch(e) {}
-    }, 5000);
-
-  } catch(e) {
-    msgEl.textContent = 'Error: ' + e.message;
-    if (typeof toast === 'function') toast('Export error: ' + e.message.slice(0,60), 'error');
-  }
-};
-
-window.aab_exportSubtitles = function() {
-  if (typeof toast === 'function') toast('Subtitle export coming soon — use Stitch & Export for now', 'info');
-};
-
-// ── Wire export button into UI ─────────────────────────────────────────────
+// Wire existing Show buttons to our overlay system
 setTimeout(function() {
-  // Add export button to edit suite
-  var editHeader = document.querySelector('#edit-pg .edit-header, #edit-pg .pg-header');
-  if (editHeader && !document.getElementById('aab-export-btn')) {
-    var btn = document.createElement('button');
-    btn.id = 'aab-export-btn';
-    btn.className = 'btn-primary';
-    btn.style.cssText = 'margin-left:auto;padding:8px 18px;font-size:13px;';
-    btn.innerHTML = '🎬 Export';
-    btn.onclick = window.aab_openExport;
-    editHeader.appendChild(btn);
-  }
+  document.querySelectorAll('.asset-show-btn, [onclick*="showAsset"], [onclick*="showOverlay"]').forEach(function(btn) {
+    var url = btn.dataset.assetUrl || btn.dataset.url;
+    var pos = btn.dataset.position || 'pip-right';
+    if (url) btn.onclick = function(){ window.aab_showAssetOverlay(url, pos); };
+  });
 }, 1000);
 
-// ══════════════════════════════════════════════════════════════════════════
-// 5. SMOOTH TELEPROMPTER
-// ══════════════════════════════════════════════════════════════════════════
-
-window.tpScroll = function() {
-  clearInterval(window.TP.scrollTimer);
-  var wrap = document.getElementById('tp-text');
-  if (!wrap) return;
-  var spans = wrap.querySelectorAll('span[id^="tpw"]');
-  if (!spans.length) return;
-  var total = spans.length;
-  var msPerW = 60000 / (window.TP.speed || 80);
-
-  window.TP.scrollTimer = setInterval(function() {
-    var wi = window.TP.currentWord;
-    // Un-highlight previous
-    if (wi > 0) {
-      var prev = document.getElementById('tpw' + (wi - 1));
-      if (prev) prev.className = 'tp-done';
-    }
-    // Highlight current
-    var cur = document.getElementById('tpw' + wi);
-    if (cur) {
-      cur.className = 'tp-current';
-      cur.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-    window.TP.currentWord++;
-    if (window.TP.currentWord >= total) {
-      clearInterval(window.TP.scrollTimer);
-      window.TP.playing = false;
-      var btn = document.getElementById('tp-play-btn');
-      if (btn) btn.textContent = '▶ Play';
-    }
-  }, msPerW);
-};
-
-// ══════════════════════════════════════════════════════════════════════════
-// 6. PHONE REMOTE
-// ══════════════════════════════════════════════════════════════════════════
-
-var _bc = null;
-try { _bc = new BroadcastChannel('aab_tp_remote'); } catch(e) {}
-
-function aab_handleRemoteCmd(cmd, val) {
-  var inTp  = document.getElementById('teleprompter-pg') && document.getElementById('teleprompter-pg').classList.contains('on');
-  var inRec = document.getElementById('record-pg')      && document.getElementById('record-pg').classList.contains('on');
-  if (cmd === 'toggle')  { if (inTp && typeof tpToggle==='function') tpToggle(); else if (inRec && typeof studioTpToggle==='function') studioTpToggle(); }
-  if (cmd === 'play')    { if (inTp && typeof tpToggle==='function') { if (!TP.playing) tpToggle(); } }
-  if (cmd === 'pause')   { if (inTp && typeof tpToggle==='function') { if (TP.playing)  tpToggle(); } }
-  if (cmd === 'restart') { if (inTp) { TP.currentWord=0; clearInterval(TP.scrollTimer); if (TP.playing) tpScroll(); } }
-  if (cmd === 'next')    { if (inRec && typeof studioNext==='function') studioNext(); }
-  if (cmd === 'prev')    { if (inRec && typeof studioPrev==='function') studioPrev(); }
-  if (cmd === 'rec')     { if (inRec && typeof toggleRecording==='function') toggleRecording(); }
-  if (cmd === 'slower')  { var spd=Math.max(20,(inTp?TP.speed:STUDIO&&STUDIO.tpSpeed||80)-15); aab_handleRemoteCmd('speed',spd); }
-  if (cmd === 'faster')  { var spd=Math.min(300,(inTp?TP.speed:STUDIO&&STUDIO.tpSpeed||80)+15); aab_handleRemoteCmd('speed',spd); }
-  if (cmd === 'speed' && val) {
-    var s = parseInt(val);
-    if (inTp) { TP.speed=s; var sl=document.getElementById('tp-spd'); if(sl)sl.value=s; var sd=document.getElementById('tp-spd-disp'); if(sd)sd.textContent=s; if(TP.playing){clearInterval(TP.scrollTimer);tpScroll();} }
-    if (inRec) { if(STUDIO)STUDIO.tpSpeed=s; }
-  }
-}
-
-if (_bc) { _bc.onmessage = function(e){ if(e.data&&e.data.cmd) aab_handleRemoteCmd(e.data.cmd, e.data.val); }; }
-
-var _remoteLastCmd = '';
-setInterval(function() {
-  try {
-    var sid = window._aabRemoteSid || localStorage.getItem('aab_remote_session');
-    if (!sid) return;
-    var v = localStorage.getItem('aab_remote_cmd_' + sid);
-    if (v && v !== _remoteLastCmd) { _remoteLastCmd = v; var p=v.split(':'); aab_handleRemoteCmd(p[0],p[1]); }
-  } catch(e) {}
-}, 250);
-
-window.remoteSend = function(cmd, val) {
-  var sid = new URLSearchParams(window.location.search).get('remote') || window._aabRemoteSid || localStorage.getItem('aab_remote_session');
-  if (!sid) return;
-  localStorage.setItem('aab_remote_cmd_' + sid, cmd + (val!==undefined ? ':'+val : ''));
-  if (_bc) _bc.postMessage({ cmd: cmd, val: val });
-};
-
-window.tpShowRemote = function() {
-  var modal = document.getElementById('tp-remote-modal');
-  if (modal) modal.classList.add('on');
-  var sid = 'aab_' + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
-  window._aabRemoteSid = sid;
-  localStorage.setItem('aab_remote_session', sid);
-  var url = window.location.origin + window.location.pathname + '?remote=' + sid;
-  var qr = document.getElementById('tp-qr');
-  if (qr) qr.innerHTML = '<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(url) + '" style="width:200px;height:200px;border-radius:8px;">';
-  var ud = document.getElementById('tp-remote-url-disp');
-  if (ud) ud.textContent = url;
-};
-
-// ══════════════════════════════════════════════════════════════════════════
-// 7. USER GUIDE — contextual hints
-// ══════════════════════════════════════════════════════════════════════════
-
-function aab_showNextStep(targetPage, message) {
-  var hint = document.getElementById('aab-next-hint');
-  if (!hint) {
-    hint = document.createElement('div');
-    hint.id = 'aab-next-hint';
-    hint.className = 'aab-next-step';
-    hint.style.cssText = 'cursor:pointer;position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:9000;max-width:420px;width:90%;';
-    hint.onclick = function() {
-      if (typeof nav === 'function') nav(targetPage);
-      hint.style.display = 'none';
-    };
-    document.body.appendChild(hint);
-  }
-  hint.textContent = message;
-  hint.style.display = 'flex';
-  hint.dataset.page = targetPage;
-  setTimeout(function(){ if(hint) hint.style.display='none'; }, 12000);
-}
-
-function aab_showRetakeBar(sceneIdx) {
-  var bar = document.getElementById('studio-retake-bar');
-  if (!bar) return;
-  bar.style.display = 'block';
-  bar.innerHTML = [
-    '<div style="display:flex;align-items:center;gap:10px;padding:12px 18px;',
-      'background:rgba(16,185,129,.12);border-top:1px solid rgba(16,185,129,.25);">',
-      '<span style="font-size:13px;color:#10b981;font-weight:700;">✓ Scene ' + (sceneIdx+1) + ' saved</span>',
-      '<div style="flex:1"></div>',
-      '<button class="btn-danger" style="padding:6px 14px;font-size:12px;" onclick="if(typeof retakeScene===\'function\')retakeScene()">↺ Retake</button>',
-      '<button class="btn-ghost"  style="padding:6px 14px;font-size:12px;" onclick="if(typeof studioNext===\'function\'){studioNext();document.getElementById(\'studio-retake-bar\').style.display=\'none\';}">Next →</button>',
-      '<button class="btn-primary" style="padding:6px 14px;font-size:12px;" onclick="if(typeof nav===\'function\')nav(\'edit-pg\')">🎥 Edit Suite</button>',
-    '</div>'
-  ].join('');
-}
-
-// ══════════════════════════════════════════════════════════════════════════
-// 8. NAV OVERRIDE — refresh edit suite on navigation
-// ══════════════════════════════════════════════════════════════════════════
-
-var _origNav = window.nav;
-window.nav = function(pg) {
-  if (typeof _origNav === 'function') _origNav.apply(this, arguments);
-  if (pg === 'edit-pg') {
-    setTimeout(function() { aab_refreshTimeline(); }, 150);
-  }
-};
-
-// ══════════════════════════════════════════════════════════════════════════
-// 9. PHONE REMOTE PAGE — when ?remote=xxx in URL
-// ══════════════════════════════════════════════════════════════════════════
-
-var _remoteSid = new URLSearchParams(window.location.search).get('remote');
-if (_remoteSid) {
-  window._aabRemoteSid = _remoteSid;
-  document.querySelectorAll('.pg,.pg-flex,.pg-full').forEach(function(p){ p.classList.remove('on'); });
-  var rp = document.getElementById('remote-pg');
-  if (rp) { rp.classList.add('on'); }
-  else {
-    // Build a simple remote page
-    var rpage = document.createElement('div');
-    rpage.style.cssText = 'position:fixed;inset:0;background:#0d1117;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;';
-    rpage.innerHTML = [
-      '<div style="font-size:24px;font-weight:800;color:#e2e8f0;margin-bottom:8px;">📱 Remote Control</div>',
-      '<div style="font-size:12px;color:#64748b;margin-bottom:16px;">Connected to AABStudio</div>',
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%;max-width:320px;">',
-        '<button class="btn-primary" style="padding:20px;font-size:18px;" onclick="remoteSend(\'play\')">▶ Play</button>',
-        '<button class="btn-danger"  style="padding:20px;font-size:18px;" onclick="remoteSend(\'pause\')">⏸ Pause</button>',
-        '<button class="btn-ghost"   style="padding:20px;font-size:18px;" onclick="remoteSend(\'restart\')">↺ Restart</button>',
-        '<button class="btn-ghost"   style="padding:20px;font-size:18px;" onclick="remoteSend(\'toggle\')">⏯ Toggle</button>',
-        '<button class="btn-ghost"   style="padding:20px;font-size:16px;" onclick="remoteSend(\'slower\')">🐢 Slower</button>',
-        '<button class="btn-ghost"   style="padding:20px;font-size:16px;" onclick="remoteSend(\'faster\')">🐇 Faster</button>',
-        '<button class="btn-gold"    style="padding:20px;font-size:16px;" onclick="remoteSend(\'prev\')">← Prev</button>',
-        '<button class="btn-gold"    style="padding:20px;font-size:16px;" onclick="remoteSend(\'next\')">Next →</button>',
-      '</div>',
-      '<button class="btn-danger" style="margin-top:8px;padding:16px 40px;font-size:16px;" onclick="remoteSend(\'rec\')">⏺ Record</button>',
-    ].join('');
-    document.body.appendChild(rpage);
-    var tn = document.getElementById('topnav'); if(tn) tn.style.display='none';
-  }
-}
-
-// ══════════════════════════════════════════════════════════════════════════
-// 10. SCENE GENERATION — improved (sequential, 15min timeout)
-// ══════════════════════════════════════════════════════════════════════════
-
-window.aps_generateScene = async function(idx) {
-  var sc = APS.scenes[idx];
-  if (!sc || !sc.narration.trim()) {
-    if (sc) { sc.status = 'failed'; if (typeof aps_updateSceneRow==='function') aps_updateSceneRow(sc); }
-    return false;
-  }
-  sc.status = 'generating';
-  if (typeof aps_updateSceneRow === 'function') aps_updateSceneRow(sc);
-  if (idx === APS.currentIdx && typeof aps_selectScene === 'function') aps_selectScene(idx);
-
-  // Update dot colour
-  var dot = document.querySelector('[data-scene-idx="' + idx + '"] .scene-status-dot, .scene-row[data-idx="' + idx + '"] .dot');
-  if (dot) dot.className = (dot.className || '') + ' scene-dot-gen';
-
-  try {
-    if (typeof aps_saveSettings === 'function') aps_saveSettings();
-    if (!APS.photoB64) {
-      var sp = localStorage.getItem('aps_presenter_photo');
-      if (sp) APS.photoB64 = sp.split(',')[1];
-    }
-
-    // Step 1: Voice
-    var vr = await fetch(API + '/api/voice', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        text:            sc.narration,
-        voiceId:         APS.settings.voiceId,
-        stability:       APS.settings.stability  || 0.5,
-        similarityBoost: APS.settings.clarity    || 0.75
-      })
-    });
-    var vd = await vr.json();
-    if (!vd.audio) throw new Error('Voice failed: ' + (vd.error || 'no audio'));
-
-    // Step 2: Submit presenter (returns taskId immediately)
-    var pr = await fetch(API + '/api/presenter', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        audioBase64:          vd.audio,
-        referenceImageBase64: APS.photoB64    || null,
-        customBgBase64:       APS.customBgB64 || null,
-        studioType:           APS.settings.bg,
-        ratio:                APS.settings.ratio,
-        sceneText:            sc.narration,
-        provider:             APS.settings.provider,
-        framingStyle:         APS.settings.framing,
-        gestureStyle:         APS.settings.gesture  || 'professional',
-        shotType:             APS.settings.shot     || 'medium',
-        motionStyle:          APS.settings.motion   || 'static',
-        voiceGender:          APS.settings.voiceGender,
-        sceneNum:             sc.num,
-        sceneTotal:           sc.total,
-        duration:             sc.duration
-      })
-    });
-    var pd = await pr.json();
-    if (pd.error) throw new Error(pd.error);
-    sc.taskId = pd.taskId;
-
-    // Immediate success (unlikely but handle it)
-    if (pd.done && pd.videoUrl) {
-      return aab_sceneSuccess(sc, idx, pd.videoUrl);
-    }
-
-    // Step 3: Poll (15min max, 15s interval)
-    for (var poll = 0; poll < 60 && !APS.stopRequested; poll++) {
-      await new Promise(function(r){ setTimeout(r, 15000); });
-      var sr = await fetch(API + '/api/presenter-status?taskId=' + encodeURIComponent(pd.taskId));
-      if (!sr.ok) { console.warn('Poll HTTP', sr.status); continue; }
-      var stat = await sr.json();
-      console.log('Scene', sc.num, 'poll', (poll+1) + '/60:', stat.status, stat.videoUrl ? '✓' : '');
-      if (stat.done && stat.videoUrl) return aab_sceneSuccess(sc, idx, stat.videoUrl);
-      if (stat.failed) throw new Error('Render failed: ' + (stat.error || 'provider error'));
-    }
-    throw new Error('Timed out after 15 min');
-
-  } catch(e) {
-    sc.status = 'failed'; sc.error = e.message;
-    if (typeof aps_updateSceneRow === 'function') aps_updateSceneRow(sc);
-    if (idx === APS.currentIdx && typeof aps_selectScene === 'function') aps_selectScene(idx);
-    if (typeof toast === 'function') toast('Scene ' + sc.num + ' failed: ' + e.message.slice(0,60), 'error');
-    console.error('aps_generateScene', idx, e.message);
-    return false;
-  }
-};
-
-function aab_sceneSuccess(sc, idx, videoUrl) {
-  sc.status = 'done'; sc.videoUrl = videoUrl;
-  APS.results[sc.id] = videoUrl;
-  if (typeof aps_updateSceneRow === 'function') aps_updateSceneRow(sc);
-  if (idx === APS.currentIdx && typeof aps_selectScene === 'function') aps_selectScene(idx);
-  if (typeof aps_addClipToBar === 'function') aps_addClipToBar(sc);
-  if (typeof aps_addClipToTimeline === 'function') aps_addClipToTimeline(sc); // our override above
-  if (typeof saveProject === 'function') saveProject();
-  if (typeof toast === 'function') toast('Scene ' + sc.num + ' done ✓', 'ok');
-  return true;
-}
-
-window.aps_generateAll = async function() {
-  if (typeof aps_saveSettings === 'function') aps_saveSettings();
-  APS.stopRequested = false; APS.generating = true;
-  var stopBtn = document.getElementById('aps-stop-btn'), genBtn = document.getElementById('aps-gen-all-btn');
-  if (stopBtn) stopBtn.style.display = 'block';
-  if (genBtn)  genBtn.style.display  = 'none';
-  var toGen = APS.scenes.filter(function(s){ return s.status !== 'done'; });
-  if (typeof toast === 'function') toast('Generating ' + toGen.length + ' scenes one by one...', 'info');
-  for (var i = 0; i < toGen.length && !APS.stopRequested; i++) {
-    if (typeof aps_updateProgress === 'function') aps_updateProgress(i+1, toGen.length, 'Scene ' + toGen[i].num + ' of ' + toGen[i].total);
-    if (typeof aps_selectScene   === 'function') aps_selectScene(toGen[i].num - 1);
-    await window.aps_generateScene(toGen[i].num - 1);
-  }
-  APS.generating = false;
-  if (stopBtn) stopBtn.style.display = 'none';
-  if (genBtn)  genBtn.style.display  = 'block';
-  var done   = APS.scenes.filter(function(s){ return s.status==='done';   }).length;
-  var failed = APS.scenes.filter(function(s){ return s.status==='failed'; }).length;
-  if (typeof toast === 'function') toast(done + ' done · ' + failed + ' failed', done > 0 ? 'ok' : 'error');
-  if (done > 0) aab_showNextStep('edit-pg', '🎬 All scenes done! Go to Edit Suite to review and export');
-};
-
-window.aps_generateSelected = async function() {
-  if (typeof aps_saveSettings === 'function') aps_saveSettings();
-  APS.stopRequested = false; APS.generating = true;
-  var sel = APS.scenes.filter(function(s){ return s.selected && s.status !== 'done'; });
-  if (!sel.length) { if (typeof toast === 'function') toast('No scenes selected', 'info'); APS.generating = false; return; }
-  for (var i = 0; i < sel.length && !APS.stopRequested; i++) await window.aps_generateScene(sel[i].num - 1);
-  APS.generating = false;
-};
-
-// ══════════════════════════════════════════════════════════════════════════
-// 11. INIT
-// ══════════════════════════════════════════════════════════════════════════
-
-// Refresh edit suite when navigated to
-setTimeout(function() {
-  if (typeof nav === 'function') {
-    var _nav2 = window.nav;
-    window.nav = function(pg) {
-      _nav2.apply(this, arguments);
-      if (pg === 'edit-pg') setTimeout(aab_refreshTimeline, 200);
-    };
-  }
-  aab_buildExportPanel();
-  aab_refreshTimeline();
-}, 500);
-
-console.log('AABStudio Platform v2.0 ✓ — Studio→Timeline→Export, smooth TP, phone remote');
-
+console.log('Studio fixes v1.0: VBG + smooth TP + timeline wiring + asset overlays');
 })();
 </script> 
 </body>
