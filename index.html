@@ -5598,6 +5598,7 @@
   </div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
+</style>
 
   <script>
 
@@ -13139,5 +13140,2098 @@ rgba(0,0,0,.2);max-height:90vh;overflow-y:auto;}
 
 
 
+    <script>
+      (function () {
+        function applyFixes() {
+          // Move pages trapped inside export-pg to body level
+          var exportPg = document.getElementById('export-pg');
+          if (exportPg) {
+            ['teleprompter-pg', 'remote-pg', 'pricing-pg', 'privacy-pg', 'terms-pg', 'ai-presenter-studio',
+              'mode-picker-modal', 'upgrade-modal', 'ai-presenter-modal', 'studio-settings-modal'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el && exportPg.contains(el)) document.body.appendChild(el);
+              });
+          }
+
+          // Fix loadDashboard to use proj-list
+          window.loadDashboard = function () {
+            var grid = document.getElementById('proj-list');
+            if (!grid) return;
+            var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+            if (!projects.length) {
+              grid.innerHTML = '<div style="padding:40px;text-align:center;color:#9ca3af;font-size:14px;">No projects yet. Click + New project to start.</div>';
+              return;
+            }
+            var inner = document.createElement('div');
+            inner.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;padding:4px;';
+            projects.forEach(function (p, i) {
+              var card = document.createElement('div');
+              card.className = 'proj-card';
+              card.innerHTML = '<div style="height:110px;background:linear-gradient(135deg,#0f172a,#1a3a5f);border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:10px;font-size:32px;">🎬</div>'
+                + '<div style="font-weight:700;font-size:14px;margin-bottom:4px;">' + (p.title || 'Untitled') + '</div>'
+                + '<div style="font-size:12px;color:#9ca3af;margin-bottom:10px;">' + (p.scenes ? p.scenes.length : 0) + ' scenes &middot; ' + (p.date || '') + '</div>'
+                + '<div style="display:flex;gap:8px;">'
+                + '<button onclick="loadProject(' + i + ')" style="flex:1;background:#00d4ff;color:#000;border:none;padding:7px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;">Open &rarr;</button>'
+                + '<button onclick="deleteProject(' + i + ')" style="background:none;border:1px solid #e5e7eb;padding:7px 10px;border-radius:6px;cursor:pointer;font-size:11px;color:#9ca3af;">&times;</button>'
+                + '</div>';
+              inner.appendChild(card);
+            });
+            grid.innerHTML = '';
+            grid.appendChild(inner);
+          };
+
+          // Fix openAIPresenter to open the studio
+          window.openAIPresenter = function () {
+            if (typeof window.openAIPresenterStudio === 'function') {
+              window.openAIPresenterStudio();
+            } else {
+              if (typeof toast === 'function') toast('AI Presenter loading...', 'info');
+              setTimeout(function () { if (typeof window.openAIPresenterStudio === 'function') window.openAIPresenterStudio(); }, 500);
+            }
+          };
+        }
+
+        applyFixes();
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', applyFixes);
+        }
+        setTimeout(applyFixes, 200);
+      })();
+    </script>
+
+
+    <script id="aab-aps-fallback">
+      /* APS Fallback — injects AI Presenter Studio functions if not in scope */
+      (function () {
+        if (typeof window.openAIPresenterStudio === 'function') return; // already loaded correctly
+
+        if (!window.APS) window.APS = {
+          scenes: [], currentIdx: 0, photoB64: null, customBgB64: null,
+          generating: false, stopRequested: false, clips: {}, results: {},
+          settings: {
+            voiceId: 'pNInz6obpgDQGcFmaJgB', voiceName: 'Adam', voiceGender: 'male',
+            framing: 'medium', gesture: 'professional', bg: 'news-studio',
+            shot: 'medium', motion: 'static', provider: 'heygen', ratio: '16:9',
+            bgLocked: true, stability: 0.5, clarity: 0.75
+          }
+        };
+
+        window.openAIPresenterStudio = function () {
+          if (!window.APP || !APP.user) { if (typeof toast === 'function') toast('Sign in first', 'info'); return; }
+          if (!PROJECT.scenes || !PROJECT.scenes.length) {
+            var saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+            var best = null;
+            saved.forEach(function (p) {
+              if (p.scenes && p.scenes.length > 0 && (!best || p.scenes.length > best.scenes.length)) best = p;
+            });
+            if (best) { PROJECT.id = best.id; PROJECT.title = best.title; PROJECT.scenes = best.scenes; PROJECT.assets = best.assets || []; PROJECT.clips = {}; }
+          }
+          if (!PROJECT.scenes || !PROJECT.scenes.length) { if (typeof toast === 'function') toast('No scenes — split your script first', 'error'); return; }
+          var studio = document.getElementById('ai-presenter-studio');
+          if (!studio) return;
+          studio.classList.add('on');
+          var nameEl = document.getElementById('aps-project-name');
+          if (nameEl) nameEl.textContent = PROJECT.title || 'My Video';
+          APS.scenes = PROJECT.scenes.map(function (sc, i) {
+            return {
+              id: sc.id, num: i + 1, total: PROJECT.scenes.length, narration: sc.narration || sc.script || '',
+              duration: sc.duration || 8, type: sc.type || 'MAIN', status: 'ready', selected: true, taskId: null, videoUrl: null
+            };
+          });
+          APS.currentIdx = 0;
+          var cnt = document.getElementById('aps-scene-count');
+          if (cnt) cnt.textContent = APS.scenes.length + ' scenes';
+          var list = document.getElementById('aps-scene-list');
+          if (list) {
+            list.innerHTML = '';
+            APS.scenes.forEach(function (sc) {
+              var row = document.createElement('div');
+              row.className = 'aps-scene-row' + (sc.num === 1 ? ' active' : '');
+              row.id = 'aps-row-' + sc.id;
+              var chk = '<input type="checkbox" checked style="accent-color:#00d4ff;flex-shrink:0;" onclick="APS.scenes[' + (sc.num - 1) + '].selected=this.checked;event.stopPropagation();">';
+              var num = '<span style="font-size:10px;color:#6b7280;font-weight:600;flex-shrink:0;width:28px;">' + String(sc.num).padStart(2, '0') + '</span>';
+              var txt = '<span style="font-size:11px;color:#e5e7eb;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (sc.narration.slice(0, 50) || '(no narration)') + '</span>';
+              var dur = '<span style="font-size:10px;color:#4b5563;flex-shrink:0;">' + sc.duration + 's</span>';
+              row.innerHTML = '<span class="aps-status-dot ready"></span>' + chk + num + txt + dur;
+              row.onclick = (function (n) { return function () { if (typeof aps_selectScene === 'function') aps_selectScene(n); else { APS.currentIdx = n; document.querySelectorAll('.aps-scene-row').forEach(function (r) { r.classList.remove('active'); }); row.classList.add('active'); } }; })(sc.num - 1);
+              list.appendChild(row);
+            });
+          }
+          // Select scene 1
+          var sc1 = APS.scenes[0];
+          if (sc1) {
+            var scriptEl = document.getElementById('aps-preview-script');
+            var numEl = document.getElementById('aps-preview-scene-num');
+            var badgeEl = document.getElementById('aps-preview-badge');
+            if (scriptEl) { scriptEl.textContent = sc1.narration.slice(0, 120); scriptEl.style.display = 'block'; }
+            if (numEl) numEl.textContent = 'Scene 01 / ' + sc1.total + ' — ' + sc1.type;
+            if (badgeEl) badgeEl.textContent = 'Ready';
+          }
+          console.log('AI Presenter Studio opened: ' + APS.scenes.length + ' scenes ✓');
+        };
+
+        window.openAIPresenter = window.openAIPresenterStudio;
+        window.closeAIPresenterStudio = function () {
+          var s = document.getElementById('ai-presenter-studio'); if (s) s.classList.remove('on');
+          if (window.APS) APS.stopRequested = true;
+        };
+        window.aps_selectAll = function (v) { if (window.APS) APS.scenes.forEach(function (s) { s.selected = v; }); };
+        window.aps_filterScenes = function () { };
+        window.aps_stopQueue = function () { if (window.APS) { APS.stopRequested = true; APS.generating = false; } };
+        window.aps_setBg = function (btn) {
+          document.querySelectorAll('.aps-bg-btn').forEach(function (b) { b.classList.remove('active'); });
+          btn.classList.add('active');
+          if (window.APS) APS.settings.bg = btn.dataset.bg;
+          var BG = {
+            'news-studio': 'linear-gradient(135deg,#0a1628,#1a2f5a)', 'podcast': 'linear-gradient(135deg,#0d0020,#1a0535)',
+            'office': 'linear-gradient(135deg,#0f1a10,#1a2f1a)', 'classroom': 'linear-gradient(135deg,#1a1a0a,#2a2a10)',
+            'courtroom': 'linear-gradient(135deg,#1a0a00,#3a1500)', 'documentary': 'linear-gradient(135deg,#050505,#100005)',
+            'cooking': 'linear-gradient(135deg,#0a1a0a,#182a10)', 'custom': '#1a2535'
+          };
+          var bg = document.getElementById('aps-preview-bg');
+          if (bg) bg.style.background = BG[btn.dataset.bg] || '#1a2535';
+        };
+        window.aps_triggerCustomBg = function () { var f = document.getElementById('aps-bg-file'); if (f) f.click(); };
+        window.aps_loadPhoto = function (input) {
+          var file = input.files[0]; if (!file) return;
+          var r = new FileReader();
+          r.onload = function (e) {
+            if (window.APS) try { localStorage.setItem('aps_presenter_photo', e.target.result); } catch (ex) { }
+            var p = document.getElementById('aps-photo-preview');
+            if (p) { p.src = e.target.result; p.style.display = 'block'; }
+            var pw = document.getElementById('aps-presenter-img-wrap');
+            if (pw) pw.innerHTML = '<img src="' + e.target.result + '" style="width:100%;height:100%;object-fit:cover;border-radius:100px 100px 0 0;">';
+          };
+          r.readAsDataURL(file);
+        };
+        window.aps_loadCustomBg = function (input) {
+          var file = input.files[0]; if (!file) return;
+          var r = new FileReader();
+          r.onload = function (e) {
+            if (window.APS) APS.customBgB64 = e.target.result.split(',')[1];
+            var bg = document.getElementById('aps-preview-bg');
+            if (bg) { bg.style.background = 'none'; bg.style.backgroundImage = 'url(' + e.target.result + ')'; bg.style.backgroundSize = 'cover'; }
+          };
+          r.readAsDataURL(file);
+        };
+        window.aps_previewVoice = async function () {
+          var sel = document.getElementById('aps-voice-sel');
+          if (sel && window.APS) { APS.settings.voiceId = sel.value; var o = sel.options[sel.selectedIndex]; if (o) { APS.settings.voiceName = o.text.split('—')[0].trim(); APS.settings.voiceGender = o.dataset.gender || 'unknown'; } }
+          if (typeof toast === 'function') toast('Generating voice preview…', 'info');
+          try {
+            var sc = window.APS && APS.scenes[APS.currentIdx];
+            var txt = sc ? sc.narration.slice(0, 80) : 'Hello, this is a voice preview.';
+            var r = await fetch(window.API + '/api/voice', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: txt, voiceId: window.APS ? APS.settings.voiceId : 'pNInz6obpgDQGcFmaJgB' }) });
+            var d = await r.json();
+            if (d.audio) { new Audio('data:audio/mpeg;base64,' + d.audio).play(); if (typeof toast === 'function') toast((window.APS ? APS.settings.voiceName : 'Adam') + ' voice preview', 'ok'); }
+            else if (typeof toast === 'function') toast('Preview failed: ' + (d.error || 'no audio'), 'error');
+          } catch (e) { if (typeof toast === 'function') toast('Preview error', 'error'); }
+        };
+        window.aps_applyVoiceAll = function () { if (typeof toast === 'function') toast('Voice applied to all scenes', 'ok'); };
+        window.aps_saveSettings = function () {
+          if (!window.APS) return;
+          var g = function (id) { return (document.getElementById(id) || {}).value; };
+          APS.settings.voiceId = g('aps-voice-sel') || APS.settings.voiceId;
+          APS.settings.framing = g('aps-framing') || APS.settings.framing;
+          APS.settings.gesture = g('aps-gesture') || APS.settings.gesture;
+          APS.settings.provider = g('aps-provider') || APS.settings.provider;
+          APS.settings.ratio = g('aps-ratio') || APS.settings.ratio;
+          var o = document.querySelector('#aps-voice-sel option:checked');
+          if (o) { APS.settings.voiceName = o.text.split('—')[0].trim(); APS.settings.voiceGender = o.dataset.gender || 'unknown'; }
+        };
+        window.aps_generateScene = async function (idx) {
+          if (!window.APS || !window.API) return false;
+          var sc = APS.scenes[idx]; if (!sc || !sc.narration.trim()) { if (typeof toast === 'function') toast('Scene ' + (idx + 1) + ' has no narration', 'error'); return false; }
+          // Warn if no presenter photo - HeyGen needs it
+          if (!APS.photoB64 && (APS.settings.provider === 'heygen' || !APS.settings.provider)) {
+            if (typeof toast === 'function') toast('Tip: Upload a presenter photo for better results. Using studio background only.', 'info');
+          }
+          sc.status = 'generating';
+          var row = document.getElementById('aps-row-' + sc.id);
+          if (row) row.className = 'aps-scene-row generating' + (idx === APS.currentIdx ? ' active' : '');
+          try {
+            aps_saveSettings();
+            var vr = await fetch(API + '/api/voice', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: sc.narration, voiceId: APS.settings.voiceId, stability: APS.settings.stability || 0.5 }) });
+            var vd = await vr.json();
+            if (!vd.audio) throw new Error('Voice failed: ' + (vd.error || 'no audio'));
+            var pr = await fetch(API + '/api/presenter', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ audioBase64: vd.audio, referenceImageBase64: APS.photoB64 || null, customBgBase64: APS.customBgB64 || null, studioType: APS.settings.bg, ratio: APS.settings.ratio, sceneText: sc.narration, provider: APS.settings.provider, prompt: { studioType: APS.settings.bg, presenter: { framing: APS.settings.framing }, voice: { id: APS.settings.voiceId, name: APS.settings.voiceName, gender: APS.settings.voiceGender } } }) });
+            var pd = await pr.json();
+            if (pd.error) throw new Error(pd.error);
+            sc.taskId = pd.taskId; sc.status = 'generating';
+            if (typeof toast === 'function') toast('Scene ' + sc.num + ' submitted…', 'info');
+            for (var i = 0; i < 60; i++) {
+              if (APS.stopRequested) break;
+              await new Promise(function (res) { setTimeout(res, 8000); });
+              var sr = await fetch(API + '/api/presenter-status?taskId=' + encodeURIComponent(pd.taskId));
+              var sd = await sr.json();
+              if (sd.done && sd.videoUrl) {
+                sc.status = 'done'; sc.videoUrl = sd.videoUrl; APS.results[sc.id] = sd.videoUrl;
+                if (row) row.className = 'aps-scene-row done' + (idx === APS.currentIdx ? ' active' : '');
+                var bar = document.getElementById('aps-clips-list'), empty = document.getElementById('aps-clips-empty');
+                if (empty) empty.style.display = 'none';
+                if (bar) { var clip = document.createElement('div'); clip.style.cssText = 'flex-shrink:0;width:80px;height:56px;background:#1f2937;border-radius:6px;border:.5px solid #10b981;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;'; clip.innerHTML = '<span style="font-size:18px;">🎬</span><span style="font-size:9px;color:#10b981;font-weight:700;">Scene ' + sc.num + '</span>'; clip.onclick = function () { window.open(sc.videoUrl, '_blank'); }; bar.appendChild(clip); }
+                if (typeof saveProject === 'function' && PROJECT.clips) { PROJECT.clips[sc.id] = { sceneId: sc.id, videoUrl: sd.videoUrl, duration: sc.duration, source: 'ai-presenter' }; saveProject(); }
+                if (typeof toast === 'function') toast('Scene ' + sc.num + ' ready! ✓', 'ok');
+                return true;
+              } else if (sd.failed) { throw new Error('Generation failed'); }
+            }
+            throw new Error('Timed out');
+          } catch (e) {
+            sc.status = 'failed';
+            if (row) row.className = 'aps-scene-row failed' + (idx === APS.currentIdx ? ' active' : '');
+            if (typeof toast === 'function') toast('Scene ' + sc.num + ' failed: ' + e.message.slice(0, 50), 'error');
+            return false;
+          }
+        };
+        window.aps_generateCurrent = function () { if (window.APS && typeof aps_generateScene === 'function') aps_generateScene(APS.currentIdx); };
+        window.aps_regenerateCurrent = function () { if (window.APS) { APS.scenes[APS.currentIdx].status = 'ready'; aps_generateScene(APS.currentIdx); } };
+        window.aps_regenerateScene = function (idx) { if (window.APS) { APS.scenes[idx].status = 'ready'; aps_generateScene(idx); } };
+        window.aps_generateSelected = async function () {
+          if (!window.APS) return;
+          aps_saveSettings(); APS.stopRequested = false; APS.generating = true;
+          var sel = APS.scenes.filter(function (s) { return s.selected && s.status !== 'done'; });
+          if (!sel.length) { if (typeof toast === 'function') toast('Select at least one scene', 'error'); APS.generating = false; return; }
+          for (var i = 0; i < sel.length; i++) { if (APS.stopRequested) break; await aps_generateScene(sel[i].num - 1); }
+          APS.generating = false;
+        };
+        window.aps_generateAll = async function () {
+          if (!window.APS) return;
+          aps_saveSettings(); APS.stopRequested = false; APS.generating = true;
+          if (typeof toast === 'function') toast('Generating ' + APS.scenes.length + ' scenes…', 'info');
+          for (var i = 0; i < APS.scenes.length; i++) { if (APS.stopRequested) break; if (APS.scenes[i].status !== 'done') await aps_generateScene(i); }
+          APS.generating = false;
+        };
+        window.aps_selectScene = function (idx) {
+          if (!window.APS) return;
+          APS.currentIdx = idx;
+          var sc = APS.scenes[idx]; if (!sc) return;
+          document.querySelectorAll('.aps-scene-row').forEach(function (r) { r.classList.remove('active'); });
+          var row = document.getElementById('aps-row-' + sc.id); if (row) row.classList.add('active');
+          var numEl = document.getElementById('aps-preview-scene-num');
+          var scriptEl = document.getElementById('aps-preview-script');
+          var badgeEl = document.getElementById('aps-preview-badge');
+          var durEl = document.getElementById('aps-preview-duration');
+          if (numEl) numEl.textContent = 'Scene ' + String(sc.num).padStart(2, '0') + ' / ' + sc.total + ' — ' + sc.type;
+          if (scriptEl) { scriptEl.textContent = sc.narration.slice(0, 120) + (sc.narration.length > 120 ? '…' : ''); scriptEl.style.display = sc.narration ? 'block' : 'none'; }
+          if (badgeEl) { var L = { ready: 'Ready', generating: 'Generating…', done: '✓ Generated', failed: '✗ Failed', pending: 'Pending' }; badgeEl.textContent = L[sc.status] || sc.status; }
+          if (durEl) durEl.textContent = sc.duration + 's';
+        };
+
+        // Mobile remote
+        window.initRemote = function () { var pg = document.getElementById('remote-pg'); if (pg) pg.classList.add('on'); };
+        window.remotePlay = function () { try { new BroadcastChannel('aab-remote').postMessage({ cmd: 'toggle', src: 'remote' }); } catch (e) { } };
+        window.remoteSlow = function () { try { new BroadcastChannel('aab-remote').postMessage({ cmd: 'slower', src: 'remote' }); } catch (e) { } };
+        window.remoteFast = function () { try { new BroadcastChannel('aab-remote').postMessage({ cmd: 'faster', src: 'remote' }); } catch (e) { } };
+        window.remoteFontUp = function () { try { new BroadcastChannel('aab-remote').postMessage({ cmd: 'fontup', src: 'remote' }); } catch (e) { } };
+        window.remoteFontDown = function () { try { new BroadcastChannel('aab-remote').postMessage({ cmd: 'fontdown', src: 'remote' }); } catch (e) { } };
+        window.remoteExit = function () { var pg = document.getElementById('remote-pg'); if (pg) pg.classList.remove('on'); };
+        window.aps_updateVoiceList = function () { }; // stub - voice list is static
+
+
+        // Legacy function aliases — HTML may still reference old names
+        window.loadAIPhoto = window.aps_loadPhoto;
+        window.loadAISceneList = function () { if (typeof aps_renderSceneList === 'function') aps_renderSceneList(); };
+        window.startAIPresenter = window.aps_generateSelected;
+        window.checkAIPresenterStatus = function () { if (typeof toast === 'function') toast('Check video status in the AI Presenter Studio', 'info'); };
+        // pushAllLocalProjectsToCloud — needed on sign-in
+        window.pushAllLocalProjectsToCloud = async function () {
+          try {
+            var session = window._sbSession;
+            if (!session || !session.access_token) return;
+            var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+            for (var i = 0; i < projects.length; i++) {
+              var p = projects[i]; if (!p.id) continue;
+              await fetch('https://aabstudio-production.up.railway.app/api/project/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
+                body: JSON.stringify({ project: p })
+              }).catch(function () { });
+            }
+            console.log('All projects pushed to cloud');
+          } catch (e) { console.warn('pushAllLocalProjectsToCloud:', e.message); }
+        };
+        console.log('APS fallback loaded: openAIPresenterStudio, aps_generateScene, initRemote ✓');
+      })();
+    </script>
+    <script id="aab-v5">
+      // AABStudio v5 — Studio + Timeline + APS + Export
+      function showSaveStatus(msg, type) {
+        var el = document.getElementById('save-status-bar');
+        if (!el) { el = document.createElement('div'); el.id = 'save-status-bar'; el.style.cssText = 'position:fixed;bottom:12px;right:16px;z-index:9999;font-size:11px;padding:5px 12px;border-radius:20px;font-family:Sora,sans-serif;transition:opacity .5s;opacity:0;pointer-events:none;'; document.body.appendChild(el); }
+        var c = { ok: '#10b981', info: 'rgba(30,30,30,.9)', warn: '#f59e0b', error: '#ef4444' };
+        el.style.background = c[type] || c.info; el.style.color = type === 'warn' ? '#000' : '#fff';
+        el.textContent = msg; el.style.opacity = '1'; clearTimeout(el._t); el._t = setTimeout(function () { el.style.opacity = '0'; }, 3000);
+      }
+      window.showSaveStatus = showSaveStatus;
+      var _oSP = window.saveProject;
+      window.saveProject = function () { if (typeof _oSP === 'function') _oSP.apply(this, arguments); showSaveStatus('\u2713 Saved locally', 'ok'); };
+
+      // STUDIO STATE MACHINE
+      var STUDIO_STATE = 'IDLE'; window.STUDIO_STATE = 'IDLE';
+      function setStudioState(s) {
+        STUDIO_STATE = s; window.STUDIO_STATE = s;
+        var badge = document.getElementById('rec-badge'), txt = document.getElementById('rec-txt'),
+          bRec = document.getElementById('btn-rec'), bPrac = document.getElementById('btn-tp-start'),
+          bSync = document.getElementById('btn-auto'), bar = document.getElementById('studio-retake-bar'),
+          ind = document.getElementById('studio-rec-ind');
+        if (ind) ind.style.display = 'none';
+        if (s === 'IDLE') { if (txt) txt.textContent = 'IDLE'; if (badge) { badge.style.background = ''; badge.style.animation = ''; } if (bRec) { bRec.textContent = '\u23fa REC'; bRec.style.cssText = ''; } if (bar) bar.style.display = 'none'; }
+        else if (s === 'READY') { if (txt) txt.textContent = 'READY'; if (badge) badge.style.background = '#10b981'; if (bRec) { bRec.textContent = '\u23fa REC'; bRec.style.background = 'rgba(239,68,68,.12)'; bRec.style.color = '#fca5a5'; } if (bar) bar.style.display = 'none'; }
+        else if (s === 'PRACTICE') { if (txt) txt.textContent = 'PRACTICE'; if (badge) badge.style.background = '#f59e0b'; if (bPrac) { bPrac.textContent = '\u25a0 Stop Practice'; bPrac.style.background = 'rgba(245,158,11,.3)'; bPrac.style.color = '#fde68a'; } }
+        else if (s === 'RECORDING') { if (txt) txt.textContent = '\u25cf REC'; if (badge) badge.style.background = '#ef4444'; if (bRec) { bRec.textContent = '\u25a0 STOP REC'; bRec.style.background = 'rgba(239,68,68,.6)'; bRec.style.borderColor = '#ef4444'; bRec.style.color = '#fff'; bRec.style.fontWeight = '700'; } if (bSync) { bSync.textContent = '\u25a0 STOP'; bSync.style.background = 'rgba(239,68,68,.5)'; bSync.style.color = '#fff'; } if (ind) ind.style.display = 'flex'; if (bar) bar.style.display = 'none'; }
+        else if (s === 'SAVED') { if (txt) txt.textContent = 'SAVED \u2713'; if (badge) { badge.style.background = '#10b981'; badge.style.animation = ''; } if (bRec) { bRec.textContent = '\u23fa REC'; bRec.style.cssText = ''; } if (bSync) { bSync.textContent = '\u23fa Sync REC'; bSync.style.cssText = ''; } if (bar) bar.style.display = 'block'; }
+      }
+      window.setStudioState = setStudioState;
+
+      // PRACTICE MODE
+      function startPracticeMode() {
+        if (typeof STUDIO === 'undefined') return;
+        if (STUDIO_STATE === 'PRACTICE') { if (typeof studioTpStop === 'function') studioTpStop(); setStudioState('READY'); var btn = document.getElementById('btn-tp-start'); if (btn) { btn.textContent = '\u25b6 Practice'; btn.style.cssText = ''; } toast('Practice stopped', 'info'); return; }
+        STUDIO.currentScene = 0; if (typeof updateTP === 'function') updateTP(); if (typeof renderStudioQueue === 'function') renderStudioQueue();
+        setStudioState('PRACTICE'); if (typeof studioTpStart === 'function') studioTpStart();
+        toast('Practice \u2014 teleprompter from Scene 1. Click again to stop.', 'info');
+      }
+      window.startPracticeMode = startPracticeMode;
+
+      // SYNC RECORD
+      function startSyncRecord() {
+        if (typeof STUDIO === 'undefined') return;
+        if (STUDIO_STATE === 'RECORDING') { if (typeof stopRec === 'function') stopRec(); return; }
+        if (!STUDIO.stream || !STUDIO.stream.active) { toast('Start camera first \u2014 click \ud83d\udcf7 Cam', 'error'); return; }
+        if (STUDIO.currentScene === null || STUDIO.currentScene === undefined) { toast('Select a scene first', 'info'); return; }
+        if (typeof startRec === 'function') startRec();
+        setTimeout(function () { if (typeof studioTpStart === 'function') studioTpStart(); }, 400);
+        toast('Sync REC \u2014 camera + teleprompter. Click \u25a0 STOP to finish.', 'ok');
+      }
+      window.startSyncRecord = startSyncRecord;
+
+      // TOGGLE RECORDING
+      function toggleRecording() {
+        if (typeof STUDIO === 'undefined') return;
+        if (STUDIO_STATE === 'RECORDING') { if (typeof stopRec === 'function') stopRec(); return; }
+        if (!STUDIO.stream || !STUDIO.stream.active) { toast('Start camera first', 'error'); return; }
+        if (typeof startRec === 'function') startRec();
+      }
+      window.toggleRecording = toggleRecording;
+
+      // PATCH startRec/stopRec
+      var _sr0 = window.startRec;
+      window.startRec = function () { if (typeof STUDIO !== 'undefined') setStudioState('RECORDING'); if (typeof _sr0 === 'function') _sr0.apply(this, arguments); };
+      var _st0 = window.stopRec;
+      window.stopRec = function () {
+        if (typeof STUDIO === 'undefined') { if (typeof _st0 === 'function') _st0.apply(this, arguments); return; }
+        var idx = STUDIO.currentScene;
+        STUDIO.recording = false;
+        clearInterval(STUDIO.recTimer);
+        if (STUDIO.mr && STUDIO.mr.state !== 'inactive') {
+          STUDIO.mr.onstop = function () {
+            var blob = new Blob(STUDIO.chunks || [], { type: STUDIO._mime || 'video/webm' });
+            var url = URL.createObjectURL(blob);
+            var sc = PROJECT.scenes[idx];
+            var sid = (sc && sc.id) || ('clip_' + Date.now());
+            if (!PROJECT.clips) PROJECT.clips = {};
+            PROJECT.clips[sid] = { sceneId: sid, sceneIdx: idx, sceneNum: idx + 1, url: url, videoUrl: url, duration: STUDIO.recSecs || 0, size: blob.size, source: 'recording', recorded: true };
+            if (sc) sc.status = 'recorded';
+            STUDIO.chunks = [];
+            if (typeof tl_addClipToTimeline === 'function') tl_addClipToTimeline({ sceneId: sid, sceneNum: idx + 1, url: url, duration: STUDIO.recSecs || 8, source: 'recording' });
+            if (typeof updateStudioClips === 'function') updateStudioClips();
+            if (typeof renderStudioQueue === 'function') renderStudioQueue();
+            if (typeof saveProject === 'function') saveProject();
+            setStudioState('SAVED');
+            var bar = document.getElementById('studio-retake-bar');
+            if (bar) { bar.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:10px 18px;background:rgba(16,185,129,.12);border-top:1px solid rgba(16,185,129,.25);flex-wrap:wrap;"><span style="font-size:13px;color:#10b981;font-weight:700;">✓ Scene ' + (idx + 1) + ' saved — added to timeline</span><div style="flex:1;"></div><button onclick="retakeScene()" class="s-btn" style="color:#f59e0b;">↺ Retake</button><button onclick="keepAndNext()" class="s-btn" style="color:#10b981;">✓ Keep + Next →</button><button onclick="goToTimeline()" class="s-btn s-btn-teal">🎥 Timeline</button></div>'; bar.style.display = 'block'; }
+            toast('✓ Scene ' + (idx + 1) + ' saved and added to timeline', 'ok');
+          };
+          STUDIO.mr.stop();
+        } else {
+          setStudioState('READY');
+        }
+      };
+
+      // ON SCENE SAVED — retake bar + auto-add to timeline
+      function onSceneSaved(idx, clipUrl) {
+        setStudioState('SAVED');
+        var sc = PROJECT.scenes[idx];
+        if (sc && clipUrl) {
+          sc.status = 'recorded';
+          if (!PROJECT.clips) PROJECT.clips = {};
+          PROJECT.clips[sc.id] = { url: clipUrl, videoUrl: clipUrl, sceneIdx: idx, sceneNum: idx + 1, duration: (typeof STUDIO !== 'undefined' && STUDIO.recSecs) || 8, source: 'recording', recorded: true };
+          if (typeof saveProject === 'function') saveProject();
+          tl_addClipToTimeline({ sceneId: sc.id, sceneNum: idx + 1, url: clipUrl, duration: PROJECT.clips[sc.id].duration, source: 'recording' });
+        }
+        var bar = document.getElementById('studio-retake-bar');
+        if (bar) {
+          var dur = (typeof STUDIO !== 'undefined' && STUDIO.recSecs) || 0;
+          bar.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:10px 18px;background:rgba(16,185,129,.12);border-top:1px solid rgba(16,185,129,.25);flex-wrap:wrap;">'
+            + '<span style="font-size:13px;color:#10b981;font-weight:700;">\u2713 Scene ' + (idx + 1) + ' saved (' + dur + 's)</span>'
+            + '<div style="flex:1;"></div>'
+            + '<button onclick="retakeScene()" class="s-btn" style="color:#f59e0b;border-color:rgba(245,158,11,.3);">\u21ba Retake</button>'
+            + '<button onclick="keepAndNext()" class="s-btn" style="color:#10b981;border-color:rgba(16,185,129,.3);">\u2713 Keep + Next \u2192</button>'
+            + '<button onclick="goToTimeline()" class="s-btn s-btn-teal">\ud83c\udfa5 Go to Timeline</button>'
+            + '</div>';
+          bar.style.display = 'block';
+        }
+        toast('\u2713 Scene ' + (idx + 1) + ' saved \u2014 added to timeline', 'ok');
+        if (typeof renderStudioQueue === 'function') renderStudioQueue();
+        if (typeof updateStudioClips === 'function') updateStudioClips();
+      }
+      window.onSceneSaved = onSceneSaved;
+      function keepAndNext() { setStudioState('READY'); if (typeof studioNext === 'function') studioNext(); } window.keepAndNext = keepAndNext;
+      function goToTimeline() { if (typeof saveProject === 'function') saveProject(); nav('edit-pg'); if (typeof renderEditSuite === 'function') renderEditSuite(); } window.goToTimeline = goToTimeline;
+
+      // WIRE BUTTONS
+      function wireStudioButtons() {
+        var p = document.getElementById('btn-tp-start'); if (p) { p.onclick = startPracticeMode; p.textContent = '\u25b6 Practice'; }
+        var s = document.getElementById('btn-auto'); if (s) { s.onclick = startSyncRecord; s.textContent = '\u23fa Sync REC'; }
+        var r = document.getElementById('btn-rec'); if (r) r.onclick = toggleRecording;
+        if (!document.getElementById('studio-retake-bar')) {
+          var bar = document.createElement('div'); bar.id = 'studio-retake-bar';
+          bar.style.cssText = 'display:none;position:absolute;bottom:110px;left:0;right:0;z-index:100;';
+          var cv = document.getElementById('studio-canvas'); if (cv) cv.appendChild(bar);
+        }
+      }
+      window.wireStudioButtons = wireStudioButtons;
+      setTimeout(wireStudioButtons, 100); setTimeout(wireStudioButtons, 700); setTimeout(wireStudioButtons, 1800);
+
+      // REC TIMER SYNC
+      setInterval(function () {
+        if (typeof STUDIO === 'undefined' || !STUDIO || !STUDIO.recording) return;
+        var m = Math.floor(STUDIO.recSecs / 60), s = STUDIO.recSecs % 60, str = m + ':' + (s < 10 ? '0' : '') + s;
+        document.querySelectorAll('#rec-timer-display').forEach(function (el) { el.textContent = str; });
+        document.querySelectorAll('#st-elapsed').forEach(function (el) { el.textContent = str; });
+      }, 1000);
+
+      // UPDATE STUDIO CLIPS
+      var _oUC = window.updateStudioClips;
+      window.updateStudioClips = function () {
+        if (typeof STUDIO === 'undefined' || typeof PROJECT === 'undefined') return;
+        if (typeof _oUC === 'function') _oUC();
+        var el = document.getElementById('sp-clips'); if (!el) return;
+        var clips = Object.values(PROJECT.clips || {}).filter(function (c) { return c && (c.url || c.videoUrl); });
+        if (!clips.length) { el.innerHTML = '<div style="font-size:10px;color:rgba(255,255,255,.2);padding:8px;">No clips yet</div>'; return; }
+        el.innerHTML = '';
+        clips.sort(function (a, b) { return (a.sceneNum || 0) - (b.sceneNum || 0); }).forEach(function (c) {
+          var url = c.url || c.videoUrl, d = document.createElement('div');
+          d.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:.5px solid rgba(255,255,255,.06);';
+          d.innerHTML = '<span style="font-size:10px;color:rgba(255,255,255,.5);">Scene ' + (c.sceneNum || ((c.sceneIdx || 0) + 1)) + '</span>'
+            + '<span style="font-size:9px;color:rgba(255,255,255,.3);">' + (c.duration || 0) + 's</span>'
+            + '<a href="' + url + '" download="scene-' + (c.sceneNum || 1) + '.webm" style="margin-left:auto;font-size:10px;color:var(--gold);">\u2193</a>';
+          el.appendChild(d);
+        });
+      };
+
+      // 7-TRACK TIMELINE
+      var TL = { tracks: [], duration: 0, zoom: 60, playhead: 0, playing: false, selectedClip: null, tool: 'select', subtitlesOn: false, _raf: null };
+      window.TL = TL;
+      var TLH = { video: 58, audio: 42, subtitle: 28, overlay: 36 };
+      var TLC = {
+        video: { clip: '#00d4ff', label: '#00d4ff', bg: 'rgba(0,212,255,.07)' },
+        audio: { clip: '#10b981', label: '#10b981', bg: 'rgba(16,185,129,.07)' },
+        subtitle: { clip: '#8b5cf6', label: '#8b5cf6', bg: 'rgba(139,92,246,.07)' },
+        overlay: { clip: '#f59e0b', label: '#f59e0b', bg: 'rgba(245,158,11,.07)' }
+      };
+
+      function tl_initTracks() {
+        TL.tracks = [
+          { id: 'main-video', type: 'video', name: '\ud83d\udcf9 Main Video', main: true, muted: false, volume: 1, clips: [] },
+          { id: 'broll', type: 'video', name: '\ud83c\udf9e B-Roll', main: false, muted: false, volume: 1, clips: [] },
+          { id: 'voice', type: 'audio', name: '\ud83c\udfa4 Voice', main: true, muted: false, volume: 1, clips: [] },
+          { id: 'music', type: 'audio', name: '\ud83c\udfb5 Music', main: false, muted: false, volume: .3, clips: [] },
+          { id: 'sfx', type: 'audio', name: '\ud83d\udd0a SFX', main: false, muted: false, volume: .8, clips: [] },
+          { id: 'subtitles', type: 'subtitle', name: '\ud83d\udcac Subtitles', main: false, muted: false, volume: 1, clips: [] },
+          { id: 'overlays', type: 'overlay', name: '\ud83d\uddbc Overlays', main: false, muted: false, volume: 1, clips: [] }
+        ];
+      }
+
+      // KEY: auto-add clip — called from recording AND APS
+      function tl_addClipToTimeline(clip) {
+        if (!TL.tracks || !TL.tracks.length) tl_initTracks();
+        var track = TL.tracks.find(function (t) { return t.id === 'main-video'; });
+        if (!track) return;
+        var existing = track.clips.find(function (c) { return c.sceneId === clip.sceneId || c.sceneNum === clip.sceneNum; });
+        if (existing) {
+          existing.url = clip.url || clip.videoUrl;
+          existing.duration = clip.duration || 8;
+          existing.color = clip.source === 'ai-presenter' ? '#8b5cf6' : '#00d4ff';
+        } else {
+          var le = 0;
+          track.clips.forEach(function (c) { le = Math.max(le, c.start + c.duration); });
+          track.clips.push({
+            id: 'vc-' + (clip.sceneId || Date.now()),
+            sceneId: clip.sceneId, sceneNum: clip.sceneNum || track.clips.length + 1,
+            url: clip.url || clip.videoUrl, start: le, duration: clip.duration || 8,
+            trimIn: 0, trimOut: 0, label: 'Scene ' + (clip.sceneNum || track.clips.length),
+            color: clip.source === 'ai-presenter' ? '#8b5cf6' : '#00d4ff'
+          });
+          TL.duration = Math.max(TL.duration, le + (clip.duration || 8));
+        }
+        if (typeof tl_render === 'function') tl_render();
+        if (typeof renderEditClips === 'function') renderEditClips();
+      }
+      window.tl_addClipToTimeline = tl_addClipToTimeline;
+
+      function tl_buildTracksFromProject() {
+        if (!TL.tracks || !TL.tracks.length) tl_initTracks();
+        var clips = Object.values(PROJECT.clips || {}).filter(function (c) { return c && (c.url || c.videoUrl); });
+        if (!clips.length) { TL.duration = 30; tl_render(); return; }
+        clips.sort(function (a, b) { return (a.sceneNum || 0) - (b.sceneNum || 0); });
+        var pos = 0, mT = TL.tracks.find(function (t) { return t.id === 'main-video'; });
+        if (mT) mT.clips = clips.map(function (c, i) {
+          var dur = c.duration || 8;
+          var cl = {
+            id: 'vc-' + (c.sceneId || i), sceneId: c.sceneId, sceneNum: c.sceneNum || i + 1,
+            url: c.url || c.videoUrl, start: pos, duration: dur, trimIn: 0, trimOut: 0,
+            label: 'Scene ' + (c.sceneNum || i + 1), color: c.source === 'ai-presenter' ? '#8b5cf6' : '#00d4ff'
+          };
+          pos += dur; return cl;
+        });
+        TL.duration = pos;
+        var sT = TL.tracks.find(function (t) { return t.id === 'subtitles'; });
+        if (sT) { var sp = 0; sT.clips = PROJECT.scenes.map(function (sc, i) { var d = sc.duration || 8; var cl = { id: 'sub-' + i, start: sp, duration: d, label: (sc.narration || '').slice(0, 40), text: sc.narration || '', color: '#8b5cf6' }; sp += d; return cl; }); }
+        tl_render();
+      }
+      window.tl_buildTracksFromProject = tl_buildTracksFromProject;
+
+      function tl_makeWave(w, h, color) {
+        var n = Math.max(4, Math.floor(w / 4)), p = '', mid = h / 2;
+        for (var i = 0; i < n; i++) { var amp = (Math.sin(i * .7) * .3 + .4) * mid * .9, x = (i / n) * w; p += '<rect x="' + x + '" y="' + (mid - amp) + '" width="3" height="' + (amp * 2) + '" fill="' + color + '"/>'; }
+        return '<svg width="' + w + '" height="' + h + '" xmlns="http://www.w3.org/2000/svg">' + p + '</svg>';
+      }
+
+      function tl_render() {
+        var LE = document.getElementById('tl-labels'), TE = document.getElementById('tl-tracks'), RE = document.getElementById('tl-ruler');
+        if (!LE || !TE || !RE) return;
+        if (!TL.tracks || !TL.tracks.length) tl_initTracks();
+        var pps = Math.max(10, TL.zoom), tw = Math.max(900, Math.ceil(TL.duration * pps) + 300);
+        var step = pps >= 80 ? 1 : pps >= 30 ? 5 : pps >= 12 ? 10 : 30;
+        var rh = '<div style="position:relative;width:' + tw + 'px;height:22px;">';
+        for (var ti = 0; ti <= TL.duration + 60; ti += step) {
+          var x = ti * pps, m = Math.floor(ti / 60), s2 = ti % 60;
+          rh += '<div style="position:absolute;left:' + x + 'px;top:0;height:100%;border-left:.5px solid rgba(255,255,255,.08);padding-left:2px;"><span style="font-size:8px;color:rgba(255,255,255,.3);">' + m + ':' + (s2 < 10 ? '0' : '') + s2 + '</span></div>';
+        }
+        RE.innerHTML = rh + '</div>';
+        LE.innerHTML = ''; TE.innerHTML = '';
+        var ph = document.createElement('div'); ph.id = 'tl-ph';
+        ph.style.cssText = 'position:absolute;top:0;bottom:0;width:2px;background:var(--accent);z-index:20;pointer-events:none;left:' + (TL.playhead * pps) + 'px;';
+        ph.innerHTML = '<div style="position:absolute;top:0;left:-5px;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid var(--accent);"></div>';
+        TE.appendChild(ph);
+        var totalH = 0;
+        TL.tracks.forEach(function (track) {
+          var th = TLH[track.type] || 44, tc = TLC[track.type] || TLC.video; totalH += th;
+          var lbl = document.createElement('div');
+          lbl.style.cssText = 'height:' + th + 'px;display:flex;flex-direction:column;justify-content:center;padding:0 8px;border-bottom:.5px solid rgba(255,255,255,.04);background:' + tc.bg + ';flex-shrink:0;';
+          var muteBtn = '<button onclick="tl_muteTrack(\'' + track.id + '\')" style="font-size:9px;padding:1px 5px;border:none;border-radius:3px;cursor:pointer;background:rgba(255,255,255,.06);color:' + (track.muted ? '#ef4444' : 'rgba(255,255,255,.4)') + ';">' + (track.muted ? '\ud83d\udd07' : '\ud83d\udd0a') + '</button>';
+          var volSlider = track.type === 'audio' ? '<input type="range" min="0" max="100" value="' + Math.round((track.volume || 1) * 100) + '" oninput="tl_setVol(\'' + track.id + '\',this.value)" style="width:40px;accent-color:' + tc.label + '">' : '';
+          lbl.innerHTML = '<div style="font-size:9px;font-weight:700;color:' + tc.label + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + track.name + '</div><div style="display:flex;gap:3px;margin-top:3px;">' + muteBtn + volSlider + '</div>';
+          LE.appendChild(lbl);
+          var rail = document.createElement('div');
+          rail.style.cssText = 'height:' + th + 'px;position:relative;border-bottom:.5px solid rgba(255,255,255,.04);background:' + tc.bg + ';width:' + tw + 'px;';
+          rail.onclick = function (e) {
+            if (e.target !== rail) return;
+            var r2 = rail.getBoundingClientRect(), sc = document.getElementById('tl-scroll'), sx = sc ? sc.scrollLeft : 0;
+            TL.playhead = Math.max(0, (e.clientX - r2.left + sx) / pps); tl_updatePlayhead();
+          };
+          (track.clips || []).forEach(function (clip) {
+            var cs = Math.max(0, (clip.start || 0) + (clip.trimIn || 0));
+            var cd = Math.max(0, (clip.duration || 0) - (clip.trimIn || 0) - (clip.trimOut || 0));
+            var cx = cs * pps, cw = Math.max(4, cd * pps);
+            var isSel = TL.selectedClip === clip.id;
+            var ce = document.createElement('div');
+            ce.dataset.clipId = clip.id; ce.dataset.trackId = track.id;
+            ce.style.cssText = 'position:absolute;left:' + cx + 'px;width:' + cw + 'px;top:4px;bottom:4px;background:' + (clip.color || tc.clip) + ';border-radius:4px;border:.5px solid ' + (clip.color || tc.clip) + ';cursor:pointer;overflow:hidden;opacity:' + (isSel ? 1 : .82) + ';user-select:none;z-index:2;' + (isSel ? 'box-shadow:0 0 0 2px #fff;' : '');
+            var inner = track.type === 'audio' ? '<div style="position:absolute;inset:0;overflow:hidden;opacity:.35;">' + tl_makeWave(cw, th - 8, clip.color || tc.clip) + '</div>' : '';
+            inner += '<div style="position:relative;z-index:1;padding:2px 6px;font-size:9px;font-weight:700;color:#000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (clip.label || 'Clip') + '</div>';
+            if (cw > 60) inner += '<div style="position:relative;z-index:1;padding:0 6px;font-size:8px;color:rgba(0,0,0,.6);">' + cd.toFixed(1) + 's</div>';
+            ce.innerHTML = inner;
+            ce.onclick = function (e) {
+              e.stopPropagation(); TL.selectedClip = clip.id; tl_render();
+              if (clip.url) { var v = document.getElementById('edit-video'), nc = document.getElementById('edit-no-clips'); if (v) { v.src = clip.url; v.style.display = 'block'; if (nc) nc.style.display = 'none'; } }
+            };
+            ce.onmousedown = function (e) {
+              if (TL.tool !== 'select') return; e.stopPropagation();
+              var sx2 = e.clientX, sp2 = clip.start;
+              var mv = function (ev) { clip.start = Math.max(0, sp2 + (ev.clientX - sx2) / pps); ce.style.left = ((clip.start + (clip.trimIn || 0)) * pps) + 'px'; };
+              var up = function () { document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up); tl_render(); };
+              document.addEventListener('mousemove', mv); document.addEventListener('mouseup', up);
+            };
+            rail.appendChild(ce);
+          });
+          TE.appendChild(rail);
+        });
+        TE.style.height = totalH + 'px'; LE.style.height = totalH + 'px';
+        var sc2 = document.getElementById('tl-scroll');
+        if (sc2 && !sc2._sb) { sc2._sb = true; sc2.onscroll = function () { LE.scrollTop = sc2.scrollTop; }; }
+      }
+      window.tl_render = tl_render;
+
+      function tl_updatePlayhead() {
+        var pps = Math.max(10, TL.zoom), ph = document.getElementById('tl-ph');
+        if (ph) ph.style.left = (TL.playhead * pps) + 'px';
+        var tc = document.getElementById('edit-timecode');
+        if (tc) tc.textContent = tl_fmt(TL.playhead) + ' / ' + tl_fmt(TL.duration);
+        if (TL.subtitlesOn) tl_updateSubs();
+      }
+      window.tl_updatePlayhead = tl_updatePlayhead;
+      function tl_fmt(s) { if (!s || isNaN(s)) return '0:00'; var m = Math.floor(s / 60), sec = Math.floor(s % 60); return m + ':' + (sec < 10 ? '0' : '') + sec; }
+      function tl_updateSubs() {
+        var st = TL.tracks.find(function (t) { return t.id === 'subtitles'; }); if (!st) return;
+        var ac = st.clips.find(function (c) { return TL.playhead >= c.start && TL.playhead < c.start + c.duration; });
+        var ov = document.getElementById('edit-subtitle-overlay'), tx = document.getElementById('edit-subtitle-text');
+        if (ov && tx) { if (ac) { ov.style.display = 'block'; tx.textContent = ac.text || ac.label || ''; } else ov.style.display = 'none'; }
+      }
+      function tl_muteTrack(id) { var t = TL.tracks.find(function (t) { return t.id === id; }); if (t) { t.muted = !t.muted; tl_render(); } } window.tl_muteTrack = tl_muteTrack;
+      function tl_setVol(id, v) { var t = TL.tracks.find(function (t) { return t.id === id; }); if (t) t.volume = parseFloat(v) / 100; } window.tl_setVol = tl_setVol;
+      function tl_setTool(tool) { TL.tool = tool;['select', 'trim', 'split'].forEach(function (t) { var b = document.getElementById('tl-tool-' + t); if (b) b.style.background = t === tool ? 'rgba(0,212,255,.2)' : ''; }); } window.tl_setTool = tl_setTool;
+      function tl_setZoom(v) { TL.zoom = parseInt(v); var zv = document.getElementById('tl-zoom-val'); if (zv) zv.textContent = v + 'px/s'; tl_render(); } window.tl_setZoom = tl_setZoom;
+      function tl_fitToWindow() { var c = document.getElementById('tl-scroll'); if (!c || TL.duration <= 0) return; TL.zoom = Math.max(10, Math.floor((c.clientWidth - 20) / TL.duration)); var sl = document.getElementById('tl-zoom'); if (sl) sl.value = TL.zoom; tl_render(); } window.tl_fitToWindow = tl_fitToWindow;
+      function tl_deleteSelected() { if (!TL.selectedClip) { toast('Select a clip first', 'info'); return; } TL.tracks.forEach(function (t) { t.clips = t.clips.filter(function (c) { return c.id !== TL.selectedClip; }); }); TL.selectedClip = null; tl_render(); toast('Clip deleted', 'ok'); } window.tl_deleteSelected = tl_deleteSelected;
+      function tl_splitAtPlayhead() {
+        if (!TL.selectedClip) { toast('Select a clip first', 'info'); return; }
+        TL.tracks.forEach(function (tr) {
+          var idx = tr.clips.findIndex(function (c) { return c.id === TL.selectedClip; }); if (idx === -1) return;
+          var clip = tr.clips[idx], sp = TL.playhead - clip.start; if (sp <= 0 || sp >= clip.duration) return;
+          tr.clips.splice(idx, 1, Object.assign({}, clip, { id: clip.id + '_a', duration: sp, trimOut: 0 }), Object.assign({}, clip, { id: clip.id + '_b', start: clip.start + sp, duration: clip.duration - sp, trimIn: 0 }));
+        });
+        tl_render(); toast('Clip split', 'ok');
+      } window.tl_splitAtPlayhead = tl_splitAtPlayhead;
+      function tl_addTrack() {
+        var te = document.getElementById('tl-add-track-type'), type = te ? te.value : 'video';
+        TL.tracks.push({ id: 'track-' + Date.now(), type: type === 'image' ? 'overlay' : type, main: false, name: ({ video: 'Video', audio: 'Audio', subtitle: 'Subtitles', overlay: 'Overlay' }[type] || type), muted: false, volume: 1, clips: [] });
+        tl_render();
+      } window.tl_addTrack = tl_addTrack;
+      function tl_toggleSubtitles() {
+        TL.subtitlesOn = !TL.subtitlesOn;
+        var btn = document.getElementById('tl-sub-btn'); if (btn) btn.textContent = '\ud83d\udcac Subtitles: ' + (TL.subtitlesOn ? 'ON' : 'OFF');
+        if (TL.subtitlesOn) {
+          var sp = 0, st = TL.tracks.find(function (t) { return t.id === 'subtitles'; });
+          if (st) st.clips = PROJECT.scenes.map(function (sc, i) { var d = sc.duration || 8; var c = { id: 'sub-' + i, start: sp, duration: d, label: (sc.narration || '').slice(0, 40), text: sc.narration || '', color: '#8b5cf6' }; sp += d; return c; });
+          tl_render();
+        }
+        var ov = document.getElementById('edit-subtitle-overlay'); if (ov) ov.style.display = TL.subtitlesOn ? 'block' : 'none';
+      } window.tl_toggleSubtitles = tl_toggleSubtitles;
+      function importToTimeline(input, type) {
+        var file = input.files[0]; if (!file) return;
+        var url = URL.createObjectURL(file), tt = type === 'audio' ? 'audio' : type === 'image' ? 'overlay' : 'video';
+        var tr = TL.tracks.find(function (t) { return t.type === tt && !t.main; });
+        if (!tr) { tr = { id: 'imp-' + Date.now(), type: tt, main: false, name: file.name.slice(0, 12), muted: false, volume: 1, clips: [] }; TL.tracks.push(tr); }
+        var le = 0; tr.clips.forEach(function (c) { le = Math.max(le, c.start + c.duration); });
+        tr.clips.push({ id: 'imp-' + Date.now(), url: url, start: le, duration: 10, label: file.name.slice(0, 18), color: TLC[tt] ? TLC[tt].clip : '#00d4ff' });
+        TL.duration = Math.max(TL.duration, le + 10); tl_render(); toast(file.name + ' added', 'ok');
+      } window.importToTimeline = importToTimeline;
+      function editPlayPause() {
+        var vid = document.getElementById('edit-video'), btn = document.getElementById('edit-play-btn');
+        if (TL.playing) { TL.playing = false; if (vid) vid.pause(); if (btn) btn.textContent = '\u25b6'; cancelAnimationFrame(TL._raf); }
+        else {
+          TL.playing = true; if (vid && vid.src) { vid.currentTime = TL.playhead; vid.play().catch(function () { }); } if (btn) btn.textContent = '\u23f8';
+          var step = function () { if (!TL.playing) return; TL.playhead = Math.min(TL.duration, TL.playhead + .05); tl_updatePlayhead(); if (TL.playhead >= TL.duration) { TL.playing = false; if (btn) btn.textContent = '\u25b6'; return; } TL._raf = requestAnimationFrame(step); }; TL._raf = requestAnimationFrame(step);
+        }
+      } window.editPlayPause = editPlayPause;
+      function editSeek(secs) { TL.playhead = Math.max(0, Math.min(TL.duration, TL.playhead + secs)); var vid = document.getElementById('edit-video'); if (vid && vid.src) vid.currentTime = TL.playhead; tl_updatePlayhead(); } window.editSeek = editSeek;
+      function renderEditSuite() { var t = document.getElementById('edit-title'); if (t) t.textContent = 'Edit \u2014 ' + (PROJECT.title || 'My Video'); if (!TL.tracks || !TL.tracks.length) tl_initTracks(); tl_buildTracksFromProject(); renderEditClips(); setTimeout(tl_fitToWindow, 80); } window.renderEditSuite = renderEditSuite;
+      function renderEditClips() {
+        var list = document.getElementById('edit-clips-list'); if (!list) return;
+        var clips = Object.values(PROJECT.clips || {}).filter(function (c) { return c && (c.url || c.videoUrl); });
+        if (!clips.length) { list.innerHTML = '<div style="padding:10px;font-size:11px;color:rgba(255,255,255,.2);">No clips yet</div>'; return; }
+        list.innerHTML = clips.sort(function (a, b) { return (a.sceneNum || 0) - (b.sceneNum || 0); }).map(function (c) {
+          var col = c.source === 'ai-presenter' ? '#8b5cf6' : '#00d4ff';
+          return '<div style="padding:6px 10px;border-bottom:.5px solid rgba(255,255,255,.04);cursor:pointer;" onclick="tl_previewClip(\'' + (c.url || c.videoUrl) + '\')">'
+            + '<div style="display:flex;align-items:center;gap:6px;">'
+            + '<div style="width:3px;height:28px;border-radius:2px;background:' + col + ';flex-shrink:0;"></div>'
+            + '<div><div style="font-size:10px;font-weight:600;color:#e5e7eb;">Scene ' + (c.sceneNum || '?') + '</div>'
+            + '<div style="font-size:9px;color:rgba(255,255,255,.3);">' + (c.source || 'recording') + ' \u00b7 ' + (c.duration || 0) + 's</div></div>'
+            + '<button onclick="event.stopPropagation();deleteClip(\'' + (c.sceneId || c.sceneNum || '') + '\'' + ')" style="margin-left:auto;background:none;border:none;color:rgba(239,68,68,.5);cursor:pointer;">\u2715</button>'
+            + '</div></div>';
+        }).join('');
+      } window.renderEditClips = renderEditClips;
+      function tl_previewClip(url) { if (!url) return; var vid = document.getElementById('edit-video'), nc = document.getElementById('edit-no-clips'); if (vid) { vid.src = url; vid.style.display = 'block'; if (nc) nc.style.display = 'none'; } } window.tl_previewClip = tl_previewClip;
+      function deleteClip(id) { if (!id || !confirm('Delete clip?')) return; delete PROJECT.clips[id]; tl_buildTracksFromProject(); saveProject(); renderEditSuite(); toast('Clip deleted', 'ok'); } window.deleteClip = deleteClip;
+
+      // EXPORT — stitch all clips
+      window.doExport = async function () {
+        var clips = Object.values(PROJECT.clips || {}).filter(function (c) { return c && (c.url || c.videoUrl); });
+        if (!clips.length) { toast('No clips to export', 'error'); return; }
+        clips.sort(function (a, b) { return (a.sceneNum || 0) - (b.sceneNum || 0); });
+        var st = document.getElementById('export-status'), pb = document.getElementById('export-progress-bar'), pl = document.getElementById('export-progress-label'), pg = document.getElementById('export-progress');
+        var ss = function (h) { if (st) st.innerHTML = h; };
+        var sp = function (p, l) { if (pg) pg.style.display = ''; if (pb) pb.style.width = p + '%'; if (pl) pl.textContent = l || ''; };
+        ss('<div>Stitching ' + clips.length + ' clips\u2026</div>'); sp(5, 'Fetching\u2026');
+        try {
+          var bufs = await Promise.all(clips.map(function (c) { return fetch(c.url || c.videoUrl).then(function (r) { return r.arrayBuffer(); }); }));
+          sp(70, 'Merging\u2026');
+          var tot = bufs.reduce(function (s, b) { return s + b.byteLength; }, 0), merged = new Uint8Array(tot), off = 0;
+          bufs.forEach(function (buf) { merged.set(new Uint8Array(buf), off); off += buf.byteLength; });
+          var blob = new Blob([merged], { type: 'video/webm' }), url = URL.createObjectURL(blob);
+          var fname = (PROJECT.title || 'video').replace(/[^a-z0-9]/gi, '-') + '-final.webm';
+          var a = document.createElement('a'); a.href = url; a.download = fname; a.click();
+          sp(100, 'Done!'); ss('<div style="color:var(--green)">\u2705 Exported ' + fname + '</div>'); toast('\u2705 Exported', 'ok');
+          setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+        } catch (e) {
+          clips.forEach(function (c, i) { setTimeout(function () { var a = document.createElement('a'); a.href = c.url || c.videoUrl; a.download = (PROJECT.title || 'video').replace(/[^a-z0-9]/gi, '-') + '-scene-' + String(c.sceneNum || i + 1).padStart(2, '0') + '.webm'; a.click(); }, i * 600); });
+          ss('<div style="color:var(--gold)">\u26a0 Downloaded clips individually.</div>');
+        }
+      };
+
+      // AI PRESENTER — photo + all selections + auto-timeline
+      window.aps_generateScene = async function (idx) {
+        var sc = APS.scenes[idx];
+        if (!sc || !sc.narration.trim()) { toast('Scene ' + (idx + 1) + ' has no narration', 'error'); if (sc) sc.status = 'failed'; return false; }
+        sc.status = 'generating';
+        if (typeof aps_updateSceneRow === 'function') aps_updateSceneRow(sc);
+        if (idx === APS.currentIdx && typeof aps_selectScene === 'function') aps_selectScene(idx);
+        try {
+          if (typeof aps_saveSettings === 'function') aps_saveSettings();
+          if (!APS.photoB64) { var sp2 = localStorage.getItem('aps_presenter_photo'); if (sp2) APS.photoB64 = sp2.split(',')[1]; }
+          if (!APS.photoB64) { toast('Upload your presenter photo first \u2014 use the \ud83d\udcf7 button in the right panel', 'error'); sc.status = 'failed'; if (typeof aps_updateSceneRow === 'function') aps_updateSceneRow(sc); return false; }
+          var vr = await fetch(API + '/api/voice', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: sc.narration, voiceId: APS.settings.voiceId, stability: APS.settings.stability || .5 }) });
+          var vd = await vr.json(); if (!vd.audio) throw new Error('Voice failed: ' + (vd.error || 'no audio'));
+          var pr = await fetch(API + '/api/presenter', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ audioBase64: vd.audio, referenceImageBase64: APS.photoB64, customBgBase64: APS.customBgB64 || null, studioType: APS.settings.bg, ratio: APS.settings.ratio, sceneText: sc.narration, provider: APS.settings.provider, framingStyle: APS.settings.framing, gestureStyle: APS.settings.gesture || 'professional', shotType: APS.settings.shot || 'medium', motionStyle: APS.settings.motion || 'static', voiceGender: APS.settings.voiceGender, sceneNum: sc.num, sceneTotal: sc.total, duration: sc.duration }) });
+          var pd = await pr.json(); if (pd.error) throw new Error(pd.error);
+          sc.taskId = pd.taskId;
+          var pgW = document.getElementById('aps-progress-wrap'), pgL = document.getElementById('aps-progress-label'), pgB = document.getElementById('aps-progress-bar');
+          if (pgW) pgW.style.display = 'block'; if (pgL) pgL.textContent = 'Scene ' + sc.num + '/' + sc.total + ' rendering\u2026'; if (pgB) pgB.style.width = '20%';
+          for (var poll = 0; poll < 60 && !APS.stopRequested; poll++) {
+            await new Promise(function (res) { setTimeout(res, 10000); });
+            if (pgB) pgB.style.width = Math.min(90, 20 + poll * 1.2) + '%';
+            var sr = await fetch(API + '/api/presenter-status?taskId=' + encodeURIComponent(pd.taskId));
+            var sd = await sr.json();
+            if (sd.done && sd.videoUrl) {
+              sc.status = 'done'; sc.videoUrl = sd.videoUrl; APS.results[sc.id] = sd.videoUrl;
+              if (pgB) pgB.style.width = '100%'; if (pgL) pgL.textContent = 'Scene ' + sc.num + ' complete \u2713';
+              if (typeof aps_updateSceneRow === 'function') aps_updateSceneRow(sc);
+              if (idx === APS.currentIdx && typeof aps_selectScene === 'function') aps_selectScene(idx);
+              var cbar = document.getElementById('aps-clips-list'), cempty = document.getElementById('aps-clips-empty');
+              if (cempty) cempty.style.display = 'none';
+              if (cbar) { var cc = document.createElement('div'); cc.style.cssText = 'flex-shrink:0;width:80px;height:56px;background:#1f2937;border-radius:6px;border:.5px solid #10b981;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;'; cc.innerHTML = '<span style="font-size:18px;">\ud83c\udfa6</span><span style="font-size:9px;color:#10b981;font-weight:700;">Scene ' + sc.num + '</span>'; (function (u) { cc.onclick = function () { window.open(u, '_blank'); }; })(sd.videoUrl); cbar.appendChild(cc); }
+              if (!PROJECT.clips) PROJECT.clips = {};
+              PROJECT.clips[sc.id] = { sceneId: sc.id, sceneNum: sc.num, url: sd.videoUrl, videoUrl: sd.videoUrl, duration: sc.duration, source: 'ai-presenter' };
+              if (typeof saveProject === 'function') saveProject();
+              tl_addClipToTimeline({ sceneId: sc.id, sceneNum: sc.num, url: sd.videoUrl, duration: sc.duration, source: 'ai-presenter' });
+              try { localStorage.setItem('aps_results_' + (PROJECT.id || ''), JSON.stringify(APS.results)); } catch (ex) { }
+              toast('Scene ' + sc.num + ' ready \u2713 \u2014 added to timeline', 'ok'); return true;
+            } else if (sd.failed) throw new Error('Rendering failed');
+          }
+          throw new Error('Timed out');
+        } catch (e) {
+          sc.status = 'failed'; sc.error = e.message;
+          if (typeof aps_updateSceneRow === 'function') aps_updateSceneRow(sc);
+          if (idx === APS.currentIdx && typeof aps_selectScene === 'function') aps_selectScene(idx);
+          toast('Scene ' + sc.num + ' failed: ' + e.message.slice(0, 80), 'error'); return false;
+        }
+      };
+
+      // FIX pushAllLocalProjectsToCloud — always redefine to ensure it works
+      window.pushAllLocalProjectsToCloud = async function () {
+        try {
+          var session = window._sbSession; if (!session || !session.access_token) return;
+          var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+          for (var i = 0; i < projects.length; i++) {
+            var p = projects[i]; if (!p.id) continue;
+            try { await fetch(API + '/api/project/save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token }, body: JSON.stringify({ project: p }) }); } catch (e) { }
+          }
+          showSaveStatus('All projects synced \u2713', 'ok');
+        } catch (e) { console.warn('cloud push failed:', e.message); }
+      };
+
+      // WARN ON APS OPEN IF NO PHOTO
+      var _origOpenAPS = window.openAIPresenterStudio;
+      window.openAIPresenterStudio = function () {
+        if (!APS.photoB64) {
+          var sp3 = localStorage.getItem('aps_presenter_photo');
+          if (sp3) { APS.photoB64 = sp3.split(',')[1]; }
+          else { setTimeout(function () { toast('\u26a0 Upload your presenter photo first \u2014 use the \ud83d\udcf7 button in the right panel', 'warn'); }, 800); }
+        }
+        if (typeof _origOpenAPS === 'function') _origOpenAPS.apply(this, arguments);
+      };
+
+      console.log('AABStudio v5 \u2713 \u2014 all fixes applied, no markdown corruption');
+    </script>
+    
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+// AABStudio Platform v3.0
+// Fixes: CSS leak on homepage, timeline wiring, mobile PWA, smooth animations
+// D-ID as primary provider, HeyGen fallback
+// ════════════════════════════════════════════════════════════════════════════
+(function() {
+'use strict';
+
+// ── Only run inside the app (not on homepage) ─────────────────────────────
+var isApp = !!document.getElementById('aab-v5');
+var isHomepage = !isApp;
+
+// ── PWA manifest injection ─────────────────────────────────────────────────
+if (!document.querySelector('link[rel="manifest"]')) {
+  var manifestData = {
+    name: 'AABStudio.ai',
+    short_name: 'AABStudio',
+    description: 'Professional AI Video Studio',
+    start_url: 'https://aabstudio.ai/app',
+    display: 'standalone',
+    background_color: '#080d14',
+    theme_color: '#00d4aa',
+    orientation: 'any',
+    icons: [
+      { src: 'https://aabstudio.ai/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { src: 'https://aabstudio.ai/icon-512.png', sizes: '512x512', type: 'image/png' }
+    ]
+  };
+  var blob = new Blob([JSON.stringify(manifestData)], { type: 'application/json' });
+  var link = document.createElement('link');
+  link.rel = 'manifest';
+  link.href = URL.createObjectURL(blob);
+  document.head.appendChild(link);
+}
+
+// ── Meta tags for PWA / mobile ─────────────────────────────────────────────
+var metas = [
+  { name: 'mobile-web-app-capable',           content: 'yes' },
+  { name: 'apple-mobile-web-app-capable',     content: 'yes' },
+  { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' },
+  { name: 'apple-mobile-web-app-title',       content: 'AABStudio' },
+  { name: 'theme-color',                      content: '#00d4aa' }
+];
+metas.forEach(function(m) {
+  if (!document.querySelector('meta[name="' + m.name + '"]')) {
+    var el = document.createElement('meta');
+    el.name = m.name; el.content = m.content;
+    document.head.appendChild(el);
+  }
+});
+
+// ── CSS: ONLY inject app styles inside the app, not homepage ─────────────
+if (isApp) {
+  var CSS = `
+/* ── AABStudio v3 tokens ── */
+:root{--aab-teal:#00d4aa;--aab-gold:#f59e0b;--aab-red:#ef4444;--aab-blue:#3b82f6;--aab-green:#10b981;--aab-purple:#8b5cf6;--aab-ink:#e2e8f0;--aab-muted:#64748b;--aab-surface:#0d1117;--aab-card:rgba(255,255,255,.04);--aab-bdr:rgba(255,255,255,.08)}
+
+/* ── Colour-coded buttons (scoped to app pages only) ── */
+#record-pg .btn-primary, #edit-pg .btn-primary, #dashboard-pg .btn-primary, #export-pg .btn-primary{background:linear-gradient(135deg,#00d4aa,#00b894)!important;color:#000!important;font-weight:700!important;border:none!important;border-radius:8px!important;padding:10px 20px!important;cursor:pointer!important;transition:all .2s!important}
+#record-pg .btn-primary:hover, #edit-pg .btn-primary:hover, #dashboard-pg .btn-primary:hover, #export-pg .btn-primary:hover{transform:translateY(-1px);box-shadow:0 4px 20px rgba(0,212,170,.4)!important}
+#record-pg .btn-danger, #edit-pg .btn-danger, #dashboard-pg .btn-danger, #export-pg .btn-danger{background:linear-gradient(135deg,#ef4444,#dc2626)!important;color:#fff!important;font-weight:700!important;border:none!important;border-radius:8px!important;padding:10px 20px!important;cursor:pointer!important;transition:all .2s!important}
+#record-pg .btn-danger:hover, #edit-pg .btn-danger:hover, #dashboard-pg .btn-danger:hover, #export-pg .btn-danger:hover{transform:translateY(-1px);box-shadow:0 4px 20px rgba(239,68,68,.4)!important}
+#record-pg .btn-gold, #edit-pg .btn-gold, #dashboard-pg .btn-gold, #export-pg .btn-gold{background:linear-gradient(135deg,#f59e0b,#d97706)!important;color:#000!important;font-weight:700!important;border:none!important;border-radius:8px!important;padding:10px 20px!important;cursor:pointer!important;transition:all .2s!important}
+#record-pg .btn-ghost, #edit-pg .btn-ghost, #dashboard-pg .btn-ghost, #export-pg .btn-ghost, .aab-next-step .btn-ghost{background:transparent!important;color:#e2e8f0!important;font-weight:600!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:8px!important;padding:10px 20px!important;cursor:pointer!important;transition:all .2s!important}
+#record-pg .btn-ghost:hover, #edit-pg .btn-ghost:hover, #dashboard-pg .btn-ghost:hover, #export-pg .btn-ghost:hover{background:rgba(255,255,255,.04)!important;border-color:#00d4aa!important}
+
+/* ── Animations ── */
+@keyframes aab-pulse{0%,100%{opacity:1}50%{opacity:.5}}
+@keyframes aab-slide-in{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes aab-spin{to{transform:rotate(360deg)}}
+.aab-animate{animation:aab-slide-in .35s cubic-bezier(.4,0,.2,1) both}
+.aab-animate:nth-child(1){animation-delay:.05s}
+.aab-animate:nth-child(2){animation-delay:.1s}
+.aab-animate:nth-child(3){animation-delay:.15s}
+.aab-animate:nth-child(4){animation-delay:.2s}
+.aab-animate:nth-child(5){animation-delay:.25s}
+
+/* ── Progress ── */
+.aab-spinner{width:18px;height:18px;border:2px solid rgba(255,255,255,.1);border-top-color:#00d4aa;border-radius:50%;animation:aab-spin .7s linear infinite;display:inline-block;vertical-align:middle;margin-right:6px}
+
+/* ── Timeline clips ── */
+.tl-clip-card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px;cursor:pointer;transition:all .2s;position:relative;will-change:transform}
+.tl-clip-card:hover{border-color:#00d4aa;transform:translateY(-2px);box-shadow:0 4px 16px rgba(0,212,170,.15)}
+.tl-clip-card.tl-ai{border-left:3px solid #8b5cf6}
+.tl-clip-card.tl-rec{border-left:3px solid #ef4444}
+.tl-clip-card.tl-did{border-left:3px solid #00d4aa}
+.tl-del{position:absolute;top:6px;right:6px;background:rgba(239,68,68,.15);color:#ef4444;border:none;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;opacity:0;transition:opacity .2s}
+.tl-clip-card:hover .tl-del{opacity:1}
+
+/* ── Teleprompter smooth ── */
+#tp-text span{transition:color .12s,font-weight .12s,text-shadow .12s}
+#tp-text span.tp-done{color:rgba(255,255,255,.15)!important;font-weight:400!important}
+#tp-text span.tp-current{color:#f59e0b!important;font-weight:700!important;text-shadow:0 0 24px rgba(245,158,11,.6)!important}
+
+/* ── Next step hint ── */
+.aab-next-step{display:flex;align-items:center;gap:8px;font-size:13px;color:#00d4aa;background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:8px;padding:10px 14px;cursor:pointer;animation:aab-pulse 2.5s ease infinite}
+
+/* ── Mobile: Portrait stacking ── */
+@media(max-width:768px){
+  .studio-layout{flex-direction:column!important}
+  .studio-cam{width:100%!important;height:50vw!important;min-height:200px}
+  .studio-tp{width:100%!important;height:auto!important;min-height:180px}
+  .pg-header,.edit-header{flex-wrap:wrap;gap:8px}
+  #aab-export-btn{width:100%}
+  .scene-card,.scene-row{font-size:13px}
+}
+@media(max-width:480px){
+  .pg{padding:8px!important}
+  .top-bar,.topnav{padding:0 10px!important}
+}
+
+/* ── Export panel ── */
+#aab-export-panel{position:fixed;right:0;top:0;bottom:0;width:min(340px,100vw);background:#080d14;border-left:1px solid rgba(255,255,255,.08);z-index:9999;transform:translateX(100%);transition:transform .3s cubic-bezier(.4,0,.2,1);overflow-y:auto;padding:24px}
+#aab-export-panel.open{transform:translateX(0)}
+.export-opt{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:14px;margin-bottom:10px;cursor:pointer;transition:all .2s}
+.export-opt:hover{border-color:#00d4aa;background:rgba(0,212,170,.06)}
+.export-opt h4{font-size:13px;font-weight:700;color:#e2e8f0;margin:0 0 4px}
+.export-opt p{font-size:11px;color:#64748b;margin:0}
+.export-badge{font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;float:right}
+.badge-free{background:rgba(16,185,129,.2);color:#10b981}
+.badge-pro{background:rgba(139,92,246,.2);color:#8b5cf6}
+.badge-fast{background:rgba(0,212,170,.2);color:#00d4aa}
+
+/* ── Retake bar ── */
+#studio-retake-bar{display:none}
+@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+/* ── Animations ── */
+@keyframes aab-pulse{0%,100%{opacity:1}50%{opacity:.5}}
+@keyframes aab-slide-in{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes aab-spin{to{transform:rotate(360deg)}}
+.aab-animate{animation:aab-slide-in .35s cubic-bezier(.4,0,.2,1) both}
+.aab-animate:nth-child(1){animation-delay:.05s}
+.aab-animate:nth-child(2){animation-delay:.1s}
+.aab-animate:nth-child(3){animation-delay:.15s}
+.aab-animate:nth-child(4){animation-delay:.2s}
+.aab-animate:nth-child(5){animation-delay:.25s}
+
+/* ── Progress ── */
+.aab-spinner{width:18px;height:18px;border:2px solid rgba(255,255,255,.1);border-top-color:#00d4aa;border-radius:50%;animation:aab-spin .7s linear infinite;display:inline-block;vertical-align:middle;margin-right:6px}
+
+/* ── Timeline clips ── */
+.tl-clip-card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px;cursor:pointer;transition:all .2s;position:relative;will-change:transform}
+.tl-clip-card:hover{border-color:#00d4aa;transform:translateY(-2px);box-shadow:0 4px 16px rgba(0,212,170,.15)}
+.tl-clip-card.tl-ai{border-left:3px solid #8b5cf6}
+.tl-clip-card.tl-rec{border-left:3px solid #ef4444}
+.tl-clip-card.tl-did{border-left:3px solid #00d4aa}
+.tl-del{position:absolute;top:6px;right:6px;background:rgba(239,68,68,.15);color:#ef4444;border:none;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;opacity:0;transition:opacity .2s}
+.tl-clip-card:hover .tl-del{opacity:1}
+
+/* ── Teleprompter smooth ── */
+#tp-text span{transition:color .12s,font-weight .12s,text-shadow .12s}
+#tp-text span.tp-done{color:rgba(255,255,255,.15)!important;font-weight:400!important}
+#tp-text span.tp-current{color:#f59e0b!important;font-weight:700!important;text-shadow:0 0 24px rgba(245,158,11,.6)!important}
+
+/* ── Next step hint ── */
+.aab-next-step{display:flex;align-items:center;gap:8px;font-size:13px;color:#00d4aa;background:rgba(0,212,170,.06);border:1px solid rgba(0,212,170,.2);border-radius:8px;padding:10px 14px;cursor:pointer;animation:aab-pulse 2.5s ease infinite}
+
+/* ── Mobile: Portrait stacking ── */
+@media(max-width:768px){
+  .studio-layout{flex-direction:column!important}
+  .studio-cam{width:100%!important;height:50vw!important;min-height:200px}
+  .studio-tp{width:100%!important;height:auto!important;min-height:180px}
+  .pg-header,.edit-header{flex-wrap:wrap;gap:8px}
+  #aab-export-btn{width:100%}
+  .scene-card,.scene-row{font-size:13px}
+}
+@media(max-width:480px){
+  .pg{padding:8px!important}
+  .top-bar,.topnav{padding:0 10px!important}
+}
+
+/* ── Export panel ── */
+#aab-export-panel{position:fixed;right:0;top:0;bottom:0;width:min(340px,100vw);background:#080d14;border-left:1px solid rgba(255,255,255,.08);z-index:9999;transform:translateX(100%);transition:transform .3s cubic-bezier(.4,0,.2,1);overflow-y:auto;padding:24px}
+#aab-export-panel.open{transform:translateX(0)}
+.export-opt{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:14px;margin-bottom:10px;cursor:pointer;transition:all .2s}
+.export-opt:hover{border-color:#00d4aa;background:rgba(0,212,170,.06)}
+.export-opt h4{font-size:13px;font-weight:700;color:#e2e8f0;margin:0 0 4px}
+.export-opt p{font-size:11px;color:#64748b;margin:0}
+.export-badge{font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;float:right}
+.badge-free{background:rgba(16,185,129,.2);color:#10b981}
+.badge-pro{background:rgba(139,92,246,.2);color:#8b5cf6}
+.badge-fast{background:rgba(0,212,170,.2);color:#00d4aa}
+
+/* ── Retake bar ── */
+#studio-retake-bar{display:none}
+@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+  `;
+  var s = document.createElement('style');
+  s.id = 'aab-v3-styles';
+  s.textContent = CSS;
+  document.head.appendChild(s);
+}
+
+if (isHomepage) {
+  console.log('AABStudio Platform v3.0 — homepage mode (no app styles injected)');
+  return; // Stop here for homepage — don't run any app code
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Everything below only runs inside the app
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── Staggered entrance animations on page nav ─────────────────────────────
+// Defer nav override until after page load so homepage buttons still work
+setTimeout(function() {
+var _origNav = window.nav;
+window.nav = function(pg) {
+  if (typeof _origNav === 'function') _origNav.apply(this, arguments);
+  setTimeout(function() {
+    var page = document.getElementById(pg);
+    if (!page) return;
+    var cards = page.querySelectorAll('.card,.scene-card,.scene-row,.clip-card,.tl-clip-card,.proj-card,.feature-card,.dashboard-card');
+    cards.forEach(function(c, i) {
+      c.style.opacity = '0';
+      c.style.transform = 'translateY(16px)';
+      setTimeout(function() {
+        c.style.transition = 'opacity .35s cubic-bezier(.4,0,.2,1), transform .35s cubic-bezier(.4,0,.2,1)';
+        c.style.opacity    = '1';
+        c.style.transform  = 'translateY(0)';
+      }, i * 50);
+    });
+    if (pg === 'edit-pg') setTimeout(function() { aab_refreshTimeline(); }, 150);
+  }, 80);
+};
+}, 500);
+
+// ── GSAP-style hardware-accelerated transition helper ─────────────────────
+function aab_fadeIn(el, delay) {
+  if (!el) return;
+  el.style.cssText += ';will-change:transform,opacity;opacity:0;transform:translateY(12px)';
+  setTimeout(function() {
+    el.style.transition = 'opacity .3s ease, transform .3s ease';
+    el.style.opacity = '1';
+    el.style.transform = 'translateY(0)';
+    setTimeout(function() { el.style.willChange = 'auto'; }, 400);
+  }, delay || 0);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// TIMELINE — auto-refresh and clip display
+// ══════════════════════════════════════════════════════════════════════════
+
+window.aps_addClipToTimeline = function(sc) {
+  if (!sc || !sc.videoUrl) return;
+  if (!PROJECT.clips) PROJECT.clips = {};
+  PROJECT.clips[sc.id] = {
+    sceneId:   sc.id,
+    sceneNum:  sc.num,
+    url:       sc.videoUrl,
+    videoUrl:  sc.videoUrl,
+    duration:  sc.duration || 8,
+    source:    'ai-presenter',
+    provider:  (window.APS && APS.settings && APS.settings.provider) || 'did',
+    sceneName: 'Scene ' + sc.num + (sc.type ? ' · ' + sc.type : ''),
+    ts:        Date.now()
+  };
+  if (PROJECT.scenes) {
+    var s = PROJECT.scenes.find(function(x){ return x.id === sc.id; });
+    if (s) s.status = 'recorded';
+  }
+  if (typeof saveProject === 'function') saveProject();
+  aab_refreshTimeline();
+  aab_showNextStep('edit-pg', '🎬 Scene ready — go to Edit Suite to review & export');
+};
+
+function aab_refreshTimeline() {
+  ['renderEditSuite','renderEditClips','tl_render','tl_buildTracksFromProject'].forEach(function(fn) {
+    if (typeof window[fn] === 'function') { try { window[fn](); } catch(e){} }
+  });
+  if (typeof PROJECT !== 'undefined') aab_buildClipsPanel();
+}
+
+function aab_buildClipsPanel() {
+  if (typeof PROJECT === 'undefined') return;
+  var clips = PROJECT && PROJECT.clips;
+  if (!clips) return;
+  var keys = Object.keys(clips).sort(function(a,b){ return (clips[a].sceneNum||0)-(clips[b].sceneNum||0); });
+  if (!keys.length) return;
+
+  // Find generated clips bar in APS
+  var apsBar = document.getElementById('aps-clips-bar') || document.querySelector('.aps-clips-inner, #clips-bar-inner');
+  if (apsBar) {
+    var existing = apsBar.querySelectorAll('.aab-clip-thumb');
+    existing.forEach(function(e){ e.remove(); });
+    keys.forEach(function(k) {
+      var c = clips[k]; if (!c.url) return;
+      if (apsBar.querySelector('[data-clip-id="'+k+'"]')) return;
+      var div = document.createElement('div');
+      div.className = 'aab-clip-thumb';
+      div.dataset.clipId = k;
+      div.style.cssText = 'display:inline-flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;margin-right:8px;';
+      div.innerHTML = '<video src="'+c.url+'" style="width:80px;height:52px;object-fit:cover;border-radius:6px;border:2px solid rgba(0,212,170,.4);" muted preload="metadata"></video>'
+        + '<span style="font-size:10px;color:#64748b;">Scene '+c.sceneNum+'</span>';
+      div.onclick = function(){ aab_previewClip(k); };
+      apsBar.appendChild(div);
+      aab_fadeIn(div, 100);
+    });
+  }
+
+  // Build or update edit suite clips panel
+  var editPg = document.getElementById('edit-pg');
+  if (!editPg || !editPg.classList.contains('on')) return;
+
+  var panel = document.getElementById('aab-clips-panel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'aab-clips-panel';
+    panel.style.cssText = 'padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.06);';
+    var insertAfter = editPg.querySelector('.edit-header, .pg-header, #edit-top');
+    if (insertAfter) insertAfter.after(panel);
+    else editPg.prepend(panel);
+  }
+
+  panel.innerHTML = '<div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;">'
+    + keys.length + ' clip' + (keys.length!==1?'s':'') + ' · click to preview</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:10px;">'
+    + keys.map(function(k) {
+        var c = clips[k];
+        var src = c.source === 'did' ? 'tl-did' : c.source === 'ai-presenter' ? 'tl-ai' : 'tl-rec';
+        var label = c.source === 'did' ? '🤖 D-ID' : c.source === 'ai-presenter' ? '🤖 AI' : '🎥 REC';
+        var color = c.source === 'did' ? '#00d4aa' : c.source === 'ai-presenter' ? '#8b5cf6' : '#ef4444';
+        return '<div class="tl-clip-card aab-animate '+src+'" style="width:150px;" onclick="aab_previewClip(\''+k+'\')">'
+          + '<div style="font-size:11px;font-weight:700;color:'+color+';margin-bottom:4px;">'+label+'</div>'
+          + '<div style="font-size:12px;color:#e2e8f0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+( c.sceneName||'Scene '+c.sceneNum)+'</div>'
+          + '<div style="font-size:11px;color:#64748b;margin-top:2px;">'+(c.duration?Math.round(c.duration)+'s':'—')+'</div>'
+          + (c.url ? '<video src="'+c.url+'" style="width:100%;height:72px;object-fit:cover;border-radius:4px;margin-top:6px;" muted preload="metadata"></video>' : '')
+          + '<button class="tl-del" onclick="event.stopPropagation();aab_removeClip(\''+k+'\')">✕</button>'
+          + '</div>';
+      }).join('')
+    + '</div>'
+    + '<div style="margin-top:12px;display:flex;gap:8px;">'
+    + '<button class="btn-primary" style="padding:8px 18px;font-size:13px;" onclick="aab_openExport()">🎬 Export Video</button>'
+    + '<button class="btn-ghost" style="padding:8px 14px;font-size:13px;" onclick="aab_exportDirect()">⬇ Download All</button>'
+    + '</div>';
+}
+
+window.aab_previewClip = function(id) {
+  var clip = PROJECT.clips && PROJECT.clips[id];
+  if (!clip || !clip.url) return;
+  var m = document.createElement('div');
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:99999;display:flex;align-items:center;justify-content:center;animation:aab-slide-in .2s ease';
+  m.onclick = function(e){ if(e.target===m) m.remove(); };
+  m.innerHTML = '<div style="max-width:900px;width:94%;background:#0d1117;border-radius:14px;overflow:hidden;border:1px solid rgba(255,255,255,.08);">'
+    + '<video src="'+clip.url+'" controls autoplay playsinline style="width:100%;display:block;max-height:72vh;"></video>'
+    + '<div style="padding:14px 16px;display:flex;justify-content:space-between;align-items:center;">'
+    + '<span style="color:#e2e8f0;font-size:13px;font-weight:600;">'+(clip.sceneName||'Clip')+'</span>'
+    + '<div style="display:flex;gap:8px;">'
+    + '<a href="'+clip.url+'" download class="btn-gold" style="padding:8px 16px;font-size:12px;text-decoration:none;border-radius:6px;">⬇ Download</a>'
+    + '<button onclick="this.closest(\'[style*=fixed]\').remove()" class="btn-ghost" style="padding:8px 14px;font-size:12px;">Close</button>'
+    + '</div></div></div>';
+  document.body.appendChild(m);
+};
+
+window.aab_removeClip = function(id) {
+  if (!confirm('Remove this clip from the timeline?')) return;
+  if (PROJECT.clips) delete PROJECT.clips[id];
+  if (typeof saveProject === 'function') saveProject();
+  aab_refreshTimeline();
+};
+
+// ══════════════════════════════════════════════════════════════════════════
+// EXPORT PANEL
+// ══════════════════════════════════════════════════════════════════════════
+
+function aab_buildExportPanel() {
+  if (document.getElementById('aab-export-panel')) return;
+  var p = document.createElement('div');
+  p.id = 'aab-export-panel';
+  p.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">'
+    + '<h3 style="font-size:16px;font-weight:700;color:#e2e8f0;margin:0;">🎬 Export Video</h3>'
+    + '<button onclick="document.getElementById(\'aab-export-panel\').classList.remove(\'open\')" style="background:none;border:none;color:#64748b;font-size:22px;cursor:pointer;line-height:1;">✕</button>'
+    + '</div>'
+    + '<div id="aab-export-clip-count" style="font-size:12px;color:#64748b;margin-bottom:16px;"></div>'
+    + '<div class="export-opt" onclick="aab_exportDirect()">'
+    + '<span class="export-badge badge-free">FREE</span><h4>⬇ Download All Clips</h4><p>Save each clip as an MP4 file</p></div>'
+    + '<div class="export-opt" onclick="aab_exportStitch()">'
+    + '<span class="export-badge badge-pro">CREATOMATE</span><h4>🎞 Stitch into One Video</h4><p>Merge all clips with transitions (1-3 min)</p></div>'
+    + '<div id="aab-export-status" style="margin-top:16px;display:none;">'
+    + '<div style="height:3px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden;"><div id="aab-export-bar" style="height:100%;background:#00d4aa;width:0%;transition:width .5s;"></div></div>'
+    + '<p id="aab-export-msg" style="font-size:12px;color:#64748b;margin-top:8px;"></p></div>'
+    + '<div id="aab-export-result" style="margin-top:16px;display:none;"></div>';
+  document.body.appendChild(p);
+}
+
+window.aab_openExport = function() {
+  aab_buildExportPanel();
+  var clips = PROJECT.clips || {};
+  var count = Object.keys(clips).length;
+  var el = document.getElementById('aab-export-clip-count');
+  if (el) el.textContent = count + ' clip' + (count!==1?'s':'') + ' ready';
+  document.getElementById('aab-export-result').style.display = 'none';
+  document.getElementById('aab-export-status').style.display = 'none';
+  document.getElementById('aab-export-panel').classList.add('open');
+};
+
+window.aab_exportDirect = function() {
+  var clips = PROJECT.clips || {};
+  var keys = Object.keys(clips);
+  if (!keys.length) { alert('No clips yet. Generate scenes first.'); return; }
+  keys.forEach(function(k,i) {
+    var c = clips[k]; if (!c.url) return;
+    setTimeout(function() {
+      var a = document.createElement('a');
+      a.href = c.url;
+      a.download = 'aabstudio-scene-' + (c.sceneNum||i+1) + '.mp4';
+      document.body.appendChild(a); a.click(); a.remove();
+    }, i * 800);
+  });
+  if (typeof toast === 'function') toast('Downloading ' + keys.length + ' clips...', 'ok');
+  document.getElementById('aab-export-panel').classList.remove('open');
+};
+
+window.aab_exportStitch = async function() {
+  var clips = PROJECT.clips || {};
+  var keys  = Object.keys(clips).sort(function(a,b){ return (clips[a].sceneNum||0)-(clips[b].sceneNum||0); });
+  var valid  = keys.filter(function(k){ return clips[k].url; });
+  if (valid.length < 2) { alert('Need at least 2 clips to stitch.'); return; }
+  var statusEl = document.getElementById('aab-export-status');
+  var barEl    = document.getElementById('aab-export-bar');
+  var msgEl    = document.getElementById('aab-export-msg');
+  var resultEl = document.getElementById('aab-export-result');
+  statusEl.style.display = 'block'; resultEl.style.display = 'none';
+  msgEl.textContent = 'Submitting...';
+  try {
+    var res = await fetch(API + '/api/creatomate/stitch', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        clips: valid.map(function(k){ return { url:clips[k].url, duration:clips[k].duration||8 }; }),
+        resolution: '1080p', outputFormat: 'mp4'
+      })
+    });
+    var data = await res.json();
+    if (data.error) throw new Error(data.error);
+    msgEl.textContent = 'Rendering...';
+    var pct = 0;
+    var timer = setInterval(async function() {
+      var sr = await fetch(API + '/api/creatomate/status/' + data.taskId);
+      var sd = await sr.json();
+      pct = sd.progress || pct;
+      barEl.style.width = pct + '%';
+      msgEl.textContent = 'Rendering... ' + Math.round(pct) + '%';
+      if (sd.status === 'succeeded' && sd.outputUrl) {
+        clearInterval(timer);
+        barEl.style.width = '100%';
+        msgEl.textContent = 'Done!';
+        resultEl.style.display = 'block';
+        resultEl.innerHTML = '<a href="'+sd.outputUrl+'" target="_blank" class="btn-primary" style="display:block;text-align:center;padding:12px;text-decoration:none;border-radius:8px;font-size:14px;">⬇ Download Final Video</a>';
+        if (typeof toast === 'function') toast('Export complete!', 'ok');
+      }
+      if (sd.status === 'failed') { clearInterval(timer); msgEl.textContent = 'Export failed — try downloading individually'; }
+    }, 5000);
+  } catch(e) { msgEl.textContent = 'Error: ' + e.message; }
+};
+
+// Wire export button to edit suite header
+setTimeout(function() {
+  var editHeader = document.querySelector('#edit-pg .edit-header, #edit-pg .pg-header, #edit-pg > div:first-child');
+  if (editHeader && !document.getElementById('aab-export-btn')) {
+    var btn = document.createElement('button');
+    btn.id = 'aab-export-btn';
+    btn.className = 'btn-primary';
+    btn.style.cssText = 'margin-left:auto;padding:8px 18px;font-size:13px;';
+    btn.innerHTML = '🎬 Export';
+    btn.onclick = window.aab_openExport;
+    editHeader.appendChild(btn);
+  }
+  aab_buildExportPanel();
+  if (typeof PROJECT !== 'undefined') aab_refreshTimeline();
+}, 800);
+
+// ══════════════════════════════════════════════════════════════════════════
+// RECORDING → TIMELINE
+// ══════════════════════════════════════════════════════════════════════════
+
+var _origStopRec = window.stopRec;
+window.stopRec = function() {
+  if (typeof _origStopRec === 'function') _origStopRec.apply(this, arguments);
+  setTimeout(function() {
+    var idx   = window.STUDIO && STUDIO.currentScene || 0;
+    var scene = PROJECT.scenes && PROJECT.scenes[idx];
+    if (!scene) return;
+    var clip  = PROJECT.clips && PROJECT.clips[scene.id];
+    if (!clip || !clip.url) return;
+    clip.source    = clip.source    || 'recording';
+    clip.sceneName = clip.sceneName || 'Scene ' + (idx + 1);
+    clip.ts = Date.now();
+    if (typeof saveProject === 'function') saveProject();
+    aab_refreshTimeline();
+    aab_showRetakeBar(idx);
+    aab_showNextStep('edit-pg', '✓ Clip saved — go to Edit Suite or record next scene');
+  }, 700);
+};
+
+// ══════════════════════════════════════════════════════════════════════════
+// SMOOTH TELEPROMPTER
+// ══════════════════════════════════════════════════════════════════════════
+
+window.tpScroll = function() {
+  var TP = window.TP;
+  if (!TP) return;
+  clearInterval(TP.scrollTimer);
+  var wrap = document.getElementById('tp-text');
+  if (!wrap) return;
+  var spans = wrap.querySelectorAll('span[id^="tpw"]');
+  if (!spans.length) return;
+  var total  = spans.length;
+  var msPerW = 60000 / (TP.speed || 80);
+  TP.scrollTimer = setInterval(function() {
+    var wi = TP.currentWord;
+    if (wi > 0) {
+      var prev = document.getElementById('tpw' + (wi-1));
+      if (prev) { prev.className = 'tp-done'; }
+    }
+    var cur = document.getElementById('tpw' + wi);
+    if (cur) {
+      cur.className = 'tp-current';
+      cur.scrollIntoView({ behavior:'smooth', block:'center' });
+    }
+    TP.currentWord++;
+    if (TP.currentWord >= total) {
+      clearInterval(TP.scrollTimer);
+      TP.playing = false;
+      var btn = document.getElementById('tp-play-btn');
+      if (btn) btn.textContent = '▶ Play';
+    }
+  }, msPerW);
+};
+
+// ══════════════════════════════════════════════════════════════════════════
+// PHONE REMOTE
+// ══════════════════════════════════════════════════════════════════════════
+
+var _bc = null;
+try { _bc = new BroadcastChannel('aab_tp_remote'); } catch(e) {}
+
+function aab_remoteCmd(cmd, val) {
+  var TP    = window.TP;
+  var inTp  = document.getElementById('teleprompter-pg') && document.getElementById('teleprompter-pg').classList.contains('on');
+  var inRec = document.getElementById('record-pg') && document.getElementById('record-pg').classList.contains('on');
+  if (cmd==='toggle') { if(inTp&&typeof tpToggle==='function') tpToggle(); else if(inRec&&typeof studioTpToggle==='function') studioTpToggle(); }
+  if (cmd==='play'  && inTp && TP && !TP.playing && typeof tpToggle==='function') tpToggle();
+  if (cmd==='pause' && inTp && TP && TP.playing  && typeof tpToggle==='function') tpToggle();
+  if (cmd==='restart' && inTp && TP) { TP.currentWord=0; clearInterval(TP.scrollTimer); if(TP.playing) tpScroll(); }
+  if (cmd==='next' && inRec && typeof studioNext==='function') studioNext();
+  if (cmd==='prev' && inRec && typeof studioPrev==='function') studioPrev();
+  if (cmd==='rec'  && inRec && typeof toggleRecording==='function') toggleRecording();
+  if (cmd==='slower') aab_remoteCmd('speed', Math.max(20, ((inTp&&TP?TP.speed:window.STUDIO&&STUDIO.tpSpeed)||80) - 15));
+  if (cmd==='faster') aab_remoteCmd('speed', Math.min(300,((inTp&&TP?TP.speed:window.STUDIO&&STUDIO.tpSpeed)||80) + 15));
+  if (cmd==='speed' && val) {
+    var s = parseInt(val);
+    if (inTp && TP) { TP.speed=s; var sl=document.getElementById('tp-spd'); if(sl)sl.value=s; var sd=document.getElementById('tp-spd-disp'); if(sd)sd.textContent=s; if(TP.playing){clearInterval(TP.scrollTimer);tpScroll();} }
+  }
+}
+
+if (_bc) _bc.onmessage = function(e){ if(e.data&&e.data.cmd) aab_remoteCmd(e.data.cmd,e.data.val); };
+
+var _lastCmd = '';
+setInterval(function() {
+  try {
+    var sid = window._aabSid || localStorage.getItem('aab_remote_session');
+    if (!sid) return;
+    var v = localStorage.getItem('aab_remote_cmd_' + sid);
+    if (v && v !== _lastCmd) { _lastCmd = v; var p=v.split(':'); aab_remoteCmd(p[0],p[1]); }
+  } catch(e){}
+}, 250);
+
+window.remoteSend = function(cmd, val) {
+  var sid = new URLSearchParams(window.location.search).get('remote') || window._aabSid || localStorage.getItem('aab_remote_session');
+  if (!sid) return;
+  localStorage.setItem('aab_remote_cmd_' + sid, cmd + (val!==undefined?':'+val:''));
+  if (_bc) _bc.postMessage({cmd:cmd,val:val});
+};
+
+window.tpShowRemote = function() {
+  var modal = document.getElementById('tp-remote-modal');
+  if (modal) modal.classList.add('on');
+  var sid = 'aab_' + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
+  window._aabSid = sid;
+  localStorage.setItem('aab_remote_session', sid);
+  var url = location.origin + location.pathname + '?remote=' + sid;
+  var qr  = document.getElementById('tp-qr');
+  if (qr) qr.innerHTML = '<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data='+encodeURIComponent(url)+'" style="width:200px;height:200px;border-radius:8px;">';
+  var ud = document.getElementById('tp-remote-url-disp');
+  if (ud) ud.textContent = url;
+};
+
+// ── Remote page ────────────────────────────────────────────────────────────
+var _rsid = new URLSearchParams(location.search).get('remote');
+if (_rsid) {
+  window._aabSid = _rsid;
+  document.querySelectorAll('.pg,.pg-flex,.pg-full').forEach(function(p){ p.classList.remove('on'); });
+  var tn = document.getElementById('topnav'); if(tn) tn.style.display='none';
+  var rp = document.getElementById('remote-pg');
+  if (!rp) {
+    rp = document.createElement('div');
+    rp.style.cssText='position:fixed;inset:0;background:#080d14;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;';
+    rp.innerHTML='<div style="font-size:22px;font-weight:800;color:#e2e8f0;">📱 Remote Control</div>'
+      +'<div style="font-size:12px;color:#64748b;margin-bottom:8px;">Controlling AABStudio</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%;max-width:320px;">'
+      +'<button class="btn-primary" style="padding:18px;font-size:16px;" onclick="remoteSend(\'play\')">▶ Play</button>'
+      +'<button class="btn-danger"  style="padding:18px;font-size:16px;" onclick="remoteSend(\'pause\')">⏸ Pause</button>'
+      +'<button class="btn-ghost"   style="padding:18px;font-size:16px;" onclick="remoteSend(\'restart\')">↺ Restart</button>'
+      +'<button class="btn-ghost"   style="padding:18px;font-size:16px;" onclick="remoteSend(\'toggle\')">⏯ Toggle</button>'
+      +'<button class="btn-ghost"   style="padding:18px;font-size:14px;" onclick="remoteSend(\'slower\')">🐢 Slower</button>'
+      +'<button class="btn-ghost"   style="padding:18px;font-size:14px;" onclick="remoteSend(\'faster\')">🐇 Faster</button>'
+      +'<button class="btn-gold"    style="padding:18px;font-size:14px;" onclick="remoteSend(\'prev\')">← Prev</button>'
+      +'<button class="btn-gold"    style="padding:18px;font-size:14px;" onclick="remoteSend(\'next\')">Next →</button>'
+      +'</div>'
+      +'<button class="btn-danger" style="margin-top:8px;padding:16px 40px;font-size:16px;" onclick="remoteSend(\'rec\')">⏺ Record</button>';
+    document.body.appendChild(rp);
+  } else { rp.classList.add('on'); }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// USER GUIDE
+// ══════════════════════════════════════════════════════════════════════════
+
+function aab_showNextStep(targetPage, message) {
+  var h = document.getElementById('aab-next-hint');
+  if (!h) {
+    h = document.createElement('div');
+    h.id = 'aab-next-hint';
+    h.className = 'aab-next-step';
+    h.style.cssText = 'cursor:pointer;position:fixed;bottom:72px;left:50%;transform:translateX(-50%);z-index:9000;max-width:400px;width:90%;';
+    document.body.appendChild(h);
+  }
+  h.textContent = message;
+  h.style.display = 'flex';
+  h.onclick = function(){ if(typeof nav==='function') nav(targetPage); h.style.display='none'; };
+  clearTimeout(h._t);
+  h._t = setTimeout(function(){ h.style.display='none'; }, 10000);
+}
+
+function aab_showRetakeBar(idx) {
+  var bar = document.getElementById('studio-retake-bar');
+  if (!bar) return;
+  bar.style.display='block';
+  bar.style.animation='slideUp .3s ease';
+  bar.innerHTML='<div style="display:flex;align-items:center;gap:10px;padding:12px 18px;background:rgba(16,185,129,.1);border-top:1px solid rgba(16,185,129,.2);">'
+    +'<span style="font-size:13px;color:#10b981;font-weight:700;">✓ Scene '+(idx+1)+' saved</span>'
+    +'<div style="flex:1"></div>'
+    +'<button class="btn-danger"  style="padding:6px 14px;font-size:12px;" onclick="if(typeof retakeScene===\'function\')retakeScene()">↺ Retake</button>'
+    +'<button class="btn-ghost"   style="padding:6px 14px;font-size:12px;" onclick="if(typeof studioNext===\'function\'){studioNext();document.getElementById(\'studio-retake-bar\').style.display=\'none\';}">Next →</button>'
+    +'<button class="btn-primary" style="padding:6px 14px;font-size:12px;" onclick="if(typeof nav===\'function\')nav(\'edit-pg\')">🎥 Edit Suite</button>'
+    +'</div>';
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// SCENE GENERATION — D-ID primary, HeyGen fallback
+// ══════════════════════════════════════════════════════════════════════════
+
+window.aps_generateScene = async function(idx) {
+  var sc = APS.scenes[idx];
+  if (!sc || !sc.narration.trim()) {
+    if(sc){sc.status='failed';if(typeof aps_updateSceneRow==='function')aps_updateSceneRow(sc);}
+    return false;
+  }
+  sc.status = 'generating';
+  if (typeof aps_updateSceneRow==='function') aps_updateSceneRow(sc);
+  if (idx===APS.currentIdx && typeof aps_selectScene==='function') aps_selectScene(idx);
+
+  try {
+    if (typeof aps_saveSettings==='function') aps_saveSettings();
+    if (!APS.photoB64) {
+      var sp = localStorage.getItem('aps_presenter_photo');
+      if (sp) APS.photoB64 = sp.split(',')[1];
+    }
+
+    // Step 1: Voice (ElevenLabs)
+    var vr = await fetch(API+'/api/voice', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        text:            sc.narration,
+        voiceId:         APS.settings.voiceId,
+        stability:       APS.settings.stability  || 0.5,
+        similarityBoost: APS.settings.clarity    || 0.75
+      })
+    });
+    var vd = await vr.json();
+    if (!vd.audio) throw new Error('Voice failed: '+(vd.error||'no audio'));
+
+    // Step 2: Submit to presenter (D-ID preferred → returns taskId immediately)
+    var pr = await fetch(API+'/api/presenter', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        audioBase64:          vd.audio,
+        referenceImageBase64: APS.photoB64    || null,
+        customBgBase64:       APS.customBgB64 || null,
+        studioType:           APS.settings.bg,
+        ratio:                APS.settings.ratio,
+        sceneText:            sc.narration,
+        provider:             APS.settings.provider || 'did',
+        framingStyle:         APS.settings.framing,
+        gestureStyle:         APS.settings.gesture  || 'professional',
+        shotType:             APS.settings.shot     || 'medium',
+        motionStyle:          APS.settings.motion   || 'static',
+        voiceGender:          APS.settings.voiceGender,
+        sceneNum:             sc.num,
+        sceneTotal:           sc.total,
+        duration:             sc.duration
+      })
+    });
+    var pd = await pr.json();
+    if (pd.error) throw new Error(pd.error);
+    sc.taskId = pd.taskId;
+    console.log('Scene', sc.num, 'taskId:', pd.taskId, 'provider:', pd.provider);
+
+    if (pd.done && pd.videoUrl) return aab_sceneDone(sc, idx, pd.videoUrl);
+
+    // Step 3: Poll
+    // D-ID: 30-90s, HeyGen: 3-8 min — max 15 min total
+    var pollMs = pd.provider === 'did' ? 8000 : 15000;
+    var maxPolls = pd.provider === 'did' ? 60 : 60; // 8s×60=8min for D-ID, 15s×60=15min for HeyGen
+
+    for (var i = 0; i < maxPolls && !APS.stopRequested; i++) {
+      await new Promise(function(r){ setTimeout(r, pollMs); });
+      var sr = await fetch(API+'/api/presenter-status?taskId='+encodeURIComponent(pd.taskId));
+      if (!sr.ok) { console.warn('Poll HTTP', sr.status); continue; }
+      var stat = await sr.json();
+      var elapsed = Math.round((i+1)*pollMs/1000);
+      console.log('Scene', sc.num, 'poll', (i+1)+'/'+maxPolls+':', stat.status, stat.videoUrl?'✓':'', elapsed+'s');
+      if (stat.done && stat.videoUrl) return aab_sceneDone(sc, idx, stat.videoUrl);
+      if (stat.failed) throw new Error('Render failed: '+(stat.error||'provider error'));
+    }
+    throw new Error('Timed out after '+ Math.round(maxPolls*pollMs/60000) +' min');
+
+  } catch(e) {
+    sc.status='failed'; sc.error=e.message;
+    if(typeof aps_updateSceneRow==='function') aps_updateSceneRow(sc);
+    if(idx===APS.currentIdx&&typeof aps_selectScene==='function') aps_selectScene(idx);
+    if(typeof toast==='function') toast('Scene '+sc.num+' failed: '+e.message.slice(0,60),'error');
+    console.error('Scene', idx, 'error:', e.message);
+    return false;
+  }
+};
+
+function aab_sceneDone(sc, idx, videoUrl) {
+  sc.status='done'; sc.videoUrl=videoUrl;
+  APS.results[sc.id]=videoUrl;
+  if(typeof aps_updateSceneRow==='function') aps_updateSceneRow(sc);
+  if(idx===APS.currentIdx&&typeof aps_selectScene==='function') aps_selectScene(idx);
+  if(typeof aps_addClipToBar==='function') aps_addClipToBar(sc);
+  window.aps_addClipToTimeline(sc);
+  if(typeof saveProject==='function') saveProject();
+  if(typeof toast==='function') toast('Scene '+sc.num+' done ✓','ok');
+  return true;
+}
+
+window.aps_generateAll = async function() {
+  if(typeof aps_saveSettings==='function') aps_saveSettings();
+  APS.stopRequested=false; APS.generating=true;
+  var stopBtn=document.getElementById('aps-stop-btn'), genBtn=document.getElementById('aps-gen-all-btn');
+  if(stopBtn)stopBtn.style.display='block';
+  if(genBtn)genBtn.style.display='none';
+  var toGen=APS.scenes.filter(function(s){return s.status!=='done';});
+  if(typeof toast==='function') toast('Generating '+toGen.length+' scenes...','info');
+  for(var i=0;i<toGen.length&&!APS.stopRequested;i++){
+    if(typeof aps_updateProgress==='function') aps_updateProgress(i+1,toGen.length,'Scene '+toGen[i].num+' of '+toGen[i].total);
+    if(typeof aps_selectScene==='function') aps_selectScene(toGen[i].num-1);
+    await window.aps_generateScene(toGen[i].num-1);
+  }
+  APS.generating=false;
+  if(stopBtn)stopBtn.style.display='none';
+  if(genBtn)genBtn.style.display='block';
+  var done=APS.scenes.filter(function(s){return s.status==='done';}).length;
+  var fail=APS.scenes.filter(function(s){return s.status==='failed';}).length;
+  if(typeof toast==='function') toast(done+' done · '+fail+' failed', done>0?'ok':'error');
+  if(done>0) aab_showNextStep('edit-pg','🎬 All done! Go to Edit Suite to review & export');
+};
+
+window.aps_generateSelected = async function() {
+  if(typeof aps_saveSettings==='function') aps_saveSettings();
+  APS.stopRequested=false; APS.generating=true;
+  var sel=APS.scenes.filter(function(s){return s.selected&&s.status!=='done';});
+  if(!sel.length){if(typeof toast==='function')toast('No scenes selected','info');APS.generating=false;return;}
+  for(var i=0;i<sel.length&&!APS.stopRequested;i++) await window.aps_generateScene(sel[i].num-1);
+  APS.generating=false;
+};
+
+console.log('AABStudio Platform v3.0 ✓ — D-ID+HeyGen, Timeline, Export, PWA, Mobile');
+
+})();
+
+</script>
+<script>
+      // AABStudio Studio Fixes v1.0
+      // 1. Virtual background (canvas-based, MediaPipe body segmentation)
+      // 2. Teleprompter smooth scroll (force override)
+      // 3. Asset overlay placement on canvas
+      // 4. AI Presenter clips → existing timeline
+      // ════════════════════════════════════════════════════════════════════════════
+      (function () {
+        'use strict';
+
+        var isApp = !!document.getElementById('aab-v5');
+        if (!isApp) return;
+
+        // ══════════════════════════════════════════════════════════════════════════
+        // 1. VIRTUAL BACKGROUND — canvas compositing
+        // Replaces CSS filter approach with proper background removal
+        // Uses MediaPipe Selfie Segmentation (runs in browser, no server needed)
+        // ══════════════════════════════════════════════════════════════════════════
+
+        var VBG = {
+          active: false,
+          type: 'none',  // none | blur | image | color
+          imageUrl: null,
+          color: '#1a2035',
+          blurAmount: 12,
+          segmenter: null,
+          canvas: null,
+          ctx: null,
+          bgCanvas: null,
+          bgCtx: null,
+          bgImage: null,
+          stream: null,
+          rafId: null,
+          videoEl: null
+        };
+
+        async function vbg_loadMediaPipe() {
+          if (VBG.segmenter) return true;
+          try {
+            // Load MediaPipe Selfie Segmentation from CDN
+            if (!window.SelfieSegmentation) {
+              await new Promise(function (resolve, reject) {
+                var s = document.createElement('script');
+                s.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js';
+                s.onload = resolve;
+                s.onerror = reject;
+                document.head.appendChild(s);
+              });
+            }
+            VBG.segmenter = new window.SelfieSegmentation({
+              locateFile: function (file) {
+                return 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/' + file;
+              }
+            });
+            VBG.segmenter.setOptions({ modelSelection: 1, selfieMode: true });
+            await VBG.segmenter.initialize();
+            console.log('MediaPipe Selfie Segmentation loaded');
+            return true;
+          } catch (e) {
+            console.warn('MediaPipe load failed, falling back to CSS blur:', e.message);
+            return false;
+          }
+        }
+
+        async function vbg_apply(type, value) {
+          VBG.type = type;
+
+          // Find the studio video element
+          var videoEl = document.getElementById('studio-cam')
+            || document.getElementById('cam-preview')
+            || document.querySelector('#record-pg video');
+          if (!videoEl) { console.warn('VBG: no video element found'); return; }
+          VBG.videoEl = videoEl;
+
+          // Stop previous processing
+          if (VBG.rafId) { cancelAnimationFrame(VBG.rafId); VBG.rafId = null; }
+
+          if (type === 'none') {
+            VBG.active = false;
+            // Restore original stream display
+            videoEl.style.filter = '';
+            var overlay = document.getElementById('vbg-canvas-overlay');
+            if (overlay) overlay.style.display = 'none';
+            return;
+          }
+
+          // Load background image if needed
+          if (type === 'image' && value) {
+            VBG.imageUrl = value;
+            VBG.bgImage = new Image();
+            VBG.bgImage.crossOrigin = 'anonymous';
+            VBG.bgImage.src = value;
+            await new Promise(function (r) { VBG.bgImage.onload = r; VBG.bgImage.onerror = r; });
+          }
+
+          // If MediaPipe not available, fall back to CSS
+          var mpLoaded = await vbg_loadMediaPipe();
+          if (!mpLoaded) {
+            vbg_cssBlurFallback(type, value);
+            return;
+          }
+
+          // Create output canvas overlaid on top of video
+          var rect = videoEl.getBoundingClientRect();
+          var canvas = document.getElementById('vbg-canvas-overlay');
+          if (!canvas) {
+            canvas = document.createElement('canvas');
+            canvas.id = 'vbg-canvas-overlay';
+            canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:5;pointer-events:none;border-radius:inherit;';
+            videoEl.parentElement.style.position = 'relative';
+            videoEl.parentElement.appendChild(canvas);
+          }
+          canvas.style.display = 'block';
+          VBG.canvas = canvas;
+          VBG.ctx = canvas.getContext('2d');
+
+          // Set up segmenter callback
+          VBG.segmenter.onResults(function (results) {
+            vbg_renderFrame(results, videoEl, canvas, VBG.ctx);
+          });
+
+          VBG.active = true;
+
+          // Process frames
+          async function processFrame() {
+            if (!VBG.active) return;
+            if (videoEl.readyState >= 2) {
+              canvas.width = videoEl.videoWidth || videoEl.clientWidth || 640;
+              canvas.height = videoEl.videoHeight || videoEl.clientHeight || 480;
+              try {
+                await VBG.segmenter.send({ image: videoEl });
+              } catch (e) { }
+            }
+            VBG.rafId = requestAnimationFrame(processFrame);
+          }
+          processFrame();
+        }
+
+        function vbg_renderFrame(results, videoEl, canvas, ctx) {
+          var w = canvas.width, h = canvas.height;
+          ctx.save();
+          ctx.clearRect(0, 0, w, h);
+
+          // Draw segmentation mask to determine person pixels
+          ctx.globalCompositeOperation = 'source-over';
+
+          // Draw background first
+          if (VBG.type === 'blur') {
+            // Draw blurred video as background
+            ctx.filter = 'blur(' + VBG.blurAmount + 'px)';
+            ctx.drawImage(results.image, 0, 0, w, h);
+            ctx.filter = 'none';
+          } else if (VBG.type === 'image' && VBG.bgImage && VBG.bgImage.complete) {
+            ctx.drawImage(VBG.bgImage, 0, 0, w, h);
+          } else if (VBG.type === 'color') {
+            ctx.fillStyle = VBG.color;
+            ctx.fillRect(0, 0, w, h);
+          } else {
+            // News/Office/Dark — use preset gradient
+            var presets = {
+              'news': ['#081840', '#0a2d6b'],
+              'office': ['#0a1a0a', '#1a3a1a'],
+              'dark': ['#050810', '#0d1117'],
+              'green': ['#00a000', '#004000']
+            };
+            var colors = presets[VBG.type] || presets['dark'];
+            var grad = ctx.createLinearGradient(0, 0, w, h);
+            grad.addColorStop(0, colors[0]);
+            grad.addColorStop(1, colors[1]);
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, w, h);
+          }
+
+          // Cut out person using segmentation mask
+          // The mask is white where the person is
+          ctx.globalCompositeOperation = 'destination-out';
+          ctx.drawImage(results.segmentationMask, 0, 0, w, h);
+
+          // Draw the actual person pixels back on top
+          ctx.globalCompositeOperation = 'destination-over';
+          ctx.drawImage(results.image, 0, 0, w, h);
+
+          ctx.restore();
+        }
+
+        function vbg_cssBlurFallback(type, value) {
+          // CSS-only fallback when MediaPipe unavailable
+          var videoEl = VBG.videoEl;
+          if (!videoEl) return;
+          var presets = {
+            'blur': 'blur(12px) brightness(0.7)',
+            'dark': 'brightness(0.3)',
+            'news': 'hue-rotate(200deg) saturate(0.3) brightness(0.4)',
+            'office': 'sepia(0.3) brightness(0.6)',
+            'green': 'hue-rotate(90deg) saturate(2)'
+          };
+          // Can't do real background removal in CSS, just apply to whole video
+          // Show user a message
+          if (typeof toast === 'function') toast('Full background removal loading... using blur for now', 'info');
+          videoEl.style.filter = presets[type] || '';
+        }
+
+        // Override background button clicks in studio
+        function vbg_wireButtons() {
+          var bgBtns = document.querySelectorAll('.bg-btn, [data-bg], .s-btn[onclick*="setBg"], .s-btn[onclick*="bg"]');
+          // Map button text/data to background type
+          document.querySelectorAll('.studio-bg-btn, [class*="bg-opt"]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              var t = (btn.dataset.bg || btn.textContent || '').toLowerCase().trim();
+              if (t.includes('blur')) vbg_apply('blur');
+              if (t.includes('dark')) vbg_apply('color', '#050810');
+              if (t.includes('news')) vbg_apply('news');
+              if (t.includes('office')) vbg_apply('office');
+              if (t.includes('green')) vbg_apply('green');
+              if (t.includes('live') || t.includes('none')) vbg_apply('none');
+            });
+          });
+        }
+
+        // Intercept setBg calls from existing code
+        var _origSetBg = window.setBg || window.setBackground;
+        window.setBg = window.setBackground = function (type, value) {
+          if (typeof _origSetBg === 'function') _origSetBg.apply(this, arguments);
+          // Also apply our canvas-based background removal
+          var typeMap = {
+            'blur': 'blur', 'dark': 'dark', 'news': 'news',
+            'office': 'office', 'green': 'green', 'live': 'none',
+            'none': 'none', '': 'none'
+          };
+          var mapped = typeMap[type] || type;
+          vbg_apply(mapped, value);
+        };
+
+        setTimeout(vbg_wireButtons, 1000);
+
+        // ══════════════════════════════════════════════════════════════════════════
+        // 2. TELEPROMPTER SMOOTH SCROLL — force override at document level
+        // The issue is the existing tpScroll runs after our override
+        // Solution: redefine on a timer AFTER all scripts load
+        // ══════════════════════════════════════════════════════════════════════════
+
+        function installSmoothTp() {
+          // Override tpScroll with CSS transition approach
+          window.tpScroll = function () {
+            var TP = window.TP;
+            if (!TP) return;
+            clearInterval(TP.scrollTimer);
+
+            var wrap = document.getElementById('tp-text');
+            if (!wrap) return;
+
+            // Add transition styles to all word spans
+            wrap.querySelectorAll('span[id^="tpw"]').forEach(function (s) {
+              s.style.transition = 'color .12s ease, font-weight .12s ease, text-shadow .15s ease';
+            });
+
+            var total = (wrap.querySelectorAll('span[id^="tpw"]')).length;
+            var msPerW = 60000 / (TP.speed || 80);
+
+            TP.scrollTimer = setInterval(function () {
+              var wi = TP.currentWord;
+
+              // Previous word — fade out
+              if (wi > 0) {
+                var prev = document.getElementById('tpw' + (wi - 1));
+                if (prev) {
+                  prev.style.color = 'rgba(255,255,255,0.18)';
+                  prev.style.fontWeight = '400';
+                  prev.style.textShadow = 'none';
+                }
+              }
+
+              // Current word — highlight gold
+              var cur = document.getElementById('tpw' + wi);
+              if (cur) {
+                cur.style.color = '#f59e0b';
+                cur.style.fontWeight = '700';
+                cur.style.textShadow = '0 0 28px rgba(245,158,11,0.7)';
+                // Smooth scroll into view — center of viewport
+                cur.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+              }
+
+              TP.currentWord++;
+
+              if (TP.currentWord >= total) {
+                clearInterval(TP.scrollTimer);
+                TP.playing = false;
+                var btn = document.getElementById('tp-play-btn') || document.querySelector('[onclick*="tpToggle"]');
+                if (btn) btn.textContent = '▶ Play';
+              }
+            }, msPerW);
+          };
+
+          // Also override studio teleprompter (different scroll mechanism)
+          var _origStartTp = window.startTpAutoTimer || window.studioTpStart;
+          window.startTpAutoTimer = window.studioTpStart = function () {
+            var scene = PROJECT && PROJECT.scenes && PROJECT.scenes[window.STUDIO && STUDIO.currentScene || 0];
+            if (!scene) { if (typeof _origStartTp === 'function') return _origStartTp.apply(this, arguments); return; }
+
+            var words = (scene.narration || '').trim().split(/\s+/).filter(Boolean);
+            var wpm = (window.STUDIO && STUDIO.tpSpeed) || 80;
+            var msPerW = 60000 / wpm;
+            var tpEl = document.getElementById('tp-cur') || document.querySelector('.tp-cur-txt, .studio-tp-text');
+            if (!tpEl) { if (typeof _origStartTp === 'function') return _origStartTp.apply(this, arguments); return; }
+
+            // Render words as spans
+            tpEl.innerHTML = words.map(function (w, i) {
+              return '<span id="studio-tpw' + i + '" style="display:inline-block;margin-right:8px;transition:color .12s,font-weight .12s,text-shadow .15s;color:rgba(255,255,255,.5);">' + w + '</span>';
+            }).join('');
+
+            if (window._studioTpTimer) clearInterval(window._studioTpTimer);
+            var wi = 0;
+            var inner = tpEl;
+
+            window._studioTpTimer = setInterval(function () {
+              if (!window.STUDIO_TP || !window.STUDIO_TP.running) { clearInterval(window._studioTpTimer); return; }
+
+              // Previous
+              if (wi > 0) {
+                var p = document.getElementById('studio-tpw' + (wi - 1));
+                if (p) { p.style.color = 'rgba(255,255,255,.15)'; p.style.fontWeight = '400'; p.style.textShadow = 'none'; }
+              }
+              // Current
+              var c = document.getElementById('studio-tpw' + wi);
+              if (c) {
+                c.style.color = '#f59e0b';
+                c.style.fontWeight = '700';
+                c.style.textShadow = '0 0 24px rgba(245,158,11,.65)';
+                // Smooth horizontal scroll
+                c.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+              }
+              wi++;
+
+              if (wi >= words.length) {
+                clearInterval(window._studioTpTimer);
+                if (window.STUDIO_TP) window.STUDIO_TP.running = false;
+                // Auto-advance
+                setTimeout(function () {
+                  if (typeof studioNext === 'function') studioNext();
+                }, 600);
+              }
+            }, msPerW);
+          };
+
+          console.log('Smooth teleprompter v3 installed');
+        }
+
+        // Install now and again after 2s (to beat any late-loading scripts)
+        installSmoothTp();
+        setTimeout(installSmoothTp, 2000);
+        setTimeout(installSmoothTp, 5000);
+
+        // ══════════════════════════════════════════════════════════════════════════
+        // 3. AI PRESENTER CLIPS → EXISTING TIMELINE
+        // The existing timeline uses tl_addClip() or similar
+        // We need to find the correct function and call it
+        // ══════════════════════════════════════════════════════════════════════════
+
+        window.aps_addClipToTimeline = function (sc) {
+          if (!sc || !sc.videoUrl) return;
+
+          // Store in PROJECT.clips
+          if (!PROJECT.clips) PROJECT.clips = {};
+          PROJECT.clips[sc.id] = {
+            sceneId: sc.id,
+            sceneNum: sc.num,
+            url: sc.videoUrl,
+            videoUrl: sc.videoUrl,
+            duration: sc.duration || 8,
+            source: 'ai-presenter',
+            sceneName: 'Scene ' + sc.num
+          };
+
+          // Try all known timeline add functions in order
+          var added = false;
+
+          // Method 1: tl_addClipToTrack (most likely function name)
+          if (typeof tl_addClipToTrack === 'function') {
+            try { tl_addClipToTrack({ url: sc.videoUrl, duration: sc.duration, name: 'Scene ' + sc.num, track: 'main' }); added = true; } catch (e) { }
+          }
+
+          // Method 2: tl_addClip
+          if (!added && typeof tl_addClip === 'function') {
+            try { tl_addClip({ url: sc.videoUrl, duration: sc.duration, name: 'Scene ' + sc.num }); added = true; } catch (e) { }
+          }
+
+          // Method 3: addClipToTimeline
+          if (!added && typeof addClipToTimeline === 'function') {
+            try { addClipToTimeline(sc.videoUrl, sc.duration, 'Scene ' + sc.num); added = true; } catch (e) { }
+          }
+
+          // Method 4: tl_buildTracksFromProject (rebuilds from PROJECT.clips)
+          if (typeof tl_buildTracksFromProject === 'function') {
+            try { tl_buildTracksFromProject(); added = true; } catch (e) { }
+          }
+
+          // Method 5: renderEditClips / renderEditSuite
+          if (typeof renderEditClips === 'function') { try { renderEditClips(); } catch (e) { } }
+          if (typeof renderEditSuite === 'function') { try { renderEditSuite(); } catch (e) { } }
+          if (typeof tl_render === 'function') { try { tl_render(); } catch (e) { } }
+
+          if (typeof saveProject === 'function') saveProject();
+          console.log('Timeline: Scene ' + sc.num + ' added' + (added ? ' via function' : ' via PROJECT.clips'));
+
+          // Show "go to timeline" hint
+          var hint = document.getElementById('aab-next-hint');
+          if (!hint) {
+            hint = document.createElement('div');
+            hint.id = 'aab-next-hint';
+            hint.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:rgba(0,212,170,.12);border:1px solid rgba(0,212,170,.3);color:#00d4aa;font-size:13px;padding:10px 18px;border-radius:8px;cursor:pointer;z-index:9000;animation:aab-pulse 2s ease infinite;';
+            hint.onclick = function () { if (typeof nav === 'function') nav('edit-pg'); hint.style.display = 'none'; };
+            document.body.appendChild(hint);
+          }
+          hint.textContent = '→ Scene ' + sc.num + ' ready — click to go to Edit Suite';
+          hint.style.display = 'block';
+          setTimeout(function () { if (hint) hint.style.display = 'none'; }, 12000);
+        };
+
+        // ══════════════════════════════════════════════════════════════════════════
+        // 4. RECORDING SAVE → TIMELINE
+        // Wire the existing "Scene 1 saved — added to timeline" bar to actually
+        // call our timeline function
+        // ══════════════════════════════════════════════════════════════════════════
+
+        var _origStopRec = window.stopRec;
+        window.stopRec = function () {
+          if (typeof _origStopRec === 'function') _origStopRec.apply(this, arguments);
+          setTimeout(function () {
+            var idx = window.STUDIO && STUDIO.currentScene || 0;
+            var scene = PROJECT.scenes && PROJECT.scenes[idx];
+            if (!scene) return;
+            var clip = PROJECT.clips && PROJECT.clips[scene.id];
+            if (!clip || !clip.url) return;
+
+            // Trigger timeline rebuild
+            if (typeof tl_buildTracksFromProject === 'function') { try { tl_buildTracksFromProject(); } catch (e) { } }
+            if (typeof renderEditClips === 'function') { try { renderEditClips(); } catch (e) { } }
+            if (typeof tl_render === 'function') { try { tl_render(); } catch (e) { } }
+            if (typeof saveProject === 'function') saveProject();
+          }, 800);
+        };
+
+        // ══════════════════════════════════════════════════════════════════════════
+        // 5. ASSET OVERLAY — place assets on video canvas
+        // ══════════════════════════════════════════════════════════════════════════
+
+        window.aab_showAssetOverlay = function (assetUrl, position) {
+          // position: 'pip-right' | 'pip-left' | 'fullscreen' | 'lower-k'
+          var container = document.getElementById('studio-cam-wrap') || document.querySelector('#record-pg .cam-wrap, #record-pg .video-wrap');
+          if (!container) return;
+
+          // Remove existing overlay of same position
+          var existing = container.querySelector('[data-overlay-pos="' + position + '"]');
+          if (existing) { existing.remove(); return; } // toggle off
+
+          var el = document.createElement('div');
+          el.dataset.overlayPos = position;
+          el.style.position = 'absolute';
+          el.style.zIndex = '10';
+
+          var isImg = /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(assetUrl);
+          var isVid = /\.(mp4|webm|mov)$/i.test(assetUrl);
+          var inner = isImg ? '<img src="' + assetUrl + '" style="width:100%;height:100%;object-fit:contain;">'
+            : isVid ? '<video src="' + assetUrl + '" autoplay loop muted style="width:100%;height:100%;object-fit:contain;"></video>'
+              : '<img src="' + assetUrl + '" style="width:100%;height:100%;object-fit:contain;">';
+
+          switch (position) {
+            case 'pip-right':
+              el.style.cssText += 'right:16px;bottom:80px;width:28%;height:auto;border-radius:10px;overflow:hidden;border:2px solid rgba(255,255,255,.3);box-shadow:0 4px 20px rgba(0,0,0,.5);';
+              break;
+            case 'pip-left':
+              el.style.cssText += 'left:16px;bottom:80px;width:28%;height:auto;border-radius:10px;overflow:hidden;border:2px solid rgba(255,255,255,.3);box-shadow:0 4px 20px rgba(0,0,0,.5);';
+              break;
+            case 'fullscreen':
+              el.style.cssText += 'inset:0;opacity:.4;pointer-events:none;';
+              break;
+            case 'lower-k':
+              el.style.cssText += 'left:0;right:0;bottom:0;height:18%;padding:0 20px;display:flex;align-items:center;background:linear-gradient(transparent,rgba(0,0,0,.7));';
+              break;
+            default:
+              el.style.cssText += 'top:50%;left:50%;transform:translate(-50%,-50%);width:60%;';
+          }
+
+          el.innerHTML = inner;
+          container.style.position = 'relative';
+          container.appendChild(el);
+        };
+
+        // Wire existing Show buttons to our overlay system
+        setTimeout(function () {
+          document.querySelectorAll('.asset-show-btn, [onclick*="showAsset"], [onclick*="showOverlay"]').forEach(function (btn) {
+            var url = btn.dataset.assetUrl || btn.dataset.url;
+            var pos = btn.dataset.position || 'pip-right';
+            if (url) btn.onclick = function () { window.aab_showAssetOverlay(url, pos); };
+          });
+        }, 1000);
+
+        console.log('Studio fixes v1.0: VBG + smooth TP + timeline wiring + asset overlays');
+      })();
+    </script>
 </body>
+
 </html>
