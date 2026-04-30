@@ -1444,15 +1444,39 @@ button:active, .btn:active { transform: scale(0.96); filter: brightness(0.9); tr
   </div>
 </div>
 
-<!-- ══ EDIT SUITE ═══════════════════════════════════════════════════════════════ -->
-<div id="edit-pg" class="pg-flex" style="flex-direction:column;background:#07090f;color:#fff;height:100vh;overflow:hidden;">
+<!-- ══════════════════════════════════════════════════════════════════════════
+   PROFESSIONAL EDIT SUITE — FULL REPLACEMENT FOR #edit-pg
+   Julius: Replace the ENTIRE <div id="edit-pg" ...> block with this.
+   Everything from <div id="edit-pg" to its closing </div> before the export section.
+══════════════════════════════════════════════════════════════════════════ -->
 
-  <!-- ═══ TOP BAR ═══════════════════════════════════════════════════════════ -->
-  <div style="height:44px;display:flex;align-items:center;gap:8px;padding:0 14px;background:rgba(255,255,255,.03);border-bottom:.5px solid rgba(255,255,255,.05);flex-shrink:0;">
-    <div style="font-size:13px;font-weight:600;color:rgba(255,255,255,.8);" id="edit-title">Edit</div>
-    <div style="width:.5px;height:18px;background:rgba(255,255,255,.08);margin:0 4px;"></div>
-    <button class="studio-btn" onclick="editUndo()" title="Undo last action">↩ Undo</button>
-    <button class="studio-btn" onclick="openSubtitleEditor()" title="Edit subtitles" style="color:#a78bfa;border-color:rgba(139,92,246,.3);">💬 Subtitles</button>
+<div id="edit-pg" class="pg-flex" style="flex-direction:column;background:#030508;color:#fff;height:100vh;overflow:hidden;">
+
+  <!-- ═══ TOP BAR ════════════════════════════════════════════════════════════ -->
+  <div class="edit-topbar">
+    <!-- Left: nav + project -->
+    <div style="font-size:13px;font-weight:600;color:rgba(255,255,255,.7);" id="edit-title">Edit Suite</div>
+    <div class="edit-topbar-sep"></div>
+    <button class="studio-btn" onclick="editUndo()" title="Undo (Ctrl+Z)">↩ Undo</button>
+    <button class="studio-btn" onclick="editRedo()" title="Redo (Ctrl+Y)">↪ Redo</button>
+    <div class="edit-topbar-sep"></div>
+    <!-- Clip tools -->
+    <button class="studio-btn" id="tl-tool-select" onclick="setEditTool('select')" title="Select / move">▶ Select</button>
+    <button class="studio-btn" id="tl-tool-trim" onclick="setEditTool('trim')" title="Trim edges">✂ Trim</button>
+    <button class="studio-btn" id="tl-tool-split" onclick="setEditTool('split')" title="Split at playhead">⊣ Split</button>
+    <button class="studio-btn" id="tl-tool-ripple" onclick="setEditTool('ripple')" title="Ripple delete">⟵ Ripple</button>
+    <div class="edit-topbar-sep"></div>
+    <!-- Clip actions -->
+    <button class="studio-btn" onclick="duplicateSelectedClip()" title="Duplicate clip">⧉ Dupe</button>
+    <button class="studio-btn" onclick="enableDisableClip()" title="Enable / disable clip">◎ Toggle</button>
+    <button class="studio-btn" onclick="reverseClip()" title="Reverse clip">⇄ Reverse</button>
+    <button class="studio-btn" onclick="freezeFrame()" title="Freeze frame at playhead">❄ Freeze</button>
+    <div class="edit-topbar-sep"></div>
+    <!-- View / panels -->
+    <button class="studio-btn" onclick="toggleEffectsDrawer()" title="Effects & transitions">✦ FX</button>
+    <button class="studio-btn" onclick="openSubtitleEditor()" style="color:#a78bfa;border-color:rgba(139,92,246,.3);" title="Subtitle editor">💬 Subs</button>
+    <button class="studio-btn" onclick="toggleVersionPanel()" title="Version history">🗂 Versions</button>
+    <!-- Right: export nav -->
     <div style="margin-left:auto;display:flex;gap:5px;align-items:center;">
       <button class="studio-btn" onclick="exportTranscript()">📋 Transcript</button>
       <button class="studio-btn" onclick="generateSubtitles()">📋 .SRT</button>
@@ -1462,142 +1486,529 @@ button:active, .btn:active { transform: scale(0.96); filter: brightness(0.9); tr
     </div>
   </div>
 
-  <!-- ═══ MAIN BODY: clips + preview + timeline ═════════════════════════════ -->
-  <div style="flex:1;display:flex;overflow:hidden;min-height:0;">
+  <!-- ═══ MAIN BODY ══════════════════════════════════════════════════════════ -->
+  <div class="edit-body">
 
-    <!-- LEFT: Clips & Assets panel -->
-    <div style="width:190px;flex-shrink:0;border-right:.5px solid rgba(255,255,255,.05);display:flex;flex-direction:column;background:rgba(0,0,0,.2);">
-
-      <!-- Clips section -->
-      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
-        <div style="padding:8px 10px 4px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.25);">Clips</div>
-        <div style="flex:1;overflow-y:auto;" id="edit-clips-list"></div>
+    <!-- ── LEFT: Media Bin ──────────────────────────────────────────────── -->
+    <div class="edit-bin">
+      <div class="edit-bin-hdr">
+        <span>Media Bin</span>
+        <span id="bin-count" style="color:rgba(255,255,255,.2);">0</span>
       </div>
-
-      <!-- Import section -->
-      <div style="padding:8px;border-top:.5px solid rgba(255,255,255,.05);display:flex;flex-direction:column;gap:4px;">
-        <label class="studio-btn" style="width:100%;justify-content:center;cursor:pointer;display:flex;gap:5px;">
+      <div class="edit-bin-list" id="edit-bin-list">
+        <div style="padding:16px;text-align:center;font-size:11px;color:rgba(255,255,255,.2);line-height:1.7;">
+          Record scenes or<br>import media below
+        </div>
+      </div>
+      <!-- Import buttons -->
+      <div class="bin-import-btn" style="flex-direction:column;gap:4px;">
+        <label class="studio-btn" style="width:100%;justify-content:center;cursor:pointer;">
           🎬 Import video
-          <input type="file" style="display:none;" accept="video/*" onchange="importToTimeline(this,'video')">
+          <input type="file" style="display:none;" accept="video/*" onchange="importMedia(this,'video')">
         </label>
-        <label class="studio-btn" style="width:100%;justify-content:center;cursor:pointer;display:flex;gap:5px;">
+        <label class="studio-btn" style="width:100%;justify-content:center;cursor:pointer;">
           🎵 Import audio
-          <input type="file" style="display:none;" accept="audio/*" onchange="importToTimeline(this,'audio')">
+          <input type="file" style="display:none;" accept="audio/*" onchange="importMedia(this,'audio')">
         </label>
-        <label class="studio-btn" style="width:100%;justify-content:center;cursor:pointer;display:flex;gap:5px;">
+        <label class="studio-btn" style="width:100%;justify-content:center;cursor:pointer;">
           🖼 Import image
-          <input type="file" style="display:none;" accept="image/*" onchange="importToTimeline(this,'image')">
+          <input type="file" style="display:none;" accept="image/*" onchange="importMedia(this,'image')">
         </label>
       </div>
     </div>
 
-    <!-- CENTRE: Preview + Timeline -->
-    <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;">
+    <!-- ── CENTER: Preview + Timeline ──────────────────────────────────── -->
+    <div class="edit-center">
 
-      <!-- Video preview -->
-      <div style="flex:1;display:flex;align-items:center;justify-content:center;background:#040710;position:relative;min-height:0;">
-        <div id="edit-no-clips" style="text-align:center;color:rgba(255,255,255,.2);">
-          <div style="font-size:32px;margin-bottom:10px;">🎬</div>
-          <div style="font-size:13px;margin-bottom:10px;">Record your scenes first</div>
-          <button class="studio-btn" onclick="nav('record-pg')">← Go to studio</button>
-        </div>
-        <video id="edit-video" preload="auto" style="display:none;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain;background:#000;"></video>
+      <!-- Preview -->
+      <div class="edit-preview-area">
+        <div class="edit-preview-wrap" id="edit-preview-wrap" style="width:100%;height:100%;max-width:800px;">
+          <div id="edit-no-clips" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:rgba(255,255,255,.2);z-index:5;">
+            <div style="font-size:36px;margin-bottom:10px;">🎬</div>
+            <div style="font-size:13px;margin-bottom:10px;">Record or import clips to start editing</div>
+            <button class="studio-btn" onclick="nav('record-pg')">← Go to studio</button>
+          </div>
+          <video id="edit-video" preload="auto" style="width:100%;height:100%;object-fit:contain;background:#000;border-radius:4px;display:none;"></video>
 
-        <!-- Subtitle overlay on preview -->
-        <div id="edit-subtitle-overlay" style="position:absolute;bottom:50px;left:10%;right:10%;text-align:center;pointer-events:none;display:none;">
-          <span id="edit-subtitle-text" style="font-size:20px;font-weight:600;color:#fff;background:rgba(0,0,0,.65);padding:4px 12px;border-radius:4px;display:inline-block;"></span>
-        </div>
+          <!-- Subtitle overlay -->
+          <div class="edit-subtitle-overlay" id="edit-subtitle-overlay" style="display:none;">
+            <span class="edit-subtitle-text" id="edit-subtitle-text"></span>
+          </div>
 
-        <!-- Playback controls -->
-        <div style="position:absolute;bottom:8px;left:50%;transform:translateX(-50%);display:flex;gap:5px;align-items:center;background:rgba(0,0,0,.7);padding:5px 12px;border-radius:20px;backdrop-filter:blur(8px);">
-          <button class="studio-btn" onclick="editSeek(-10)" style="padding:3px 8px;">«10s</button>
-          <button class="studio-btn" onclick="editSeek(-1)" style="padding:3px 7px;">«1s</button>
-          <button class="studio-btn" onclick="editPlayPause()" id="edit-play-btn" style="padding:4px 12px;background:rgba(0,212,255,.12);color:var(--accent);border-color:rgba(0,212,255,.3);">▶</button>
-          <button class="studio-btn" onclick="editSeek(1)" style="padding:3px 7px;">1s»</button>
-          <button class="studio-btn" onclick="editSeek(10)" style="padding:3px 8px;">10s»</button>
-          <span id="edit-timecode" style="font-size:11px;color:rgba(255,255,255,.5);font-family:JetBrains Mono,monospace;min-width:90px;text-align:center;">0:00 / 0:00</span>
+          <!-- Overlay canvas (PiP, image overlays, text) -->
+          <canvas id="edit-overlay-canvas" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;border-radius:4px;"></canvas>
+
+          <!-- Playback controls -->
+          <div class="edit-playbar">
+            <button class="studio-btn" onclick="editSeek(-10)" style="padding:3px 7px;">«10</button>
+            <button class="studio-btn" onclick="editSeek(-1/30)" style="padding:3px 6px;" title="Previous frame">‹</button>
+            <button class="play-btn-main" onclick="editPlayPause()" id="edit-play-btn">▶</button>
+            <button class="studio-btn" onclick="editSeek(1/30)" style="padding:3px 6px;" title="Next frame">›</button>
+            <button class="studio-btn" onclick="editSeek(10)" style="padding:3px 7px;">10»</button>
+            <button class="edit-loop-btn" id="edit-loop-btn" onclick="toggleLoop()" title="Loop">⟳</button>
+            <span id="edit-timecode" style="font-size:11px;color:rgba(255,255,255,.5);font-family:'JetBrains Mono',monospace;min-width:110px;text-align:center;">0:00.00 / 0:00</span>
+            <div class="edit-vol-wrap">
+              <span class="edit-vol-icon" onclick="toggleMutePreview()">🔊</span>
+              <input type="range" id="edit-preview-vol" min="0" max="100" value="80" style="width:60px;accent-color:var(--accent);" oninput="setPreviewVol(this.value)">
+            </div>
+            <!-- Aspect ratio -->
+            <div style="margin-left:8px;display:flex;gap:3px;">
+              <button class="studio-btn" id="ar-169" onclick="setAspectRatio('16:9')" style="font-size:9px;padding:2px 6px;">16:9</button>
+              <button class="studio-btn" id="ar-916" onclick="setAspectRatio('9:16')" style="font-size:9px;padding:2px 6px;">9:16</button>
+              <button class="studio-btn" id="ar-11" onclick="setAspectRatio('1:1')" style="font-size:9px;padding:2px 6px;">1:1</button>
+              <button class="studio-btn" id="ar-45" onclick="setAspectRatio('4:5')" style="font-size:9px;padding:2px 6px;">4:5</button>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- ═══ MULTI-TRACK TIMELINE ══════════════════════════════════════════ -->
-      <div id="timeline-panel" style="flex-shrink:0;height:280px;display:flex;flex-direction:column;background:rgba(0,0,0,.45);border-top:.5px solid rgba(255,255,255,.07);">
+      <!-- ═══ MULTI-TRACK TIMELINE ═══════════════════════════════════════ -->
+      <div class="edit-timeline">
 
         <!-- Timeline toolbar -->
-        <div style="height:36px;display:flex;align-items:center;gap:6px;padding:0 10px;border-bottom:.5px solid rgba(255,255,255,.06);flex-shrink:0;background:rgba(255,255,255,.02);">
-          <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.35);">Timeline</span>
-
-          <!-- Edit tools -->
-          <div style="display:flex;gap:3px;margin-left:6px;">
-            <button class="studio-btn" onclick="tl_setTool('select')" id="tl-tool-select" style="padding:3px 8px;font-size:10px;background:rgba(0,212,255,.1);color:var(--accent);" title="Select / move clips">▶ Select</button>
-            <button class="studio-btn" onclick="tl_setTool('trim')" id="tl-tool-trim" style="padding:3px 8px;font-size:10px;" title="Trim clip edges">✂ Trim</button>
-            <button class="studio-btn" onclick="tl_setTool('split')" id="tl-tool-split" style="padding:3px 8px;font-size:10px;" title="Split at playhead">⊣ Split</button>
-            <button class="studio-btn" onclick="tl_deleteSelected()" style="padding:3px 8px;font-size:10px;color:#ef4444;border-color:rgba(239,68,68,.25);" title="Delete selected">🗑 Del</button>
-          </div>
-
-          <div style="width:.5px;height:18px;background:rgba(255,255,255,.08);margin:0 4px;"></div>
-
+        <div class="tl-toolbar">
+          <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.25);">Timeline</span>
+          <div class="tl-sep"></div>
+          <!-- Tools -->
+          <button class="tl-tool-btn on" id="tl-btn-select" onclick="tlSetTool('select')" title="Select (V)">▶ Select</button>
+          <button class="tl-tool-btn" id="tl-btn-trim" onclick="tlSetTool('trim')" title="Trim (T)">✂ Trim</button>
+          <button class="tl-tool-btn" id="tl-btn-split" onclick="tlSplitAtPlayhead()" title="Split (S)">⊣ Split</button>
+          <button class="tl-tool-btn" onclick="tlDeleteSelected()" style="color:#ef4444;border-color:rgba(239,68,68,.2);" title="Delete (Del)">🗑 Delete</button>
+          <button class="tl-tool-btn" onclick="tlRippleDelete()" title="Ripple delete">⟵⊣ Ripple del</button>
+          <div class="tl-sep"></div>
+          <!-- Multi-select info -->
+          <span id="tl-sel-info" style="font-size:9px;color:rgba(255,255,255,.25);display:none;"></span>
+          <!-- Snap -->
+          <label class="tl-snap-toggle" title="Snap to clips and markers">
+            <input type="checkbox" id="tl-snap" checked> Snap
+          </label>
+          <div class="tl-sep"></div>
           <!-- Add track -->
-          <select id="tl-add-track-type" style="font-size:10px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);color:rgba(255,255,255,.6);border-radius:5px;padding:3px 5px;font-family:Sora,sans-serif;">
-            <option value="video">Video overlay</option>
-            <option value="audio">Audio</option>
+          <select id="tl-add-type" style="font-size:10px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.55);border-radius:4px;padding:2px 5px;font-family:'Sora',sans-serif;">
+            <option value="video">Video track</option>
+            <option value="audio">Audio track</option>
             <option value="image">Image overlay</option>
-            <option value="subtitle">Subtitle</option>
+            <option value="subtitle">Subtitle track</option>
           </select>
-          <button class="studio-btn" onclick="tl_addTrack()" style="padding:3px 8px;font-size:10px;">+ Track</button>
-
+          <button class="tl-tool-btn" onclick="tlAddTrack()">+ Track</button>
+          <div class="tl-sep"></div>
+          <!-- Markers -->
+          <button class="tl-tool-btn" onclick="tlAddMarker()" title="Add marker (M)">📍 Marker</button>
+          <!-- Jump to scene -->
+          <select id="tl-jump-scene" onchange="tlJumpToScene(this.value)" style="font-size:10px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.55);border-radius:4px;padding:2px 5px;font-family:'Sora',sans-serif;">
+            <option value="">Jump to scene…</option>
+          </select>
+          <!-- Zoom + Fit -->
           <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
-            <span style="font-size:9px;color:rgba(255,255,255,.3);">ZOOM</span>
-            <input type="range" id="tl-zoom" min="8" max="200" value="40" step="4" style="width:70px;accent-color:var(--accent);" oninput="tl_setZoom(this.value)">
-            <span id="tl-zoom-val" style="font-size:9px;color:rgba(255,255,255,.3);min-width:28px;">80%</span>
-            <button class="studio-btn" onclick="tl_fitToWindow()" style="padding:3px 7px;font-size:10px;">Fit</button>
+            <span style="font-size:9px;color:rgba(255,255,255,.25);">ZOOM</span>
+            <input type="range" id="tl-zoom" min="5" max="300" value="50" step="5" style="width:80px;accent-color:var(--accent);" oninput="tlSetZoom(this.value)">
+            <span id="tl-zoom-val" style="font-size:9px;color:rgba(255,255,255,.3);min-width:32px;">50px/s</span>
+            <button class="tl-tool-btn" onclick="tlFitToWindow()">Fit</button>
           </div>
         </div>
 
         <!-- Track area -->
-        <div style="flex:1;display:flex;overflow:hidden;min-height:0;">
-
-          <!-- Track labels (fixed left) -->
-          <div id="tl-labels" style="width:88px;flex-shrink:0;border-right:.5px solid rgba(255,255,255,.07);overflow:hidden;background:rgba(0,0,0,.2);">
-            <!-- Populated by JS -->
-          </div>
-
-          <!-- Scrollable tracks + ruler -->
-          <div style="flex:1;overflow:auto;position:relative;" id="tl-scroll-container">
-            <!-- Time ruler -->
-            <div id="tl-ruler" style="height:20px;background:rgba(255,255,255,.04);border-bottom:.5px solid rgba(255,255,255,.06);position:sticky;top:0;z-index:10;pointer-events:none;"></div>
-            <!-- Track rails -->
-            <div id="tl-tracks" style="position:relative;">
-              <!-- Playhead -->
-              <div id="tl-playhead" style="position:absolute;top:0;bottom:0;width:2px;background:var(--accent);z-index:20;pointer-events:none;left:0;">
-                <div style="position:absolute;top:0;left:-5px;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid var(--accent);"></div>
+        <div class="tl-track-area">
+          <!-- Labels col (fixed) -->
+          <div class="tl-labels-col" id="tl-labels-col"></div>
+          <!-- Scrollable area -->
+          <div class="tl-scroll-area" id="tl-scroll-area">
+            <!-- Ruler -->
+            <div class="tl-ruler-strip" id="tl-ruler"></div>
+            <!-- Tracks + Playhead -->
+            <div class="tl-tracks-wrap" id="tl-tracks-wrap">
+              <div class="tl-playhead-line" id="tl-playhead">
+                <div class="tl-playhead-head"></div>
               </div>
+              <!-- Tracks rendered by JS -->
             </div>
           </div>
         </div>
 
-        <!-- Bottom: Volume + subtitle controls row -->
-        <div style="height:32px;display:flex;align-items:center;gap:10px;padding:0 10px;border-top:.5px solid rgba(255,255,255,.05);flex-shrink:0;overflow-x:auto;">
-          <span style="font-size:9px;color:rgba(255,255,255,.25);white-space:nowrap;">MUSIC VOL</span>
-          <input type="range" id="music-vol" min="0" max="100" value="30" style="width:70px;accent-color:var(--gold);" oninput="setMusicVol(this.value)">
-          <span id="music-vol-val" style="font-size:10px;color:var(--gold);min-width:26px;">30%</span>
+        <!-- Bottom bar: master volume, music vol, fade -->
+        <div class="tl-bottom">
+          <span style="font-size:9px;color:rgba(255,255,255,.25);">MASTER</span>
+          <input type="range" id="master-vol" min="0" max="100" value="100" style="width:60px;accent-color:var(--accent);" oninput="setMasterVol(this.value)">
+          <span id="master-vol-val" style="font-size:9px;color:rgba(255,255,255,.3);min-width:28px;">100%</span>
           <div style="width:.5px;height:16px;background:rgba(255,255,255,.08);"></div>
-          <span style="font-size:9px;color:rgba(255,255,255,.25);white-space:nowrap;">FADE IN</span>
-          <input type="range" id="music-fade-in" min="0" max="5" value="1" step=".5" style="width:55px;accent-color:var(--accent);" oninput="document.getElementById('fade-in-val').textContent=this.value+'s'">
-          <span id="fade-in-val" style="font-size:10px;color:var(--accent);min-width:22px;">1s</span>
-          <span style="font-size:9px;color:rgba(255,255,255,.25);white-space:nowrap;">FADE OUT</span>
-          <input type="range" id="music-fade-out" min="0" max="5" value="2" step=".5" style="width:55px;accent-color:var(--accent);" oninput="document.getElementById('fade-out-val').textContent=this.value+'s'">
-          <span id="fade-out-val" style="font-size:10px;color:var(--accent);min-width:22px;">2s</span>
+          <span style="font-size:9px;color:rgba(255,255,255,.25);">MUSIC VOL</span>
+          <input type="range" id="music-vol" min="0" max="100" value="30" style="width:60px;accent-color:var(--gold);" oninput="setMusicVol(this.value)">
+          <span id="music-vol-val" style="font-size:9px;color:var(--gold);min-width:28px;">30%</span>
           <div style="width:.5px;height:16px;background:rgba(255,255,255,.08);"></div>
-          <button class="studio-btn" onclick="tl_toggleSubtitles()" id="tl-sub-btn" style="padding:2px 8px;font-size:10px;color:#a78bfa;border-color:rgba(139,92,246,.25);">💬 Subtitles: OFF</button>
+          <span style="font-size:9px;color:rgba(255,255,255,.25);">FADE IN</span>
+          <input type="range" id="music-fade-in" min="0" max="5" value="1" step=".5" style="width:50px;accent-color:var(--accent);" oninput="document.getElementById('fi-val').textContent=this.value+'s'">
+          <span id="fi-val" style="font-size:9px;color:var(--accent);min-width:22px;">1s</span>
+          <span style="font-size:9px;color:rgba(255,255,255,.25);">OUT</span>
+          <input type="range" id="music-fade-out" min="0" max="5" value="2" step=".5" style="width:50px;accent-color:var(--accent);" oninput="document.getElementById('fo-val').textContent=this.value+'s'">
+          <span id="fo-val" style="font-size:9px;color:var(--accent);min-width:22px;">2s</span>
+          <div style="width:.5px;height:16px;background:rgba(255,255,255,.08);"></div>
+          <button class="tl-tool-btn" onclick="tl_toggleSubtitles()" id="tl-sub-btn" style="color:#a78bfa;border-color:rgba(139,92,246,.2);">💬 Subtitles: OFF</button>
+          <span id="tl-duration-label" style="margin-left:auto;font-size:9px;color:rgba(255,255,255,.25);font-family:'JetBrains Mono',monospace;"></span>
         </div>
-
       </div>
     </div>
 
+    <!-- ── RIGHT: Inspector Panel ────────────────────────────────────────── -->
+    <div class="edit-inspector">
+      <div class="insp-hdr">Inspector</div>
+      <div class="insp-tabs">
+        <button class="insp-tab on" onclick="inspTab('transform',this)">Transform</button>
+        <button class="insp-tab" onclick="inspTab('audio',this)">Audio</button>
+        <button class="insp-tab" onclick="inspTab('effects',this)">FX</button>
+        <button class="insp-tab" onclick="inspTab('clip',this)">Clip</button>
+      </div>
+
+      <!-- Transform tab -->
+      <div class="insp-body" id="insp-transform">
+        <div id="insp-no-sel" style="text-align:center;padding:24px 12px;font-size:11px;color:rgba(255,255,255,.2);line-height:1.7;">Select a clip<br>to inspect</div>
+
+        <!-- Position & Scale -->
+        <div class="insp-section" id="insp-transform-body" style="display:none;">
+          <div class="insp-section-title">Position</div>
+          <div class="insp-row">
+            <span class="insp-label">X</span>
+            <div class="insp-slider-wrap" style="flex:1;margin-left:8px;">
+              <input type="range" class="insp-slider" id="insp-x" min="-960" max="960" value="0" oninput="applyTransform()">
+              <input class="insp-input" id="insp-x-val" value="0" onchange="document.getElementById('insp-x').value=this.value;applyTransform()">
+            </div>
+          </div>
+          <div class="insp-row">
+            <span class="insp-label">Y</span>
+            <div class="insp-slider-wrap" style="flex:1;margin-left:8px;">
+              <input type="range" class="insp-slider" id="insp-y" min="-540" max="540" value="0" oninput="applyTransform()">
+              <input class="insp-input" id="insp-y-val" value="0" onchange="document.getElementById('insp-y').value=this.value;applyTransform()">
+            </div>
+          </div>
+          <div class="insp-section-title" style="margin-top:10px;">Scale</div>
+          <div class="insp-row">
+            <span class="insp-label">Scale</span>
+            <div class="insp-slider-wrap" style="flex:1;margin-left:8px;">
+              <input type="range" class="insp-slider" id="insp-scale" min="10" max="300" value="100" oninput="applyTransform()">
+              <input class="insp-input" id="insp-scale-val" value="100" onchange="document.getElementById('insp-scale').value=this.value;applyTransform()">
+            </div>
+          </div>
+          <div class="insp-section-title" style="margin-top:10px;">Rotation</div>
+          <div class="insp-row">
+            <span class="insp-label">°</span>
+            <div class="insp-slider-wrap" style="flex:1;margin-left:8px;">
+              <input type="range" class="insp-slider" id="insp-rot" min="-180" max="180" value="0" oninput="applyTransform()">
+              <input class="insp-input" id="insp-rot-val" value="0" onchange="document.getElementById('insp-rot').value=this.value;applyTransform()">
+            </div>
+          </div>
+          <div class="insp-section-title" style="margin-top:10px;">Opacity</div>
+          <div class="insp-row">
+            <span class="insp-label">%</span>
+            <div class="insp-slider-wrap" style="flex:1;margin-left:8px;">
+              <input type="range" class="insp-slider" id="insp-opacity" min="0" max="100" value="100" oninput="applyTransform()">
+              <input class="insp-input" id="insp-opacity-val" value="100" onchange="document.getElementById('insp-opacity').value=this.value;applyTransform()">
+            </div>
+          </div>
+          <div class="insp-section-title" style="margin-top:10px;">Crop</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;">
+            <div>
+              <div style="font-size:9px;color:rgba(255,255,255,.3);margin-bottom:2px;">Top %</div>
+              <input type="range" class="insp-slider" id="insp-crop-t" min="0" max="50" value="0" oninput="applyTransform()">
+            </div>
+            <div>
+              <div style="font-size:9px;color:rgba(255,255,255,.3);margin-bottom:2px;">Bottom %</div>
+              <input type="range" class="insp-slider" id="insp-crop-b" min="0" max="50" value="0" oninput="applyTransform()">
+            </div>
+            <div>
+              <div style="font-size:9px;color:rgba(255,255,255,.3);margin-bottom:2px;">Left %</div>
+              <input type="range" class="insp-slider" id="insp-crop-l" min="0" max="50" value="0" oninput="applyTransform()">
+            </div>
+            <div>
+              <div style="font-size:9px;color:rgba(255,255,255,.3);margin-bottom:2px;">Right %</div>
+              <input type="range" class="insp-slider" id="insp-crop-r" min="0" max="50" value="0" oninput="applyTransform()">
+            </div>
+          </div>
+          <!-- Layer order -->
+          <div class="insp-section-title" style="margin-top:10px;">Layer (Z-index)</div>
+          <div style="display:flex;gap:5px;">
+            <button class="studio-btn" onclick="moveLayerUp()" style="flex:1;">↑ Up</button>
+            <button class="studio-btn" onclick="moveLayerDown()" style="flex:1;">↓ Down</button>
+          </div>
+          <div style="margin-top:6px;">
+            <button class="studio-btn" onclick="resetTransform()" style="width:100%;color:rgba(255,255,255,.4);">↺ Reset transform</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Audio tab -->
+      <div class="insp-body" id="insp-audio" style="display:none;">
+        <div class="insp-section">
+          <div class="insp-section-title">Volume</div>
+          <div class="insp-row">
+            <span class="insp-label">Gain dB</span>
+            <div class="insp-slider-wrap" style="flex:1;margin-left:8px;">
+              <input type="range" class="insp-slider" id="insp-gain" min="-20" max="20" value="0" oninput="applyAudio()">
+              <input class="insp-input" id="insp-gain-val" value="0" style="width:40px;">
+            </div>
+          </div>
+          <div class="insp-row">
+            <span class="insp-label">Vol %</span>
+            <div class="insp-slider-wrap" style="flex:1;margin-left:8px;">
+              <input type="range" class="insp-slider" id="insp-vol" min="0" max="200" value="100" oninput="applyAudio()">
+              <input class="insp-input" id="insp-vol-val" value="100" style="width:40px;">
+            </div>
+          </div>
+          <label style="display:flex;align-items:center;gap:7px;margin-top:6px;font-size:11px;color:rgba(255,255,255,.45);cursor:pointer;">
+            <input type="checkbox" id="insp-mute" onchange="applyAudio()" style="accent-color:var(--red);">
+            Mute this clip
+          </label>
+        </div>
+        <div class="insp-section">
+          <div class="insp-section-title">Fade</div>
+          <div class="insp-row">
+            <span class="insp-label">Fade in</span>
+            <input type="range" class="insp-slider" id="insp-fade-in" min="0" max="3" value="0" step=".1" style="flex:1;margin:0 6px;" oninput="applyAudio()">
+            <span id="insp-fi-val" style="font-size:10px;color:var(--accent);min-width:26px;">0s</span>
+          </div>
+          <div class="insp-row">
+            <span class="insp-label">Fade out</span>
+            <input type="range" class="insp-slider" id="insp-fade-out" min="0" max="3" value="0" step=".1" style="flex:1;margin:0 6px;" oninput="applyAudio()">
+            <span id="insp-fo-val" style="font-size:10px;color:var(--accent);min-width:26px;">0s</span>
+          </div>
+        </div>
+        <div class="insp-section">
+          <div class="insp-section-title">EQ Presets</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;">
+            <button class="preset-btn" onclick="applyEQ('flat')">Flat</button>
+            <button class="preset-btn" onclick="applyEQ('voice')">Voice</button>
+            <button class="preset-btn" onclick="applyEQ('music')">Music</button>
+            <button class="preset-btn" onclick="applyEQ('bass')">Bass boost</button>
+            <button class="preset-btn" onclick="applyEQ('cinema')">Cinema</button>
+          </div>
+        </div>
+        <div class="insp-section">
+          <div class="insp-section-title">Advanced</div>
+          <button class="studio-btn" style="width:100%;margin-bottom:5px;" onclick="normalizeAudio()">📊 Normalize audio</button>
+          <button class="studio-btn" style="width:100%;margin-bottom:5px;" onclick="detachAudio()">✂ Detach audio</button>
+          <button class="studio-btn" style="width:100%;margin-bottom:5px;" onclick="enableDuckUnderVoice()">🎤 Duck under voice</button>
+          <button class="studio-btn" style="width:100%;margin-bottom:5px;" onclick="noiseReduction()">🔇 Noise reduction</button>
+          <button class="studio-btn" style="width:100%;margin-bottom:5px;" onclick="addCrossfade()">〜 Crossfade</button>
+        </div>
+        <!-- Waveform display -->
+        <div class="insp-section">
+          <div class="insp-section-title">Waveform</div>
+          <canvas id="insp-waveform" style="width:100%;height:60px;border-radius:4px;background:#0a0e1a;"></canvas>
+          <div style="font-size:9px;color:rgba(255,255,255,.2);margin-top:3px;text-align:center;">Click waveform to jump to position</div>
+        </div>
+      </div>
+
+      <!-- Effects tab -->
+      <div class="insp-body" id="insp-effects" style="display:none;">
+        <div class="insp-section">
+          <div class="insp-section-title">Transitions (in/out)</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;">
+            <button class="preset-btn" onclick="applyTransition('none')">None</button>
+            <button class="preset-btn on" onclick="applyTransition('fade')">Fade</button>
+            <button class="preset-btn" onclick="applyTransition('dissolve')">Dissolve</button>
+            <button class="preset-btn" onclick="applyTransition('slide-left')">Slide ←</button>
+            <button class="preset-btn" onclick="applyTransition('slide-right')">Slide →</button>
+            <button class="preset-btn" onclick="applyTransition('zoom-in')">Zoom in</button>
+            <button class="preset-btn" onclick="applyTransition('zoom-out')">Zoom out</button>
+            <button class="preset-btn" onclick="applyTransition('wipe')">Wipe</button>
+          </div>
+          <div class="insp-row" style="margin-top:8px;">
+            <span class="insp-label">Duration</span>
+            <input type="range" class="insp-slider" id="transition-dur" min="0.1" max="2" value="0.5" step=".1" style="flex:1;margin:0 6px;">
+            <span id="trans-dur-val" style="font-size:10px;color:var(--accent);">0.5s</span>
+          </div>
+        </div>
+        <div class="insp-section">
+          <div class="insp-section-title">Color</div>
+          <div class="insp-row">
+            <span class="insp-label">Brightness</span>
+            <input type="range" class="insp-slider" id="fx-brightness" min="-100" max="100" value="0" style="flex:1;margin:0 6px;" oninput="applyColorFX()">
+            <span id="fx-br-val" style="font-size:9px;color:rgba(255,255,255,.4);min-width:24px;">0</span>
+          </div>
+          <div class="insp-row">
+            <span class="insp-label">Contrast</span>
+            <input type="range" class="insp-slider" id="fx-contrast" min="-100" max="100" value="0" style="flex:1;margin:0 6px;" oninput="applyColorFX()">
+            <span id="fx-co-val" style="font-size:9px;color:rgba(255,255,255,.4);min-width:24px;">0</span>
+          </div>
+          <div class="insp-row">
+            <span class="insp-label">Saturation</span>
+            <input type="range" class="insp-slider" id="fx-saturation" min="-100" max="100" value="0" style="flex:1;margin:0 6px;" oninput="applyColorFX()">
+            <span id="fx-sa-val" style="font-size:9px;color:rgba(255,255,255,.4);min-width:24px;">0</span>
+          </div>
+          <div class="insp-row">
+            <span class="insp-label">Blur</span>
+            <input type="range" class="insp-slider" id="fx-blur" min="0" max="20" value="0" style="flex:1;margin:0 6px;" oninput="applyColorFX()">
+            <span id="fx-bl-val" style="font-size:9px;color:rgba(255,255,255,.4);min-width:24px;">0</span>
+          </div>
+          <button class="studio-btn" onclick="resetColorFX()" style="width:100%;margin-top:6px;">↺ Reset color</button>
+        </div>
+        <div class="insp-section">
+          <div class="insp-section-title">Motion Effects</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;">
+            <button class="preset-btn" onclick="applyMotion('none')">None</button>
+            <button class="preset-btn" onclick="applyMotion('pan-left')">Pan left</button>
+            <button class="preset-btn" onclick="applyMotion('pan-right')">Pan right</button>
+            <button class="preset-btn" onclick="applyMotion('zoom-in-slow')">Zoom in</button>
+            <button class="preset-btn" onclick="applyMotion('zoom-out-slow')">Zoom out</button>
+            <button class="preset-btn" onclick="applyMotion('ken-burns')">Ken Burns</button>
+          </div>
+        </div>
+        <div class="insp-section">
+          <div class="insp-section-title">Speed</div>
+          <div class="insp-row">
+            <span class="insp-label">Rate</span>
+            <input type="range" class="insp-slider" id="insp-speed" min="0.1" max="4" value="1" step=".05" style="flex:1;margin:0 6px;" oninput="applySpeed()">
+            <span id="insp-speed-val" style="font-size:10px;color:var(--accent);min-width:32px;">1×</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;">
+            <button class="preset-btn" onclick="setSpeed(0.25)">0.25×</button>
+            <button class="preset-btn" onclick="setSpeed(0.5)">0.5×</button>
+            <button class="preset-btn" onclick="setSpeed(1)">1×</button>
+            <button class="preset-btn" onclick="setSpeed(1.5)">1.5×</button>
+            <button class="preset-btn" onclick="setSpeed(2)">2×</button>
+            <button class="preset-btn" onclick="setSpeed(4)">4×</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Clip info tab -->
+      <div class="insp-body" id="insp-clip" style="display:none;">
+        <div class="insp-section">
+          <div class="insp-section-title">Clip info</div>
+          <div id="insp-clip-info" style="font-size:11px;color:rgba(255,255,255,.4);line-height:1.9;">
+            No clip selected
+          </div>
+        </div>
+        <div class="insp-section" id="insp-clip-actions" style="display:none;">
+          <div class="insp-section-title">Actions</div>
+          <button class="studio-btn" style="width:100%;margin-bottom:5px;" onclick="replaceClip()">🔄 Replace clip (keep timing)</button>
+          <button class="studio-btn" style="width:100%;margin-bottom:5px;" onclick="replaceAudio()">🔄 Replace audio</button>
+          <button class="studio-btn" style="width:100%;margin-bottom:5px;" onclick="duplicateSelectedClip()">⧉ Duplicate</button>
+          <button class="studio-btn" style="width:100%;margin-bottom:5px;" onclick="enableDisableClip()">◎ Enable / disable</button>
+          <button class="studio-btn" style="width:100%;margin-bottom:5px;" onclick="reverseClip()">⇄ Reverse</button>
+          <button class="studio-btn" style="width:100%;margin-bottom:5px;color:#ef4444;border-color:rgba(239,68,68,.2);" onclick="tlDeleteSelected()">🗑 Delete clip</button>
+        </div>
+        <div class="insp-section">
+          <div class="insp-section-title">Version history</div>
+          <div id="insp-versions" style="font-size:11px;color:rgba(255,255,255,.3);">No versions yet</div>
+        </div>
+      </div>
+    </div>
   </div>
+
+  <!-- ═══ EFFECTS DRAWER (slides in from right) ═══════════════════════════ -->
+  <div class="effects-drawer" id="effects-drawer">
+    <div class="effects-drawer-hdr">
+      <span style="font-size:14px;font-weight:700;color:#fff;">✦ Effects & Transitions</span>
+      <button onclick="toggleEffectsDrawer()" style="background:none;border:none;color:rgba(255,255,255,.4);font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <div style="padding:12px;">
+      <div class="insp-section-title">Video transitions</div>
+      <div class="effect-card" onclick="applyTransition('fade')">
+        <div style="font-size:13px;font-weight:600;color:#fff;">Fade in/out</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.4);">Smooth opacity transition</div>
+      </div>
+      <div class="effect-card" onclick="applyTransition('dissolve')">
+        <div style="font-size:13px;font-weight:600;color:#fff;">Cross dissolve</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.4);">Classic blend between clips</div>
+      </div>
+      <div class="effect-card" onclick="applyTransition('slide-left')">
+        <div style="font-size:13px;font-weight:600;color:#fff;">Slide</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.4);">Push in from edge</div>
+      </div>
+      <div class="effect-card" onclick="applyTransition('zoom-in')">
+        <div style="font-size:13px;font-weight:600;color:#fff;">Zoom</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.4);">Scale-based transition</div>
+      </div>
+      <div class="insp-section-title" style="margin-top:12px;">Motion effects</div>
+      <div class="effect-card" onclick="applyMotion('ken-burns')">
+        <div style="font-size:13px;font-weight:600;color:#fff;">Ken Burns</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.4);">Slow pan + zoom across clip</div>
+      </div>
+      <div class="effect-card" onclick="applyMotion('pan-left')">
+        <div style="font-size:13px;font-weight:600;color:#fff;">Pan left/right</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.4);">Horizontal panning motion</div>
+      </div>
+      <div class="effect-card" onclick="applyMotion('zoom-in-slow')">
+        <div style="font-size:13px;font-weight:600;color:#fff;">Slow zoom in</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.4);">Gradual scale increase</div>
+      </div>
+      <div class="insp-section-title" style="margin-top:12px;">Overlays</div>
+      <div class="effect-card" onclick="addPiPOverlay()">
+        <div style="font-size:13px;font-weight:600;color:#fff;">Picture-in-Picture</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.4);">Add PiP from media bin</div>
+      </div>
+      <div class="effect-card" onclick="addTextOverlay()">
+        <div style="font-size:13px;font-weight:600;color:#fff;">Text overlay</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.4);">Title / lower-third text</div>
+      </div>
+      <div class="effect-card" onclick="addImageOverlay()">
+        <div style="font-size:13px;font-weight:600;color:#fff;">Image overlay</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.4);">Logo, watermark, graphic</div>
+      </div>
+      <div class="effect-card" onclick="addBackgroundReplacement()">
+        <div style="font-size:13px;font-weight:600;color:#fff;">Background replace</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.4);">Swap background on clip</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SUBTITLE EDITOR MODAL ═════════════════════════════════════════════ -->
+  <div class="modal-overlay" id="subtitle-modal">
+    <div class="modal-box" style="max-width:640px;background:#0d1117;border:.5px solid rgba(255,255,255,.08);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div style="font-size:15px;font-weight:700;color:#fff;">💬 Subtitle Editor</div>
+        <button onclick="closeModal('subtitle-modal')" style="background:none;border:none;font-size:20px;cursor:pointer;color:rgba(255,255,255,.4);">✕</button>
+      </div>
+      <!-- Style presets -->
+      <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
+        <span style="font-size:11px;color:rgba(255,255,255,.4);line-height:28px;">Style:</span>
+        <button class="preset-btn on" onclick="applySubtitleStyle('clean')">Clean</button>
+        <button class="preset-btn" onclick="applySubtitleStyle('bold')">Bold</button>
+        <button class="preset-btn" onclick="applySubtitleStyle('outline')">Outline</button>
+        <button class="preset-btn" onclick="applySubtitleStyle('news')">News</button>
+        <button class="preset-btn" onclick="applySubtitleStyle('minimal')">Minimal</button>
+        <span style="flex:1;"></span>
+        <span style="font-size:11px;color:rgba(255,255,255,.4);line-height:28px;">Position:</span>
+        <button class="preset-btn" onclick="setSubPosition('top')">Top</button>
+        <button class="preset-btn on" onclick="setSubPosition('bottom')">Bottom</button>
+        <button class="preset-btn" onclick="setSubPosition('center')">Center</button>
+      </div>
+      <!-- Font controls -->
+      <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center;flex-wrap:wrap;">
+        <select id="sub-font" onchange="applySubtitleStyle()" style="padding:5px 8px;border:.5px solid rgba(255,255,255,.12);border-radius:5px;background:#1f2937;color:#e5e7eb;font-size:12px;font-family:'Sora',sans-serif;">
+          <option value="Sora,sans-serif">Sora</option>
+          <option value="'JetBrains Mono',monospace">JetBrains Mono</option>
+          <option value="Georgia,serif">Georgia</option>
+          <option value="'Arial Black',sans-serif">Arial Black</option>
+        </select>
+        <input type="range" id="sub-font-size" min="12" max="48" value="20" style="width:80px;accent-color:var(--accent);" oninput="document.getElementById('sub-fsize-val').textContent=this.value+'px';applySubtitleStyle()">
+        <span id="sub-fsize-val" style="font-size:10px;color:var(--accent);">20px</span>
+        <input type="color" id="sub-color" value="#ffffff" style="width:28px;height:28px;border:none;border-radius:4px;cursor:pointer;" onchange="applySubtitleStyle()">
+        <label style="font-size:11px;color:rgba(255,255,255,.4);">Color</label>
+        <input type="color" id="sub-bg-color" value="#000000" style="width:28px;height:28px;border:none;border-radius:4px;cursor:pointer;" onchange="applySubtitleStyle()">
+        <label style="font-size:11px;color:rgba(255,255,255,.4);">BG</label>
+        <!-- Animation -->
+        <select id="sub-anim" onchange="applySubtitleStyle()" style="padding:5px 8px;border:.5px solid rgba(255,255,255,.12);border-radius:5px;background:#1f2937;color:#e5e7eb;font-size:12px;font-family:'Sora',sans-serif;">
+          <option value="none">No animation</option>
+          <option value="fade">Fade</option>
+          <option value="slide-up">Slide up</option>
+          <option value="slide-down">Slide down</option>
+          <option value="typewriter">Typewriter</option>
+        </select>
+      </div>
+      <!-- Subtitle list -->
+      <div class="sub-editor-wrap" id="sub-editor-list" style="max-height:300px;overflow-y:auto;"></div>
+      <!-- Actions -->
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm" onclick="applyAndPreviewSubs()">✓ Apply & preview</button>
+        <button class="studio-btn" onclick="generateSubtitles()">📋 Export .SRT</button>
+        <button class="studio-btn" onclick="autoSyncSubs()">⏱ Auto-sync</button>
+        <button class="studio-btn" onclick="closeModal('subtitle-modal')">Close</button>
+      </div>
+    </div>
+  </div>
+
 </div>
-
-
+<!-- ══ END OF EDIT SUITE ══════════════════════════════════════════════════ -->
 <div id="export-pg" class="pg" style="background:var(--off);padding-top:52px;min-height:100vh;">
   <div class="export-inner">
     <h2 style="margin-bottom:6px;color:var(--ink);">Export your video</h2>
