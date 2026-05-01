@@ -2260,7 +2260,7 @@
     /* Teleprompter overlay */
     .studio-tp {
       position: absolute;
-      bottom: 160px;
+      bottom: 10px;
       left: 0;
       right: 0;
       z-index: 15;
@@ -5773,7 +5773,7 @@
         <div style="font-size:12px;color:rgba(255,255,255,.3);margin-bottom:28px;">Teleprompter remote</div>
         <div
           style="font-size:11px;padding:4px 14px;border-radius:16px;background:rgba(16,185,129,.1);border:.5px solid rgba(16,185,129,.2);color:var(--green);display:inline-block;margin-bottom:26px;">
-          ● Connected</div>
+          <span id="remote-conn-dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:rgba(255,165,0,.7);margin-right:5px;transition:background .3s;"></span><span id="remote-conn-txt">Waiting…</span></div>
         <div style="margin-bottom:24px;">
           <div
             style="font-size:10px;color:rgba(255,255,255,.3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">
@@ -7178,7 +7178,7 @@
       if (btn) btn.textContent = STUDIO.adaptive ? '🎤 Adapt: ON' : '🎤 Adapt';
       toast(STUDIO.adaptive ? 'Adaptive sync ON' : 'Adaptive sync OFF', 'info');
     }
-    function increaseTpFont() { var el = document.getElementById('tp-cur'); if (el) { var s = parseFloat(el.style.fontSize) || 1.3; el.style.fontSize = (s + 0.1) + 'rem'; } }
+    function increaseTpFont() { var el = document.getElementById('tp-cur'); if (el) { var s = parseFloat(el.style.fontSize) || 1.3; el.style.fontSize = Math.min(4, s + 0.1) + 'rem'; } }
     function decreaseTpFont() { var el = document.getElementById('tp-cur'); if (el) { var s = parseFloat(el.style.fontSize) || 1.3; el.style.fontSize = Math.max(0.7, s - 0.1) + 'rem'; } }
     function toggleMirror() { var el = document.getElementById('studio-tp'); if (el) el.style.transform = el.style.transform ? '' : 'scaleX(-1)'; }
     function toggleFocus() { var el = document.getElementById('tp-cur'); if (el) el.style.fontSize = el.style.fontSize === '2rem' ? '1.3rem' : '2rem'; }
@@ -7663,7 +7663,7 @@
       }, Math.round(60000 / (TP.speed || 80)));
     }
     function tpSetSpd(v) { TP.speed = parseInt(v) || 80; var el = document.getElementById('tp-spd-disp'); if (el) el.textContent = v; if (TP.playing) { clearInterval(TP.scrollTimer); tpScroll(); } }
-    function tpFontUp() { var w = document.getElementById('tp-text') || document.getElementById('tp-text'); if (w) { var s = parseFloat(w.style.fontSize) || 1.4; w.style.fontSize = (s + 0.1) + 'rem'; } }
+    function tpFontUp() { var w = document.getElementById('tp-text') || document.getElementById('tp-text'); if (w) { var s = parseFloat(w.style.fontSize) || 1.4; w.style.fontSize = Math.min(4, s + 0.1) + 'rem'; } }
     function tpFontDown() { var w = document.getElementById('tp-text') || document.getElementById('tp-text'); if (w) { var s = parseFloat(w.style.fontSize) || 1.4; w.style.fontSize = Math.max(0.8, s - 0.1) + 'rem'; } }
     function tpMirror() { var disp = document.getElementById('tp-display-screen'); if (disp) disp.style.transform = disp.style.transform ? '' : 'scaleX(-1)'; }
     function tpFullscreen() { var el = document.getElementById('tp-display-screen'); if (!el) return; if (document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen && el.requestFullscreen(); }
@@ -8180,6 +8180,7 @@
 
     // Override updateTP to also schedule assets
     function updateTP() {
+        if (window._aabTpActive) return; // guard
       var scene = PROJECT.scenes[STUDIO.currentScene];
       var prevScene = PROJECT.scenes[STUDIO.currentScene - 1];
       var nextScene = PROJECT.scenes[STUDIO.currentScene + 1];
@@ -11639,9 +11640,9 @@
 
       // WIRE BUTTONS
       function wireStudioButtons() {
-        var p = document.getElementById('btn-tp-start'); if (p) { p.onclick = startPracticeMode; p.textContent = '\u25b6 Practice'; }
-        var s = document.getElementById('btn-auto'); if (s) { s.onclick = startSyncRecord; s.textContent = '\u23fa Sync REC'; }
-        var r = document.getElementById('btn-rec'); if (r) r.onclick = toggleRecording;
+        var p = document.getElementById('btn-tp-start'); if (p) { p.onclick = function(){ window.startPracticeMode(); }; p.textContent = '\u25b6 Practice'; }
+        var s = document.getElementById('btn-auto'); if (s) { s.onclick = function(){ window.startSyncRecord(); }; s.textContent = '\u23fa Sync REC'; }
+        var r = document.getElementById('btn-rec'); if (r) r.onclick = function(){ window.toggleRecording(); };
         if (!document.getElementById('studio-retake-bar')) {
           var bar = document.createElement('div'); bar.id = 'studio-retake-bar';
           bar.style.cssText = 'display:none;position:absolute;bottom:110px;left:0;right:0;z-index:100;';
@@ -13087,6 +13088,8 @@ console.log('AABStudio Platform v3.0 ✓ — D-ID+HeyGen, Timeline, Export, PWA,
           // Also override studio teleprompter (different scroll mechanism)
           var _origStartTp = window.startTpAutoTimer || window.studioTpStart;
           window.startTpAutoTimer = window.studioTpStart = function () {
+            // If our RAF-based TP is active, don't run the interval-based one
+            if (window._aabTpActive) return;
             var scene = PROJECT && PROJECT.scenes && PROJECT.scenes[window.STUDIO && STUDIO.currentScene || 0];
             if (!scene) { if (typeof _origStartTp === 'function') return _origStartTp.apply(this, arguments); return; }
 
@@ -13140,8 +13143,7 @@ console.log('AABStudio Platform v3.0 ✓ — D-ID+HeyGen, Timeline, Export, PWA,
 
         // Install now and again after 2s (to beat any late-loading scripts)
         installSmoothTp();
-        setTimeout(installSmoothTp, 2000);
-        setTimeout(installSmoothTp, 5000);
+        // Delayed re-installs cancelled — they fight with _aabTpScrollStart
 
         // ══════════════════════════════════════════════════════════════════════════
         // 3. AI PRESENTER CLIPS → EXISTING TIMELINE
@@ -13559,7 +13561,11 @@ function _aabDoSyncStart() {
 var _aabTpRaf = null;
 
 function _aabTpScrollStart() {
-  _aabTpStop(); // clear any existing
+  // Stop all competing TP timers before starting
+  if (window._studioTpTimer) { clearInterval(window._studioTpTimer); window._studioTpTimer = null; }
+  if (window.STUDIO_TP) window.STUDIO_TP.running = false;
+  if (_aabTpRaf) { cancelAnimationFrame(_aabTpRaf); _aabTpRaf = null; }
+  window._aabTpActive = true; // flag to block updateTP from overwriting
 
   // Get speed from slider
   var slider = document.getElementById('tp-spd-range');
@@ -13633,10 +13639,14 @@ function _aabTpScrollStart() {
 function _aabTpStop() {
   window._aab_practice = false;
   window._aab_syncing = false;
+  window._aabTpActive = false;
   if (_aabTpRaf) { cancelAnimationFrame(_aabTpRaf); _aabTpRaf = null; }
-  // Also stop old timer-based TP
   if (window._studioTpTimer) { clearInterval(window._studioTpTimer); window._studioTpTimer = null; }
   if (window.STUDIO_TP) window.STUDIO_TP.running = false;
+  // Restore tp-cur text from scene narration so it reads normally after
+  var scene = window.PROJECT && PROJECT.scenes && PROJECT.scenes[window.STUDIO && STUDIO.currentScene || 0];
+  var tpCur = document.getElementById('tp-cur');
+  if (tpCur && scene) tpCur.textContent = scene.narration || '';
 }
 
 // Override stopRec to also stop TP
@@ -13886,6 +13896,37 @@ window.addEventListener('load', function(){
     _addTpBgControl();
   }, 800);
 });
+
+
+// ── REMOTE SEND — fix channel to match main window listener ──────────────
+window.remoteSend = function(cmd) {
+  var sid = window._remoteSid;
+  if (!sid) { console.warn('remoteSend: no session ID'); return; }
+  var speedEl = document.getElementById('remote-spd') || document.getElementById('remote-speed');
+  if (cmd === 'speed' && speedEl) cmd = 'speed:' + speedEl.value;
+  // localStorage (polling fallback — main window polls aab_remote_{TP.remoteId})
+  localStorage.setItem('aab_remote_' + sid, cmd + ':' + Date.now());
+  // BroadcastChannel — must match main window channel 'aab_remote'
+  try {
+    var bc = new BroadcastChannel('aab_remote');
+    bc.postMessage({ cmd: cmd, sid: sid, ts: Date.now() });
+    bc.close();
+  } catch(e) {}
+  // Update connectivity UI on remote page
+  var dot = document.getElementById('remote-conn-dot');
+  var txt = document.getElementById('remote-conn-txt');
+  if (dot) { dot.style.background = '#10b981'; dot.style.boxShadow = '0 0 6px #10b981'; }
+  if (txt) txt.textContent = 'Connected ✓';
+};
+
+// Ping main window on remote page load to confirm connectivity
+if (window.location.search.includes('remote=')) {
+  var _rSid = new URLSearchParams(window.location.search).get('remote');
+  window._remoteSid = _rSid;
+  setTimeout(function() {
+    window.remoteSend('ping');
+  }, 500);
+}
 
 console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgrounds, TP bg');
 </script>
