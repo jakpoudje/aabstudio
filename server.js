@@ -114,7 +114,8 @@ let HG_AVATAR_ID = process.env.HEYGEN_AVATAR_ID || 'Anna_public_3_20240108';
 
 // Session cache — reset on restart
 let CACHED_HG_IMAGE_KEY      = null;  // HeyGen image asset id
-let CACHED_HG_TALKING_PHOTO  = null;  // talking_photo_id — created once per presenter photo
+let CACHED_HG_TALKING_PHOTO     = null;  // talking_photo_id
+let CACHED_HG_TALKING_PHOTO_KEY = null;  // fingerprint of the image used
 
 // ── Create HeyGen Photo Avatar from uploaded image ────────────────────────────
 // Flow: upload image → create avatar group → get talking_photo_id
@@ -122,8 +123,9 @@ let CACHED_HG_TALKING_PHOTO  = null;  // talking_photo_id — created once per p
 async function getOrCreateTalkingPhotoId(imageB64) {
   if (!HEYGEN_KEY) return null;
 
-  // Return cached ID if already created this session
-  if (CACHED_HG_TALKING_PHOTO) {
+  // Cache per image (first 200 chars as fingerprint)
+  const imgKey = imageB64.slice(0, 200);
+  if (CACHED_HG_TALKING_PHOTO && CACHED_HG_TALKING_PHOTO_KEY === imgKey) {
     console.log('HeyGen: using cached talking_photo_id:', CACHED_HG_TALKING_PHOTO);
     return CACHED_HG_TALKING_PHOTO;
   }
@@ -162,7 +164,8 @@ async function getOrCreateTalkingPhotoId(imageB64) {
       const createData    = JSON.parse(createText);
       const talkingPhotoId = createData.data?.talking_photo_id || createData.data?.id;
       if (talkingPhotoId) {
-        CACHED_HG_TALKING_PHOTO = talkingPhotoId;
+        CACHED_HG_TALKING_PHOTO     = talkingPhotoId;
+        CACHED_HG_TALKING_PHOTO_KEY = imgKey;
         console.log('HeyGen: talking_photo_id created:', talkingPhotoId);
         return talkingPhotoId;
       }
@@ -495,10 +498,11 @@ app.post('/api/presenter', async (req, res) => {
       gestureStyle,  gesture,
       shotType,      shot,
       motionStyle,   motion,
-      voiceGender,
+      voiceGender, voiceName,
       sceneText     = '',
       sceneNum, sceneTotal, duration,
       provider: requestedProvider = null,
+      talkingPhotoId = null,   // Pre-created HeyGen talking_photo_id (user's face)
     } = req.body;
 
     const bgTypeResolved  = bgType || studioType || 'news-studio';
@@ -545,7 +549,9 @@ app.post('/api/presenter', async (req, res) => {
       shot:     shotType || shot || 'medium',
       motion:   motionStyle || motion || 'static',
       gender:   voiceGender || 'unknown',
+      voiceName: voiceName || '',
       studioType: bgTypeResolved,
+      talkingPhotoId,   // Pass through pre-created ID
       sceneText, sceneNum, sceneTotal, duration
     };
 
@@ -593,53 +599,123 @@ app.post('/api/voice', async (req, res) => {
 // not a raw image_key. The correct approach for dynamic photos is
 // v2/video/generate with character type 'photo'.
 // ══════════════════════════════════════════════════════════════════════════════
+// ── build_heygen_payload — matches user's spec exactly ───────────────────────
+// Uses talking_photo_id (your face) + ElevenLabs voice + background image
+// This is the CORRECT flow: your photo = your face in the video
+function build_heygen_payload(talkingPhotoId, audioAssetId, backgroundUrl, ratio, sceneText, voiceSettings) {
+  return {
+    video_inputs: [{
+      character: {
+        type: 'talking_photo',
+        talking_photo_id: talkingPhotoId,
+        talking_photo_style: 'square',
+        scale: voiceSettings.scale || 1.0,
+        talking_style: voiceSettings.talkingStyle || 'stable'
+      },
+      voice: {
+        type: 'audio',
+        audio_asset_id: audioAssetId
+      },
+      background: backgroundUrl
+        ? { type: 'image', url: backgroundUrl }
+        : { type: 'color', value: '#0f172a' }
+    }],
+    aspect_ratio: ratio || '16:9',
+    test: false
+  };
+}
+
 async function generateWithHeyGen(req, res, args) {
-  const { compositeImageB64, referenceImageBase64, audioBase64, ratio, sceneText, gender } = args;
+  const { compositeImageB64, referenceImageBase64, audioBase64, ratio, sceneText, gender, studioType, talkingPhotoId: preCreatedPhotoId } = args;
   try {
     if (!HEYGEN_KEY) throw new Error('HEYGEN_API_KEY not configured');
-    const H = { 'X-Api-Key': HEYGEN_KEY };
+    const H = { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'application/json' };
 
-    // Step 1: Upload audio → audio_asset_id
+    // ── Step 1: Upload ElevenLabs audio → audio_asset_id ─────────────────────
     const audioBuf = Buffer.from(audioBase64, 'base64');
     console.log('HeyGen: uploading audio', audioBuf.length, 'bytes...');
     const audioResp = await fetch('https://upload.heygen.com/v1/asset', {
-      method: 'POST', headers: { ...H, 'Content-Type': 'audio/mpeg' }, body: audioBuf
+      method: 'POST',
+      headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'audio/mpeg' },
+      body: audioBuf
     });
     if (!audioResp.ok) throw new Error('HeyGen audio upload: ' + audioResp.status + ' — ' + (await audioResp.text()).slice(0,300));
     const audioData    = await audioResp.json();
     const audioAssetId = audioData.data?.id || audioData.data?.asset_id;
-    if (!audioAssetId) throw new Error('HeyGen: no audio_asset_id in response: ' + JSON.stringify(audioData).slice(0,200));
+    if (!audioAssetId) throw new Error('HeyGen: no audio_asset_id: ' + JSON.stringify(audioData).slice(0,200));
     console.log('HeyGen audio_asset_id:', audioAssetId);
 
-    // Step 2: Generate video
-    // Using stock avatar + user audio (reliable on Creator API plan)
-    // Talking Photo requires Pro API plan — skip to avoid wasting credits
-    // The composited scene image (presenter on background) is shown in the preview
-    // The HeyGen video uses stock avatar with the user's voice/script
+    // ── Step 2: Get talking_photo_id ─────────────────────────────────────────
+    // Use pre-created ID from frontend (uploaded when user added photo) — fastest
+    // Otherwise create from reference image on the fly
+    let talkingPhotoId = preCreatedPhotoId || null;
+    const imageToUse = referenceImageBase64 || compositeImageB64;
 
-    // Stock avatar with user's audio
-    // Works on all Creator plan accounts, avatar is Abigail or discovered stock avatar
-    console.log('HeyGen: stock avatar fallback...');
-    const v2Resp = await fetch('https://api.heygen.com/v2/video/generate', {
-      method: 'POST', headers: { ...H, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    if (!talkingPhotoId && imageToUse) {
+      // Create talking photo from image (slower — 10-30s)
+      talkingPhotoId = await getOrCreateTalkingPhotoId(imageToUse);
+      console.log('HeyGen talking_photo_id (created):', talkingPhotoId || 'failed — using stock avatar');
+    } else if (talkingPhotoId) {
+      console.log('HeyGen talking_photo_id (pre-created from frontend):', talkingPhotoId);
+    }
+
+    // ── Step 3: Upload background image if we have one ────────────────────────
+    let backgroundUrl = null;
+    if (compositeImageB64) {
+      try {
+        backgroundUrl = await uploadToImgur(compositeImageB64);
+        console.log('HeyGen background URL:', backgroundUrl);
+      } catch(e) {
+        console.warn('Background upload failed:', e.message);
+      }
+    }
+
+    // ── Step 4: Build payload and generate ───────────────────────────────────
+    let payload;
+
+    if (talkingPhotoId) {
+      // ✅ YOUR FACE: use talking_photo with your uploaded image
+      console.log('HeyGen: using talking_photo (your face):', talkingPhotoId);
+      payload = build_heygen_payload(talkingPhotoId, audioAssetId, backgroundUrl, ratio, sceneText, {
+        scale: 1.0,
+        talkingStyle: 'stable'
+      });
+    } else {
+      // ⚠️ Fallback: stock avatar — happens when no photo uploaded or upload failed
+      // Pick gender-appropriate avatar
+      const maleAvatars   = ['josh_talking_male_4_20241203', 'james_20240207', 'tyler_20240309'];
+      const femaleAvatars = ['Anna_public_3_20240108', 'aisha_20240926', 'abigail_20240926'];
+      const avatarList    = (gender === 'male') ? maleAvatars : femaleAvatars;
+      const avatarId      = process.env.HEYGEN_AVATAR_ID || avatarList[0];
+      console.log('HeyGen: stock avatar fallback (no photo) | gender:', gender, '| avatar:', avatarId);
+      payload = {
         video_inputs: [{
-          character:  { type: 'avatar', avatar_id: HG_AVATAR_ID, avatar_style: 'normal' },
+          character:  { type: 'avatar', avatar_id: avatarId, avatar_style: 'normal' },
           voice:      { type: 'audio', audio_asset_id: audioAssetId },
-          background: { type: 'color', value: '#1a2035' }
+          background: backgroundUrl
+            ? { type: 'image', url: backgroundUrl }
+            : { type: 'color', value: '#0f172a' }
         }],
         aspect_ratio: ratio || '16:9',
         test: false
-      })
+      };
+    }
+
+    // ── Step 5: Submit to HeyGen ──────────────────────────────────────────────
+    const v2Resp = await fetch('https://api.heygen.com/v2/video/generate', {
+      method: 'POST',
+      headers: H,
+      body: JSON.stringify(payload)
     });
     const v2Text = await v2Resp.text();
-    console.log('HeyGen stock avatar response:', v2Resp.status, v2Text.slice(0, 300));
+    console.log('HeyGen generate response:', v2Resp.status, v2Text.slice(0, 400));
     if (!v2Resp.ok) throw new Error('HeyGen failed: ' + v2Resp.status + ' — ' + v2Text.slice(0, 400));
     const v2Data  = JSON.parse(v2Text);
     const videoId = v2Data.data?.video_id || v2Data.video_id;
     if (!videoId) throw new Error('HeyGen: no video_id. Response: ' + v2Text.slice(0, 300));
-    console.log('HeyGen stock avatar video_id:', videoId);
-    return res.json({ taskId: 'heygen-' + videoId, provider: 'heygen', engine: 'stock' });
+    const engine = talkingPhotoId ? 'talking_photo' : 'stock_avatar';
+    console.log('HeyGen video_id:', videoId, '| engine:', engine);
+    return res.json({ taskId: 'heygen-' + videoId, provider: 'heygen', engine });
 
   } catch(e) {
     console.error('generateWithHeyGen:', e.message);
@@ -993,6 +1069,12 @@ app.get('/api/presenter-status', async (req, res) => {
 
     if (taskId.startsWith('heygen-')) {
       const id = taskId.replace('heygen-', '');
+      // Check webhook cache first (instant result when webhook fires)
+      if (heygenResults[id]) {
+        const wh = heygenResults[id];
+        console.log('HeyGen: webhook result found for', id);
+        return res.json({ done: true, videoUrl: wh.videoUrl, status: 'completed', source: 'webhook' });
+      }
       const sr = await fetch('https://api.heygen.com/v1/video_status.get?video_id=' + id, { headers: { 'X-Api-Key': HEYGEN_KEY } });
       const sd = await sr.json();
       const hgStatus = sd.data?.status;
@@ -1169,6 +1251,61 @@ async function ensureAabProjectsTable() {
     if (error.code === 'PGRST205') console.warn('⚠ aab_projects table missing — create it in Supabase SQL editor.');
   } catch(e) { console.warn('ensureAabProjectsTable:', e.message); }
 }
+
+
+// ── POST /api/heygen/upload-photo ─────────────────────────────────────────────
+// Uploads presenter photo to HeyGen, returns talking_photo_id
+// Frontend stores this ID and sends it with every generation request
+// This is the correct flow from build_heygen_payload spec
+app.post('/api/heygen/upload-photo', async (req, res) => {
+  try {
+    const { imageBase64, mimeType = 'image/jpeg' } = req.body;
+    if (!imageBase64) return res.status(400).json({ error: 'imageBase64 required' });
+    if (!HEYGEN_KEY)  return res.status(503).json({ error: 'HeyGen not configured' });
+
+    console.log('HeyGen: uploading presenter photo for talking_photo_id...');
+    const talkingPhotoId = await getOrCreateTalkingPhotoId(imageBase64);
+
+    if (talkingPhotoId) {
+      console.log('HeyGen: talking_photo_id ready:', talkingPhotoId);
+      return res.json({ talking_photo_id: talkingPhotoId, ok: true });
+    } else {
+      return res.status(500).json({ error: 'Failed to create talking photo — check HeyGen plan and logs' });
+    }
+  } catch(e) {
+    console.error('/api/heygen/upload-photo:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── POST /webhooks/heygen ─────────────────────────────────────────────────────
+// HeyGen fires this when a video generation completes
+// Stores result URL keyed by video_id so /api/presenter-status can return it
+const heygenResults = {};
+
+app.post('/webhooks/heygen', async (req, res) => {
+  try {
+    const { event_type, event_data } = req.body || {};
+    console.log('HeyGen webhook:', event_type, event_data?.video_id);
+
+    if (event_type === 'avatar_video.success') {
+      const videoUrl = event_data?.video_url;
+      const videoId  = event_data?.video_id;
+      if (videoId && videoUrl) {
+        heygenResults[videoId] = { videoUrl, ts: Date.now() };
+        console.log('HeyGen webhook: video ready:', videoId, videoUrl.slice(0,60));
+      }
+    }
+    res.json({ status: 'received' });
+  } catch(e) {
+    console.error('HeyGen webhook error:', e.message);
+    res.json({ status: 'error' });
+  }
+});
+
+// Expose heygenResults to presenter-status polling
+// Patch presenter-status to check heygenResults first (webhook is faster than polling)
+const _origStatus = null; // handled inline in polling route
 
 app.listen(PORT, () => {
   console.log('AABStudio v3.8 running on port', PORT);
