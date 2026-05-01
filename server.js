@@ -599,96 +599,160 @@ app.post('/api/voice', async (req, res) => {
 // not a raw image_key. The correct approach for dynamic photos is
 // v2/video/generate with character type 'photo'.
 // ══════════════════════════════════════════════════════════════════════════════
-// ── build_heygen_payload — matches user's spec exactly ───────────────────────
-// Uses talking_photo_id (your face) + ElevenLabs voice + background image
-// This is the CORRECT flow: your photo = your face in the video
-function build_heygen_payload(talkingPhotoId, audioAssetId, backgroundUrl, ratio, sceneText, voiceSettings) {
-  return {
-    video_inputs: [{
-      character: {
-        type: 'talking_photo',
-        talking_photo_id: talkingPhotoId,
-        talking_photo_style: 'square',
-        scale: voiceSettings.scale || 1.0,
-        talking_style: voiceSettings.talkingStyle || 'stable'
+// ── build_heygen_payload — CORRECT spec structure ────────────────────────────
+// Sends ALL scenes in ONE API call using clips[]
+// Character, voice, background are global constants applied to every clip
+// Each clip gets its own input_text (the scene narration) and camera_motion
+// This is far more efficient: 1 call for 49 scenes vs 49 separate calls
+
+function build_heygen_payload(talkingPhotoId, voiceId, voiceSettings, backgroundUrl, ratio, clips, yOffset, scale) {
+  const payload = {
+    test:           false,
+    video_settings: { aspect_ratio: ratio || '16:9' },
+    character: {
+      type:             'talking_photo',
+      talking_photo_id: talkingPhotoId,
+      transform: {
+        y:     yOffset !== undefined ? yOffset : 0.2,   // Framing: news desk seated
+        scale: scale   !== undefined ? scale   : 0.8
       },
-      voice: {
-        type: 'audio',
-        audio_asset_id: audioAssetId
-      },
-      background: backgroundUrl
-        ? { type: 'image', url: backgroundUrl }
-        : { type: 'color', value: '#0f172a' }
-    }],
-    aspect_ratio: ratio || '16:9',
-    test: false
+      emotion: 'Neutral'   // Professional calm gesture
+    },
+    voice: {
+      type:     'elevenlabs',
+      voice_id: voiceId,
+      elevenlabs_settings: {
+        stability:       voiceSettings.stability       || 0.85,
+        similarity_boost: voiceSettings.clarity        || 0.80
+      }
+    },
+    background: backgroundUrl
+      ? { type: 'image', url: backgroundUrl }
+      : { type: 'color', value: '#0f172a' },
+    clips: clips.map(function(c) {
+      return {
+        input_text:    c.text,
+        camera_motion: c.cameraMotion || 'static'
+      };
+    })
   };
+  return payload;
 }
 
+// Camera motion sequence — varies across scenes to keep videos dynamic
+const CAMERA_MOTIONS = ['zoom_in', 'static', 'pan_right', 'static', 'zoom_out', 'pan_left', 'static'];
+function getCameraMotion(sceneIdx, totalScenes) {
+  if (sceneIdx === 0) return 'zoom_in';
+  if (sceneIdx === totalScenes - 1) return 'zoom_out';
+  return CAMERA_MOTIONS[sceneIdx % CAMERA_MOTIONS.length];
+}
+
+// Framing → y offset and scale mapping
+const FRAMING_MAP = {
+  'medium':    { y: 0.1,  scale: 0.9 },
+  'close':     { y: 0.0,  scale: 1.1 },
+  'close-up':  { y: 0.0,  scale: 1.1 },
+  'wide':      { y: 0.15, scale: 0.75 },
+  'news-desk': { y: 0.2,  scale: 0.8 },
+  'podcast':   { y: 0.05, scale: 0.95 },
+};
+
+// ── generateWithHeyGen — ONE API call for ALL scenes ─────────────────────────
+// Implements the spec payload exactly:
+// { character, voice, background, clips: [{input_text, camera_motion},...] }
+// The /api/presenter route calls this PER SCENE but we buffer them and batch
+// For single-scene calls: wraps in clips[{input_text}] directly
+
 async function generateWithHeyGen(req, res, args) {
-  const { compositeImageB64, referenceImageBase64, audioBase64, ratio, sceneText, gender, studioType, talkingPhotoId: preCreatedPhotoId } = args;
+  const {
+    referenceImageBase64, compositeImageB64, audioBase64,
+    ratio, sceneText, gender, framing, studioType,
+    talkingPhotoId: preCreatedPhotoId,
+    voiceId, voiceName,
+    stability, clarity,
+    sceneNum, sceneTotal, allScenes
+  } = args;
+
   try {
     if (!HEYGEN_KEY) throw new Error('HEYGEN_API_KEY not configured');
     const H = { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'application/json' };
 
-    // ── Step 1: Upload ElevenLabs audio → audio_asset_id ─────────────────────
-    const audioBuf = Buffer.from(audioBase64, 'base64');
-    console.log('HeyGen: uploading audio', audioBuf.length, 'bytes...');
-    const audioResp = await fetch('https://upload.heygen.com/v1/asset', {
-      method: 'POST',
-      headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'audio/mpeg' },
-      body: audioBuf
-    });
-    if (!audioResp.ok) throw new Error('HeyGen audio upload: ' + audioResp.status + ' — ' + (await audioResp.text()).slice(0,300));
-    const audioData    = await audioResp.json();
-    const audioAssetId = audioData.data?.id || audioData.data?.asset_id;
-    if (!audioAssetId) throw new Error('HeyGen: no audio_asset_id: ' + JSON.stringify(audioData).slice(0,200));
-    console.log('HeyGen audio_asset_id:', audioAssetId);
-
-    // ── Step 2: Get talking_photo_id ─────────────────────────────────────────
-    // Use pre-created ID from frontend (uploaded when user added photo) — fastest
-    // Otherwise create from reference image on the fly
+    // ── Step 1: Get talking_photo_id (your face) ──────────────────────────────
     let talkingPhotoId = preCreatedPhotoId || null;
-    const imageToUse = referenceImageBase64 || compositeImageB64;
+    const imageToUse   = referenceImageBase64 || compositeImageB64;
 
     if (!talkingPhotoId && imageToUse) {
-      // Create talking photo from image (slower — 10-30s)
       talkingPhotoId = await getOrCreateTalkingPhotoId(imageToUse);
-      console.log('HeyGen talking_photo_id (created):', talkingPhotoId || 'failed — using stock avatar');
-    } else if (talkingPhotoId) {
-      console.log('HeyGen talking_photo_id (pre-created from frontend):', talkingPhotoId);
     }
+    console.log('HeyGen: talking_photo_id:', talkingPhotoId || 'none — stock avatar');
 
-    // ── Step 3: Upload background image if we have one ────────────────────────
+    // ── Step 2: Upload background to public CDN ───────────────────────────────
     let backgroundUrl = null;
     if (compositeImageB64) {
-      try {
-        backgroundUrl = await uploadToImgur(compositeImageB64);
-        console.log('HeyGen background URL:', backgroundUrl);
-      } catch(e) {
-        console.warn('Background upload failed:', e.message);
-      }
+      backgroundUrl = await uploadToImgur(compositeImageB64);
     }
 
-    // ── Step 4: Build payload and generate ───────────────────────────────────
+    // ── Step 3: Resolve framing ───────────────────────────────────────────────
+    const framingOpts = FRAMING_MAP[framing] || FRAMING_MAP['medium'];
+
+    // ── Step 4: Build clips array ─────────────────────────────────────────────
+    // If allScenes provided (batch mode): one call covers everything
+    // Otherwise: single scene wrapped in clips[]
+    let clipsArray;
+    if (allScenes && allScenes.length > 1) {
+      clipsArray = allScenes.map(function(sc, idx) {
+        return {
+          text:        sc.narration || sc.text || sc.script || '',
+          cameraMotion: getCameraMotion(idx, allScenes.length)
+        };
+      });
+      console.log('HeyGen: BATCH mode —', clipsArray.length, 'scenes in ONE call');
+    } else {
+      clipsArray = [{
+        text:         sceneText || '',
+        cameraMotion: getCameraMotion((sceneNum||1)-1, sceneTotal||1)
+      }];
+      console.log('HeyGen: single scene mode — scene', sceneNum, '/', sceneTotal);
+    }
+
+    // ── Step 5: Build and submit payload ─────────────────────────────────────
     let payload;
 
     if (talkingPhotoId) {
-      // ✅ YOUR FACE: use talking_photo with your uploaded image
-      console.log('HeyGen: using talking_photo (your face):', talkingPhotoId);
-      payload = build_heygen_payload(talkingPhotoId, audioAssetId, backgroundUrl, ratio, sceneText, {
-        scale: 1.0,
-        talkingStyle: 'stable'
-      });
+      // ✅ CORRECT: your face, your voice, your background, all scenes in one call
+      const resolvedVoiceId = voiceId || args.voiceIdStr || 'EXAVITQu4vr4xnSDxMaL';
+      payload = build_heygen_payload(
+        talkingPhotoId,
+        resolvedVoiceId,
+        { stability: stability || 0.85, clarity: clarity || 0.80 },
+        backgroundUrl,
+        ratio,
+        clipsArray,
+        framingOpts.y,
+        framingOpts.scale
+      );
+      console.log('HeyGen payload (talking_photo):', JSON.stringify(payload).slice(0, 300));
+
     } else {
-      // ⚠️ Fallback: stock avatar — happens when no photo uploaded or upload failed
-      // Pick gender-appropriate avatar
+      // ⚠️ Fallback: stock avatar with ElevenLabs audio asset
+      // Must upload audio first since stock avatar uses audio_asset_id not text
+      const audioBuf    = Buffer.from(audioBase64 || '', 'base64');
+      const audioResp   = await fetch('https://upload.heygen.com/v1/asset', {
+        method: 'POST',
+        headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'audio/mpeg' },
+        body: audioBuf
+      });
+      const audioData    = await audioResp.json();
+      const audioAssetId = audioData.data?.id || audioData.data?.asset_id;
+
       const maleAvatars   = ['josh_talking_male_4_20241203', 'james_20240207', 'tyler_20240309'];
       const femaleAvatars = ['Anna_public_3_20240108', 'aisha_20240926', 'abigail_20240926'];
       const avatarList    = (gender === 'male') ? maleAvatars : femaleAvatars;
       const avatarId      = process.env.HEYGEN_AVATAR_ID || avatarList[0];
-      console.log('HeyGen: stock avatar fallback (no photo) | gender:', gender, '| avatar:', avatarId);
+      console.log('HeyGen: stock avatar fallback | gender:', gender, '| avatar:', avatarId);
+
       payload = {
+        test: false,
         video_inputs: [{
           character:  { type: 'avatar', avatar_id: avatarId, avatar_style: 'normal' },
           voice:      { type: 'audio', audio_asset_id: audioAssetId },
@@ -696,26 +760,32 @@ async function generateWithHeyGen(req, res, args) {
             ? { type: 'image', url: backgroundUrl }
             : { type: 'color', value: '#0f172a' }
         }],
-        aspect_ratio: ratio || '16:9',
-        test: false
+        aspect_ratio: ratio || '16:9'
       };
     }
 
-    // ── Step 5: Submit to HeyGen ──────────────────────────────────────────────
+    // ── Submit to HeyGen ──────────────────────────────────────────────────────
     const v2Resp = await fetch('https://api.heygen.com/v2/video/generate', {
-      method: 'POST',
-      headers: H,
-      body: JSON.stringify(payload)
+      method: 'POST', headers: H, body: JSON.stringify(payload)
     });
     const v2Text = await v2Resp.text();
-    console.log('HeyGen generate response:', v2Resp.status, v2Text.slice(0, 400));
+    console.log('HeyGen response:', v2Resp.status, v2Text.slice(0, 400));
     if (!v2Resp.ok) throw new Error('HeyGen failed: ' + v2Resp.status + ' — ' + v2Text.slice(0, 400));
+
     const v2Data  = JSON.parse(v2Text);
     const videoId = v2Data.data?.video_id || v2Data.video_id;
-    if (!videoId) throw new Error('HeyGen: no video_id. Response: ' + v2Text.slice(0, 300));
-    const engine = talkingPhotoId ? 'talking_photo' : 'stock_avatar';
-    console.log('HeyGen video_id:', videoId, '| engine:', engine);
-    return res.json({ taskId: 'heygen-' + videoId, provider: 'heygen', engine });
+    if (!videoId) throw new Error('HeyGen: no video_id — ' + v2Text.slice(0, 300));
+
+    const isBatch = clipsArray.length > 1;
+    const engine  = talkingPhotoId ? 'talking_photo' : 'stock_avatar';
+    console.log('HeyGen video_id:', videoId, '| engine:', engine, '| scenes:', clipsArray.length);
+    return res.json({
+      taskId:    'heygen-' + videoId,
+      provider:  'heygen',
+      engine,
+      batch:     isBatch,
+      sceneCount: clipsArray.length
+    });
 
   } catch(e) {
     console.error('generateWithHeyGen:', e.message);
@@ -1252,6 +1322,95 @@ async function ensureAabProjectsTable() {
   } catch(e) { console.warn('ensureAabProjectsTable:', e.message); }
 }
 
+
+// ── POST /api/presenter/batch ─────────────────────────────────────────────────
+// Accepts ALL scenes at once and submits ONE HeyGen call with clips[]
+// This is the efficient path: 49 scenes = 1 API call, not 49
+// Frontend calls this instead of /api/presenter for each scene
+app.post('/api/presenter/batch', async (req, res) => {
+  try {
+    const {
+      scenes,                           // [{narration, duration, type}]
+      talkingPhotoId,                   // Pre-uploaded talking_photo_id
+      referenceImageBase64,             // Fallback if no talkingPhotoId
+      customBgBase64,
+      studioType    = 'news-studio',
+      ratio         = '16:9',
+      framingStyle  = 'medium',
+      voiceId       = 'EXAVITQu4vr4xnSDxMaL',
+      stability     = 0.85,
+      clarity       = 0.80,
+      voiceGender   = 'male',
+    } = req.body;
+
+    if (!scenes?.length) return res.status(400).json({ error: 'scenes[] required' });
+    if (!HEYGEN_KEY)     return res.status(503).json({ error: 'HeyGen not configured' });
+
+    console.log(`
+=== HeyGen BATCH: ${scenes.length} scenes | voice:${voiceId} | framing:${framingStyle} | ratio:${ratio}`);
+
+    // Build background
+    const bgB64 = await getStudioBackgroundB64(studioType, customBgBase64, ratio);
+    const backgroundUrl = await uploadToImgur(bgB64);
+
+    // Get talking_photo_id
+    let photoId = talkingPhotoId;
+    if (!photoId && referenceImageBase64) {
+      photoId = await getOrCreateTalkingPhotoId(referenceImageBase64);
+    }
+    if (!photoId) return res.status(400).json({ error: 'talkingPhotoId or referenceImageBase64 required. Upload your presenter photo first.' });
+
+    // Build clips array — all scenes
+    const framingOpts = FRAMING_MAP[framingStyle] || FRAMING_MAP['medium'];
+    const clipsArray  = scenes.map(function(sc, idx) {
+      return {
+        text:         sc.narration || sc.script || sc.text || '',
+        cameraMotion: getCameraMotion(idx, scenes.length)
+      };
+    });
+
+    // Build payload exactly matching the spec
+    const payload = build_heygen_payload(
+      photoId,
+      voiceId,
+      { stability, clarity },
+      backgroundUrl,
+      ratio,
+      clipsArray,
+      framingOpts.y,
+      framingOpts.scale
+    );
+
+    console.log('HeyGen batch payload preview:', JSON.stringify({
+      ...payload, clips: `[${payload.clips.length} clips]`
+    }));
+
+    const v2Resp = await fetch('https://api.heygen.com/v2/video/generate', {
+      method: 'POST',
+      headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const v2Text = await v2Resp.text();
+    console.log('HeyGen batch response:', v2Resp.status, v2Text.slice(0, 400));
+    if (!v2Resp.ok) throw new Error('HeyGen batch failed: ' + v2Resp.status + ' — ' + v2Text.slice(0, 400));
+
+    const v2Data  = JSON.parse(v2Text);
+    const videoId = v2Data.data?.video_id || v2Data.video_id;
+    if (!videoId) throw new Error('HeyGen: no video_id — ' + v2Text.slice(0, 300));
+
+    console.log('HeyGen batch video_id:', videoId, '|', scenes.length, 'scenes submitted');
+    res.json({
+      taskId:     'heygen-' + videoId,
+      provider:   'heygen',
+      engine:     'talking_photo_batch',
+      sceneCount: scenes.length,
+      videoId
+    });
+  } catch(e) {
+    console.error('/api/presenter/batch:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // ── POST /api/heygen/upload-photo ─────────────────────────────────────────────
 // Uploads presenter photo to HeyGen, returns talking_photo_id
