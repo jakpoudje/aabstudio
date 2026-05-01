@@ -12,8 +12,84 @@ const express  = require('express');
 const cors     = require('cors');
 const Anthropic = require('@anthropic-ai/sdk');
 
-const app  = express();
+const app    = express();
+const http   = require('http');
+const server = http.createServer(app);
+const { Server } = require('socket.io');
+const io = new Server(server, {
+  cors: { origin: '*', methods: ['GET','POST'] },
+  transports: ['websocket', 'polling']
+});
 const PORT = process.env.PORT || 3000;
+
+// ── Socket.IO — Real-time remote control & project rooms ──────────────────────
+// Each project gets its own room: project_id → room
+// Phone joins room → commands broadcast to desktop instantly (no polling)
+// Also used for: HeyGen completion push, scene status updates, multi-user sync
+
+io.on('connection', (socket) => {
+  console.log('Socket connected:', socket.id);
+
+  // pair_devices — both desktop and phone join project room (matches spec)
+  socket.on('pair_devices', (data) => {
+    const room = data.project_id || data.projectId;
+    if (!room) return;
+    socket.join(room);
+    const device = data.device || 'unknown';
+    console.log('Socket', socket.id, '('+device+') paired to project room:', room);
+    socket.emit('paired', { room, socketId: socket.id, device });
+    // Notify other devices in the room that a new device paired
+    socket.to(room).emit('device_joined', { device, socketId: socket.id });
+  });
+
+  // join_project — legacy event name, treat same as pair_devices
+  socket.on('join_project', (data) => {
+    const room = data.project_id || data.projectId;
+    if (!room) return;
+    socket.join(room);
+    socket.emit('joined', { room, socketId: socket.id });
+  });
+
+  // command — phone sends action → server broadcasts to desktop (matches spec)
+  socket.on('command', (data) => {
+    const room = data.project_id || data.projectId;
+    if (!room) return;
+    console.log('Remote command:', data.action, '→ room:', room);
+    socket.to(room).emit('remote_execute', data);  // desktop listens for remote_execute
+  });
+
+  // remote_control — legacy event name  
+  socket.on('remote_control', (data) => {
+    const room = data.project_id || data.projectId;
+    if (!room) return;
+    socket.to(room).emit('command_to_teleprompter', data);
+    socket.to(room).emit('remote_execute', data);  // also fire new event name
+  });
+
+  // Teleprompter speed sync — desktop tells phone the current WPM
+  socket.on('tp_state', (data) => {
+    const room = data.project_id || data.projectId;
+    if (room) socket.to(room).emit('tp_state_update', data);
+  });
+
+  // Scene status push — when HeyGen completes, push to all room members
+  // Called from the webhook handler below
+  socket.on('subscribe_project', (data) => {
+    const room = 'updates_' + (data.project_id || data.projectId);
+    socket.join(room);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Socket disconnected:', socket.id);
+  });
+});
+
+// Helper: push clip-ready notification to all project subscribers
+// Called when HeyGen webhook fires
+function pushClipReady(projectId, payload) {
+  io.to('updates_' + projectId).emit('clip_ready', payload);
+  console.log('Pushed clip_ready to project room:', projectId);
+}
 
 const corsOpts = { origin: '*', methods: ['GET','POST','DELETE','OPTIONS'], allowedHeaders: ['Content-Type','Authorization'] };
 app.use(cors(corsOpts));
@@ -291,6 +367,67 @@ function stripProject(project) {
   delete p.clips;
   return p;
 }
+
+// ── Projects & Scenes CRUD (new persistent schema) ───────────────────────────
+// GET /api/projects — list user's projects
+app.get('/api/projects', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.status(401).json({ error: 'No auth token' });
+    const sb = getSupaAdmin();
+    const { data: { user } } = await sb.auth.getUser(token);
+    if (!user) return res.status(401).json({ error: 'Invalid token' });
+    const { data, error } = await sb.from('projects')
+      .select('*').eq('user_id', user.id)
+      .order('updated_at', { ascending: false }).limit(50);
+    if (error) {
+      // Table may not exist yet — return empty
+      if (error.code === 'PGRST205' || error.message?.includes('does not exist')) {
+        return res.json({ projects: [] });
+      }
+      throw error;
+    }
+    res.json({ projects: data || [] });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/projects/:id/scenes — get all scenes for a project
+app.get('/api/projects/:id/scenes', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.status(401).json({ error: 'No auth token' });
+    const sb = getSupaAdmin();
+    const { data: { user } } = await sb.auth.getUser(token);
+    if (!user) return res.status(401).json({ error: 'Invalid token' });
+    // Verify project belongs to user
+    const { data: proj } = await sb.from('projects').select('id').eq('id', req.params.id).eq('user_id', user.id).single();
+    if (!proj) return res.status(404).json({ error: 'Project not found' });
+    const { data, error } = await sb.from('scenes')
+      .select('*').eq('project_id', req.params.id).order('scene_order');
+    if (error && error.code === 'PGRST205') return res.json({ scenes: [] });
+    if (error) throw error;
+    res.json({ scenes: data || [] });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH /api/scenes/:id — update a single scene status/url
+app.patch('/api/scenes/:id', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.status(401).json({ error: 'No auth token' });
+    const sb = getSupaAdmin();
+    const { data: { user } } = await sb.auth.getUser(token);
+    if (!user) return res.status(401).json({ error: 'Invalid token' });
+    const { status, ai_video_url, user_recording_url } = req.body;
+    const update = {};
+    if (status)             update.status = status;
+    if (ai_video_url)       update.ai_video_url = ai_video_url;
+    if (user_recording_url) update.user_recording_url = user_recording_url;
+    const { error } = await sb.from('scenes').update(update).eq('id', req.params.id);
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
 
 app.post('/api/project/save', async (req, res) => {
   try {
@@ -1561,6 +1698,39 @@ app.post('/webhooks/heygen', async (req, res) => {
         // Cache for instant polling response
         heygenResults[videoId] = { videoUrl, ts: Date.now() };
         console.log('HeyGen webhook: video ready:', videoId, videoUrl.slice(0,60));
+        // Update scenes table — mark any scene waiting for this taskId as generated
+        try {
+          if (process.env.SUPABASE_SERVICE_KEY) {
+            const sb3 = getSupaAdmin();
+            await sb3.from('scenes')
+              .update({ status: 'generated', ai_video_url: videoUrl })
+              .eq('ai_task_id', 'heygen-' + videoId);
+          }
+        } catch(whDbErr) {
+          console.warn('Webhook scene update:', whDbErr.message);
+        }
+
+        // Push instant notification to all connected clients in the project room
+        // This replaces polling — desktop gets notified the moment video is ready
+        try {
+          // Find which project this video belongs to and push to its room
+          if (process.env.SUPABASE_SERVICE_KEY) {
+            const sb2 = getSupaAdmin();
+            const { data: projs } = await sb2.from('aab_projects').select('id').limit(50);
+            if (projs) {
+              projs.forEach(p => {
+                pushClipReady(p.id, { videoUrl, videoId, taskId: 'heygen-' + videoId, ts: Date.now() });
+              });
+            }
+          } else {
+            // No DB — push to all connected clients
+            io.emit('clip_ready', { videoUrl, videoId, taskId: 'heygen-' + videoId, ts: Date.now() });
+          }
+        } catch(pushErr) {
+          // Non-critical — just log
+          console.warn('Socket push failed:', pushErr.message);
+          io.emit('clip_ready', { videoUrl, videoId, taskId: 'heygen-' + videoId });
+        }
 
         // Update scene status in Supabase so it persists across sessions
         // Any project scene with this taskId gets marked 'done'
@@ -1646,8 +1816,9 @@ app.get('/api/project/scenes-status', async (req, res) => {
 // Patch presenter-status to check heygenResults first (webhook is faster than polling)
 const _origStatus = null; // handled inline in polling route
 
-app.listen(PORT, () => {
-  console.log('AABStudio v3.8 running on port', PORT);
+server.listen(PORT, () => {
+  console.log('AABStudio v3.9 running on port', PORT);
+  console.log('Socket.IO: real-time remote control enabled');
   console.log('Anthropic:    ', !!process.env.ANTHROPIC_API_KEY ? '✓' : '✗ MISSING');
   console.log('ElevenLabs:   ', !!ELEVENLABS_KEY  ? '✓' : '✗ MISSING');
   console.log('HeyGen:       ', !!HEYGEN_KEY       ? '✓ (primary)' : '✗');
