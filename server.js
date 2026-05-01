@@ -343,7 +343,7 @@ async function uploadToImgur(base64Image) {
 
 // ── Health ────────────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({
-  status: 'ok', version: '3.6',
+  status: 'ok', version: '3.9',
   anthropic: !!process.env.ANTHROPIC_API_KEY,
   elevenlabs: !!ELEVENLABS_KEY,
   heygen: !!HEYGEN_KEY,
@@ -373,7 +373,7 @@ function stripProject(project) {
 app.get('/api/projects', async (req, res) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '');
-    if (!token) return res.status(401).json({ error: 'No auth token' });
+    if (!token) return res.json({ projects: [] }); // Return empty instead of 401 — frontend may call before auth
     const sb = getSupaAdmin();
     const { data: { user } } = await sb.auth.getUser(token);
     if (!user) return res.status(401).json({ error: 'Invalid token' });
@@ -455,12 +455,33 @@ app.get('/api/project/list', async (req, res) => {
     const sb = getSupaAdmin();
     const { data: { user }, error: authErr } = await sb.auth.getUser(token);
     if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
+    
+    // Try new projects table first
+    try {
+      const { data: newProjects, error: newErr } = await sb.from('projects')
+        .select('*').eq('user_id', user.id)
+        .order('updated_at', { ascending: false }).limit(50);
+      if (!newErr && newProjects) {
+        return res.json({ projects: newProjects });
+      }
+    } catch(e2) { /* fall through to old table */ }
+    
+    // Fall back to legacy aab_projects table
     const { data, error } = await sb.from('aab_projects')
       .select('id,title,data,updated_at').eq('user_id', user.id)
       .order('updated_at', { ascending: false }).limit(50);
-    if (error) throw error;
-    res.json({ projects: (data || []).map(r => r.data) });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+    if (error) {
+      // Table may not exist — return empty gracefully
+      if (error.code === 'PGRST205' || error.message?.includes('does not exist')) {
+        return res.json({ projects: [] });
+      }
+      throw error;
+    }
+    res.json({ projects: (data || []).map(r => r.data || r) });
+  } catch(e) { 
+    console.error('/api/project/list:', e.message);
+    res.status(500).json({ error: e.message }); 
+  }
 });
 
 app.delete('/api/project/:id', async (req, res) => {
@@ -1620,7 +1641,22 @@ app.post('/api/presenter/batch', async (req, res) => {
     if (!photoId && referenceImageBase64) {
       photoId = await getOrCreateTalkingPhotoId(referenceImageBase64);
     }
-    if (!photoId) return res.status(400).json({ error: 'talkingPhotoId or referenceImageBase64 required. Upload your presenter photo first.' });
+    // If no photoId but we have reference image, try once more to create it
+    if (!photoId && referenceImageBase64) {
+      console.log('Batch: attempting to create talking_photo_id from reference image...');
+      photoId = await getOrCreateTalkingPhotoId(referenceImageBase64);
+    }
+    
+    // If still no photoId, use stock avatar fallback based on voiceGender
+    if (!photoId) {
+      console.warn('Batch: no talking_photo_id available — using stock avatar');
+      // Use gender-appropriate stock avatar
+      const maleAvatars   = ['josh_talking_male_4_20241203', 'james_20240207', 'tyler_20240309'];
+      const femaleAvatars = ['Anna_public_3_20240108', 'aisha_20240926', 'abigail_20240926'];
+      const avatarList    = (voiceGender === 'female') ? femaleAvatars : maleAvatars;
+      photoId             = process.env.HEYGEN_AVATAR_ID || avatarList[0];
+      console.log('Batch: stock avatar fallback:', photoId);
+    }
 
     // Build clips array — all scenes
     const framingOpts = FRAMING_MAP[framingStyle] || FRAMING_MAP['medium'];
@@ -1728,7 +1764,17 @@ app.post('/api/heygen/upload-photo', async (req, res) => {
       console.log('HeyGen: talking_photo_id ready:', talkingPhotoId);
       return res.json({ talking_photo_id: talkingPhotoId, ok: true });
     } else {
-      return res.status(500).json({ error: 'Failed to create talking photo — check HeyGen plan and logs' });
+      // Photo ID creation failed — but we still have the image
+      // Return the imageBase64 fingerprint so frontend can proceed
+      // The batch endpoint will use referenceImageBase64 as fallback
+      console.warn('HeyGen: could not create talking_photo_id (may need HeyGen Enterprise plan)');
+      console.warn('HeyGen: falling back to reference image mode');
+      return res.json({ 
+        talking_photo_id: null, 
+        ok: false,
+        fallback: true,
+        message: 'Using reference image mode — video will use stock avatar with your voice. Upgrade HeyGen plan for custom face.'
+      });
     }
   } catch(e) {
     console.error('/api/heygen/upload-photo:', e.message);
