@@ -930,6 +930,24 @@ async function generateWithHeyGen(req, res, args) {
     }
     console.log('HeyGen: talking_photo_id:', talkingPhotoId || 'none — stock avatar');
 
+    // Get image description for better avatar matching
+    let presenterDescription = '';
+    if (imageToUse && process.env.ANTHROPIC_API_KEY) {
+      try {
+        const descResp = await anthropic.messages.create({
+          model: MODEL, max_tokens: 200,
+          messages: [{ role: 'user', content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageToUse.slice(0,100000) } },
+            { type: 'text', text: 'Describe this person in 1 sentence: gender, skin tone, hair. Be precise.' }
+          ]}]
+        });
+        presenterDescription = descResp.content[0]?.text?.trim() || '';
+        console.log('Presenter description:', presenterDescription.slice(0,80));
+      } catch(descErr) {
+        console.warn('Image description failed:', descErr.message);
+      }
+    }
+
     // ── Step 2: Upload background to public CDN ───────────────────────────────
     let backgroundUrl = null;
     if (compositeImageB64) {
@@ -1653,6 +1671,43 @@ app.post('/api/presenter/batch', async (req, res) => {
   } catch(e) {
     console.error('/api/presenter/batch:', e.message);
     res.status(500).json({ error: e.message });
+  }
+});
+
+
+// ── POST /api/describe-image ──────────────────────────────────────────────────
+// Uses Claude Vision to describe a presenter reference image
+// The description is used to improve HeyGen avatar accuracy
+// This helps ensure the generated video matches the actual reference person
+app.post('/api/describe-image', async (req, res) => {
+  try {
+    const { imageBase64, mimeType = 'image/jpeg' } = req.body;
+    if (!imageBase64) return res.status(400).json({ error: 'imageBase64 required' });
+
+    const response = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 300,
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: { type: 'base64', media_type: mimeType, data: imageBase64 }
+          },
+          {
+            type: 'text',
+            text: 'Describe this person for an AI video generator. Include: gender, approximate age, skin tone, hair colour and style, facial features, clothing visible. Be specific and factual. 2-3 sentences maximum.'
+          }
+        ]
+      }]
+    });
+
+    const description = response.content[0]?.text?.trim() || '';
+    console.log('Image description:', description.slice(0, 100));
+    res.json({ description });
+  } catch(e) {
+    console.error('/api/describe-image:', e.message);
+    res.status(500).json({ error: e.message, description: '' });
   }
 });
 
