@@ -1662,47 +1662,60 @@ app.post('/api/presenter/batch', async (req, res) => {
     const bgB64 = await getStudioBackgroundB64(studioType, customBgBase64, ratio);
     const backgroundUrl = await uploadToImgur(bgB64);
 
-    // Step 3: Generate ElevenLabs audio + upload to HeyGen for each scene
-    console.log('Batch: generating audio for', scenes.length, 'scenes...');
-    const sceneResults = [];
+    // Step 3: Generate ALL audio in parallel (Promise.all)
+    // Sequential: 22 scenes × ~3s = 66s → timeout
+    // Parallel:   22 scenes simultaneously = ~5-8s total
+    console.log('Batch: generating audio for', scenes.length, 'scenes in parallel...');
 
-    for (let i = 0; i < scenes.length; i++) {
-      const sc   = scenes[i];
+    const CONCURRENCY = 10; // Max parallel requests (ElevenLabs rate limit)
+    
+    async function processScene(sc, idx) {
       const text = (sc.narration || sc.script || sc.text || '').trim();
-      if (!text) continue;
+      if (!text) return null;
+      
+      // 3a. ElevenLabs TTS
+      const ttsResp = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + voiceId, {
+        method: 'POST',
+        headers: { 'xi-api-key': ELEVENLABS_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          model_id: 'eleven_multilingual_v2',
+          voice_settings: { stability, similarity_boost: clarity, style: 0.3, use_speaker_boost: true }
+        })
+      });
+      if (!ttsResp.ok) throw new Error('ElevenLabs ' + ttsResp.status + ' scene ' + (idx+1));
+      const audioBuf = Buffer.from(await ttsResp.arrayBuffer());
 
-      try {
-        // Generate audio via ElevenLabs
-        const ttsResp = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + voiceId, {
-          method: 'POST',
-          headers: { 'xi-api-key': ELEVENLABS_KEY, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text,
-            model_id: 'eleven_multilingual_v2',
-            voice_settings: { stability, similarity_boost: clarity, style: 0.3, use_speaker_boost: true }
-          })
-        });
-        if (!ttsResp.ok) throw new Error('ElevenLabs ' + ttsResp.status + ': ' + (await ttsResp.text()).slice(0,100));
-        const audioBuf = Buffer.from(await ttsResp.arrayBuffer());
+      // 3b. Upload to HeyGen → audio_asset_id
+      const hgAudioResp = await fetch('https://upload.heygen.com/v1/asset', {
+        method: 'POST',
+        headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'audio/mpeg' },
+        body: audioBuf
+      });
+      if (!hgAudioResp.ok) throw new Error('HeyGen audio upload ' + hgAudioResp.status + ' scene ' + (idx+1));
+      const hgAudioData  = await hgAudioResp.json();
+      const audioAssetId = hgAudioData.data?.id || hgAudioData.data?.asset_id;
+      if (!audioAssetId) throw new Error('No audio_asset_id scene ' + (idx+1));
 
-        // Upload audio to HeyGen
-        const hgAudioResp = await fetch('https://upload.heygen.com/v1/asset', {
-          method: 'POST',
-          headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'audio/mpeg' },
-          body: audioBuf
-        });
-        if (!hgAudioResp.ok) throw new Error('HeyGen audio upload ' + hgAudioResp.status);
-        const hgAudioData  = await hgAudioResp.json();
-        const audioAssetId = hgAudioData.data?.id || hgAudioData.data?.asset_id;
-        if (!audioAssetId) throw new Error('No audio_asset_id from HeyGen upload');
-
-        console.log('Scene', i+1, '/', scenes.length, '— audio_asset_id:', audioAssetId);
-        sceneResults.push({ scene: sc, audioAssetId });
-      } catch(sceneErr) {
-        console.error('Scene', i+1, 'audio failed:', sceneErr.message);
-      }
+      console.log('Scene', idx+1, '/', scenes.length, '— audio_asset_id:', audioAssetId);
+      return { scene: sc, audioAssetId, idx };
     }
 
+    // Process in chunks of CONCURRENCY to respect rate limits
+    const sceneResults = [];
+    for (let i = 0; i < scenes.length; i += CONCURRENCY) {
+      const chunk  = scenes.slice(i, i + CONCURRENCY);
+      const settled = await Promise.allSettled(chunk.map((sc, j) => processScene(sc, i + j)));
+      settled.forEach(r => {
+        if (r.status === 'fulfilled' && r.value) sceneResults.push(r.value);
+        else if (r.status === 'rejected') console.error('Scene audio failed:', r.reason?.message);
+      });
+    }
+
+    // Sort results back into original scene order
+    sceneResults.sort((a, b) => a.idx - b.idx);
+
+    console.log('Audio ready:', sceneResults.length, '/', scenes.length, 'scenes');
     if (!sceneResults.length) {
       throw new Error('All scene audio generation failed — check ElevenLabs and HeyGen API keys');
     }
