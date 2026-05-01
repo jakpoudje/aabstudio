@@ -5325,29 +5325,29 @@
 
       <!-- Edit actions -->
       <div class="edit-topbar-section">
-        <button class="studio-btn" onclick="editUndo()" title="Undo last action" style="font-size:11px;">↩ Undo</button>
-        <button class="studio-btn" onclick="nav('record-pg')" style="font-size:11px;">← Studio</button>
+        <button class="studio-btn" onclick="nav('record-pg')" style="font-size:11px;" title="Go back to recording studio">← Studio</button>
+        <button class="studio-btn" onclick="editUndo()" title="Undo last delete" style="font-size:11px;">↩ Undo</button>
       </div>
 
-      <!-- Subtitle + exports -->
+      <!-- Tools dropdown -->
       <div class="edit-topbar-section">
-        <button class="studio-btn" onclick="openSubtitleEditor()" title="Edit subtitles" style="color:#a78bfa;border-color:rgba(139,92,246,.3);font-size:11px;">💬 Subtitles</button>
         <div class="dropdown-panel-wrap" style="position:relative;">
-          <button class="dropdown-panel-trigger" id="export-extras-btn" onclick="toggleDropdown('export-extras-panel','export-extras-btn')" style="font-size:11px;">
-            📋 Export extras <span class="caret">▾</span>
+          <button class="dropdown-panel-trigger" id="edit-tools-btn" onclick="toggleDropdown('edit-tools-panel','edit-tools-btn')" style="font-size:11px;">
+            🛠 Tools <span class="caret">▾</span>
           </button>
-          <div class="dropdown-panel" id="export-extras-panel" style="min-width:160px;left:0;bottom:calc(100% + 4px);">
-            <div class="dropdown-panel-title">Download as</div>
-            <button class="studio-btn" onclick="exportTranscript();closeDropdown('export-extras-panel','export-extras-btn')" style="width:100%;justify-content:flex-start;margin-bottom:4px;">📋 Transcript</button>
-            <button class="studio-btn" onclick="generateSubtitles();closeDropdown('export-extras-panel','export-extras-btn')" style="width:100%;justify-content:flex-start;margin-bottom:4px;">📋 .SRT subtitles</button>
-            <button class="studio-btn" onclick="exportYTChapters();closeDropdown('export-extras-panel','export-extras-btn')" style="width:100%;justify-content:flex-start;">📋 YouTube chapters</button>
+          <div class="dropdown-panel" id="edit-tools-panel" style="min-width:180px;left:0;top:calc(100% + 4px);bottom:auto;">
+            <div class="dropdown-panel-title">Edit tools</div>
+            <button class="studio-btn" onclick="openSubtitleEditor();closeDropdown('edit-tools-panel','edit-tools-btn')" style="width:100%;justify-content:flex-start;margin-bottom:4px;">💬 Subtitles</button>
+            <button class="studio-btn" onclick="exportTranscript();closeDropdown('edit-tools-panel','edit-tools-btn')" style="width:100%;justify-content:flex-start;margin-bottom:4px;">📋 Transcript</button>
+            <button class="studio-btn" onclick="generateSubtitles();closeDropdown('edit-tools-panel','edit-tools-btn')" style="width:100%;justify-content:flex-start;margin-bottom:4px;">📋 .SRT subtitles</button>
+            <button class="studio-btn" onclick="exportYTChapters();closeDropdown('edit-tools-panel','edit-tools-btn')" style="width:100%;justify-content:flex-start;">📋 YouTube chapters</button>
           </div>
         </div>
       </div>
 
-      <!-- Spacer + Export CTA -->
+      <!-- Export CTA — right aligned -->
       <div class="edit-topbar-section" style="margin-left:auto;border-right:none;">
-        <button class="studio-btn" style="font-size:12px;font-weight:700;background:rgba(0,212,255,.15);border-color:rgba(0,212,255,.4);color:var(--accent);" onclick="nav('export-pg')">Export → Publish</button>
+        <button class="studio-btn" style="font-size:12px;font-weight:700;background:rgba(0,212,255,.15);border-color:rgba(0,212,255,.4);color:var(--accent);padding:6px 18px;" onclick="nav('export-pg')">🚀 Export</button>
       </div>
 
     </div>
@@ -7099,39 +7099,59 @@
         var wasRecording = STUDIO.recording;
 
         if (wasRecording && STUDIO.mr && STUDIO.mr.state === 'recording') {
-          // Mark scene boundary with timestamp instead of stopping/restarting
-          // This avoids memory buildup from repeated MediaRecorder stop/start cycles
-          var currentTime = STUDIO.recSecs;
-          var scene = PROJECT.scenes[STUDIO.currentScene];
-          var sid = scene ? scene.id : ('clip_' + Date.now());
-          if (!PROJECT.clips) PROJECT.clips = {};
-          // Save scene boundary marker (not a real clip yet — will be split on export)
-          PROJECT.clips[sid] = {
-            sceneIdx: STUDIO.currentScene,
-            duration: STUDIO.recSecs,
-            size: 0,
-            sceneName: (scene && scene.type) || 'SCENE',
-            startTime: STUDIO._sessionStartTime || 0,
-            endTime: Date.now(),
-            recorded: true,
-            url: null // no blob yet - continuous recording
-          };
-          if (scene) scene.status = 'recorded';
-          updateStudioClips();
-          renderStudioQueue();
-          saveProject();
-          STUDIO.recSecs = 0; // reset per-scene timer
-          var timerEl = document.getElementById('rec-timer-display');
-          if (timerEl) timerEl.textContent = '0:00';
+          // Stop MediaRecorder for current scene — saves real blob via onstop
+          var sceneIdxAtStop = STUDIO.currentScene;
+          STUDIO.mr.onstop = (function(sceneIdx, chunks, mime, secs) {
+            return function() {
+              var blob = new Blob(chunks, { type: mime || 'video/webm' });
+              var url = URL.createObjectURL(blob);
+              var scene = PROJECT.scenes[sceneIdx];
+              var sid = (scene && scene.id) || ('clip_' + sceneIdx + '_' + Date.now());
+              if (!PROJECT.clips) PROJECT.clips = {};
+              PROJECT.clips[sid] = {
+                url: url,
+                sceneIdx: sceneIdx,
+                duration: secs,
+                size: blob.size,
+                sceneName: (scene && scene.type) || 'Scene ' + (sceneIdx + 1),
+                recorded: true
+              };
+              if (scene) scene.status = 'recorded';
+              updateStudioClips();
+              renderStudioQueue();
+              // Restart recording for next scene (already advanced)
+              if (wasRecording && STUDIO.stream && STUDIO.stream.active) {
+                setTimeout(function() {
+                  STUDIO.chunks = [];
+                  STUDIO.recSecs = 0;
+                  var timerEl = document.getElementById('rec-timer-display');
+                  if (timerEl) timerEl.textContent = '0:00';
+                  var mrOpts = STUDIO._mime ? { mimeType: STUDIO._mime, videoBitsPerSecond: 4000000 } : { videoBitsPerSecond: 4000000 };
+                  var newMr = new MediaRecorder(STUDIO.stream, mrOpts);
+                  newMr.ondataavailable = function(e) { if (e.data && e.data.size > 0) STUDIO.chunks.push(e.data); };
+                  newMr.onstop = function() {
+                    // Will be overridden by next studioNext or stopRec
+                  };
+                  newMr.start(100);
+                  STUDIO.mr = newMr;
+                  STUDIO.recording = true;
+                  scheduleSceneAssets(STUDIO.currentScene);
+                }, 150);
+              }
+            };
+          })(sceneIdxAtStop, STUDIO.chunks.slice(), STUDIO._mime, STUDIO.recSecs);
+
+          STUDIO.mr.stop();
+          STUDIO.chunks = [];
         }
 
         STUDIO.currentScene++;
-        updateTP();
+        if (!window._aabTpActive) updateTP(); // don't overwrite TP scroll
         renderStudioQueue();
         toast('→ Scene ' + (STUDIO.currentScene + 1), 'info');
 
       } else {
-        toast('Last scene — click STOP when done', 'info');
+        toast('Last scene — click ⏹ STOP when done', 'info');
       }
     }
     function studioPrev() {
@@ -8469,7 +8489,6 @@
         updateStudioClips();
         if (scene) scene.status = 'recorded';
         saveProject();
-        saveProject(); // auto-save per scene
         renderStudioQueue();
         var rb = document.getElementById('btn-retake');
         if (rb) rb.style.display = '';
@@ -11523,7 +11542,7 @@
       }
       window.showSaveStatus = showSaveStatus;
       var _oSP = window.saveProject;
-      window.saveProject = function () { if (typeof _oSP === 'function') _oSP.apply(this, arguments); showSaveStatus('\u2713 Saved locally', 'ok'); };
+      var _saveStatusTimer = null; window.saveProject = function () { if (typeof _oSP === 'function') _oSP.apply(this, arguments); clearTimeout(_saveStatusTimer); _saveStatusTimer = setTimeout(function(){ showSaveStatus('\u2713 Saved', 'ok'); }, 1500); }
 
       // STUDIO STATE MACHINE
       var STUDIO_STATE = 'IDLE'; window.STUDIO_STATE = 'IDLE';
@@ -13619,10 +13638,29 @@ function _aabTpScrollStart() {
       if (nxt) { nxt.style.color='rgba(255,255,255,.55)'; nxt.style.fontWeight=''; }
     }
 
-    // Done with all words
+    // Done with all words — auto-advance to next scene
     if (wi >= words.length - 1 && elapsed > words.length * msPerWord) {
-      window._aab_practice = false;
-      window._aab_syncing = false;
+      // Advance scene if more scenes remain
+      var nextScene = STUDIO.currentScene + 1;
+      if (nextScene < PROJECT.scenes.length) {
+        // Move to next scene
+        if (typeof studioNext === 'function') studioNext();
+        // Restart TP scroll for new scene after a brief pause
+        setTimeout(function() {
+          if (window._aab_practice || window._aab_syncing) {
+            _aabTpScrollStart();
+          }
+        }, 400);
+      } else {
+        // All scenes done
+        window._aab_practice = false;
+        window._aab_syncing = false;
+        // If recording, stop
+        if (STUDIO.recording && typeof stopRec === 'function') {
+          stopRec();
+        }
+        toast('All scenes complete ✓', 'ok');
+      }
       return;
     }
 
