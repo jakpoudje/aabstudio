@@ -15939,6 +15939,104 @@ window.aps_getImageDescription = async function(b64) {
 };
 
 
+
+// ══════════════════════════════════════════════════════════════════
+// STARTUP & AUTH FIXES
+// ══════════════════════════════════════════════════════════════════
+
+// Fix: db_loadLatestProject and scene polling should only fire when signed in
+// Wrap db_saveProject to guard against missing user
+var _origDbSave = window.db_saveProject;
+window.db_saveProject = async function() {
+  if (!APP || !APP.user || !PROJECT || !PROJECT.id) return; // Never fire without auth
+  if (typeof _origDbSave === 'function') return _origDbSave();
+};
+
+// Fix: /api/project/list called before auth — guard it
+var _origLoadProj = window.db_loadLatestProject;
+window.db_loadLatestProject = async function() {
+  if (!APP || !APP.user) return null;
+  var token = APP.user.accessToken || APP.user.token || 
+              (APP.user.session && APP.user.session.access_token);
+  if (!token) return null;
+  if (typeof _origLoadProj === 'function') return _origLoadProj();
+  return null;
+};
+
+// Fix: aps_loadPhoto — on photo upload failure, continue with reference image mode
+// Don't block the workflow if HeyGen talking_photo creation fails
+var _origLoadPhoto = window.aps_loadPhoto;
+window.aps_loadPhoto = function(input) {
+  var file = input && input.files && input.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var dataUrl = e.target.result;
+    var b64 = dataUrl.split(',')[1];
+    APS.photoB64 = b64;
+    APS.photoMimeType = file.type || 'image/jpeg';
+    APS.talkingPhotoId = null;
+
+    // Show preview immediately
+    var preview = document.getElementById('aps-photo-preview');
+    if (preview) { preview.src = dataUrl; preview.style.display = 'block'; }
+    var wrap = document.getElementById('aps-presenter-img-wrap');
+    if (wrap) wrap.innerHTML = '<img src="'+dataUrl+'" style="width:100%;height:100%;object-fit:cover;border-radius:100px 100px 0 0;">';
+
+    // Save locally
+    try { localStorage.setItem('aps_presenter_photo', dataUrl.slice(0,50000)); } catch(ex) {}
+
+    // Try to upload to HeyGen — but don't block if it fails
+    toast('Presenter photo loaded ✓', 'ok');
+    
+    fetch((window.API||API) + '/api/heygen/upload-photo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: b64, mimeType: file.type || 'image/jpeg' })
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(d) {
+      if (d.talking_photo_id) {
+        APS.talkingPhotoId = d.talking_photo_id;
+        try { localStorage.setItem('aps_talking_photo_id', d.talking_photo_id); } catch(ex) {}
+        toast('✓ Presenter ready — your face will appear in all scenes', 'ok');
+      } else if (d.fallback) {
+        // HeyGen plan limitation — still works with reference image
+        toast('Photo saved — using reference image mode (your voice + stock avatar)', 'info');
+      }
+    })
+    .catch(function(e) {
+      console.warn('Photo upload failed:', e.message);
+      toast('Photo saved locally ✓', 'ok');
+    });
+  };
+  reader.readAsDataURL(file);
+};
+
+// Fix: aps_generateAll — restore photo from localStorage before generating
+var _origGenAll = window.aps_generateAll;
+window.aps_generateAll = async function() {
+  // Restore photo data if lost
+  if (!APS.photoB64) {
+    var saved = localStorage.getItem('aps_presenter_photo');
+    if (saved) APS.photoB64 = saved.split(',')[1] || saved;
+  }
+  if (!APS.talkingPhotoId) {
+    var savedId = localStorage.getItem('aps_talking_photo_id');
+    if (savedId) APS.talkingPhotoId = savedId;
+  }
+  // Proceed even without photo — batch endpoint handles fallback
+  if (typeof _origGenAll === 'function') return _origGenAll();
+};
+
+// Fix: scene status polling — only start when signed in and have project
+var _origStartPolling = window.startSceneStatusPolling;
+window.startSceneStatusPolling = function() {
+  if (!APP || !APP.user || !PROJECT || !PROJECT.id) return;
+  if (typeof _origStartPolling === 'function') _origStartPolling();
+};
+
+
 console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgrounds, TP bg');
 </script>
 
