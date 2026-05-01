@@ -14705,6 +14705,220 @@ window.aps_generateSelected = async function() {
 };
 
 
+
+// ══════════════════════════════════════════════════════════════════
+// PROJECT DB SYNC — Implements sync_platform_to_creatomate() spec
+// Per-scene persistent state: status, videoUrl, taskId
+// Webhook → Supabase → frontend auto-update
+// ══════════════════════════════════════════════════════════════════
+
+// Scene status tracker — mirrors the project_db from the Python spec
+// Each scene has: { id, script, motion, status: 'pending'|'recording'|'recorded'|'generating'|'done'|'failed', videoUrl }
+window.SCENE_DB = window.SCENE_DB || {};
+
+// ── syncSceneDB — build SCENE_DB from PROJECT ─────────────────────
+function syncSceneDB() {
+  if (!PROJECT.scenes) return;
+  PROJECT.scenes.forEach(function(sc, idx) {
+    var key = sc.id || ('s_' + idx);
+    if (!SCENE_DB[key]) {
+      SCENE_DB[key] = {
+        id:       key,
+        num:      sc.sceneNumber || idx + 1,
+        script:   sc.narration || '',
+        motion:   getCameraMotionFE(idx, PROJECT.scenes.length),
+        status:   sc.status || 'pending',
+        videoUrl: sc.videoUrl || null,
+        taskId:   sc.taskId  || null,
+      };
+    } else {
+      // Update existing entry
+      SCENE_DB[key].script   = sc.narration || '';
+      SCENE_DB[key].status   = sc.status    || SCENE_DB[key].status;
+      SCENE_DB[key].videoUrl = sc.videoUrl  || SCENE_DB[key].videoUrl;
+    }
+  });
+}
+
+function getCameraMotionFE(idx, total) {
+  var motions = ['zoom_in','static','pan_right','static','zoom_out','pan_left','static'];
+  if (idx === 0)         return 'zoom_in';
+  if (idx === total - 1) return 'zoom_out';
+  return motions[idx % motions.length];
+}
+
+// ── pollSceneStatus — polls /api/project/scenes-status ────────────
+// When a HeyGen batch completes, backend updates Supabase
+// Frontend polls and automatically updates timeline
+var _sceneStatusPollTimer = null;
+
+function startSceneStatusPolling() {
+  if (_sceneStatusPollTimer) return;
+  if (!APP.user || !PROJECT.id) return;
+  console.log('Starting scene status polling for project:', PROJECT.id);
+
+  _sceneStatusPollTimer = setInterval(async function() {
+    if (!APP.user || !PROJECT.id) { stopSceneStatusPolling(); return; }
+    try {
+      var token = APP.user.accessToken || APP.user.token || '';
+      if (!token) return;
+
+      var r = await fetch(API + '/api/project/scenes-status?projectId=' + PROJECT.id, {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (!r.ok) return;
+      var data = await r.json();
+
+      var anyUpdated = false;
+
+      // Merge server scene statuses into PROJECT.scenes
+      (data.scenes || []).forEach(function(srv) {
+        var local = PROJECT.scenes && PROJECT.scenes.find(function(s){ return s.id === srv.id; });
+        if (local && srv.status !== local.status) {
+          local.status   = srv.status;
+          local.videoUrl = srv.videoUrl || local.videoUrl;
+          anyUpdated = true;
+          console.log('Scene', srv.id, 'status updated:', srv.status);
+        }
+      });
+
+      // Merge new clips from server into PROJECT.clips
+      Object.keys(data.clips || {}).forEach(function(key) {
+        if (!PROJECT.clips[key]) {
+          PROJECT.clips[key] = data.clips[key];
+          anyUpdated = true;
+          console.log('New clip from server:', key);
+        }
+      });
+
+      if (anyUpdated) {
+        // Rebuild timeline with new clips
+        if (typeof edit_buildPlaylist          === 'function') edit_buildPlaylist();
+        if (typeof edit_renderClipStrip        === 'function') edit_renderClipStrip();
+        if (typeof tl_buildTracksFromProject   === 'function') tl_buildTracksFromProject();
+        if (typeof renderStudioQueue           === 'function') renderStudioQueue();
+        toast('✓ Timeline updated with new generated clips', 'ok');
+        saveProject();
+      }
+    } catch(e) {
+      // Polling error — non-critical, keep polling
+    }
+  }, 15000); // Poll every 15 seconds
+}
+
+function stopSceneStatusPolling() {
+  if (_sceneStatusPollTimer) {
+    clearInterval(_sceneStatusPollTimer);
+    _sceneStatusPollTimer = null;
+  }
+}
+
+// ── doPublish — sync_platform_to_creatomate() equivalent ──────────
+// Pulls current project state (all recorded + AI clips)
+// Sends to /api/creatomate/sync which builds Creatomate timeline
+// This is the "Publish" button action from the Python spec
+window.doPublish = async function() {
+  var token = APP.user && (APP.user.accessToken || APP.user.token);
+  if (!token) { toast('Sign in required to publish', 'error'); return; }
+  if (!PROJECT.id) { toast('Save project first', 'error'); return; }
+
+  var clips = Object.values(PROJECT.clips || {}).filter(function(c){ return c && (c.url || c.videoUrl); });
+  if (!clips.length) { toast('No recorded clips to publish', 'error'); return; }
+
+  toast('Publishing ' + clips.length + ' clips to Creatomate...', 'info');
+
+  var st  = document.getElementById('export-status');
+  var pb  = document.getElementById('export-progress-bar');
+  if (st) st.innerHTML = '<div>Syncing ' + clips.length + ' clips to Creatomate...</div>';
+  if (pb) { pb.style.width = '10%'; pb.parentElement.style.display = ''; }
+
+  try {
+    var r = await fetch(API + '/api/creatomate/sync', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ projectId: PROJECT.id, resolution: '1080p', outputFormat: 'mp4' })
+    });
+    var data = await r.json();
+    if (data.error) throw new Error(data.error);
+
+    if (pb) pb.style.width = '40%';
+    if (st) st.innerHTML = '<div>Creatomate rendering ' + data.clipCount + ' clips... (~1-2 min)</div>';
+
+    // Poll Creatomate for completion
+    var taskId   = data.taskId;
+    var maxPolls = 24; // 24 × 5s = 2 min
+    for (var i = 0; i < maxPolls; i++) {
+      await new Promise(function(resolve){ setTimeout(resolve, 5000); });
+      var sr   = await fetch(API + '/api/creatomate/status/' + taskId);
+      var stat = await sr.json();
+      var pct  = Math.min(95, 40 + (i/maxPolls)*55);
+      if (pb) pb.style.width = pct + '%';
+
+      if (stat.status === 'succeeded' && stat.outputUrl) {
+        if (pb) pb.style.width = '100%';
+        if (st) st.innerHTML = '<div>✅ Published! <a href="' + stat.outputUrl + '" target="_blank" style="color:var(--accent);">Download final video →</a></div>';
+        toast('Video published! Click the link to download.', 'ok');
+        return;
+      }
+      if (stat.status === 'failed') throw new Error('Creatomate render failed');
+    }
+    throw new Error('Timed out');
+  } catch(e) {
+    if (st) st.innerHTML = '<div style="color:#ef4444;">✗ ' + e.message + '</div>';
+    toast('Publish failed: ' + e.message, 'error');
+  }
+};
+
+// ── buildCreatomatePayload — frontend preview of what gets sent ────
+// Matches the Python spec's sync_platform_to_creatomate() output
+window.buildCreatomatePayload = function() {
+  var clips  = Object.values(PROJECT.clips || {})
+    .filter(function(c){ return c && (c.url||c.videoUrl); })
+    .sort(function(a,b){ return (a.sceneNum||0)-(b.sceneNum||0); });
+
+  var elements = [];
+  var t = 0;
+  clips.forEach(function(clip, i) {
+    var dur = clip.duration || 8;
+    var url = clip.url || clip.videoUrl;
+    // Main AI Avatar track (matches Python spec track: 1)
+    elements.push({ type:'video', source: url, track:1, time:t, duration:dur, animations: clip.cameraMotion ? [{type:clip.cameraMotion, duration:2}]:[] });
+    // Subtitle track
+    var scene = PROJECT.scenes && PROJECT.scenes.find(function(s){ return s.id===clip.sceneId; });
+    if (scene && scene.narration) {
+      elements.push({ type:'text', text:scene.narration, track:4, time:t, duration:dur });
+    }
+    t += dur;
+  });
+
+  return {
+    source: {
+      output:   { format:'mp4', width:1920, height:1080 },
+      elements: elements
+    }
+  };
+};
+
+// Attach to nav('export-pg') — start polling when we reach export page
+var _origNav = window.nav;
+window.nav = function(pg) {
+  if (typeof _origNav === 'function') _origNav(pg);
+  if (pg === 'dashboard-pg' || pg === 'home') stopSceneStatusPolling();
+  if (pg === 'edit-pg' || pg === 'export-pg') {
+    syncSceneDB();
+    startSceneStatusPolling();
+  }
+};
+
+// Start polling on page load if user already logged in
+setTimeout(function() {
+  if (APP && APP.user && PROJECT && PROJECT.id) {
+    syncSceneDB();
+    startSceneStatusPolling();
+  }
+}, 3000);
+
+
 console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgrounds, TP bg');
 </script>
 
