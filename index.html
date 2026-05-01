@@ -14348,6 +14348,363 @@ window.newProject = function() {
 };
 
 
+
+// ── APS PHOTO UPLOAD — get talking_photo_id from HeyGen ──────────────────────
+// Called when user uploads a presenter photo in the APS studio
+// Uploads to HeyGen immediately to get a talking_photo_id
+// This ID is used in ALL generation calls so the right face appears
+
+window.aps_loadPhoto = function(input) {
+  var file = input.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var dataUrl = e.target.result;
+    var b64 = dataUrl.split(',')[1];
+    APS.photoB64 = b64;
+    APS.photoMimeType = file.type || 'image/jpeg';
+    APS.talkingPhotoId = null; // will be set after upload
+
+    // Show preview immediately
+    var preview = document.getElementById('aps-photo-preview');
+    if (preview) { preview.src = dataUrl; preview.style.display = 'block'; }
+    var presenterWrap = document.getElementById('aps-presenter-img-wrap');
+    if (presenterWrap) presenterWrap.innerHTML = '<img src="'+dataUrl+'" style="width:100%;height:100%;object-fit:cover;border-radius:100px 100px 0 0;">';
+
+    // Cache locally
+    try { localStorage.setItem('aps_presenter_photo', dataUrl); } catch(ex) {}
+
+    // Upload to HeyGen to get talking_photo_id — this fixes the wrong face bug
+    toast('Uploading presenter photo to HeyGen...', 'info');
+    fetch(API + '/api/heygen/upload-photo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: b64, mimeType: file.type || 'image/jpeg' })
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(d) {
+      if (d.talking_photo_id) {
+        APS.talkingPhotoId = d.talking_photo_id;
+        toast('✓ Presenter photo ready — your face will appear in videos', 'ok');
+        console.log('talking_photo_id:', d.talking_photo_id);
+        // Store for this session
+        try { localStorage.setItem('aps_talking_photo_id', d.talking_photo_id); } catch(ex) {}
+      } else {
+        console.warn('talking_photo_id not returned:', d.error || 'unknown');
+        toast('Photo uploaded — will use reference image mode', 'info');
+      }
+    })
+    .catch(function(e) {
+      console.warn('Photo upload to HeyGen failed:', e.message);
+      toast('Photo saved locally — will use reference mode', 'info');
+    });
+  };
+  reader.readAsDataURL(file);
+};
+
+// ── Override aps_generateScene to send talking_photo_id ───────────────────────
+// This is the definitive generateScene that uses talking_photo_id if available
+var _aps_gen_orig = window.aps_generateScene;
+window.aps_generateScene = async function(idx) {
+  var sc = APS.scenes[idx];
+  if (!sc || !sc.narration.trim()) {
+    if (sc) { sc.status='failed'; if(typeof aps_updateSceneRow==='function') aps_updateSceneRow(sc); }
+    return false;
+  }
+  
+  // Restore talking_photo_id from localStorage if lost
+  if (!APS.talkingPhotoId) {
+    var saved = localStorage.getItem('aps_talking_photo_id');
+    if (saved) APS.talkingPhotoId = saved;
+  }
+  if (!APS.photoB64) {
+    var savedPhoto = localStorage.getItem('aps_presenter_photo');
+    if (savedPhoto) APS.photoB64 = savedPhoto.split(',')[1];
+  }
+
+  sc.status = 'generating';
+  if (typeof aps_updateSceneRow === 'function') aps_updateSceneRow(sc);
+  if (idx === APS.currentIdx && typeof aps_selectScene === 'function') aps_selectScene(idx);
+
+  try {
+    if (typeof aps_saveSettings === 'function') aps_saveSettings();
+
+    // Step 1: ElevenLabs voice
+    if (typeof aps_showStep === 'function') aps_showStep(sc.num, 1, 3, 'Generating voice...');
+    var vr = await fetch(API + '/api/voice', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text:            sc.narration,
+        voiceId:         APS.settings.voiceId,
+        stability:       APS.settings.stability || 0.7,
+        similarityBoost: APS.settings.clarity || 0.75
+      })
+    });
+    var vd = await vr.json();
+    if (!vd.audio) throw new Error('Voice failed: ' + (vd.error || 'no audio returned'));
+    
+    // Step 2: Generate video with talking_photo_id (your face) or reference image
+    if (typeof aps_showStep === 'function') aps_showStep(sc.num, 2, 3, 'Generating video (your face + voice)...');
+    
+    var presenterPayload = {
+      audioBase64:          vd.audio,
+      referenceImageBase64: APS.photoB64 || null,
+      talkingPhotoId:       APS.talkingPhotoId || null,  // THE FIX: send pre-created ID
+      customBgBase64:       APS.customBgB64 || null,
+      studioType:           APS.settings.bg,
+      ratio:                APS.settings.ratio,
+      sceneText:            sc.narration,
+      provider:             APS.settings.provider || 'heygen',
+      framingStyle:         APS.settings.framing,
+      gestureStyle:         APS.settings.gesture || 'professional',
+      voiceGender:          APS.settings.voiceGender || 'male',
+      voiceName:            APS.settings.voiceName,
+      sceneNum:             sc.num,
+      sceneTotal:           sc.total,
+      duration:             sc.duration
+    };
+    
+    var pr = await fetch(API + '/api/presenter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(presenterPayload)
+    });
+    var pd = await pr.json();
+    if (pd.error) throw new Error(pd.error);
+    
+    sc.taskId = pd.taskId;
+    console.log('Scene', sc.num, 'submitted | taskId:', pd.taskId, '| engine:', pd.engine);
+    
+    if (pd.done && pd.videoUrl) {
+      return aab_sceneDone(sc, idx, pd.videoUrl);
+    }
+
+    // Step 3: Poll for completion
+    if (typeof aps_showStep === 'function') aps_showStep(sc.num, 3, 3, 'Rendering video (2-8 min)...');
+    
+    var pollMs   = 10000;
+    var maxPolls = 72; // 12 minutes max
+    
+    for (var i = 0; i < maxPolls && !APS.stopRequested; i++) {
+      await new Promise(function(r){ setTimeout(r, pollMs); });
+      
+      try {
+        var sr = await fetch(API + '/api/presenter-status?taskId=' + encodeURIComponent(pd.taskId));
+        var stat = await sr.json();
+        var elapsed = Math.round((i+1) * pollMs / 1000);
+        
+        if (typeof aps_showStep === 'function')
+          aps_showStep(sc.num, 3, 3, 'Rendering... ' + elapsed + 's (' + (stat.status||'processing') + ')');
+        
+        if (stat.done && stat.videoUrl) {
+          return aab_sceneDone(sc, idx, stat.videoUrl);
+        }
+        if (stat.failed) throw new Error('Render failed: ' + (stat.error || 'provider error'));
+      } catch(pollErr) {
+        if (pollErr.message.includes('failed')) throw pollErr;
+        // network error — keep polling
+      }
+    }
+    throw new Error('Timed out after ' + Math.round(maxPolls * pollMs / 60000) + ' min');
+
+  } catch(e) {
+    sc.status = 'failed';
+    sc.error = e.message;
+    if (typeof aps_updateSceneRow === 'function') aps_updateSceneRow(sc);
+    if (idx === APS.currentIdx && typeof aps_selectScene === 'function') aps_selectScene(idx);
+    if (typeof toast === 'function') toast('Scene ' + sc.num + ' failed: ' + e.message.slice(0,80), 'error');
+    return false;
+  }
+};
+
+
+
+// ── APS BATCH GENERATION — all scenes in ONE HeyGen call ─────────────────────
+// Implements the spec exactly: character + voice + background + clips[]
+// Much faster: 49 scenes = 1 API call instead of 49 sequential calls
+
+window.aps_generateAll = async function() {
+  if (typeof aps_saveSettings === 'function') aps_saveSettings();
+  APS.stopRequested = false;
+  APS.generating    = true;
+
+  var stopBtn = document.getElementById('aps-stop-btn');
+  var genBtn  = document.getElementById('aps-gen-all-btn');
+  if (stopBtn) stopBtn.style.display = 'block';
+  if (genBtn)  genBtn.style.display  = 'none';
+
+  // Check photo uploaded
+  if (!APS.photoB64 && !APS.talkingPhotoId) {
+    var saved = localStorage.getItem('aps_presenter_photo');
+    if (saved) APS.photoB64 = saved.split(',')[1];
+    var savedId = localStorage.getItem('aps_talking_photo_id');
+    if (savedId) APS.talkingPhotoId = savedId;
+  }
+
+  if (!APS.talkingPhotoId && !APS.photoB64) {
+    toast('⚠ Upload your presenter photo first — click the 📷 button in the right panel', 'error');
+    APS.generating = false;
+    if (stopBtn) stopBtn.style.display = 'none';
+    if (genBtn)  genBtn.style.display  = 'block';
+    return;
+  }
+
+  var scenes = APS.scenes.filter(function(sc) { return sc.narration && sc.narration.trim(); });
+  if (!scenes.length) { toast('No scenes with narration text', 'error'); APS.generating = false; return; }
+
+  toast('Submitting ' + scenes.length + ' scenes to HeyGen in one batch call...', 'info');
+
+  var pgWrap  = document.getElementById('aps-progress-wrap');
+  var pgBar   = document.getElementById('aps-progress-bar');
+  var pgLabel = document.getElementById('aps-progress-label');
+  var pgPct   = document.getElementById('aps-progress-pct');
+  if (pgWrap) pgWrap.style.display = 'block';
+  if (pgBar)  pgBar.style.width    = '5%';
+  if (pgLabel) pgLabel.textContent = 'Uploading to HeyGen...';
+
+  try {
+    // Use the batch endpoint — ONE call for ALL scenes
+    var batchResp = await fetch(API + '/api/presenter/batch', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scenes:               scenes.map(function(sc) {
+          return { narration: sc.narration, duration: sc.duration, type: sc.type, id: sc.id };
+        }),
+        talkingPhotoId:       APS.talkingPhotoId  || null,
+        referenceImageBase64: APS.photoB64         || null,
+        customBgBase64:       APS.customBgB64      || null,
+        studioType:           APS.settings.bg      || 'news-studio',
+        ratio:                APS.settings.ratio   || '16:9',
+        framingStyle:         APS.settings.framing || 'news-desk',
+        voiceId:              APS.settings.voiceId || 'EXAVITQu4vr4xnSDxMaL',
+        stability:            APS.settings.stability || 0.85,
+        clarity:              APS.settings.clarity   || 0.80,
+        voiceGender:          APS.settings.voiceGender || 'male',
+      })
+    });
+
+    var batchData = await batchResp.json();
+    if (batchData.error) throw new Error(batchData.error);
+
+    var taskId = batchData.taskId;
+    console.log('Batch submitted:', taskId, '|', batchData.sceneCount, 'scenes');
+    toast('✓ Batch submitted — ' + batchData.sceneCount + ' scenes rendering. Polling for result...', 'ok');
+
+    if (pgBar)   pgBar.style.width    = '15%';
+    if (pgLabel) pgLabel.textContent  = 'HeyGen rendering ' + batchData.sceneCount + ' scenes... (3-15 min)';
+
+    // Mark all scenes as generating
+    APS.scenes.forEach(function(sc) {
+      if (sc.narration && sc.narration.trim()) {
+        sc.status  = 'generating';
+        sc.taskId  = taskId;
+        if (typeof aps_updateSceneRow === 'function') aps_updateSceneRow(sc);
+      }
+    });
+
+    // Poll for completion — batch result is ONE video containing all scenes
+    var maxPolls = 90;  // 90 × 10s = 15 min
+    var pollsRun = 0;
+
+    for (var i = 0; i < maxPolls && !APS.stopRequested; i++) {
+      await new Promise(function(r) { setTimeout(r, 10000); });
+      pollsRun++;
+
+      try {
+        var sr   = await fetch(API + '/api/presenter-status?taskId=' + encodeURIComponent(taskId));
+        var stat = await sr.json();
+        var elapsed = Math.round(pollsRun * 10);
+
+        var pct = Math.min(90, 15 + pollsRun * 0.9);
+        if (pgBar)   pgBar.style.width   = pct + '%';
+        if (pgPct)   pgPct.textContent   = Math.round(pct) + '%';
+        if (pgLabel) pgLabel.textContent = 'Rendering... ' + elapsed + 's (' + (stat.status || 'processing') + ')';
+
+        if (stat.done && stat.videoUrl) {
+          // Batch complete — the returned video contains ALL scenes
+          if (pgBar)   pgBar.style.width   = '100%';
+          if (pgLabel) pgLabel.textContent = '✓ Complete — ' + scenes.length + ' scenes rendered!';
+
+          // Mark all scenes done and add to timeline
+          APS.scenes.forEach(function(sc, idx) {
+            if (!sc.narration || !sc.narration.trim()) return;
+            sc.status   = 'done';
+            sc.videoUrl = stat.videoUrl;  // All point to same video (contains all scenes)
+            APS.results[sc.id] = stat.videoUrl;
+            if (typeof aps_updateSceneRow === 'function') aps_updateSceneRow(sc);
+            if (typeof aps_addClipToBar   === 'function') aps_addClipToBar(sc);
+          });
+
+          // Add the batch video to the project timeline as one clip
+          if (!PROJECT.clips) PROJECT.clips = {};
+          var batchKey = 'ai_batch_' + Date.now();
+          PROJECT.clips[batchKey] = {
+            sceneId:   batchKey,
+            sceneNum:  1,
+            url:       stat.videoUrl,
+            videoUrl:  stat.videoUrl,
+            duration:  scenes.reduce(function(t, sc) { return t + (sc.duration || 8); }, 0),
+            source:    'ai-presenter-batch',
+            sceneName: 'AI Presenter (' + scenes.length + ' scenes)',
+            sceneType: 'BATCH'
+          };
+
+          if (typeof saveProject === 'function') saveProject();
+          if (typeof edit_buildPlaylist === 'function') edit_buildPlaylist();
+          if (typeof edit_renderClipStrip === 'function') edit_renderClipStrip();
+          if (typeof tl_buildTracksFromProject === 'function') tl_buildTracksFromProject();
+
+          toast('✅ ' + scenes.length + ' scenes complete! Video added to timeline.', 'ok');
+          APS.generating = false;
+          if (stopBtn) stopBtn.style.display = 'none';
+          if (genBtn)  genBtn.style.display  = 'block';
+          return;
+        }
+
+        if (stat.failed) throw new Error('HeyGen rendering failed: ' + (stat.error || 'unknown'));
+
+      } catch(pollErr) {
+        if (pollErr.message.includes('failed')) throw pollErr;
+        // Network error — keep polling
+      }
+    }
+    throw new Error('Timed out after ' + Math.round(maxPolls * 10 / 60) + ' min');
+
+  } catch(e) {
+    console.error('Batch generation failed:', e.message);
+    toast('Generation failed: ' + e.message.slice(0, 100), 'error');
+    APS.scenes.forEach(function(sc) {
+      if (sc.status === 'generating') {
+        sc.status = 'failed';
+        if (typeof aps_updateSceneRow === 'function') aps_updateSceneRow(sc);
+      }
+    });
+  }
+
+  APS.generating = false;
+  if (stopBtn) stopBtn.style.display = 'none';
+  if (genBtn)  genBtn.style.display  = 'block';
+};
+
+// aps_generateSelected also uses batch for selected scenes
+window.aps_generateSelected = async function() {
+  if (typeof aps_saveSettings === 'function') aps_saveSettings();
+  // Filter to selected scenes only, then hand off to aps_generateAll logic
+  // with a temporary override of APS.scenes
+  var originalScenes = APS.scenes;
+  APS.scenes = APS.scenes.filter(function(sc) { return sc.selected && sc.status !== 'done'; });
+  if (!APS.scenes.length) {
+    APS.scenes = originalScenes;
+    toast('No scenes selected', 'info');
+    return;
+  }
+  await window.aps_generateAll();
+  APS.scenes = originalScenes;
+};
+
+
 console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgrounds, TP bg');
 </script>
 
