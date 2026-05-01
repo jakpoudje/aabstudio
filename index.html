@@ -6013,6 +6013,8 @@
       var studioPages = ['record-pg', 'edit-pg', 'teleprompter-pg', 'remote-pg'];
       if (tn) tn.style.display = studioPages.includes(pg) ? 'none' : 'flex';
       updateNavState();
+      // Fire nav event so all hooks can respond without overriding nav
+      try { document.dispatchEvent(new CustomEvent('aab_nav', { detail: { page: pg } })); } catch(e) {}
       if (pg === 'dashboard-pg') loadDashboard();
       if (pg === 'scenes-pg') renderSceneBoard();
       if (pg === 'edit-pg') renderEditSuite();
@@ -13357,22 +13359,7 @@ window.tl_setTool = function(tool) {
 };
 
 // ── Wire up new studio buttons on page nav ────────────────────────────────
-var _origNav = window.nav;
-window.nav = function(pg) {
-  if (typeof _origNav === 'function') _origNav.apply(this, arguments);
-  // Fire custom event so other code can hook into page changes safely
-  try { document.dispatchEvent(new CustomEvent('aab_nav', { detail: { page: pg } })); } catch(e) {}
-  if (pg === 'record-pg') {
-    setTimeout(function(){
-      if (typeof wireStudioButtons === 'function') wireStudioButtons();
-    }, 100);
-  }
-  if (pg === 'edit-pg') {
-    setTimeout(function(){
-      if (typeof renderEditSuite === 'function') renderEditSuite();
-    }, 100);
-  }
-};
+// nav hook removed — handled in original nav()
 
 console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
 </script>
@@ -13853,23 +13840,26 @@ window.uploadCustomBg = function(inp) {
 };
 
 // ── WIRE ALL BUTTONS via nav override ─────────────────────────
-var _aabNavBase = window.nav;
-window.nav = function(pg) {
-  if (typeof _aabNavBase==='function') _aabNavBase.apply(this,arguments);
-  if (pg==='record-pg') {
+// Wire studio buttons via aab_nav event (no nav override needed)
+document.addEventListener('aab_nav', function(e) {
+  var pg = e.detail && e.detail.page;
+  if (pg === 'record-pg') {
     setTimeout(function(){
-      // Wire practice and sync buttons to our new functions
-      var p=document.getElementById('btn-tp-start');
-      if (p) p.onclick=window.startPracticeMode;
-      var s=document.getElementById('btn-auto');
-      if (s) s.onclick=window.startSyncRecord;
-      // Ensure ctrl visible
-      var ctrl=document.querySelector('.studio-ctrl-v2');
-      if (ctrl) ctrl.style.display='flex';
-      _addTpBgControl();
+      var p = document.getElementById('btn-tp-start');
+      if (p) p.onclick = window.startPracticeMode;
+      var s = document.getElementById('btn-auto');
+      if (s) s.onclick = window.startSyncRecord;
+      var ctrl = document.querySelector('.studio-ctrl-v2');
+      if (ctrl) ctrl.style.display = 'flex';
+      if (typeof _addTpBgControl === 'function') _addTpBgControl();
     }, 300);
   }
-};
+  if (pg === 'edit-pg') {
+    setTimeout(function(){
+      if (typeof renderEditSuite === 'function') renderEditSuite();
+    }, 100);
+  }
+});
 
 // Also wire on DOMContentLoaded for direct page load
 window.addEventListener('load', function(){
@@ -14881,7 +14871,6 @@ window.buildCreatomatePayload = function() {
 };
 
 // Attach to nav('export-pg') — start polling when we reach export page
-var _origNav = window.nav;
 // Scene DB sync hooks — attached to nav via event listener instead of override
 // This avoids breaking the nav chain
 document.addEventListener('aab_nav', function(e) {
@@ -15096,6 +15085,336 @@ setInterval(function() {
     console.log('Socket.IO: joined project room', pid);
   }
 }, 3000);
+
+
+
+// ═══════════════════════════════════════════════════════════════════
+// PERSISTENCE LAYER v2.0 — Projects & Scenes DB
+// Source of truth: Supabase projects + scenes tables
+// Auto-saves on every nav, auto-loads on sign-in
+// ═══════════════════════════════════════════════════════════════════
+
+// ── DB SAVE — project + all scenes ───────────────────────────────
+window.db_saveProject = async function() {
+  if (!APP.user) return;
+  var token = APP.user.accessToken || APP.user.token || (APP.user.session && APP.user.session.access_token);
+  if (!token) return;
+
+  try {
+    // Upsert project row
+    var projectPayload = {
+      id:                    PROJECT.id,
+      user_id:               APP.user.id,
+      title:                 PROJECT.title || 'My Video',
+      reference_image_id:    window.APS && APS.talkingPhotoId || null,
+      global_background_url: window.APS && APS.bgUrl || null,
+      background_type:       window.APS && APS.settings && APS.settings.bg || 'news-studio',
+      voice_id:              window.APS && APS.settings && APS.settings.voiceId || 'EXAVITQu4vr4xnSDxMaL',
+      voice_name:            window.APS && APS.settings && APS.settings.voiceName || null,
+      voice_gender:          window.APS && APS.settings && APS.settings.voiceGender || 'male',
+      stability:             window.APS && APS.settings && APS.settings.stability || 0.85,
+      clarity:               window.APS && APS.settings && APS.settings.clarity || 0.80,
+      aspect_ratio:          window.APS && APS.settings && APS.settings.ratio || '16:9',
+      framing_style:         window.APS && APS.settings && APS.settings.framing || 'news-desk',
+      provider:              window.APS && APS.settings && APS.settings.provider || 'heygen',
+      wpm:                   PROJECT.wpm || 150,
+      scene_duration:        PROJECT.sceneDuration || 8,
+      status:                PROJECT.status || 'draft',
+    };
+
+    var supa = getSupa();
+    var { error: projErr } = await supa.from('projects').upsert(projectPayload, { onConflict: 'id' });
+    if (projErr) throw new Error('Project save: ' + projErr.message);
+
+    // Upsert scenes
+    if (PROJECT.scenes && PROJECT.scenes.length > 0) {
+      var sceneRows = PROJECT.scenes.map(function(sc, idx) {
+        return {
+          id:               sc.id,
+          project_id:       PROJECT.id,
+          scene_order:      sc.sceneNumber || idx + 1,
+          script_text:      sc.narration || '',
+          scene_type:       sc.type || 'MAIN',
+          duration:         sc.duration || 8,
+          notes:            sc.notes || null,
+          status:           sc.status || 'pending',
+          user_recording_url: (PROJECT.clips && PROJECT.clips[sc.id] && (PROJECT.clips[sc.id].url || PROJECT.clips[sc.id].videoUrl)) || sc.userRecordingUrl || null,
+          ai_video_url:     sc.videoUrl || sc.aiVideoUrl || null,
+          camera_motion:    sc.cameraMotion || 'static',
+        };
+      });
+      var { error: sceneErr } = await supa.from('scenes').upsert(sceneRows, { onConflict: 'id' });
+      if (sceneErr) console.warn('Scenes save:', sceneErr.message);
+    }
+
+    console.log('DB: project + scenes saved');
+  } catch(e) {
+    console.warn('db_saveProject failed (non-critical):', e.message);
+  }
+};
+
+// ── DB LOAD — fetch project + scenes on sign-in ───────────────────
+window.db_loadLatestProject = async function() {
+  if (!APP.user) return null;
+  try {
+    var supa = getSupa();
+    // Get most recent project
+    var { data: projects, error: pErr } = await supa
+      .from('projects')
+      .select('*')
+      .eq('user_id', APP.user.id)
+      .order('updated_at', { ascending: false })
+      .limit(1);
+
+    if (pErr || !projects || !projects.length) return null;
+    var proj = projects[0];
+
+    // Get its scenes
+    var { data: scenes, error: sErr } = await supa
+      .from('scenes')
+      .select('*')
+      .eq('project_id', proj.id)
+      .order('scene_order', { ascending: true });
+
+    // Reconstruct PROJECT from DB
+    PROJECT.id             = proj.id;
+    PROJECT.title          = proj.title || 'My Video';
+    PROJECT.wpm            = proj.wpm || 150;
+    PROJECT.sceneDuration  = proj.scene_duration || 8;
+    PROJECT.status         = proj.status || 'draft';
+
+    // Reconstruct APS settings
+    if (window.APS) {
+      APS.talkingPhotoId = proj.reference_image_id || null;
+      APS.bgUrl          = proj.global_background_url || null;
+      if (!APS.settings) APS.settings = {};
+      APS.settings.bg       = proj.background_type || 'news-studio';
+      APS.settings.voiceId  = proj.voice_id || 'EXAVITQu4vr4xnSDxMaL';
+      APS.settings.voiceName  = proj.voice_name || null;
+      APS.settings.voiceGender = proj.voice_gender || 'male';
+      APS.settings.stability  = proj.stability || 0.85;
+      APS.settings.clarity    = proj.clarity || 0.80;
+      APS.settings.ratio      = proj.aspect_ratio || '16:9';
+      APS.settings.framing    = proj.framing_style || 'news-desk';
+      APS.settings.provider   = proj.provider || 'heygen';
+      // Restore photo ID to localStorage
+      if (APS.talkingPhotoId) {
+        try { localStorage.setItem('aps_talking_photo_id', APS.talkingPhotoId); } catch(e) {}
+      }
+    }
+
+    // Reconstruct scenes
+    if (scenes && scenes.length) {
+      PROJECT.scenes = scenes.map(function(sc) {
+        return {
+          id:          sc.id,
+          sceneNumber: sc.scene_order,
+          type:        sc.scene_type || 'MAIN',
+          narration:   sc.script_text || '',
+          duration:    sc.duration || 8,
+          notes:       sc.notes || '',
+          status:      sc.status || 'pending',
+          videoUrl:    sc.ai_video_url || null,
+          userRecordingUrl: sc.user_recording_url || null,
+          assets:      [],
+        };
+      });
+
+      // Rebuild clips from scenes with recordings
+      if (!PROJECT.clips) PROJECT.clips = {};
+      scenes.forEach(function(sc, idx) {
+        if (sc.user_recording_url) {
+          PROJECT.clips[sc.id] = {
+            url: sc.user_recording_url, videoUrl: sc.user_recording_url,
+            sceneId: sc.id, sceneNum: sc.scene_order,
+            sceneName: sc.script_text ? sc.script_text.slice(0,40) : 'Scene '+sc.scene_order,
+            sceneType: sc.scene_type || 'MAIN',
+            source: 'recording', duration: sc.duration || 8
+          };
+        }
+        if (sc.ai_video_url) {
+          PROJECT.clips['ai_'+sc.id] = {
+            url: sc.ai_video_url, videoUrl: sc.ai_video_url,
+            sceneId: sc.id, sceneNum: sc.scene_order,
+            sceneName: 'AI — ' + (sc.script_text||'').slice(0,30),
+            sceneType: sc.scene_type || 'MAIN',
+            source: 'ai-presenter', duration: sc.duration || 8
+          };
+        }
+      });
+    }
+
+    console.log('DB: loaded project', proj.id, '—', (scenes||[]).length, 'scenes');
+    return proj;
+  } catch(e) {
+    console.warn('db_loadLatestProject failed:', e.message);
+    return null;
+  }
+};
+
+// ── DB SAVE SCENES STATUS after recording/generation ─────────────
+window.db_updateSceneStatus = async function(sceneId, status, videoUrl) {
+  if (!APP.user || !sceneId) return;
+  try {
+    var supa = getSupa();
+    var update = { status: status };
+    if (videoUrl) {
+      if (status === 'recorded') update.user_recording_url = videoUrl;
+      if (status === 'generated') update.ai_video_url = videoUrl;
+    }
+    await supa.from('scenes').update(update).eq('id', sceneId);
+  } catch(e) {
+    console.warn('db_updateSceneStatus:', e.message);
+  }
+};
+
+// ── AUTO-SAVE on nav ──────────────────────────────────────────────
+document.addEventListener('aab_nav', function(e) {
+  if (!APP.user || !PROJECT.id) return;
+  // Debounced auto-save on page change
+  clearTimeout(window._dbSaveTimer);
+  window._dbSaveTimer = setTimeout(function() {
+    window.db_saveProject();
+  }, 1000);
+});
+
+// ── PATCH setUser to load project from DB on sign-in ─────────────
+var _origSetUser = window.setUser;
+window.setUser = function(u) {
+  if (typeof _origSetUser === 'function') _origSetUser(u);
+  // After user is set, load their most recent project from DB
+  setTimeout(async function() {
+    if (!APP.user) return;
+    var proj = await window.db_loadLatestProject();
+    if (proj) {
+      // Refresh UI with loaded project data
+      if (typeof renderProjectGrid    === 'function') renderProjectGrid();
+      if (typeof renderSceneBoard     === 'function') renderSceneBoard();
+      if (typeof edit_buildPlaylist   === 'function') edit_buildPlaylist();
+      if (typeof edit_renderClipStrip === 'function') edit_renderClipStrip();
+      toast('Project restored: ' + (PROJECT.title||'My Video'), 'ok');
+    }
+  }, 500);
+};
+
+// ── PATCH stopRec/studioNext to auto-save scene status ───────────
+// After a recording, update the scene status in Supabase immediately
+var _origUpdateStudioClips = window.updateStudioClips;
+window.updateStudioClips = function() {
+  if (typeof _origUpdateStudioClips === 'function') _origUpdateStudioClips();
+  // Save the updated clip to DB
+  var scene = PROJECT.scenes && PROJECT.scenes[STUDIO && STUDIO.currentScene];
+  if (scene && PROJECT.clips && PROJECT.clips[scene.id]) {
+    var clip = PROJECT.clips[scene.id];
+    window.db_updateSceneStatus(scene.id, 'recorded', clip.url || clip.videoUrl);
+  }
+};
+
+// ── REMOTE CONTROL — Socket.IO pair_devices ───────────────────────
+// Override Socket.IO join to use pair_devices + command events
+// matching the spec exactly
+document.addEventListener('aab_nav', function(e) {
+  var pg = e.detail && e.detail.page;
+  if (pg === 'remote-pg' && window._aabSocket && PROJECT.id) {
+    // Phone joins the project room
+    window._aabSocket.emit('pair_devices', {
+      project_id: PROJECT.id,
+      device: 'phone'
+    });
+    // Show green dot
+    var dot = document.getElementById('remote-conn-dot');
+    if (dot) {
+      dot.style.background = '#f59e0b';
+      dot.title = 'Pairing...';
+    }
+  }
+  if ((pg === 'record-pg' || pg === 'teleprompter-pg') && window._aabSocket && PROJECT.id) {
+    // Desktop joins the project room
+    window._aabSocket.emit('pair_devices', {
+      project_id: PROJECT.id,
+      device: 'desktop'
+    });
+  }
+});
+
+// Handle command events from phone (matching spec's remote_execute)
+if (window._aabSocket) {
+  window._aabSocket.on('remote_execute', function(data) {
+    var action = data.action || data.cmd;
+    console.log('remote_execute received:', action);
+    switch(action) {
+      case 'play':    if (typeof startPracticeMode==='function') startPracticeMode(); break;
+      case 'pause':   if (typeof _aabTpStop==='function') _aabTpStop(); break;
+      case 'next_scene': if (typeof studioNext==='function') studioNext(); break;
+      case 'prev_scene': if (typeof studioPrev==='function') studioPrev(); break;
+      case 'slower':
+        var sp=document.getElementById('tp-spd-range');
+        if(sp){sp.value=Math.max(30,parseInt(sp.value)-10);sp.dispatchEvent(new Event('input'));}
+        break;
+      case 'faster':
+        var sp2=document.getElementById('tp-spd-range');
+        if(sp2){sp2.value=Math.min(300,parseInt(sp2.value)+10);sp2.dispatchEvent(new Event('input'));}
+        break;
+      case 'restart':
+        if(typeof _aabTpStop==='function') _aabTpStop();
+        setTimeout(function(){if(typeof startPracticeMode==='function')startPracticeMode();},200);
+        break;
+    }
+  });
+}
+
+// ── MOBILE REMOTE MODE ────────────────────────────────────────────
+// Switch to large-button layout on narrow screens
+(function initMobileRemote() {
+  if (window.innerWidth >= 768) return;
+  // On mobile, the remote page gets a special class
+  var style = document.createElement('style');
+  style.textContent = [
+    '.remote-btn { min-height: 80px !important; font-size: 22px !important; }',
+    '#remote-pg { padding-bottom: env(safe-area-inset-bottom, 20px) !important; }',
+    '.remote-grid { grid-template-columns: 1fr 1fr !important; gap: 16px !important; }',
+    '.remote-speed-row { padding: 20px !important; }',
+    '/* Hide timeline on mobile remote */',
+    '@media (max-width: 767px) {',
+    '  #edit-pg .tl-tools-group, #edit-pg #tl-scroll-container { font-size: 10px; }',
+    '  #edit-pg #edit-preview-pane { width: 100% !important; }',
+    '  #edit-pg #timeline-panel { display: none; }',
+    '}',
+  ].join('\n');
+  document.head.appendChild(style);
+
+  // Use remoteSend which now goes via Socket.IO
+  window._mobileRemote = true;
+  document.addEventListener('aab_nav', function(e) {
+    if (e.detail && e.detail.page === 'remote-pg') {
+      document.body.classList.add('mobile-remote-mode');
+    } else {
+      document.body.classList.remove('mobile-remote-mode');
+    }
+  });
+})();
+
+// ── Wire remoteSend to use Socket.IO 'command' event (matches spec) ─
+window.remoteSend = function(action, value) {
+  var projectId = PROJECT && PROJECT.id;
+  var payload = { project_id: projectId, action: action };
+  if (value !== undefined) payload.value = value;
+
+  // Try Socket.IO first — cross-device
+  if (window._aabSocket && window._aabSocket.connected && projectId) {
+    window._aabSocket.emit('command', payload);  // matches spec event name
+    var dot = document.getElementById('remote-conn-dot');
+    if (dot) dot.style.background = '#10b981';
+    return;
+  }
+  // Fallback: BroadcastChannel (same device)
+  try {
+    var ch = new BroadcastChannel('aab_remote');
+    ch.postMessage(payload);
+    ch.close();
+  } catch(e) {}
+  try { localStorage.setItem('aab_remote_cmd', JSON.stringify({...payload, ts: Date.now()})); } catch(e) {}
+};
 
 
 console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgrounds, TP bg');
