@@ -5960,7 +5960,7 @@
     // ══════════════════════════════════════════════════════════════════════════════
     // CONSTANTS
     // ══════════════════════════════════════════════════════════════════════════════
-    const API = 'https://aabstudio-production.up.railway.app';
+    const API = 'https://aabstudio-production.up.railway.app'; window.API = API;
     const SUPA_URL = 'https://phjlxkyloafogznhyyig.supabase.co';
     const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBoamx4a3lsb2Fmb2d6bmh5eWlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNTcxNDgsImV4cCI6MjA5MDYzMzE0OH0.wI9E9CIHwwFN6d_lgJXwO0_G7J3aq4zesp7eU6TCDiI';
     const BG = { news: 'https://images.unsplash.com/photo-1585776245991-cf89dd7fc73a?w=1400', dark: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=1400', library: 'https://images.unsplash.com/photo-1507842217343-583bb7270b66?w=1400', office: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=1400' };
@@ -12195,28 +12195,7 @@ if (isHomepage) {
 // ════════════════════════════════════════════════════════════════════════════
 
 // ── Staggered entrance animations on page nav ─────────────────────────────
-// Defer nav override until after page load so homepage buttons still work
-setTimeout(function() {
-var _origNav = window.nav;
-window.nav = function(pg) {
-  if (typeof _origNav === 'function') _origNav.apply(this, arguments);
-  setTimeout(function() {
-    var page = document.getElementById(pg);
-    if (!page) return;
-    var cards = page.querySelectorAll('.card,.scene-card,.scene-row,.clip-card,.tl-clip-card,.proj-card,.feature-card,.dashboard-card');
-    cards.forEach(function(c, i) {
-      c.style.opacity = '0';
-      c.style.transform = 'translateY(16px)';
-      setTimeout(function() {
-        c.style.transition = 'opacity .35s cubic-bezier(.4,0,.2,1), transform .35s cubic-bezier(.4,0,.2,1)';
-        c.style.opacity    = '1';
-        c.style.transform  = 'translateY(0)';
-      }, i * 50);
-    });
-    if (pg === 'edit-pg') setTimeout(function() { aab_refreshTimeline(); }, 150);
-  }, 80);
-};
-}, 500);
+// Removed — nav hooks handled via aab_nav event
 
 // ── GSAP-style hardware-accelerated transition helper ─────────────────────
 function aab_fadeIn(el, delay) {
@@ -12766,7 +12745,7 @@ window.aps_generateSelected = async function() {
   if(typeof aps_saveSettings==='function') aps_saveSettings();
   APS.stopRequested=false; APS.generating=true;
   var sel=APS.scenes.filter(function(s){return s.selected&&s.status!=='done';});
-  if(!sel.length){if(typeof toast==='function')toast('No scenes selected','info');APS.generating=false;return;}
+  if(!sel.length){if(typeof toast==='function')toast('No scenes selected','info');APS.generating=false; return;}
   for(var i=0;i<sel.length&&!APS.stopRequested;i++) await window.aps_generateScene(sel[i].num-1);
   APS.generating=false;
 };
@@ -13381,6 +13360,8 @@ window.tl_setTool = function(tool) {
 var _origNav = window.nav;
 window.nav = function(pg) {
   if (typeof _origNav === 'function') _origNav.apply(this, arguments);
+  // Fire custom event so other code can hook into page changes safely
+  try { document.dispatchEvent(new CustomEvent('aab_nav', { detail: { page: pg } })); } catch(e) {}
   if (pg === 'record-pg') {
     setTimeout(function(){
       if (typeof wireStudioButtons === 'function') wireStudioButtons();
@@ -14376,7 +14357,7 @@ window.aps_loadPhoto = function(input) {
 
     // Upload to HeyGen to get talking_photo_id — this fixes the wrong face bug
     toast('Uploading presenter photo to HeyGen...', 'info');
-    fetch(API + '/api/heygen/upload-photo', {
+    fetch((window.API||API) + '/api/heygen/upload-photo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imageBase64: b64, mimeType: file.type || 'image/jpeg' })
@@ -14431,7 +14412,7 @@ window.aps_generateScene = async function(idx) {
 
     // Step 1: ElevenLabs voice
     if (typeof aps_showStep === 'function') aps_showStep(sc.num, 1, 3, 'Generating voice...');
-    var vr = await fetch(API + '/api/voice', {
+    var vr = await fetch((window.API||API) + '/api/voice', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -14465,7 +14446,7 @@ window.aps_generateScene = async function(idx) {
       duration:             sc.duration
     };
     
-    var pr = await fetch(API + '/api/presenter', {
+    var pr = await fetch((window.API||API) + '/api/presenter', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(presenterPayload)
@@ -14490,7 +14471,7 @@ window.aps_generateScene = async function(idx) {
       await new Promise(function(r){ setTimeout(r, pollMs); });
       
       try {
-        var sr = await fetch(API + '/api/presenter-status?taskId=' + encodeURIComponent(pd.taskId));
+        var sr = await fetch((window.API||API) + '/api/presenter-status?taskId=' + encodeURIComponent(pd.taskId));
         var stat = await sr.json();
         var elapsed = Math.round((i+1) * pollMs / 1000);
         
@@ -14565,7 +14546,7 @@ window.aps_generateAll = async function() {
 
   try {
     // Use the batch endpoint — ONE call for ALL scenes
-    var batchResp = await fetch(API + '/api/presenter/batch', {
+    var batchResp = await fetch((window.API||API) + '/api/presenter/batch', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -14613,7 +14594,7 @@ window.aps_generateAll = async function() {
       pollsRun++;
 
       try {
-        var sr   = await fetch(API + '/api/presenter-status?taskId=' + encodeURIComponent(taskId));
+        var sr   = await fetch((window.API||API) + '/api/presenter-status?taskId=' + encodeURIComponent(taskId));
         var stat = await sr.json();
         var elapsed = Math.round(pollsRun * 10);
 
@@ -14763,7 +14744,7 @@ function startSceneStatusPolling() {
       var token = APP.user.accessToken || APP.user.token || '';
       if (!token) return;
 
-      var r = await fetch(API + '/api/project/scenes-status?projectId=' + PROJECT.id, {
+      var r = await fetch((window.API||API) + '/api/project/scenes-status?projectId=' + PROJECT.id, {
         headers: { 'Authorization': 'Bearer ' + token }
       });
       if (!r.ok) return;
@@ -14833,7 +14814,7 @@ window.doPublish = async function() {
   if (pb) { pb.style.width = '10%'; pb.parentElement.style.display = ''; }
 
   try {
-    var r = await fetch(API + '/api/creatomate/sync', {
+    var r = await fetch((window.API||API) + '/api/creatomate/sync', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
       body: JSON.stringify({ projectId: PROJECT.id, resolution: '1080p', outputFormat: 'mp4' })
@@ -14849,7 +14830,7 @@ window.doPublish = async function() {
     var maxPolls = 24; // 24 × 5s = 2 min
     for (var i = 0; i < maxPolls; i++) {
       await new Promise(function(resolve){ setTimeout(resolve, 5000); });
-      var sr   = await fetch(API + '/api/creatomate/status/' + taskId);
+      var sr   = await fetch((window.API||API) + '/api/creatomate/status/' + taskId);
       var stat = await sr.json();
       var pct  = Math.min(95, 40 + (i/maxPolls)*55);
       if (pb) pb.style.width = pct + '%';
@@ -14901,20 +14882,218 @@ window.buildCreatomatePayload = function() {
 
 // Attach to nav('export-pg') — start polling when we reach export page
 var _origNav = window.nav;
-window.nav = function(pg) {
-  if (typeof _origNav === 'function') _origNav(pg);
-  if (pg === 'dashboard-pg' || pg === 'home') stopSceneStatusPolling();
-  if (pg === 'edit-pg' || pg === 'export-pg') {
-    syncSceneDB();
-    startSceneStatusPolling();
+// Scene DB sync hooks — attached to nav via event listener instead of override
+// This avoids breaking the nav chain
+document.addEventListener('aab_nav', function(e) {
+  var pg = e.detail && e.detail.page;
+  if (!pg) return;
+  if (pg === 'dashboard-pg' || pg === 'home') {
+    if (typeof stopSceneStatusPolling === 'function') stopSceneStatusPolling();
   }
-};
+  if (pg === 'edit-pg' || pg === 'export-pg') {
+    if (typeof syncSceneDB             === 'function') syncSceneDB();
+    if (typeof startSceneStatusPolling === 'function') startSceneStatusPolling();
+  }
+});
 
 // Start polling on page load if user already logged in
 setTimeout(function() {
   if (APP && APP.user && PROJECT && PROJECT.id) {
     syncSceneDB();
     startSceneStatusPolling();
+  }
+}, 3000);
+
+
+
+// ══════════════════════════════════════════════════════════════════
+// SOCKET.IO — Real-time remote control across devices
+// Replaces BroadcastChannel (same-device only) with proper WebSocket
+// Phone → Railway server → Desktop, any network, any device
+// ══════════════════════════════════════════════════════════════════
+
+(function initSocketIO() {
+  // Load Socket.IO client from CDN
+  if (window._aabSocket) return; // Already initialised
+  
+  var script = document.createElement('script');
+  script.src = 'https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js';
+  script.onload = function() { connectSocket(); };
+  script.onerror = function() { console.warn('Socket.IO CDN load failed — remote will use localStorage fallback'); };
+  document.head.appendChild(script);
+})();
+
+function connectSocket() {
+  if (window._aabSocket) return;
+  try {
+    var socket = io(API, {
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 10,
+      reconnectionDelay: 2000,
+    });
+
+    window._aabSocket = socket;
+
+    socket.on('connect', function() {
+      console.log('Socket.IO connected:', socket.id);
+      // Join project room immediately
+      if (PROJECT && PROJECT.id) {
+        socket.emit('join_project', { project_id: PROJECT.id });
+        socket.emit('subscribe_project', { project_id: PROJECT.id });
+      }
+      // Update remote connectivity dot
+      var dot = document.getElementById('remote-conn-dot');
+      if (dot) { dot.style.background = '#10b981'; dot.title = 'Socket.IO connected'; }
+      var tpDot = document.getElementById('tp-conn-dot');
+      if (tpDot) { tpDot.style.background = '#10b981'; tpDot.textContent = '● Connected'; }
+    });
+
+    socket.on('disconnect', function() {
+      console.log('Socket.IO disconnected');
+      var dot = document.getElementById('remote-conn-dot');
+      if (dot) { dot.style.background = '#f59e0b'; dot.title = 'Reconnecting...'; }
+    });
+
+    // ── RECEIVE remote control commands on desktop ─────────────────
+    // Phone sends → server → desktop receives here
+    socket.on('command_to_teleprompter', function(data) {
+      var action = data.action || data.cmd;
+      console.log('Remote command received:', action);
+
+      // Update remote page connectivity dot
+      var remoteDot = document.getElementById('remote-conn-dot');
+      if (remoteDot) remoteDot.style.background = '#10b981';
+
+      switch (action) {
+        case 'play':
+          if (window._aab_practice || window._aab_syncing) {
+            // Already running — ignore
+          } else if (typeof startPracticeMode === 'function') {
+            startPracticeMode();
+          }
+          break;
+        case 'pause':
+          if (typeof _aabTpStop === 'function') _aabTpStop();
+          break;
+        case 'slower':
+          var spd = document.getElementById('tp-spd-range');
+          if (spd) { spd.value = Math.max(30, parseInt(spd.value) - 10); spd.dispatchEvent(new Event('input')); }
+          break;
+        case 'faster':
+          var spd2 = document.getElementById('tp-spd-range');
+          if (spd2) { spd2.value = Math.min(300, parseInt(spd2.value) + 10); spd2.dispatchEvent(new Event('input')); }
+          break;
+        case 'next_scene':
+          if (typeof studioNext === 'function') studioNext();
+          break;
+        case 'prev_scene':
+          if (typeof studioPrev === 'function') studioPrev();
+          break;
+        case 'restart':
+          if (typeof _aabTpStop === 'function') _aabTpStop();
+          setTimeout(function() { if (typeof startPracticeMode==='function') startPracticeMode(); }, 200);
+          break;
+        case 'stop':
+          if (typeof _aabTpStop === 'function') _aabTpStop();
+          if (typeof stopRec        === 'function') stopRec();
+          break;
+        case 'set_speed':
+          var spd3 = document.getElementById('tp-spd-range');
+          if (spd3 && data.value) { spd3.value = data.value; spd3.dispatchEvent(new Event('input')); }
+          break;
+      }
+    });
+
+    // ── RECEIVE clip_ready — HeyGen video done, add to timeline ───
+    socket.on('clip_ready', function(data) {
+      console.log('Clip ready via WebSocket:', data.videoId);
+      if (!data.videoUrl) return;
+
+      // Check if this taskId is one we're waiting for
+      var waiting = false;
+      if (APS && APS.scenes) {
+        APS.scenes.forEach(function(sc) {
+          if (sc.taskId === data.taskId || sc.taskId === 'heygen-' + data.videoId) {
+            sc.status   = 'done';
+            sc.videoUrl = data.videoUrl;
+            waiting     = true;
+            if (typeof aps_updateSceneRow === 'function') aps_updateSceneRow(sc);
+          }
+        });
+      }
+
+      if (waiting || !PROJECT.clips['ai_' + data.videoId]) {
+        // Add to project clips
+        if (!PROJECT.clips) PROJECT.clips = {};
+        PROJECT.clips['ai_' + data.videoId] = {
+          url:       data.videoUrl,
+          videoUrl:  data.videoUrl,
+          sceneNum:  1,
+          source:    'ai-presenter',
+          sceneName: 'AI Presenter',
+          sceneType: 'BATCH',
+          duration:  30
+        };
+        if (typeof edit_buildPlaylist        === 'function') edit_buildPlaylist();
+        if (typeof edit_renderClipStrip      === 'function') edit_renderClipStrip();
+        if (typeof tl_buildTracksFromProject === 'function') tl_buildTracksFromProject();
+        if (typeof saveProject               === 'function') saveProject();
+        toast('✅ AI video ready — added to timeline', 'ok');
+      }
+    });
+
+    // ── TP state sync — keep phone speed slider in sync ───────────
+    socket.on('tp_state_update', function(data) {
+      if (data.wpm) {
+        var spd = document.getElementById('remote-spd');
+        if (spd) { spd.value = data.wpm; }
+        var spdLbl = document.getElementById('remote-spd-val');
+        if (spdLbl) spdLbl.textContent = data.wpm + 'wpm';
+      }
+    });
+
+    console.log('Socket.IO handlers registered');
+  } catch(e) {
+    console.warn('Socket.IO init error:', e.message);
+  }
+}
+
+// ── Override remoteSend to use Socket.IO (falls back to BroadcastChannel) ──
+window.remoteSend = function(action, value) {
+  var projectId = PROJECT && PROJECT.id;
+  
+  // Try Socket.IO first (cross-device)
+  if (window._aabSocket && window._aabSocket.connected && projectId) {
+    var payload = { project_id: projectId, action: action };
+    if (value !== undefined) payload.value = value;
+    window._aabSocket.emit('remote_control', payload);
+    console.log('remoteSend via Socket.IO:', action);
+    // Update connectivity dot
+    var dot = document.getElementById('remote-conn-dot');
+    if (dot) dot.style.background = '#10b981';
+    return;
+  }
+  
+  // Fallback: BroadcastChannel (same device only)
+  try {
+    var ch = new BroadcastChannel('aab_remote');
+    ch.postMessage({ action: action, value: value, ts: Date.now() });
+    ch.close();
+  } catch(e) {}
+  try { localStorage.setItem('aab_remote_cmd', JSON.stringify({ action, value, ts: Date.now() })); } catch(e) {}
+  console.log('remoteSend via BroadcastChannel (fallback):', action);
+};
+
+// ── Join project room when project changes ────────────────────────
+var _aabSocketProjectId = null;
+setInterval(function() {
+  if (!window._aabSocket || !window._aabSocket.connected) return;
+  var pid = PROJECT && PROJECT.id;
+  if (pid && pid !== _aabSocketProjectId) {
+    _aabSocketProjectId = pid;
+    window._aabSocket.emit('join_project',      { project_id: pid });
+    window._aabSocket.emit('subscribe_project', { project_id: pid });
+    console.log('Socket.IO: joined project room', pid);
   }
 }, 3000);
 
