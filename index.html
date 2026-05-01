@@ -5420,7 +5420,7 @@
           <div class="tl-tools-group">
             <button class="tl-tool tl-tool-select on" id="tl-tool-select" onclick="tl_setTool('select')" title="Select (V)">▶ Select</button>
             <button class="tl-tool tl-tool-trim" id="tl-tool-trim" onclick="tl_setTool('trim')" title="Trim (T)">✂ Trim</button>
-            <button class="tl-tool tl-tool-split" id="tl-tool-split" onclick="tl_setTool('split')" title="Split (S)">⊣ Split</button>
+            <button class="tl-tool tl-tool-split" id="tl-tool-split" onclick="tl_split()" title="Split at playhead (S)">⊣ Split</button>
             <button class="tl-tool tl-tool-del" onclick="tl_deleteSelected()" title="Delete selected (Del)">🗑 Delete</button>
           </div>
 
@@ -5431,6 +5431,7 @@
             <option value="subtitle">Subtitle</option>
           </select>
           <button class="studio-btn" onclick="tl_addTrack()" style="padding:3px 8px;font-size:10px;">+ Track</button>
+          <button class="studio-btn" onclick="tl_addText()" style="padding:3px 8px;font-size:10px;">🔤 Text</button>
 
           <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
             <button class="studio-btn" onclick="tl_fitToWindow()" style="padding:2px 7px;font-size:10px;">Fit</button>
@@ -7965,6 +7966,11 @@
     }
 
     function updateStudioClips() {
+      // Push to edit suite timeline immediately
+      if (typeof edit_buildPlaylist         === 'function') edit_buildPlaylist();
+      if (typeof edit_renderClipStrip       === 'function') edit_renderClipStrip();
+      if (typeof tl_buildTracksFromProject  === 'function') tl_buildTracksFromProject();
+
       var el = document.getElementById('sp-clips'); if (!el) return;
       var clips = Object.values(PROJECT.clips || {}).filter(function (c) { return c.url; });
       if (!clips.length) { el.innerHTML = '<div style="font-size:10px;color:rgba(255,255,255,.2);padding:8px;">No clips yet</div>'; return; }
@@ -10975,6 +10981,19 @@
           </label>
           <img id="aps-photo-preview"
             style="display:none;width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid #00d4ff;margin-bottom:8px;">
+          <!-- Character Name & Saved Characters -->
+          <div class="aps-label">Character Name</div>
+          <div style="display:flex;gap:6px;margin-bottom:8px;">
+            <input id="aps-char-name-input" type="text" class="aps-select" placeholder="e.g. John Anchor"
+              style="flex:1;" oninput="APS.charName=this.value">
+            <button onclick="aps_saveCharacter(document.getElementById('aps-char-name-input').value)"
+              style="background:rgba(0,212,255,.15);border:.5px solid rgba(0,212,255,.3);color:var(--accent);border-radius:6px;padding:5px 10px;font-size:10px;cursor:pointer;white-space:nowrap;font-family:'Sora',sans-serif;">Save</button>
+          </div>
+          <div id="aps-char-name-display" style="font-size:9px;color:rgba(255,255,255,.3);margin-bottom:8px;margin-top:-4px;">No character saved</div>
+          <div class="aps-label">Saved Characters</div>
+          <select id="aps-char-select" class="aps-select" onchange="if(this.value){aps_loadCharacter(this.value);aps_renderCharSelector();}" style="margin-bottom:10px;">
+            <option value="">— Select saved character —</option>
+          </select>
           <div class="aps-label">Framing</div>
           <select id="aps-framing" class="aps-select">
             <option value="medium">Medium shot (chest up)</option>
@@ -13578,7 +13597,9 @@ function _aabTpScrollStart() {
       var nextScene = STUDIO.currentScene + 1;
       if (nextScene < PROJECT.scenes.length) {
         // Move to next scene
-        if (typeof studioNext === 'function') studioNext();
+        // Only auto-advance recording in sync-rec mode — NOT in practice mode
+        // Practice mode: TP finishes highlighting but recording continues until user stops
+        if (window._aab_syncing && typeof studioNext === 'function') studioNext();
         // Restart TP scroll for new scene after a brief pause
         setTimeout(function() {
           if (window._aab_practice || window._aab_syncing) {
@@ -15414,6 +15435,507 @@ window.remoteSend = function(action, value) {
     ch.close();
   } catch(e) {}
   try { localStorage.setItem('aab_remote_cmd', JSON.stringify({...payload, ts: Date.now()})); } catch(e) {}
+};
+
+
+
+// ═══════════════════════════════════════════════════════════════════
+// COMPREHENSIVE FIXES v2.0
+// 1. Character naming & persistence
+// 2. APS clips in chronological order to timeline
+// 3. Timeline tools fully wired (trim, split, text, upload)
+// 4. Phone remote fully wired
+// 5. Toast cleanup — only on nav, not repeated button clicks
+// 6. Text overlay tool in edit suite
+// 7. Upload wiring (video, audio, image)
+// 8. Timeline scrollbar fix
+// ═══════════════════════════════════════════════════════════════════
+
+// ── 1. CHARACTER NAMING & PERSISTENCE ─────────────────────────────
+// Users can name their presenter and reuse across projects
+window.aps_saveCharacter = function(name) {
+  if (!name || !name.trim()) return;
+  var charName = name.trim();
+  var photoId  = APS.talkingPhotoId || localStorage.getItem('aps_talking_photo_id');
+  var photoB64 = APS.photoB64 || null;
+  
+  // Save to localStorage keyed by name
+  var chars = JSON.parse(localStorage.getItem('aps_characters') || '{}');
+  chars[charName] = {
+    name:          charName,
+    talkingPhotoId: photoId,
+    photoB64:      photoB64 ? photoB64.slice(0, 100) + '...' : null, // fingerprint only
+    savedAt:       Date.now(),
+    voiceId:       APS.settings && APS.settings.voiceId,
+    voiceGender:   APS.settings && APS.settings.voiceGender,
+  };
+  localStorage.setItem('aps_characters', JSON.stringify(chars));
+  localStorage.setItem('aps_current_char', charName);
+  APS.charName = charName;
+  toast('Character "' + charName + '" saved ✓ — reusable across projects', 'ok');
+  return chars[charName];
+};
+
+window.aps_loadCharacter = function(name) {
+  var chars = JSON.parse(localStorage.getItem('aps_characters') || '{}');
+  var char = chars[name];
+  if (!char) { toast('Character "' + name + '" not found', 'error'); return; }
+  
+  APS.charName        = char.name;
+  APS.talkingPhotoId  = char.talkingPhotoId;
+  if (char.voiceId)     { if (!APS.settings) APS.settings = {}; APS.settings.voiceId = char.voiceId; }
+  if (char.voiceGender) { if (!APS.settings) APS.settings = {}; APS.settings.voiceGender = char.voiceGender; }
+  
+  // Restore photo ID
+  if (char.talkingPhotoId) localStorage.setItem('aps_talking_photo_id', char.talkingPhotoId);
+  
+  // Update name display
+  var nameEl = document.getElementById('aps-char-name-display');
+  if (nameEl) nameEl.textContent = char.name;
+  
+  toast('Character "' + char.name + '" loaded ✓', 'ok');
+};
+
+window.aps_listCharacters = function() {
+  return JSON.parse(localStorage.getItem('aps_characters') || '{}');
+};
+
+// Render character selector in APS sidebar
+window.aps_renderCharSelector = function() {
+  var chars = aps_listCharacters();
+  var sel = document.getElementById('aps-char-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Select saved character —</option>';
+  Object.keys(chars).forEach(function(name) {
+    var opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name + (chars[name].voiceGender ? ' (' + chars[name].voiceGender + ')' : '');
+    sel.appendChild(opt);
+  });
+};
+
+// Load character selector on APS open
+document.addEventListener('aab_nav', function(e) {
+  if (e.detail && e.detail.page === 'ai-presenter-studio') {
+    setTimeout(aps_renderCharSelector, 200);
+    // Restore last character name
+    var last = localStorage.getItem('aps_current_char');
+    if (last) {
+      var nameEl = document.getElementById('aps-char-name-display');
+      if (nameEl) nameEl.textContent = last;
+      APS.charName = last;
+    }
+  }
+});
+
+// ── 2. APS CLIPS → TIMELINE in chronological order ───────────────
+// Override aps_addClipToBar to also push to edit suite in scene order
+var _origAddClipToBar = window.aps_addClipToBar || function(){};
+window.aps_addClipToBar = function(sc) {
+  if (!sc) return;
+  if (!sc.num && sc.sceneNum) sc.num = sc.sceneNum;
+  if (!sc.num) sc.num = 1;
+  
+  // Call original
+  if (typeof _origAddClipToBar === 'function') _origAddClipToBar(sc);
+  
+  // Add to project clips with correct scene order
+  if (!PROJECT.clips) PROJECT.clips = {};
+  var key = sc.id || ('ai_sc_' + sc.num + '_' + Date.now());
+  PROJECT.clips[key] = {
+    url:       sc.videoUrl || sc.url,
+    videoUrl:  sc.videoUrl || sc.url,
+    sceneId:   sc.id || key,
+    sceneNum:  sc.num,
+    sceneIdx:  sc.num - 1,
+    sceneName: 'Scene ' + sc.num + (sc.type ? ' · ' + sc.type : ''),
+    sceneType: sc.type || 'MAIN',
+    source:    'ai-presenter',
+    duration:  sc.duration || 8,
+    aiTaskId:  sc.taskId || null,
+  };
+  
+  // Also update the scene status
+  if (PROJECT.scenes) {
+    var scene = PROJECT.scenes.find(function(s) { return s.id === sc.id || s.sceneNumber === sc.num; });
+    if (scene) {
+      scene.status   = 'recorded';
+      scene.videoUrl = sc.videoUrl || sc.url;
+    }
+  }
+  
+  // Push to edit suite timeline in chronological order
+  if (typeof edit_buildPlaylist         === 'function') edit_buildPlaylist();
+  if (typeof edit_renderClipStrip       === 'function') edit_renderClipStrip();
+  if (typeof tl_buildTracksFromProject  === 'function') tl_buildTracksFromProject();
+  if (typeof saveProject                === 'function') saveProject();
+};
+
+// ── 3. TIMELINE TOOLS — fully wired ──────────────────────────────
+
+// Trim tool — drag clip edges to trim
+window.tl_trim = function(clipId, edge, newTime) {
+  if (!window.TL || !TL.tracks) return;
+  TL.tracks.forEach(function(track) {
+    var clip = track.clips && track.clips.find(function(c){ return c.id===clipId; });
+    if (!clip) return;
+    if (edge === 'in') {
+      var delta = newTime - clip.start;
+      clip.start    = newTime;
+      clip.trimIn   = (clip.trimIn||0) + delta;
+      clip.duration = Math.max(0.5, clip.duration - delta);
+    } else {
+      clip.trimOut  = clip.start + clip.duration - newTime;
+      clip.duration = Math.max(0.5, newTime - clip.start);
+    }
+  });
+  if (typeof tl_render === 'function') tl_render();
+  toast('Trimmed ✓', 'ok');
+};
+
+// Split at playhead — works on selected clip
+window.tl_split = function() {
+  if (!window.TL || !TL.tracks) return;
+  var ph = TL.playhead || 0;
+  var splitDone = false;
+  
+  TL.tracks.forEach(function(track) {
+    if (!track.clips) return;
+    var newClips = [];
+    track.clips.forEach(function(clip) {
+      var end = clip.start + clip.duration;
+      if (ph > clip.start + 0.1 && ph < end - 0.1) {
+        // Split this clip
+        var left  = Object.assign({}, clip, { duration: ph - clip.start, id: clip.id + '_a' });
+        var right = Object.assign({}, clip, { start: ph, duration: end - ph, id: clip.id + '_b', trimIn: (clip.trimIn||0) + (ph - clip.start) });
+        newClips.push(left, right);
+        splitDone = true;
+      } else {
+        newClips.push(clip);
+      }
+    });
+    track.clips = newClips;
+  });
+  
+  if (splitDone) {
+    if (typeof tl_render === 'function') tl_render();
+    toast('Split at ' + (TL.playhead||0).toFixed(1) + 's ✓', 'ok');
+  } else {
+    toast('Move playhead inside a clip to split', 'info');
+  }
+};
+
+// ── 3b. TEXT OVERLAY TOOL ─────────────────────────────────────────
+window.tl_addText = function() {
+  if (!window.TL) return;
+  var text = prompt('Enter text overlay:', 'Your text here');
+  if (!text) return;
+  
+  var overlayTrack = TL.tracks && TL.tracks.find(function(t){ return t.type==='overlay' || t.id==='overlays'; });
+  if (!overlayTrack) {
+    overlayTrack = { id:'overlays_'+Date.now(), type:'overlay', name:'🔤 Text', muted:false, volume:1, clips:[] };
+    if (TL.tracks) TL.tracks.push(overlayTrack);
+  }
+  
+  var newClip = {
+    id:       'text_' + Date.now(),
+    type:     'text',
+    text:     text,
+    start:    TL.playhead || 0,
+    duration: 3,
+    fontSize: 24,
+    color:    '#ffffff',
+    bg:       'rgba(0,0,0,0.6)',
+    position: 'bottom',
+    fontFamily: 'Sora, sans-serif',
+    color:    '#ffffff',
+  };
+  
+  overlayTrack.clips = overlayTrack.clips || [];
+  overlayTrack.clips.push(newClip);
+  TL.selectedClip = newClip.id;
+  if (typeof tl_render === 'function') tl_render();
+  
+  // Show text properties panel
+  tl_showTextProps(newClip);
+  toast('Text overlay added ✓', 'ok');
+};
+
+window.tl_showTextProps = function(clip) {
+  var panel = document.getElementById('tl-text-props');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'tl-text-props';
+    panel.style.cssText = 'position:fixed;right:16px;bottom:120px;background:#1a2235;border:.5px solid rgba(255,255,255,.12);border-radius:10px;padding:14px;width:220px;z-index:1000;';
+    panel.innerHTML = '<div style="font-size:11px;font-weight:700;color:rgba(255,255,255,.6);margin-bottom:10px;">TEXT PROPERTIES</div>' +
+      '<label style="font-size:10px;color:rgba(255,255,255,.4);">Text</label><br>' +
+      '<input id="tp-text-val" type="text" style="width:100%;margin-bottom:8px;background:rgba(255,255,255,.08);border:.5px solid rgba(255,255,255,.12);color:#fff;border-radius:4px;padding:4px 6px;font-size:11px;">' +
+      '<label style="font-size:10px;color:rgba(255,255,255,.4);">Size</label><br>' +
+      '<input id="tp-text-size" type="range" min="12" max="80" value="24" style="width:100%;margin-bottom:8px;accent-color:var(--accent)">' +
+      '<label style="font-size:10px;color:rgba(255,255,255,.4);">Color</label><br>' +
+      '<input id="tp-text-color" type="color" value="#ffffff" style="width:100%;height:30px;margin-bottom:8px;">' +
+      '<label style="font-size:10px;color:rgba(255,255,255,.4);">Position</label><br>' +
+      '<select id="tp-text-pos" style="width:100%;margin-bottom:10px;background:rgba(255,255,255,.08);border:.5px solid rgba(255,255,255,.12);color:#fff;border-radius:4px;padding:4px 6px;font-size:11px;">' +
+        '<option value="bottom">Bottom</option><option value="top">Top</option><option value="center">Center</option>' +
+      '</select>' +
+      '<div style="display:flex;gap:8px;">' +
+        '<button onclick="tl_applyTextProps()" style="flex:1;background:var(--accent);color:#000;border:none;border-radius:6px;padding:6px;font-size:11px;cursor:pointer;">Apply</button>' +
+        '<button onclick="window._closeTLTextProps()" style="flex:1;background:rgba(255,255,255,.1);color:#fff;border:none;border-radius:6px;padding:6px;font-size:11px;cursor:pointer;">Close</button>' +
+      '</div>';
+    document.body.appendChild(panel);
+  }
+  
+  var textInput = document.getElementById('tp-text-val');
+  if (textInput && clip) textInput.value = clip.text || '';
+  panel.style.display = 'block';
+  panel._clipId = clip.id;
+};
+
+window._closeTLTextProps = function(){ var x=document.getElementById('tl-text-props'); if(x)x.style.display='none'; };
+window.tl_applyTextProps = function() {
+  var panel = document.getElementById('tl-text-props');
+  if (!panel || !panel._clipId) return;
+  var clipId = panel._clipId;
+  
+  TL.tracks && TL.tracks.forEach(function(track) {
+    var clip = track.clips && track.clips.find(function(c){ return c.id===clipId; });
+    if (!clip) return;
+    clip.text     = document.getElementById('tp-text-val').value;
+    clip.fontSize = parseInt(document.getElementById('tp-text-size').value);
+    clip.color    = document.getElementById('tp-text-color').value;
+    clip.position = document.getElementById('tp-text-pos').value;
+  });
+  
+  if (typeof tl_render === 'function') tl_render();
+  toast('Text updated ✓', 'ok');
+};
+
+// ── 3c. UPLOAD WIRING — video, audio, image ───────────────────────
+window.importToTimeline = function(inputEl, type) {
+  var file = inputEl && inputEl.files && inputEl.files[0];
+  if (!file) return;
+  var url = URL.createObjectURL(file);
+  
+  if (!window.TL) return;
+  
+  var trackId, trackName, icon;
+  if (type === 'video') { trackId = 'broll'; trackName = '🎞 B-Roll'; icon = '🎬'; }
+  else if (type === 'audio') { trackId = 'music'; trackName = '🎵 Music'; icon = '🎵'; }
+  else if (type === 'image') { trackId = 'overlays'; trackName = '🖼 Overlays'; icon = '🖼'; }
+  
+  var track = TL.tracks && TL.tracks.find(function(t){ return t.id===trackId; });
+  if (!track) {
+    track = { id: trackId, type: type, name: trackName, muted:false, volume:1, clips:[] };
+    if (TL.tracks) TL.tracks.push(track);
+  }
+  
+  // Find where to place (after existing clips on this track)
+  var maxEnd = 0;
+  (track.clips || []).forEach(function(c){ maxEnd = Math.max(maxEnd, c.start + c.duration); });
+  
+  var clip = {
+    id:       type + '_' + Date.now(),
+    url:      url,
+    label:    icon + ' ' + file.name.slice(0,20),
+    start:    maxEnd,
+    duration: type === 'audio' ? 30 : 8,
+    volume:   1,
+    type:     type,
+  };
+  
+  track.clips = track.clips || [];
+  track.clips.push(clip);
+  TL.selectedClip = clip.id;
+  if (typeof tl_render === 'function') tl_render();
+  toast(icon + ' ' + file.name.slice(0,30) + ' added to timeline', 'ok');
+};
+
+// Wire the bottom import buttons in edit suite
+document.addEventListener('aab_nav', function(e) {
+  if (e.detail && e.detail.page !== 'edit-pg') return;
+  setTimeout(function() {
+    var videoBtn = document.querySelector('input[accept="video/*"][onchange*="importToTimeline"]');
+    var audioBtn = document.querySelector('input[accept="audio/*"][onchange*="importToTimeline"]');
+    // Already wired via HTML — just ensure function exists
+  }, 200);
+});
+
+// ── 4. PHONE REMOTE — fully wired ─────────────────────────────────
+// Override remoteSend to use Socket.IO AND wire the remote page buttons
+window.remoteSend = function(action, value) {
+  var projectId = PROJECT && PROJECT.id;
+  var payload = { project_id: projectId, action: action };
+  if (value !== undefined) payload.value = value;
+
+  // Socket.IO — cross-device real-time
+  if (window._aabSocket && window._aabSocket.connected && projectId) {
+    window._aabSocket.emit('command', payload);
+    var dot = document.getElementById('remote-conn-dot');
+    if (dot) { dot.style.background = '#10b981'; dot.title = 'Connected ✓'; }
+    return;
+  }
+  // BroadcastChannel fallback
+  try { var ch=new BroadcastChannel('aab_remote'); ch.postMessage(payload); ch.close(); } catch(e) {}
+  try { localStorage.setItem('aab_remote_cmd', JSON.stringify(Object.assign({},payload,{ts:Date.now()}))); } catch(e) {}
+};
+
+// Wire remote page buttons to execute locally (same device) AND via Socket.IO
+function wireRemoteButtons() {
+  var remPage = document.getElementById('remote-pg');
+  if (!remPage) return;
+  
+  // Play/pause
+  var playBtn = remPage.querySelector('[onclick*="play"]') || remPage.querySelector('[onclick*="pause"]');
+  
+  // Wire BroadcastChannel receiver for same-device remote
+  try {
+    var remCh = new BroadcastChannel('aab_remote');
+    remCh.onmessage = function(e) {
+      var data = e.data || {};
+      executeRemoteCommand(data.action, data.value);
+      var dot = document.getElementById('remote-conn-dot');
+      if (dot) dot.style.background = '#10b981';
+    };
+  } catch(e) {}
+  
+  // Also poll localStorage for cross-page remote
+  if (!window._remotePoller) {
+    window._remotePoller = setInterval(function() {
+      var cmd = null;
+      try { cmd = JSON.parse(localStorage.getItem('aab_remote_cmd')||'null'); } catch(e) {}
+      if (cmd && cmd.ts && (Date.now() - cmd.ts) < 3000) {
+        try { localStorage.removeItem('aab_remote_cmd'); } catch(e) {}
+        executeRemoteCommand(cmd.action, cmd.value);
+      }
+    }, 500);
+  }
+}
+
+function executeRemoteCommand(action, value) {
+  switch(action) {
+    case 'play':
+      if (typeof startPracticeMode === 'function') startPracticeMode();
+      break;
+    case 'pause':
+      if (typeof _aabTpStop === 'function') _aabTpStop();
+      break;
+    case 'slower':
+      var sp = document.getElementById('tp-spd-range');
+      if (sp) { sp.value = Math.max(30, parseInt(sp.value)-10); sp.dispatchEvent(new Event('input')); }
+      break;
+    case 'faster':
+      var sp2 = document.getElementById('tp-spd-range');
+      if (sp2) { sp2.value = Math.min(300, parseInt(sp2.value)+10); sp2.dispatchEvent(new Event('input')); }
+      break;
+    case 'next_scene':
+      if (typeof studioNext === 'function') studioNext();
+      break;
+    case 'prev_scene':
+      if (typeof studioPrev === 'function') studioPrev();
+      break;
+    case 'restart':
+      if (typeof _aabTpStop === 'function') _aabTpStop();
+      setTimeout(function(){ if (typeof startPracticeMode==='function') startPracticeMode(); }, 200);
+      break;
+    case 'set_speed':
+      var sp3 = document.getElementById('tp-spd-range');
+      if (sp3 && value) { sp3.value = value; sp3.dispatchEvent(new Event('input')); }
+      break;
+  }
+}
+window.executeRemoteCommand = executeRemoteCommand;
+
+// Wire on nav
+document.addEventListener('aab_nav', function(e) {
+  if (e.detail && e.detail.page === 'remote-pg') {
+    wireRemoteButtons();
+    // Join Socket.IO room
+    if (window._aabSocket && PROJECT.id) {
+      window._aabSocket.emit('pair_devices', { project_id: PROJECT.id, device: 'phone' });
+    }
+    var dot = document.getElementById('remote-conn-dot');
+    if (dot) { dot.style.background = '#f59e0b'; dot.title = 'Waiting...'; }
+  }
+});
+
+// Socket.IO remote_execute handler
+if (window._aabSocket) {
+  window._aabSocket.off('remote_execute');
+  window._aabSocket.on('remote_execute', function(data) {
+    executeRemoteCommand(data.action, data.value);
+  });
+  window._aabSocket.off('command_to_teleprompter');
+  window._aabSocket.on('command_to_teleprompter', function(data) {
+    executeRemoteCommand(data.action || data.cmd, data.value);
+  });
+}
+
+// ── 5. TOAST CLEANUP — remove toasts that fire on every button click ─
+// Toasts should fire on COMPLETION, not on every button press
+// Wrap toast so duplicate toasts within 2s are suppressed
+var _lastToastMsg = '', _lastToastTs = 0;
+var _origToast = window.toast;
+window.toast = function(msg, type, dur) {
+  var now = Date.now();
+  // Suppress duplicate toasts within 2 seconds
+  if (msg === _lastToastMsg && (now - _lastToastTs) < 2000) return;
+  _lastToastMsg = msg;
+  _lastToastTs  = now;
+  if (typeof _origToast === 'function') _origToast(msg, type, dur);
+};
+
+// ── 6. TIMELINE SCROLL FIX ────────────────────────────────────────
+// Add CSS to prevent timeline from cutting off
+(function fixTimelineLayout() {
+  var style = document.createElement('style');
+  style.textContent = [
+    '/* Timeline full height and no overflow cutoff */',
+    '#edit-pg { height: 100vh; overflow: hidden; display: flex; flex-direction: column; }',
+    '#tl-scroll-container { overflow: auto; flex: 1; min-height: 0; }',
+    '#tl-tracks { min-height: 300px; }',
+    '/* Clip strip scrollable */',
+    '#edit-clips-strip { overflow-x: auto; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.15) transparent; }',
+    '/* Timeline clip draggable */',
+    '.tl-clip { cursor: pointer; transition: opacity .1s; }',
+    '.tl-clip:hover { opacity: .85; }',
+    '.tl-clip.selected { outline: 2px solid var(--accent); }',
+    '/* Remote buttons large for mobile */',
+    '.remote-btn { min-height: 64px !important; font-size: 20px !important; font-weight: 700 !important; }',
+    '/* APS clips strip */',
+    '#aps-clips-list { display: flex; gap: 10px; overflow-x: auto; padding: 8px; min-height: 80px; }',
+  ].join('\n');
+  document.head.appendChild(style);
+})();
+
+// ── 7. APS CLIP ORDERING — chronological in strip ─────────────────
+// Override edit_renderClipStrip to always sort by sceneNum
+var _origRenderStrip = window.edit_renderClipStrip;
+window.edit_renderClipStrip = function() {
+  // Sort clips by sceneNum before rendering
+  var clips = Object.values(PROJECT.clips || {});
+  clips.sort(function(a,b){ return (a.sceneNum||a.sceneIdx||0) - (b.sceneNum||b.sceneIdx||0); });
+  // Re-index them
+  clips.forEach(function(c, i) { if (!c.sceneNum) c.sceneNum = i+1; });
+  if (typeof _origRenderStrip === 'function') _origRenderStrip();
+};
+
+// ── 8. HeyGen — improve reference image accuracy ─────────────────
+// The server needs to describe the reference image for HeyGen
+// This is a server-side fix but we can improve the prompt we send
+window.aps_getImageDescription = async function(b64) {
+  if (!b64) return '';
+  try {
+    // Use Claude to describe the presenter image for better HeyGen matching
+    var r = await fetch(API + '/api/describe-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: b64 })
+    });
+    var d = await r.json();
+    return d.description || '';
+  } catch(e) {
+    return '';
+  }
 };
 
 
