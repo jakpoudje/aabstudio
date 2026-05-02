@@ -4997,11 +4997,34 @@
               assign</div>
             <div class="sb-tabs">
               <button class="sb-tab on" onclick="sidebarTab('library',this)">Library</button>
+              <button class="sb-tab" onclick="sidebarTab('my-assets',this)">My Assets</button>
               <button class="sb-tab" onclick="sidebarTab('upload',this)">Upload</button>
             </div>
           </div>
           <div class="sb-body">
             <div id="asset-library-panel"></div>
+            
+            <!-- MY ASSETS TAB — images, audio, video, SFX, generated AI clips -->
+            <div id="my-assets-panel" style="display:none;">
+              <div style="padding:8px 0 4px;font-size:9px;color:rgba(255,255,255,.3);text-transform:uppercase;letter-spacing:.05em;">Upload to Asset Library</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">
+                <label style="background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);border-radius:8px;padding:8px;text-align:center;cursor:pointer;font-size:10px;color:rgba(255,255,255,.6);">
+                  🖼 Image<input type="file" style="display:none;" accept="image/*" onchange="asset_upload(this.files[0],'image')">
+                </label>
+                <label style="background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);border-radius:8px;padding:8px;text-align:center;cursor:pointer;font-size:10px;color:rgba(255,255,255,.6);">
+                  🎵 Audio<input type="file" style="display:none;" accept="audio/*" onchange="asset_upload(this.files[0],'audio')">
+                </label>
+                <label style="background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);border-radius:8px;padding:8px;text-align:center;cursor:pointer;font-size:10px;color:rgba(255,255,255,.6);">
+                  🎬 Video<input type="file" style="display:none;" accept="video/*" onchange="asset_upload(this.files[0],'video')">
+                </label>
+                <label style="background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);border-radius:8px;padding:8px;text-align:center;cursor:pointer;font-size:10px;color:rgba(255,255,255,.6);">
+                  🎤 SFX<input type="file" style="display:none;" accept="audio/*" onchange="asset_upload(this.files[0],'sfx')">
+                </label>
+              </div>
+              <div style="font-size:9px;color:rgba(255,255,255,.3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Saved Assets</div>
+              <div id="my-assets-grid"></div>
+            </div>
+            
             <div id="asset-upload-panel" style="display:none;">
               <div class="upload-zone" style="margin-bottom:10px;"
                 onclick="document.getElementById('f-assets').click()">
@@ -5459,8 +5482,10 @@
           <input type="range" id="music-vol" min="0" max="100" value="30" style="width:60px;accent-color:var(--gold);" oninput="setMusicVol(this.value)">
           <span id="music-vol-val" style="font-size:10px;color:var(--gold);min-width:26px;">30%</span>
           <div style="width:.5px;height:16px;background:rgba(255,255,255,.08);"></div>
-          <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:2px 8px;">🎵 Add music<input type="file" style="display:none;" accept="audio/*" onchange="loadBgMusic(this)"></label>
+          <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:2px 8px;">🎵 Add music<input type="file" style="display:none;" accept="audio/*" onchange="importToTimeline(this,'audio')"></label>
           <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:2px 8px;">🎬 Import video<input type="file" style="display:none;" accept="video/*" onchange="importToTimeline(this,'video')"></label>
+          <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:2px 8px;">🖼 Import image<input type="file" style="display:none;" accept="image/*" onchange="importToTimeline(this,'image')"></label>
+          <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:2px 8px;">🎤 Import SFX<input type="file" style="display:none;" accept="audio/*" onchange="importToTimeline(this,'sfx')"></label>
           <div style="width:.5px;height:16px;background:rgba(255,255,255,.08);"></div>
           <button class="studio-btn" onclick="tl_toggleSubtitles()" id="tl-sub-btn" style="font-size:10px;color:#a78bfa;border-color:rgba(139,92,246,.25);">💬 Subtitles: OFF</button>
         </div>
@@ -11120,9 +11145,19 @@
 
     <!-- Bottom: Generated clips timeline strip -->
     <div id="aps-clips-bar"
-      style="height:80px;background:#0d1117;border-top:.5px solid #1f2937;display:flex;align-items:center;padding:0 14px;gap:8px;overflow-x:auto;flex-shrink:0;">
-      <span style="font-size:11px;color:#4b5563;white-space:nowrap;margin-right:4px;">GENERATED CLIPS</span>
-      <div id="aps-clips-list" style="display:flex;gap:8px;align-items:center;"></div>
+      style="height:90px;background:#0d1117;border-top:.5px solid #1f2937;display:flex;align-items:center;padding:0 12px;gap:10px;flex-shrink:0;">
+      <div style="flex-shrink:0;display:flex;flex-direction:column;gap:4px;">
+        <span style="font-size:9px;color:#4b5563;text-transform:uppercase;letter-spacing:.05em;">Generated Clips</span>
+        <button id="aps-go-edit-btn" onclick="aps_goToEditSuite()"
+          style="display:none;background:#10b981;color:#fff;border:none;border-radius:7px;padding:6px 14px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Sora',sans-serif;">
+          🎬 Go to Edit Suite →
+        </button>
+        <button onclick="nav('scenes-pg')"
+          style="background:rgba(255,255,255,.06);color:rgba(255,255,255,.5);border:.5px solid rgba(255,255,255,.1);border-radius:6px;padding:3px 8px;font-size:10px;cursor:pointer;font-family:'Sora',sans-serif;">
+          ← Scenes
+        </button>
+      </div>
+      <div id="aps-clips-list" style="flex:1;display:flex;gap:8px;align-items:center;overflow-x:auto;min-height:70px;"></div>
       <div id="aps-clips-empty" style="font-size:11px;color:#374151;">No clips yet — generate scenes above</div>
     </div>
   </div>
@@ -14476,7 +14511,7 @@ window.aps_generateScene = async function(idx) {
     if (typeof aps_showStep === 'function') aps_showStep(sc.num, 3, 3, 'Rendering video (2-8 min)...');
     
     var pollMs   = 10000;
-    var maxPolls = 72; // 12 minutes max
+    var maxPolls = 180; // 180 × 10s = 30 min
     
     for (var i = 0; i < maxPolls && !APS.stopRequested; i++) {
       await new Promise(function(r){ setTimeout(r, pollMs); });
@@ -14597,7 +14632,7 @@ window.aps_generateAll = async function() {
     });
 
     // Poll for completion — batch result is ONE video containing all scenes
-    var maxPolls = 90;  // 90 × 10s = 15 min
+    var maxPolls = 270; // 270 × 10s = 45 min — HeyGen 22 scenes takes 20-40 min
     var pollsRun = 0;
 
     for (var i = 0; i < maxPolls && !APS.stopRequested; i++) {
@@ -16369,6 +16404,812 @@ document.addEventListener('aab_nav', function(e) {
     if (APP && APP.user) asset_loadLibrary();
   }
 });
+
+
+
+// ═══════════════════════════════════════════════════════════════════
+// CRITICAL FIXES — Session May 2
+// 1. AI Presenter clips → Edit Suite (separate path, never mixed)
+// 2. My Assets tab (images, audio, video, SFX) — persistent
+// 3. Uploads actually work
+// 4. Timeline horizontal scroll
+// 5. Generated videos never lost on re-generation
+// 6. Back to Scenes from both studios
+// ═══════════════════════════════════════════════════════════════════
+
+// ── 1. AI PRESENTER → EDIT SUITE (SEPARATE PATH) ─────────────────
+// APS generates videos → stored as APS_CLIPS (separate from recording clips)
+// When user clicks "Go to Edit Suite" from APS → loads ONLY APS clips
+// When user goes to Edit Suite from Recording Studio → loads ONLY recording clips
+// The two paths NEVER mix
+
+window.APS_CLIPS = window.APS_CLIPS || {}; // AI-generated clips only
+window.REC_CLIPS = window.REC_CLIPS || {}; // Recording studio clips only
+
+// Override aps_addClipToBar to store in APS_CLIPS and show "Go to Edit Suite"
+var _baseAddClipToBar = window.aps_addClipToBar || function(){};
+window.aps_addClipToBar = function(sc) {
+  if (!sc) return;
+  if (!sc.num && sc.sceneNum) sc.num = sc.sceneNum;
+  if (!sc.num) sc.num = Object.keys(APS_CLIPS).length + 1;
+  
+  var url = sc.videoUrl || sc.url;
+  if (!url) return;
+  
+  var key = sc.id || ('aps_' + sc.num + '_' + Date.now());
+  
+  // Store in APS_CLIPS (separate from recording)
+  APS_CLIPS[key] = {
+    url, videoUrl: url,
+    sceneId:   sc.id || key,
+    sceneNum:  sc.num,
+    sceneName: 'Scene ' + sc.num + (sc.type ? ' · ' + sc.type : ''),
+    sceneType: sc.type || 'MAIN',
+    source:    'ai-presenter',
+    duration:  sc.duration || 8,
+    narration: sc.narration || '',
+  };
+  
+  // ALSO save to persistent storage so videos survive re-generation
+  try {
+    var saved = JSON.parse(localStorage.getItem('aab_aps_clips') || '{}');
+    saved[key] = APS_CLIPS[key];
+    // Keep last 100 generated clips to avoid storage overflow
+    var savedKeys = Object.keys(saved);
+    if (savedKeys.length > 100) {
+      var oldest = savedKeys.sort((a,b) => (saved[a].savedAt||0)-(saved[b].savedAt||0)).slice(0,50);
+      oldest.forEach(k => delete saved[k]);
+    }
+    APS_CLIPS[key].savedAt = Date.now();
+    saved[key] = APS_CLIPS[key];
+    localStorage.setItem('aab_aps_clips', JSON.stringify(saved));
+  } catch(e) {}
+  
+  // Update APS bottom clips strip
+  var bar = document.getElementById('aps-clips-list');
+  var empty = document.getElementById('aps-clips-empty');
+  if (empty) empty.style.display = 'none';
+  if (bar) {
+    var existing = bar.querySelector('[data-scene-num="'+sc.num+'"]');
+    if (existing) existing.remove();
+    
+    var clip = document.createElement('div');
+    clip.dataset.sceneNum = sc.num;
+    clip.style.cssText = 'flex-shrink:0;width:110px;border-radius:8px;overflow:hidden;cursor:pointer;border:2px solid #10b981;background:#0d1117;';
+    
+    var vid = document.createElement('video');
+    vid.src = url;
+    vid.style.cssText = 'width:100%;height:65px;object-fit:cover;display:block;';
+    vid.muted = true;
+    vid.onloadedmetadata = function(){ vid.currentTime = 0.5; };
+    clip.appendChild(vid);
+    
+    var lbl = document.createElement('div');
+    lbl.style.cssText = 'padding:3px 6px;background:rgba(16,185,129,.9);font-size:9px;font-weight:700;color:#fff;';
+    lbl.textContent = 'Scene ' + sc.num;
+    clip.appendChild(lbl);
+    
+    clip.onclick = function() { 
+      var v = document.getElementById('edit-video');
+      if (v) { v.src = url; v.style.display='block'; v.load(); }
+      var noClips = document.getElementById('edit-no-clips');
+      if (noClips) noClips.style.display = 'none';
+    };
+    bar.appendChild(clip);
+  }
+  
+  // Show "Go to Edit Suite" button in APS topbar
+  var goBtn = document.getElementById('aps-go-edit-btn');
+  if (!goBtn) {
+    goBtn = document.createElement('button');
+    goBtn.id = 'aps-go-edit-btn';
+    goBtn.style.cssText = 'background:#10b981;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;margin-left:8px;';
+    goBtn.textContent = '🎬 Go to Edit Suite →';
+    goBtn.onclick = function() { aps_goToEditSuite(); };
+    var topbar = document.querySelector('#ai-presenter-studio .aps-topbar, #ai-presenter-studio > div:first-child');
+    if (topbar) topbar.appendChild(goBtn);
+  }
+  goBtn.style.display = 'block';
+  var count = Object.keys(APS_CLIPS).length;
+  goBtn.textContent = '🎬 Go to Edit Suite (' + count + ' clips) →';
+  
+  // Also update the scene status in the list
+  if (sc.id && APS.scenes) {
+    var scene = APS.scenes.find(function(s){ return s.id === sc.id; });
+    if (scene) { scene.status = 'done'; scene.videoUrl = url; }
+  }
+  if (typeof aps_updateSceneRow === 'function' && sc.num) {
+    var scene2 = APS.scenes && APS.scenes[sc.num - 1];
+    if (scene2) { scene2.status = 'done'; if (typeof aps_updateSceneRow==='function') aps_updateSceneRow(scene2); }
+  }
+};
+
+// Navigate from APS to Edit Suite with ONLY AI clips (not recording clips)
+window.aps_goToEditSuite = function() {
+  // Load APS_CLIPS into the edit suite — clear recording clips
+  // Save recording clips first
+  window.REC_CLIPS = Object.assign({}, window.REC_CLIPS, 
+    Object.fromEntries(Object.entries(PROJECT.clips||{}).filter(([k,v])=> v.source==='recording'))
+  );
+  
+  // Load persisted APS clips
+  try {
+    var saved = JSON.parse(localStorage.getItem('aab_aps_clips') || '{}');
+    Object.assign(APS_CLIPS, saved);
+  } catch(e) {}
+  
+  // Set PROJECT.clips to ONLY AI clips for the edit suite
+  PROJECT.clips = Object.assign({}, APS_CLIPS);
+  PROJECT._editMode = 'ai'; // track which mode
+  
+  if (typeof edit_buildPlaylist         === 'function') edit_buildPlaylist();
+  if (typeof edit_renderClipStrip       === 'function') edit_renderClipStrip();
+  if (typeof tl_buildTracksFromProject  === 'function') tl_buildTracksFromProject();
+  
+  nav('edit-pg');
+  toast('AI Presenter clips loaded in Edit Suite', 'ok');
+};
+
+// When going to Edit Suite from Recording Studio — load ONLY recording clips
+document.addEventListener('aab_nav', function(e) {
+  if (e.detail && e.detail.page === 'edit-pg') {
+    // If coming from recording (not from APS), restore recording clips
+    if (PROJECT._editMode !== 'ai') {
+      // Merge in any recording clips
+      Object.entries(PROJECT.clips||{}).forEach(function([k,v]) {
+        if (v.source === 'recording') window.REC_CLIPS[k] = v;
+      });
+    }
+    // Always ensure timeline is built
+    setTimeout(function() {
+      if (typeof tl_buildTracksFromProject === 'function') tl_buildTracksFromProject();
+      if (typeof edit_renderClipStrip      === 'function') edit_renderClipStrip();
+    }, 200);
+  }
+  if (e.detail && e.detail.page === 'record-pg') {
+    PROJECT._editMode = 'recording';
+  }
+  if (e.detail && e.detail.page === 'ai-presenter-studio') {
+    PROJECT._editMode = 'ai';
+    // Restore any saved APS clips
+    try {
+      var saved = JSON.parse(localStorage.getItem('aab_aps_clips') || '{}');
+      Object.assign(APS_CLIPS, saved);
+    } catch(e) {}
+  }
+});
+
+// Load saved APS clips on startup
+(function() {
+  try {
+    var saved = JSON.parse(localStorage.getItem('aab_aps_clips') || '{}');
+    Object.assign(APS_CLIPS, saved);
+    console.log('APS: restored', Object.keys(saved).length, 'saved clips from localStorage');
+  } catch(e) {}
+})();
+
+// ── 2. BATCH COMPLETION → ADD ALL CLIPS TO EDIT SUITE ────────────
+// After batch generates, push ALL scenes to APS_CLIPS and show Go button
+var _origGenAll = window.aps_generateAll;
+window.aps_generateAll = async function() {
+  // Restore photo if needed
+  if (!APS.photoB64) {
+    var saved = localStorage.getItem('aps_presenter_photo');
+    if (saved) APS.photoB64 = saved.split(',')[1] || saved;
+  }
+  if (!APS.talkingPhotoId) {
+    var savedId = localStorage.getItem('aps_talking_photo_id');
+    if (savedId) APS.talkingPhotoId = savedId;
+  }
+  if (typeof _origGenAll === 'function') return _origGenAll.apply(this, arguments);
+};
+
+// When batch video completes, split into per-scene clips and add all to APS_CLIPS
+window.aps_onBatchComplete = function(videoUrl, scenes) {
+  if (!videoUrl || !scenes || !scenes.length) return;
+  
+  // The batch result is ONE video containing all scenes sequenced
+  // Add it as a single clip (HeyGen doesn't give separate scene files)
+  var totalDuration = scenes.reduce(function(t,s){ return t+(s.duration||8); }, 0);
+  var key = 'aps_batch_' + Date.now();
+  
+  APS_CLIPS[key] = {
+    url: videoUrl, videoUrl: videoUrl,
+    sceneId: key, sceneNum: 1,
+    sceneName: 'AI Presenter — ' + scenes.length + ' scenes',
+    sceneType: 'BATCH', source: 'ai-presenter',
+    duration: totalDuration, savedAt: Date.now(),
+    sceneCount: scenes.length,
+  };
+  
+  try {
+    var saved = JSON.parse(localStorage.getItem('aab_aps_clips') || '{}');
+    saved[key] = APS_CLIPS[key];
+    localStorage.setItem('aab_aps_clips', JSON.stringify(saved));
+  } catch(e) {}
+  
+  // Show in APS strip
+  var fakeScene = { num: 1, type: 'BATCH', videoUrl, duration: totalDuration, id: key };
+  if (typeof _baseAddClipToBar === 'function') _baseAddClipToBar(fakeScene);
+  else window.aps_addClipToBar(fakeScene);
+  
+  toast('✅ ' + scenes.length + ' scenes complete! Click "Go to Edit Suite" to review.', 'ok');
+};
+
+// ── 3. MY ASSETS TAB — render in scenes page sidebar ──────────────
+window.renderMyAssets = function(container) {
+  if (!container) container = document.getElementById('asset-library-panel');
+  if (!container) return;
+  
+  // Load from localStorage cache
+  var items = [];
+  try { items = JSON.parse(localStorage.getItem('aab_assets') || '[]'); } catch(e) {}
+  
+  // Also include saved APS clips as assets
+  Object.values(APS_CLIPS).forEach(function(c) {
+    if (c.url && !items.find(function(i){ return i.url===c.url; })) {
+      items.unshift({ id: c.sceneId||'aps_'+Date.now(), name: c.sceneName, type:'video', url:c.url, savedAt:c.savedAt||Date.now() });
+    }
+  });
+  
+  if (!items.length) {
+    container.innerHTML = '<div style="padding:20px;text-align:center;color:rgba(255,255,255,.3);font-size:12px;">No assets yet.<br>Upload images, audio, or video.</div>';
+    return;
+  }
+  
+  var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px;">';
+  items.slice(0,60).forEach(function(a) {
+    var icon = a.type==='image'?'🖼':a.type==='audio'?'🎵':a.type==='video'?'🎬':'📁';
+    var thumb = a.type==='image'&&a.url&&!a.url.startsWith('local:')
+      ? '<img src="'+a.url+'" style="width:100%;height:48px;object-fit:cover;display:block;">'
+      : '<div style="height:48px;background:rgba(255,255,255,.05);display:flex;align-items:center;justify-content:center;font-size:20px;">'+icon+'</div>';
+    var name = (a.name||'').slice(0,18);
+    html += '<div data-asset-id="'+a.id+'" onclick="asset_useInProject(this.dataset.assetId)" '
+      + 'style="cursor:pointer;border-radius:6px;overflow:hidden;background:rgba(255,255,255,.04);border:.5px solid rgba(255,255,255,.08);" '
+      + 'title="'+a.name+'">'
+      + thumb
+      + '<div style="font-size:9px;color:rgba(255,255,255,.5);padding:2px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+name+'</div>'
+      + '</div>';
+  });
+  html += '</div>';
+  container.innerHTML = html;
+};
+
+// ── 4. UPLOAD ACTUALLY WORKING — wire all upload inputs ──────────
+window.importToTimeline = function(inputOrEvent, type) {
+  var file;
+  if (inputOrEvent && inputOrEvent.files) file = inputOrEvent.files[0];
+  else if (inputOrEvent && inputOrEvent.target) file = inputOrEvent.target.files[0];
+  if (!file) return;
+  
+  var url = URL.createObjectURL(file);
+  var name = file.name;
+  var icon = type==='video'?'🎬':type==='audio'?'🎵':type==='image'?'🖼':'📁';
+  
+  toast(icon + ' ' + name.slice(0,25) + ' — uploading...', 'info');
+  
+  // Save to asset library immediately (local URL for now)
+  var asset = { id:'local_'+Date.now(), name, type, url, mimeType:file.type, size:file.size, savedAt:Date.now() };
+  try {
+    var items = JSON.parse(localStorage.getItem('aab_assets')||'[]');
+    items.unshift(asset);
+    if (items.length > 200) items = items.slice(0, 200);
+    localStorage.setItem('aab_assets', JSON.stringify(items));
+    ASSET_LIBRARY.items = items;
+  } catch(e) {}
+  
+  // Add to correct timeline track
+  if (window.TL) {
+    var trackId = type==='video'?'broll':type==='audio'?'music':'overlays';
+    var track = TL.tracks && TL.tracks.find(function(t){ return t.id===trackId; });
+    if (!track && TL.tracks) {
+      var names = {video:'🎞 B-Roll',audio:'🎵 Music',image:'🖼 Overlays'};
+      track = { id:trackId, type, name:names[type]||'Track', muted:false, volume:1, clips:[] };
+      TL.tracks.push(track);
+    }
+    if (track) {
+      var maxEnd = (track.clips||[]).reduce(function(m,c){ return Math.max(m, c.start+c.duration); }, TL.playhead||0);
+      track.clips = track.clips || [];
+      track.clips.push({ id:'import_'+Date.now(), url, label:icon+' '+name.slice(0,20), start:maxEnd, duration:type==='audio'?30:8, type, volume:1 });
+      if (typeof tl_render==='function') tl_render();
+    }
+  }
+  
+  // Also try to upload permanently
+  var token = typeof getAuthToken==='function' ? getAuthToken() : null;
+  if (token && type==='image') {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var b64 = e.target.result.split(',')[1];
+      fetch((window.API||API)+'/api/assets/upload-image', {
+        method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+        body: JSON.stringify({ imageBase64:b64, name:file.name, mimeType:file.type })
+      }).then(function(r){ return r.json(); }).then(function(d) {
+        if (d.url) { asset.url = d.url; toast(icon+' '+name.slice(0,20)+' saved permanently ✓','ok'); }
+      }).catch(function(e){ console.warn('Asset upload:', e.message); });
+    };
+    reader.readAsDataURL(file);
+  } else {
+    toast(icon + ' ' + name.slice(0,20) + ' added to timeline ✓', 'ok');
+  }
+  
+  if (typeof renderMyAssets === 'function') renderMyAssets();
+};
+
+// ── 5. TIMELINE HORIZONTAL SCROLL FIX ─────────────────────────────
+(function fixTimeline() {
+  var style = document.createElement('style');
+  style.id = 'aab-timeline-fix';
+  style.textContent = [
+    '#tl-scroll-container { overflow-x: auto !important; overflow-y: auto !important; min-height: 200px; }',
+    '#tl-tracks { min-width: max-content; position: relative; }',
+    '#tl-labels { overflow: hidden; min-height: 200px; }',
+    '.tl-track-row { display: flex; align-items: stretch; min-height: 52px; border-bottom: .5px solid rgba(255,255,255,.04); }',
+    '.tl-track-label { width: 88px; flex-shrink: 0; font-size: 10px; color: rgba(255,255,255,.5); padding: 0 8px; display: flex; align-items: center; border-right: .5px solid rgba(255,255,255,.07); background: rgba(0,0,0,.2); }',
+    '.tl-track-rail { flex: 1; position: relative; min-height: 52px; min-width: 600px; }',
+    '.tl-clip { position: absolute; height: 44px; top: 4px; border-radius: 6px; display: flex; align-items: center; padding: 0 8px; font-size: 10px; font-weight: 600; color: #fff; overflow: hidden; cursor: pointer; white-space: nowrap; transition: opacity .1s; }',
+    '.tl-clip:hover { opacity: .85; }',
+    '.tl-clip.selected { outline: 2px solid var(--accent); }',
+    '#edit-pg { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }',
+    '#edit-clips-strip { height: 110px; flex-shrink: 0; overflow-x: auto; scrollbar-width: thin; }',
+    /* Bottom */
+    '.tl-bottom-bar { flex-shrink: 0; height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-top: .5px solid rgba(255,255,255,.05); background: rgba(0,0,0,.2); }',
+    /* APS clips bottom strip */
+    '#aps-clips-list { display: flex; gap: 10px; overflow-x: auto; padding: 8px; min-height: 84px; scrollbar-width: thin; }',
+  ].join(' ');
+  var existing = document.getElementById('aab-timeline-fix');
+  if (existing) existing.remove();
+  document.head.appendChild(style);
+})();
+
+// ── 6. BACK TO SCENES BUTTON — both studios ────────────────────────
+// Add "← Scenes" button to studio bar and APS topbar if missing
+(function addBackToScenesButtons() {
+  // Studio bar
+  document.addEventListener('aab_nav', function(e) {
+    if (e.detail && e.detail.page === 'record-pg') {
+      setTimeout(function() {
+        var bar = document.querySelector('.studio-bar');
+        if (bar && !bar.querySelector('#btn-back-scenes')) {
+          var btn = document.createElement('button');
+          btn.id = 'btn-back-scenes';
+          btn.className = 'btn btn-ghost btn-sm';
+          btn.textContent = '← Scenes';
+          btn.onclick = function() { nav('scenes-pg'); };
+          bar.insertBefore(btn, bar.firstChild);
+        }
+      }, 500);
+    }
+    if (e.detail && e.detail.page === 'ai-presenter-studio') {
+      setTimeout(function() {
+        var topbar = document.querySelector('#ai-presenter-studio .aps-topbar, #ai-presenter-studio > div:first-child');
+        if (topbar && !topbar.querySelector('#aps-back-scenes')) {
+          var btn = document.createElement('button');
+          btn.id = 'aps-back-scenes';
+          btn.style.cssText = 'background:rgba(255,255,255,.08);border:.5px solid rgba(255,255,255,.15);color:rgba(255,255,255,.7);border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;margin-right:8px;';
+          btn.textContent = '← Scenes';
+          btn.onclick = function() { nav('scenes-pg'); };
+          topbar.insertBefore(btn, topbar.firstChild);
+        }
+      }, 300);
+    }
+  });
+})();
+
+// ── 7. VERIFY HEYGEN ENTERPRISE REQUIREMENT ────────────────────────
+// HeyGen talking_photo (custom face) requires Enterprise plan ($99+/mo)
+// Creator plan ($24/mo) only gets stock avatars
+// The server correctly tries to create a talking_photo_id but fails on Creator plan
+// Users need to know this upfront
+window.aps_checkHeyGenPlan = async function() {
+  var token = typeof getAuthToken==='function' ? getAuthToken() : null;
+  if (!token) return;
+  try {
+    var r = await fetch((window.API||API)+'/api/heygen/avatars', {
+      headers: { 'Authorization': 'Bearer '+token }
+    });
+    var d = await r.json();
+    var hasCustom = d.avatars && d.avatars.some(function(a){ return a.type==='talking_photo'||a.type==='photo'; });
+    if (!hasCustom) {
+      console.log('HeyGen: Creator plan detected — custom face requires Enterprise plan');
+    }
+    return hasCustom;
+  } catch(e) { return false; }
+};
+
+
+
+// ═══════════════════════════════════════════════════════════════════
+// FINAL FIXES — Session May 2 (complete)
+// ═══════════════════════════════════════════════════════════════════
+
+// ── 1. sidebarTab — handle My Assets tab ──────────────────────────
+var _origSidebarTab = window.sidebarTab;
+window.sidebarTab = function(tab, btn) {
+  // Handle my-assets specially
+  var myPanel = document.getElementById('my-assets-panel');
+  if (myPanel) myPanel.style.display = tab === 'my-assets' ? '' : 'none';
+  
+  if (tab === 'my-assets') {
+    // Update tab buttons
+    document.querySelectorAll('.sb-tab').forEach(function(b){ b.classList.remove('on'); });
+    if (btn) btn.classList.add('on');
+    // Render assets
+    renderMyAssetsGrid();
+    return;
+  }
+  if (typeof _origSidebarTab === 'function') _origSidebarTab(tab, btn);
+};
+
+function renderMyAssetsGrid() {
+  var grid = document.getElementById('my-assets-grid');
+  if (!grid) return;
+  
+  // Load from localStorage
+  var items = [];
+  try { items = JSON.parse(localStorage.getItem('aab_assets') || '[]'); } catch(e) {}
+  
+  // Add saved APS clips
+  Object.values(window.APS_CLIPS || {}).forEach(function(c) {
+    if (c.url && !items.find(function(i){ return i.url===c.url; })) {
+      items.unshift({ id:c.sceneId, name:c.sceneName||'AI Clip', type:'video', url:c.url, savedAt:c.savedAt||Date.now() });
+    }
+  });
+  
+  if (!items.length) {
+    grid.innerHTML = '<div style="padding:12px;text-align:center;color:rgba(255,255,255,.2);font-size:11px;">No assets yet.<br>Upload files above.</div>';
+    return;
+  }
+  
+  var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">';
+  items.slice(0,40).forEach(function(a) {
+    var icon = a.type==='image'?'🖼':a.type==='audio'?'🎵':a.type==='sfx'?'🎤':a.type==='video'?'🎬':'📁';
+    var thumb = (a.type==='image' && a.url && !a.url.startsWith('local:'))
+      ? '<img src="'+a.url+'" style="width:100%;height:44px;object-fit:cover;display:block;">'
+      : '<div style="height:44px;background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;font-size:18px;">'+icon+'</div>';
+    html += '<div data-asset-id="'+a.id+'" onclick="asset_useInProject(this.dataset.assetId)"'
+      + ' style="cursor:pointer;border-radius:6px;overflow:hidden;border:.5px solid rgba(255,255,255,.08);" title="'+a.name+'">'
+      + thumb
+      + '<div style="font-size:9px;color:rgba(255,255,255,.45);padding:2px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+a.name.slice(0,16)+'</div>'
+      + '</div>';
+  });
+  html += '</div>';
+  grid.innerHTML = html;
+}
+
+// ── 2. asset_upload — actually save file and add to library ─────────────
+window.asset_upload = async function(file, type) {
+  if (!file) return null;
+  type = type || 'image';
+  var icon = type==='image'?'🖼':type==='audio'?'🎵':type==='sfx'?'🎤':'🎬';
+  
+  toast(icon + ' Saving ' + file.name.slice(0,20) + '...', 'info');
+  
+  return new Promise(function(resolve) {
+    var reader = new FileReader();
+    reader.onload = async function(e) {
+      var dataUrl = e.target.result;
+      var b64 = dataUrl.split(',')[1];
+      var url = dataUrl; // local URL as immediate fallback
+      
+      // Try to get a permanent URL
+      var token = typeof getAuthToken === 'function' ? getAuthToken() : null;
+      if (token && type === 'image') {
+        try {
+          var r = await fetch((window.API||API) + '/api/assets/upload-image', {
+            method:'POST',
+            headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+            body:JSON.stringify({ imageBase64:b64, name:file.name, mimeType:file.type })
+          });
+          var d = await r.json();
+          if (d.url) url = d.url; // permanent Imgur URL
+        } catch(e) { console.warn('Upload to Imgur failed:', e.message); }
+      }
+      
+      var asset = {
+        id: 'asset_'+Date.now(), name:file.name, type, url,
+        dataUrl, mimeType:file.type, size:file.size, savedAt:Date.now()
+      };
+      
+      // Save to localStorage
+      try {
+        var items = JSON.parse(localStorage.getItem('aab_assets')||'[]');
+        items.unshift(asset);
+        if (items.length > 200) items = items.slice(0,200);
+        localStorage.setItem('aab_assets', JSON.stringify(items));
+      } catch(e) {}
+      
+      // If ASSET_LIBRARY exists update it
+      if (window.ASSET_LIBRARY) {
+        ASSET_LIBRARY.items = ASSET_LIBRARY.items || [];
+        ASSET_LIBRARY.items.unshift(asset);
+      }
+      
+      // Also save to DB
+      if (token) {
+        try {
+          await fetch((window.API||API) + '/api/assets', {
+            method:'POST',
+            headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+            body:JSON.stringify({ name:file.name, type, url, mime_type:file.type, size_bytes:file.size })
+          });
+        } catch(e) {}
+      }
+      
+      // Refresh the My Assets grid
+      renderMyAssetsGrid();
+      
+      toast(icon + ' ' + file.name.slice(0,20) + ' saved to Asset Library ✓', 'ok');
+      resolve(asset);
+    };
+    reader.readAsDataURL(file);
+  });
+};
+
+// ── 3. aps_goToEditSuite — show button, load AI clips ───────────────
+window.aps_goToEditSuite = function() {
+  // Only load APS clips (not recording clips)
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem('aab_aps_clips') || '{}'); } catch(e) {}
+  Object.assign(window.APS_CLIPS, saved);
+  
+  var apsClips = Object.assign({}, window.APS_CLIPS);
+  
+  if (!Object.keys(apsClips).length) {
+    // No APS clips — check PROJECT.clips for ai-presenter clips
+    Object.entries(PROJECT.clips||{}).forEach(function([k,v]) {
+      if (v.source && v.source.includes('ai')) apsClips[k] = v;
+    });
+  }
+  
+  if (!Object.keys(apsClips).length) {
+    toast('No AI clips yet — generate scenes first', 'info');
+    return;
+  }
+  
+  // Set edit mode to AI and load clips
+  PROJECT._editMode = 'ai';
+  PROJECT.clips = apsClips;
+  
+  nav('edit-pg');
+  
+  setTimeout(function() {
+    if (typeof tl_buildTracksFromProject === 'function') tl_buildTracksFromProject();
+    if (typeof edit_buildPlaylist         === 'function') edit_buildPlaylist();
+    if (typeof edit_renderClipStrip       === 'function') edit_renderClipStrip();
+    if (typeof tl_render                  === 'function') tl_render();
+  }, 300);
+  
+  toast('✓ AI clips loaded in Edit Suite', 'ok');
+};
+
+// ── 4. Show "Go to Edit Suite" button after batch completes ─────────
+// Patch the batch success handler to also show the button
+var _patchBatchOnSuccess = window.aps_onBatchSuccess;
+window.aps_showGoToEditBtn = function(clipCount) {
+  var btn = document.getElementById('aps-go-edit-btn');
+  var empty = document.getElementById('aps-clips-empty');
+  if (btn) {
+    btn.style.display = 'block';
+    btn.textContent = '🎬 Go to Edit Suite (' + clipCount + ' clips) →';
+  }
+  if (empty) empty.style.display = 'none';
+};
+
+// Intercept every aps_addClipToBar call to show the Go button
+var _superBase = window.aps_addClipToBar;
+window.aps_addClipToBar = function(sc) {
+  if (typeof _superBase === 'function') _superBase(sc);
+  var count = Object.keys(window.APS_CLIPS||{}).length;
+  window.aps_showGoToEditBtn(count || 1);
+};
+
+// ── 5. importToTimeline — complete rewrite to actually work ─────────
+window.importToTimeline = function(inputOrFile, type) {
+  var file;
+  if (inputOrFile && inputOrFile.files) file = inputOrFile.files[0];
+  else if (inputOrFile instanceof File) file = inputOrFile;
+  if (!file) return;
+  
+  type = type || (file.type.startsWith('video') ? 'video' : file.type.startsWith('audio') ? 'audio' : 'image');
+  var icon = type==='video'?'🎬':type==='audio'?'🎵':type==='sfx'?'🎤':'🖼';
+  var url = URL.createObjectURL(file);
+  
+  toast(icon + ' ' + file.name.slice(0,20) + ' loading...', 'info');
+  
+  // Add to timeline immediately
+  if (!window.TL) window.TL = { tracks:[], duration:0, zoom:40, playhead:0 };
+  if (!TL.tracks) TL.tracks = [];
+  
+  var trackMap = { video:'broll', audio:'music', sfx:'sfx', image:'overlays' };
+  var nameMap  = { video:'🎞 B-Roll', audio:'🎵 Music', sfx:'🎤 SFX', image:'🖼 Images' };
+  var trackId  = trackMap[type] || 'broll';
+  
+  var track = TL.tracks.find(function(t){ return t.id===trackId; });
+  if (!track) {
+    track = { id:trackId, type:type==='sfx'?'audio':type, name:nameMap[type]||'Track', muted:false, volume:1, clips:[] };
+    TL.tracks.push(track);
+  }
+  
+  var maxEnd = (track.clips||[]).reduce(function(m,c){ return Math.max(m, c.start+(c.duration||8)); }, TL.playhead||0);
+  track.clips = track.clips || [];
+  track.clips.push({
+    id:       'import_'+Date.now(),
+    url,
+    label:    icon + ' ' + file.name.slice(0,18),
+    start:    maxEnd,
+    duration: type==='audio'||type==='sfx' ? 30 : 8,
+    type,
+    volume:   1,
+    muted:    false,
+  });
+  
+  // Save to asset library
+  try {
+    var items = JSON.parse(localStorage.getItem('aab_assets')||'[]');
+    items.unshift({ id:'import_'+Date.now(), name:file.name, type, url, mimeType:file.type, size:file.size, savedAt:Date.now() });
+    if (items.length > 200) items = items.slice(0,200);
+    localStorage.setItem('aab_assets', JSON.stringify(items));
+  } catch(e) {}
+  
+  if (typeof tl_render === 'function') tl_render();
+  toast(icon + ' ' + file.name.slice(0,20) + ' added to timeline ✓', 'ok');
+  
+  // Also upload permanently in background
+  var token = typeof getAuthToken === 'function' ? getAuthToken() : null;
+  if (token && type === 'image') {
+    var reader = new FileReader();
+    reader.onload = async function(e) {
+      var b64 = e.target.result.split(',')[1];
+      try {
+        var r = await fetch((window.API||API) + '/api/assets/upload-image', {
+          method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+          body:JSON.stringify({ imageBase64:b64, name:file.name, mimeType:file.type })
+        });
+        var d = await r.json();
+        if (d.url) {
+          // Update the clip URL to permanent one
+          track.clips.forEach(function(c){ if(c.url===url) c.url=d.url; });
+          if (typeof tl_render === 'function') tl_render();
+        }
+      } catch(e) {}
+    };
+    reader.readAsDataURL(file);
+  }
+};
+
+// ── 6. HeyGen Enterprise notice — shown when photo upload fails ──────
+window.aps_showPlanNotice = function(msg) {
+  var notice = document.getElementById('aps-plan-notice');
+  if (!notice) {
+    notice = document.createElement('div');
+    notice.id = 'aps-plan-notice';
+    notice.style.cssText = 'background:rgba(245,158,11,.12);border:.5px solid rgba(245,158,11,.3);border-radius:8px;padding:10px 12px;font-size:11px;color:rgba(245,158,11,.9);margin:8px 0;line-height:1.5;';
+    var sidebar = document.querySelector('.aps-sidebar, #aps-right-panel, [id*="aps"][id*="sidebar"]');
+    if (sidebar) sidebar.insertBefore(notice, sidebar.firstChild);
+  }
+  notice.innerHTML = '⚠ <strong>HeyGen Plan Note:</strong><br>' + msg + '<br><a href="https://www.heygen.com/pricing" target="_blank" style="color:#f59e0b;text-decoration:underline;">Upgrade on HeyGen ↗</a>';
+};
+
+// Patch photo upload to show notice if custom face fails
+var _origLoadPhoto = window.aps_loadPhoto;
+window.aps_loadPhoto = function(input) {
+  var file = input && input.files && input.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = async function(e) {
+    var dataUrl = e.target.result;
+    var b64 = dataUrl.split(',')[1];
+    
+    APS.photoB64 = b64;
+    APS.photoMimeType = file.type || 'image/jpeg';
+    APS.talkingPhotoId = null;
+    APS.photoPreviewUrl = null;
+    
+    // Show preview
+    var wrap = document.getElementById('aps-presenter-img-wrap');
+    if (wrap) wrap.innerHTML = '<img src="'+dataUrl+'" style="width:100%;height:100%;object-fit:cover;border-radius:100px 100px 0 0;">';
+    var prev = document.getElementById('aps-photo-preview');
+    if (prev) { prev.src = dataUrl; prev.style.display = 'block'; }
+    
+    // Save to localStorage + asset library
+    try { localStorage.setItem('aps_presenter_photo', b64.slice(0,60000)); } catch(e) {}
+    var assetItems = [];
+    try { assetItems = JSON.parse(localStorage.getItem('aab_assets')||'[]'); } catch(e) {}
+    assetItems.unshift({ id:'pres_'+Date.now(), name:'Presenter: '+file.name, type:'image', url:dataUrl, savedAt:Date.now() });
+    try { localStorage.setItem('aab_assets', JSON.stringify(assetItems.slice(0,200))); } catch(e) {}
+    
+    toast('📸 Photo loaded ✓ — uploading to HeyGen...', 'info');
+    
+    // Try HeyGen photo upload
+    try {
+      var token = typeof getAuthToken === 'function' ? getAuthToken() : null;
+      var headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+      
+      var r = await fetch((window.API||API) + '/api/heygen/upload-photo', {
+        method:'POST', headers,
+        body:JSON.stringify({ imageBase64:b64, mimeType:file.type||'image/jpeg' })
+      });
+      var d = await r.json();
+      
+      if (d.talking_photo_id) {
+        APS.talkingPhotoId = d.talking_photo_id;
+        APS.photoPreviewUrl = dataUrl;
+        try { localStorage.setItem('aps_talking_photo_id', d.talking_photo_id); } catch(e) {}
+        toast('✓ Presenter face registered — your face will appear in generated videos', 'ok');
+      } else if (d.fallback) {
+        // HeyGen Creator/Scale plan — no custom face
+        aps_showPlanNotice('Custom face generation requires HeyGen Enterprise plan ($350/mo). Currently using stock avatar with your voice. Your photo is saved for when you upgrade.');
+        toast('Photo saved — using stock avatar (HeyGen Enterprise needed for custom face)', 'info');
+        APS.photoPreviewUrl = dataUrl;
+      }
+    } catch(e) {
+      console.warn('Photo upload:', e.message);
+      toast('Photo saved locally ✓', 'ok');
+    }
+  };
+  reader.readAsDataURL(file);
+};
+
+// ── 7. Recording studio → Edit Suite path stays separate ────────────
+// When user records a video clip, it saves to REC_CLIPS
+// Navigating to Edit Suite from recording loads REC_CLIPS, not APS_CLIPS
+document.addEventListener('aab_nav', function(e) {
+  var pg = e.detail && e.detail.page;
+  if (pg === 'edit-pg') {
+    if (PROJECT._editMode === 'ai') {
+      // Coming from APS — already loaded in aps_goToEditSuite
+    } else {
+      // Coming from Recording Studio — restore recording clips
+      PROJECT._editMode = 'recording';
+      // Don't overwrite if already has clips from recording
+      if (Object.keys(PROJECT.clips||{}).length === 0) {
+        // Try to restore from localStorage
+        try {
+          var saved = JSON.parse(localStorage.getItem('aab_recording_clips') || '{}');
+          if (Object.keys(saved).length) PROJECT.clips = saved;
+        } catch(e) {}
+      }
+    }
+    setTimeout(function() {
+      if (typeof tl_buildTracksFromProject === 'function') tl_buildTracksFromProject();
+      if (typeof tl_render                  === 'function') tl_render();
+      if (typeof edit_renderClipStrip       === 'function') edit_renderClipStrip();
+    }, 200);
+  }
+  if (pg === 'record-pg') {
+    PROJECT._editMode = 'recording';
+  }
+  if (pg === 'ai-presenter-studio') {
+    PROJECT._editMode = 'ai';
+  }
+});
+
+// Patch updateStudioClips to save to REC_CLIPS
+var _baseUpdateStudioClips = window.updateStudioClips;
+window.updateStudioClips = function() {
+  if (typeof _baseUpdateStudioClips === 'function') _baseUpdateStudioClips();
+  // Copy recording clips to REC_CLIPS and persist
+  Object.entries(PROJECT.clips||{}).forEach(function([k,v]) {
+    if (v.source === 'recording') window.REC_CLIPS[k] = v;
+  });
+  try { localStorage.setItem('aab_recording_clips', JSON.stringify(window.REC_CLIPS)); } catch(e) {}
+};
+
+// ── 8. Timeline scroll CSS — ensure full width visible ───────────────
+var existingStyle = document.getElementById('aab-tl-scroll-fix');
+if (existingStyle) existingStyle.remove();
+var tlStyle = document.createElement('style');
+tlStyle.id = 'aab-tl-scroll-fix';
+tlStyle.textContent = [
+  '#tl-scroll-container { overflow-x:auto !important; overflow-y:auto !important; }',
+  '#tl-tracks { min-width:max-content !important; }',
+  '#tl-ruler { min-width:max-content !important; }',
+  '.tl-track-rail { min-width:600px; }',
+  '#edit-pg .edit-main { min-height:0 !important; }',
+].join('');
+document.head.appendChild(tlStyle);
 
 
 console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgrounds, TP bg');
