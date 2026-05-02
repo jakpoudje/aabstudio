@@ -347,6 +347,8 @@ app.get('/health', (req, res) => res.json({
   anthropic: !!process.env.ANTHROPIC_API_KEY,
   elevenlabs: !!ELEVENLABS_KEY,
   heygen: !!HEYGEN_KEY,
+  did: !!DID_API_KEY,
+  did: !!DID_API_KEY,
   kling_piapi: !!PIAPI_KEY,
   kling_direct: !!(KLING_AK && KLING_SK),
   runway: !!RUNWAY_KEY,
@@ -798,12 +800,17 @@ app.post('/api/presenter', async (req, res) => {
     const hasDID = !!DID_API_KEY;
     // D-ID is preferred when reference image present — uses actual face, faster than HeyGen
     if (!chosen) {
+      // D-ID is the best option when reference image is present:
+      // - Animates YOUR actual face (unlike HeyGen Creator plan)
+      // - Faster: 30-90s vs 3-8min for HeyGen
+      // - Works on any D-ID plan
       if (hasDID && (referenceImageBase64 || compositeImageB64)) chosen = 'did';
       else if (hasHeygen) chosen = 'heygen';
       else if (hasKling)  chosen = 'kling';
       else if (hasRunway) chosen = 'runway';
     }
-    if (chosen === 'did' && !hasDID) chosen = hasHeygen ? 'heygen' : null;
+    // D-ID fallback chain
+    if (chosen === 'did' && !hasDID) chosen = hasHeygen ? 'heygen' : (hasKling ? 'kling' : null);
     if (!chosen) return res.status(503).json({ error: 'No video provider configured.' });
     console.log('Provider chosen:', chosen);
 
@@ -1236,13 +1243,21 @@ async function generateWithDID(req, res, args) {
       'accept': 'application/json'
     };
 
-    // Step 1: Upload presenter image to D-ID (or use base64 directly)
-    // D-ID accepts base64 data URIs as source_url
-    const imageDataUri = referenceImageBase64
-      ? 'data:image/jpeg;base64,' + referenceImageBase64
-      : null;
+    // Step 1: Upload presenter image to Imgur first → get public URL
+    // D-ID works more reliably with a URL than a data URI (especially for large images)
+    // URL also allows D-ID to process at full resolution without base64 overhead
+    if (!referenceImageBase64) throw new Error('D-ID requires a reference image');
 
-    if (!imageDataUri) throw new Error('D-ID requires a reference image');
+    let imageSourceUrl = null;
+    try {
+      imageSourceUrl = await uploadToImgur(referenceImageBase64);
+      console.log('D-ID: presenter image on Imgur:', imageSourceUrl);
+    } catch(imgurErr) {
+      console.warn('D-ID: Imgur upload failed, using data URI fallback:', imgurErr.message);
+    }
+    // Fallback to data URI if Imgur fails
+    const imageDataUri = imageSourceUrl || ('data:image/jpeg;base64,' + referenceImageBase64);
+    if (!imageDataUri) throw new Error('D-ID: could not prepare image source');
 
     // Step 2: Upload audio to get a URL D-ID can use
     // D-ID needs an audio URL, not base64. Upload to their clips endpoint first
@@ -1278,6 +1293,11 @@ async function generateWithDID(req, res, args) {
     if (!audioUrl) throw new Error('D-ID audio upload failed — cannot generate without audio URL');
 
     // Step 3: Create talk (animate photo with audio)
+    // Framing notes:
+    // - Do NOT use presenter_config.crop 'rectangle' — it auto-crops to face, cutting off head
+    // - Use 'stitch: false' to preserve the full source image framing
+    // - The image should already be framed correctly (uploaded by user)
+    // - D-ID does NOT need gender specification — it reads your actual photo
     const talkPayload = {
       source_url: imageDataUri,
       script: {
@@ -1289,14 +1309,12 @@ async function generateWithDID(req, res, args) {
       config: {
         fluent:        true,
         pad_audio:     0,
-        stitch:        true,       // blend head into background
-        result_format: 'mp4'
-      },
-      presenter_config: {
-        crop: {
-          type: 'rectangle'
-        }
+        stitch:        false,      // false = preserve full source image, no background blending
+        result_format: 'mp4',
+        normalization_factor: 0    // 0 = minimal face stabilization, preserves framing
       }
+      // No presenter_config.crop — use full image as-is
+      // This preserves the user's framing (full body, waist-up, etc.)
     };
 
     console.log('D-ID: creating talk...');
@@ -1650,7 +1668,9 @@ app.post('/api/presenter/batch', async (req, res) => {
     } = req.body;
 
     if (!scenes?.length) return res.status(400).json({ error: 'scenes[] required' });
-    if (!HEYGEN_KEY)     return res.status(503).json({ error: 'HeyGen not configured' });
+    // Support both HeyGen batch and D-ID individual scene generation
+    const useDID = !!(DID_API_KEY && !HEYGEN_KEY);
+    if (!HEYGEN_KEY && !DID_API_KEY) return res.status(503).json({ error: 'No video provider configured (need HEYGEN_API_KEY or DID_API_KEY)' });
     if (!ELEVENLABS_KEY) return res.status(503).json({ error: 'ElevenLabs not configured' });
 
     console.log(`\n=== HeyGen BATCH: ${scenes.length} scenes | voice:${voiceId} | ratio:${ratio}`);
