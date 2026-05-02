@@ -16037,6 +16037,340 @@ window.startSceneStatusPolling = function() {
 };
 
 
+
+// ═══════════════════════════════════════════════════════════════════
+// PERSISTENT STORAGE — Characters + Assets saved to Supabase
+// Works across devices, sessions, and browsers
+// ═══════════════════════════════════════════════════════════════════
+
+function getAuthToken() {
+  if (!APP || !APP.user) return null;
+  return APP.user.accessToken || APP.user.token ||
+         (APP.user.session && APP.user.session.access_token) || null;
+}
+
+// ── CHARACTER SAVE/LOAD — Supabase persistent ─────────────────────
+window.aps_saveCharacter = async function(name) {
+  if (!name || !name.trim()) { toast('Enter a character name first', 'error'); return; }
+  name = name.trim();
+
+  var photoId  = APS.talkingPhotoId || localStorage.getItem('aps_talking_photo_id');
+  var photoUrl = APS.photoPreviewUrl || localStorage.getItem('aps_photo_url') || null;
+
+  var charData = {
+    name,
+    talking_photo_id: photoId || null,
+    photo_url:        photoUrl || null,
+    voice_id:         APS.settings && APS.settings.voiceId     || 'EXAVITQu4vr4xnSDxMaL',
+    voice_name:       APS.settings && APS.settings.voiceName   || null,
+    voice_gender:     APS.settings && APS.settings.voiceGender || 'male',
+    stability:        APS.settings && APS.settings.stability   || 0.85,
+    clarity:          APS.settings && APS.settings.clarity     || 0.80,
+    framing:          APS.settings && APS.settings.framing     || 'news-desk',
+    background_type:  APS.settings && APS.settings.bg          || 'news-studio',
+  };
+
+  // Always save to localStorage as fast backup
+  try {
+    var chars = JSON.parse(localStorage.getItem('aps_characters') || '{}');
+    chars[name] = Object.assign({ savedAt: Date.now() }, charData);
+    localStorage.setItem('aps_characters', JSON.stringify(chars));
+    localStorage.setItem('aps_current_char', name);
+  } catch(e) {}
+
+  // Save to Supabase if signed in
+  var token = getAuthToken();
+  if (token) {
+    try {
+      var r = await fetch((window.API||API) + '/api/characters', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify(charData)
+      });
+      var d = await r.json();
+      if (d.ok) {
+        toast('Character "' + name + '" saved ✓ — available on all your devices', 'ok');
+      } else {
+        toast('Character "' + name + '" saved locally (' + (d.error||'sync pending') + ')', 'info');
+      }
+    } catch(e) {
+      toast('Character "' + name + '" saved locally ✓', 'ok');
+    }
+  } else {
+    toast('Character "' + name + '" saved ✓ (sign in to sync across devices)', 'ok');
+  }
+
+  APS.charName = name;
+  var display = document.getElementById('aps-char-name-display');
+  if (display) display.textContent = 'Saved: ' + name;
+
+  // Refresh dropdown
+  await aps_renderCharSelector();
+};
+
+window.aps_loadCharacters = async function() {
+  var all = {};
+
+  // Load from Supabase first
+  var token = getAuthToken();
+  if (token) {
+    try {
+      var r = await fetch((window.API||API) + '/api/characters', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      var d = await r.json();
+      (d.characters || []).forEach(function(c) { all[c.name] = c; });
+    } catch(e) { console.warn('Load characters from server failed:', e.message); }
+  }
+
+  // Merge with localStorage (covers offline / before server has table)
+  try {
+    var local = JSON.parse(localStorage.getItem('aps_characters') || '{}');
+    Object.keys(local).forEach(function(name) {
+      if (!all[name]) all[name] = local[name];
+    });
+  } catch(e) {}
+
+  return all;
+};
+
+window.aps_loadCharacter = async function(name) {
+  var chars = await aps_loadCharacters();
+  var char  = chars[name];
+  if (!char) { toast('Character "' + name + '" not found', 'error'); return; }
+
+  APS.charName        = char.name;
+  APS.talkingPhotoId  = char.talking_photo_id || null;
+
+  if (!APS.settings) APS.settings = {};
+  if (char.voice_id)        APS.settings.voiceId     = char.voice_id;
+  if (char.voice_name)      APS.settings.voiceName   = char.voice_name;
+  if (char.voice_gender)    APS.settings.voiceGender = char.voice_gender;
+  if (char.stability)       APS.settings.stability   = char.stability;
+  if (char.clarity)         APS.settings.clarity     = char.clarity;
+  if (char.framing)         APS.settings.framing     = char.framing;
+  if (char.background_type) APS.settings.bg          = char.background_type;
+
+  // Restore photo preview
+  if (char.photo_url) {
+    var preview = document.getElementById('aps-photo-preview');
+    if (preview) { preview.src = char.photo_url; preview.style.display = 'block'; }
+    var wrap = document.getElementById('aps-presenter-img-wrap');
+    if (wrap) wrap.innerHTML = '<img src="'+char.photo_url+'" style="width:100%;height:100%;object-fit:cover;border-radius:100px 100px 0 0;">';
+    APS.photoPreviewUrl = char.photo_url;
+  }
+
+  if (char.talking_photo_id) {
+    try { localStorage.setItem('aps_talking_photo_id', char.talking_photo_id); } catch(e) {}
+  }
+
+  // Update name display and input
+  var display = document.getElementById('aps-char-name-display');
+  if (display) display.textContent = 'Loaded: ' + char.name;
+  var nameInput = document.getElementById('aps-char-name-input');
+  if (nameInput) nameInput.value = char.name;
+
+  // Apply voice settings to dropdowns
+  var voiceSel = document.getElementById('aps-voice-sel');
+  if (voiceSel && char.voice_id) voiceSel.value = char.voice_id;
+
+  localStorage.setItem('aps_current_char', char.name);
+  toast('Character "' + char.name + '" loaded ✓', 'ok');
+};
+
+window.aps_renderCharSelector = async function() {
+  var sel = document.getElementById('aps-char-select');
+  if (!sel) return;
+  var chars = await aps_loadCharacters();
+  sel.innerHTML = '<option value="">— Select saved character —</option>';
+  Object.keys(chars).sort().forEach(function(name) {
+    var c   = chars[name];
+    var opt = document.createElement('option');
+    opt.value       = name;
+    opt.textContent = name + (c.voice_gender ? ' (' + c.voice_gender + ')' : '');
+    sel.appendChild(opt);
+  });
+  var currentChar = localStorage.getItem('aps_current_char');
+  if (currentChar && chars[currentChar]) sel.value = currentChar;
+};
+
+// Load characters when APS opens
+document.addEventListener('aab_nav', function(e) {
+  if (e.detail && e.detail.page === 'ai-presenter-studio') {
+    setTimeout(function() {
+      aps_renderCharSelector();
+      var last = localStorage.getItem('aps_current_char');
+      if (last) {
+        var d = document.getElementById('aps-char-name-display');
+        if (d) d.textContent = 'Last used: ' + last;
+        var ni = document.getElementById('aps-char-name-input');
+        if (ni) ni.value = last;
+      }
+    }, 300);
+  }
+});
+
+// ── ASSET LIBRARY — persistent uploaded files ─────────────────────
+window.ASSET_LIBRARY = window.ASSET_LIBRARY || { items: [], loaded: false };
+
+window.asset_upload = async function(file, type) {
+  if (!file) return null;
+  var token = getAuthToken();
+
+  return new Promise(function(resolve) {
+    var reader = new FileReader();
+    reader.onload = async function(e) {
+      var dataUrl = e.target.result;
+      var b64     = dataUrl.split(',')[1];
+      var url     = dataUrl; // local blob URL as fallback
+
+      // Upload to server → Imgur for permanent URL
+      if (token && type === 'image') {
+        try {
+          var r = await fetch((window.API||API) + '/api/assets/upload-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+            body: JSON.stringify({ imageBase64: b64, name: file.name, mimeType: file.type, tags: [type] })
+          });
+          var d = await r.json();
+          if (d.url) url = d.url; // permanent Imgur URL
+        } catch(uploadErr) {
+          console.warn('Asset upload failed:', uploadErr.message);
+        }
+      } else if (token) {
+        // For audio/video: save record with local blob URL (client-side only for now)
+        try {
+          await fetch((window.API||API) + '/api/assets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+            body: JSON.stringify({
+              name: file.name, type, url: 'local:' + file.name,
+              mime_type: file.type, size_bytes: file.size
+            })
+          });
+        } catch(e) {}
+      }
+
+      var asset = {
+        id:       'asset_' + Date.now(),
+        name:     file.name,
+        type,
+        url,
+        dataUrl,  // keep blob for local playback
+        mimeType: file.type,
+        size:     file.size,
+        savedAt:  Date.now(),
+      };
+
+      ASSET_LIBRARY.items.unshift(asset);
+      // Save to localStorage as quick cache
+      try {
+        var cached = ASSET_LIBRARY.items.slice(0, 50).map(function(a) {
+          return { id:a.id, name:a.name, type:a.type, url:a.url, mimeType:a.mimeType, savedAt:a.savedAt };
+        });
+        localStorage.setItem('aab_assets', JSON.stringify(cached));
+      } catch(e) {}
+
+      toast('✓ ' + file.name + ' saved to asset library', 'ok');
+      if (typeof asset_renderLibrary === 'function') asset_renderLibrary();
+      resolve(asset);
+    };
+    reader.readAsDataURL(file);
+  });
+};
+
+window.asset_loadLibrary = async function() {
+  if (ASSET_LIBRARY.loaded) return;
+
+  // Load from localStorage cache first (instant)
+  try {
+    var cached = JSON.parse(localStorage.getItem('aab_assets') || '[]');
+    ASSET_LIBRARY.items = cached;
+  } catch(e) {}
+
+  // Then load from Supabase
+  var token = getAuthToken();
+  if (token) {
+    try {
+      var r = await fetch((window.API||API) + '/api/assets', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      var d = await r.json();
+      if (d.assets && d.assets.length) {
+        // Merge server assets into library
+        var serverIds = d.assets.map(function(a) { return a.id; });
+        // Remove local items that are now on server, add server items
+        ASSET_LIBRARY.items = d.assets.concat(
+          ASSET_LIBRARY.items.filter(function(a) { return !serverIds.includes(a.id); })
+        );
+      }
+    } catch(e) { console.warn('Load assets from server:', e.message); }
+  }
+
+  ASSET_LIBRARY.loaded = true;
+  if (typeof asset_renderLibrary === 'function') asset_renderLibrary();
+};
+
+// Render asset library panel (used in scene board + edit suite)
+window.asset_renderLibrary = function() {
+  var panel = document.getElementById('asset-library-panel');
+  if (!panel) return;
+  var items = ASSET_LIBRARY.items;
+  if (!items.length) {
+    panel.innerHTML = '<div style="font-size:11px;color:rgba(255,255,255,.2);padding:16px;text-align:center;">No assets yet — upload images, audio or video</div>';
+    return;
+  }
+
+  var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px;">';
+  items.slice(0, 40).forEach(function(a) {
+    var icon = a.type === 'image' ? '🖼' : a.type === 'audio' ? '🎵' : a.type === 'video' ? '🎬' : '📁';
+    var thumb = a.type === 'image' ? '<img src="'+a.url+'" style="width:100%;height:50px;object-fit:cover;border-radius:4px;display:block;">' :
+                '<div style="width:100%;height:50px;background:rgba(255,255,255,.05);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:24px;">'+icon+'</div>';
+    html += '<div data-asset-id="'+a.id+'" onclick="asset_useInProject(this.dataset.assetId)" style="cursor:pointer;border-radius:6px;overflow:hidden;background:rgba(255,255,255,.04);border:.5px solid rgba(255,255,255,.08);" title="'+a.name+'">';
+          + thumb
+          + '<div style="font-size:9px;color:rgba(255,255,255,.5);padding:3px 5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+a.name+'</div>'
+          + '</div>';
+  });
+  html += '</div>';
+  panel.innerHTML = html;
+};
+
+window.asset_useInProject = function(assetId) {
+  var asset = ASSET_LIBRARY.items.find(function(a){ return a.id === assetId; });
+  if (!asset) return;
+  var url = asset.dataUrl || asset.url;
+
+  if (asset.type === 'image') {
+    // Add as background or overlay
+    if (typeof setBg === 'function') setBg('custom', url);
+    toast(asset.name + ' set as background', 'ok');
+  } else if (asset.type === 'audio') {
+    // Add to music track
+    if (typeof loadBgMusic === 'function') loadBgMusic(null, url);
+    toast(asset.name + ' added to audio track', 'ok');
+  } else if (asset.type === 'video') {
+    // Add to b-roll track
+    if (window.TL) {
+      var broll = TL.tracks && TL.tracks.find(function(t){ return t.id==='broll'; });
+      if (broll) {
+        broll.clips = broll.clips || [];
+        broll.clips.push({ id:'asset_'+Date.now(), url, label:'🎬 '+asset.name, start: TL.playhead||0, duration:8, type:'video' });
+        if (typeof tl_render === 'function') tl_render();
+      }
+    }
+    toast(asset.name + ' added to B-Roll track', 'ok');
+  }
+};
+
+// Load library on sign-in
+document.addEventListener('aab_nav', function(e) {
+  var pg = e.detail && e.detail.page;
+  if (pg === 'dashboard-pg' || pg === 'scenes-pg' || pg === 'edit-pg') {
+    if (APP && APP.user) asset_loadLibrary();
+  }
+});
+
+
 console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgrounds, TP bg');
 </script>
 
