@@ -2028,6 +2028,8 @@
       flex: 1;
       display: flex;
       overflow: hidden;
+      min-height: 0;        /* allow shrinking */
+      max-height: calc(100vh - 46px - 128px); /* topbar=46 + ctrlbar=128 */
     }
 
     /* Scene queue */
@@ -3986,7 +3988,10 @@
   flex-direction: column;
   background: #06080f;
   border-top: .5px solid rgba(255,255,255,.07);
-  flex-shrink: 0;
+  flex-shrink: 0;       /* NEVER squish — always full height */
+  min-height: 120px;    /* always show both rows */
+  max-height: 132px;    /* cap so cam gets rest */
+  overflow: hidden;
 }
 .studio-ctrl-row {
   display: flex;
@@ -4361,6 +4366,18 @@
 .panel-group-label { padding: 2px 8px !important; }
 .grp-bg .panel-group-body { max-width: 280px; flex-wrap: wrap; }
 .s-btn { font-size: 9px !important; padding: 3px 6px !important; }
+
+/* ── STUDIO LAYOUT FIX — camera never covers bottom panel ── */
+.studio-wrap { height: 100vh !important; display: flex !important; flex-direction: column !important; overflow: hidden !important; }
+.studio-bar { flex-shrink: 0 !important; height: 46px !important; }
+.studio-main { flex: 1 !important; min-height: 0 !important; overflow: hidden !important; max-height: calc(100vh - 46px - 128px) !important; }
+.studio-ctrl-v2 { flex-shrink: 0 !important; min-height: 120px !important; max-height: 132px !important; overflow: hidden !important; }
+.studio-ctrl-row { max-height: 64px !important; overflow-y: hidden !important; }
+.panel-group { flex-shrink: 0 !important; }
+.panel-group-body { padding: 3px 8px !important; gap: 4px !important; }
+.panel-group-label { padding: 2px 8px !important; }
+.grp-bg .panel-group-body { max-width: 280px !important; flex-wrap: wrap !important; }
+.s-btn { font-size: 9px !important; padding: 3px 6px !important; }
 </style>
 </head>
 <body>
@@ -4725,6 +4742,21 @@
             </svg>Teleprompter
           </button>
           <div class="sb-div"></div>
+          <button class="sb-item" onclick="dashNav('my-videos',this)">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+              <rect x="1" y="2" width="12" height="10" rx="2" stroke="currentColor" stroke-width="1.2"/>
+              <path d="M6 5l4 2-4 2V5z" fill="currentColor"/>
+            </svg>My Videos
+          </button>
+          <button class="sb-item" onclick="dashNav('my-assets',this)">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+              <rect x="1" y="1" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/>
+              <rect x="7" y="1" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/>
+              <rect x="1" y="7" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/>
+              <rect x="7" y="7" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/>
+            </svg>My Assets
+          </button>
+          <div class="sb-div"></div>
           <button class="sb-item" onclick="dashNav('account',this)">
             <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
               <circle cx="7" cy="5" r="3" stroke="currentColor" stroke-width="1.2" />
@@ -4756,6 +4788,69 @@
             </div>
           </div>
         </div>
+        <!-- MY VIDEOS -->
+        <div class="dash-sec" id="dash-my-videos">
+          <div class="dash-hdr">
+            <div>
+              <div class="dash-title">My Videos</div>
+              <div class="dash-sub">All your recorded and AI-generated clips</div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-ghost btn-sm" onclick="dash_loadVideos()">↻ Refresh</button>
+              <button class="btn btn-primary btn-sm" onclick="nav('edit-pg')">Open Edit Suite →</button>
+            </div>
+          </div>
+          <!-- Filter tabs -->
+          <div style="display:flex;gap:6px;margin-bottom:16px;">
+            <button class="btn btn-ghost btn-sm dash-vid-filter on" data-filter="all" onclick="dash_filterVideos('all',this)">All</button>
+            <button class="btn btn-ghost btn-sm dash-vid-filter" data-filter="recording" onclick="dash_filterVideos('recording',this)">🎥 Recorded</button>
+            <button class="btn btn-ghost btn-sm dash-vid-filter" data-filter="ai-presenter" onclick="dash_filterVideos('ai-presenter',this)">✨ AI Generated</button>
+          </div>
+          <div id="dash-videos-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;">
+            <div style="color:rgba(255,255,255,.3);font-size:13px;grid-column:1/-1;padding:24px 0;text-align:center;">
+              Loading your videos...
+            </div>
+          </div>
+        </div>
+
+        <!-- MY ASSETS -->
+        <div class="dash-sec" id="dash-my-assets">
+          <div class="dash-hdr">
+            <div>
+              <div class="dash-title">My Assets</div>
+              <div class="dash-sub">Images, audio, video and SFX saved to your library</div>
+            </div>
+          </div>
+          <!-- Upload buttons -->
+          <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+            <label class="btn btn-ghost btn-sm" style="cursor:pointer;">
+              🖼 Upload Image<input type="file" style="display:none;" accept="image/*" onchange="dash_uploadAsset(this.files[0],'image')">
+            </label>
+            <label class="btn btn-ghost btn-sm" style="cursor:pointer;">
+              🎵 Upload Audio<input type="file" style="display:none;" accept="audio/*" onchange="dash_uploadAsset(this.files[0],'audio')">
+            </label>
+            <label class="btn btn-ghost btn-sm" style="cursor:pointer;">
+              🎬 Upload Video<input type="file" style="display:none;" accept="video/*" onchange="dash_uploadAsset(this.files[0],'video')">
+            </label>
+            <label class="btn btn-ghost btn-sm" style="cursor:pointer;">
+              🎤 Upload SFX<input type="file" style="display:none;" accept="audio/*" onchange="dash_uploadAsset(this.files[0],'sfx')">
+            </label>
+          </div>
+          <!-- Filter by type -->
+          <div style="display:flex;gap:6px;margin-bottom:14px;">
+            <button class="btn btn-ghost btn-sm dash-asset-filter on" data-type="all" onclick="dash_filterAssets('all',this)">All</button>
+            <button class="btn btn-ghost btn-sm dash-asset-filter" data-type="image" onclick="dash_filterAssets('image',this)">🖼 Images</button>
+            <button class="btn btn-ghost btn-sm dash-asset-filter" data-type="audio" onclick="dash_filterAssets('audio',this)">🎵 Audio</button>
+            <button class="btn btn-ghost btn-sm dash-asset-filter" data-type="video" onclick="dash_filterAssets('video',this)">🎬 Video</button>
+            <button class="btn btn-ghost btn-sm dash-asset-filter" data-type="sfx" onclick="dash_filterAssets('sfx',this)">🎤 SFX</button>
+          </div>
+          <div id="dash-assets-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;">
+            <div style="color:rgba(255,255,255,.3);font-size:13px;grid-column:1/-1;padding:24px 0;text-align:center;">
+              No assets yet — upload files above
+            </div>
+          </div>
+        </div>
+
         <div class="dash-sec" id="dash-account">
           <div class="dash-hdr">
             <div class="dash-title">Account &amp; Credits</div>
@@ -5397,114 +5492,104 @@
       </div>
     </div>
 
-    <!-- ═══ CLIPS STRIP (horizontal scroll, top) ═══════════════════════════ -->
-    <div id="edit-clips-strip" style="flex-shrink:0;height:110px;background:#050810;border-bottom:.5px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:0;overflow-x:auto;padding:0 12px;scrollbar-width:thin;">
-      <div id="edit-clips-strip-inner" style="display:flex;gap:8px;align-items:center;height:100%;padding:8px 0;">
-        <div style="font-size:11px;color:rgba(255,255,255,.2);white-space:nowrap;padding:0 8px;">No clips yet — record your scenes first</div>
-      </div>
-    </div>
+      <!-- ═══ EDIT SUITE BODY: Preview (left) + Clips (right) + Timeline (bottom) ═══ -->
+      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0;">
 
-    <!-- ═══ MAIN BODY: Preview (left) + Timeline (right) ══════════════════ -->
-    <div style="flex:1;display:flex;overflow:hidden;min-height:0;">
-
-      <!-- VIDEO PREVIEW — large, fixed left half -->
-      <div id="edit-preview-pane" style="width:55%;flex-shrink:0;display:flex;flex-direction:column;background:#000;border-right:.5px solid rgba(255,255,255,.07);">
-
-        <!-- Preview screen -->
-        <div style="flex:1;display:flex;align-items:center;justify-content:center;position:relative;background:#040710;min-height:0;">
-          <div id="edit-no-clips" style="text-align:center;color:rgba(255,255,255,.2);">
-            <div style="font-size:32px;margin-bottom:10px;">🎬</div>
-            <div style="font-size:13px;margin-bottom:10px;">Record your scenes first</div>
-            <button class="studio-btn" onclick="nav('record-pg')">← Go to studio</button>
-          </div>
-          <video id="edit-video" preload="auto"
-            style="display:none;width:100%;height:100%;object-fit:contain;background:#000;"></video>
-
-          <!-- Subtitle overlay -->
-          <div id="edit-subtitle-overlay" style="position:absolute;bottom:50px;left:10%;right:10%;text-align:center;pointer-events:none;display:none;">
-            <span id="edit-subtitle-text" style="font-size:20px;font-weight:600;color:#fff;background:rgba(0,0,0,.65);padding:4px 12px;border-radius:4px;display:inline-block;"></span>
-          </div>
-
-          <!-- Scene info overlay -->
-          <div id="edit-scene-info" style="position:absolute;top:10px;left:10px;background:rgba(0,0,0,.6);padding:4px 10px;border-radius:6px;font-size:11px;color:rgba(255,255,255,.6);display:none;"></div>
-        </div>
-
-        <!-- Playback controls -->
-        <div style="flex-shrink:0;padding:10px 14px;background:rgba(0,0,0,.5);display:flex;align-items:center;gap:6px;border-top:.5px solid rgba(255,255,255,.06);">
-          <button class="studio-btn" onclick="editSeek(-10)" style="padding:4px 8px;">«10s</button>
-          <button class="studio-btn" onclick="editSeek(-1)" style="padding:4px 7px;">«1s</button>
-          <button class="studio-btn" onclick="editPlayPause()" id="edit-play-btn"
-            style="padding:6px 16px;background:rgba(0,212,255,.12);color:var(--accent);border-color:rgba(0,212,255,.3);font-size:14px;">▶</button>
-          <button class="studio-btn" onclick="editSeek(1)" style="padding:4px 7px;">1s»</button>
-          <button class="studio-btn" onclick="editSeek(10)" style="padding:4px 8px;">10s»</button>
-          <span id="edit-timecode" style="font-size:11px;color:rgba(255,255,255,.5);font-family:JetBrains Mono,monospace;margin-left:8px;min-width:100px;">0:00 / 0:00</span>
-          <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
-            <span style="font-size:11px;color:rgba(255,255,255,.3);">VOL</span>
-            <input type="range" id="edit-vol" min="0" max="100" value="100" style="width:60px;accent-color:var(--accent);" oninput="editSetVol(this.value)">
-          </div>
-        </div>
-      </div>
-
-      <!-- TIMELINE + TOOLS — right side -->
-      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;min-height:0;">
-
-        <!-- Timeline toolbar -->
-        <div style="flex-shrink:0;height:40px;display:flex;align-items:center;gap:6px;padding:0 10px;background:rgba(0,0,0,.3);border-bottom:.5px solid rgba(255,255,255,.06);">
-          <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.2);">Timeline</span>
-
-          <div class="tl-tools-group">
-            <button class="tl-tool tl-tool-select on" id="tl-tool-select" onclick="tl_setTool('select')" title="Select (V)">▶ Select</button>
-            <button class="tl-tool tl-tool-trim" id="tl-tool-trim" onclick="tl_setTool('trim')" title="Trim (T)">✂ Trim</button>
-            <button class="tl-tool tl-tool-split" id="tl-tool-split" onclick="tl_split()" title="Split at playhead (S)">⊣ Split</button>
-            <button class="tl-tool tl-tool-del" onclick="tl_deleteSelected()" title="Delete selected (Del)">🗑 Delete</button>
-          </div>
-
-          <select id="tl-add-track-type" style="font-size:10px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);color:rgba(255,255,255,.5);border-radius:5px;padding:3px 6px;font-family:'Sora',sans-serif;">
-            <option value="video">Video overlay</option>
-            <option value="audio">Audio</option>
-            <option value="image">Image overlay</option>
-            <option value="subtitle">Subtitle</option>
-          </select>
-          <button class="studio-btn" onclick="tl_addTrack()" style="padding:3px 8px;font-size:10px;">+ Track</button>
-          <button class="studio-btn" onclick="tl_addText()" style="padding:3px 8px;font-size:10px;">🔤 Text</button>
-
-          <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
-            <button class="studio-btn" onclick="tl_fitToWindow()" style="padding:2px 7px;font-size:10px;">Fit</button>
-            <input type="range" id="tl-zoom" min="8" max="200" value="40" step="4" style="width:60px;accent-color:var(--accent);" oninput="tl_setZoom(this.value)">
-            <span id="tl-zoom-val" style="font-size:9px;color:rgba(255,255,255,.3);min-width:32px;">40px/s</span>
-          </div>
-        </div>
-
-        <!-- Track area (labels + scrollable tracks) -->
+        <!-- TOP SECTION: Preview + Clips strip side by side -->
         <div style="flex:1;display:flex;overflow:hidden;min-height:0;">
-          <div id="tl-labels" style="width:88px;flex-shrink:0;border-right:.5px solid rgba(255,255,255,.07);overflow:hidden;background:rgba(0,0,0,.2);"></div>
-          <div style="flex:1;overflow:auto;position:relative;" id="tl-scroll-container" onscroll="syncLabelScroll(this)">
-            <div id="tl-ruler" style="height:20px;background:rgba(255,255,255,.04);border-bottom:.5px solid rgba(255,255,255,.06);position:sticky;top:0;z-index:10;pointer-events:none;"></div>
-            <div id="tl-tracks" style="position:relative;">
-              <div id="tl-playhead" style="position:absolute;top:0;bottom:0;width:2px;background:var(--accent);z-index:20;pointer-events:none;left:0;">
-                <div style="position:absolute;top:0;left:-5px;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid var(--accent);"></div>
+
+          <!-- LEFT: VIDEO PREVIEW -->
+          <div id="edit-preview-pane" style="width:52%;flex-shrink:0;display:flex;flex-direction:column;background:#050810;border-right:.5px solid rgba(255,255,255,.06);">
+
+            <!-- Preview screen -->
+            <div style="flex:1;display:flex;align-items:center;justify-content:center;position:relative;background:#0a0c14;overflow:hidden;">
+              <div id="edit-no-clips" style="text-align:center;color:rgba(255,255,255,.2);">
+                <div style="font-size:32px;margin-bottom:10px;">🎬</div>
+                <div style="font-size:13px;margin-bottom:10px;">Record or generate scenes first</div>
+                <button class="studio-btn" onclick="nav('record-pg')">← Recording Studio</button>
+                <button class="studio-btn" onclick="nav('ai-presenter-studio')" style="margin-top:6px;">✨ AI Presenter</button>
+              </div>
+              <video id="edit-video" preload="auto"
+                style="display:none;width:100%;height:100%;object-fit:contain;background:#000;"
+                onended="edit_nextClip()" ontimeupdate="edit_onTimeUpdate()" onpause="edit_onPause()" onplay="edit_onPlay()">
+              </video>
+              <!-- Subtitle overlay -->
+              <div id="edit-subtitle-overlay" style="position:absolute;bottom:50px;left:10%;right:10%;text-align:center;font-size:16px;font-weight:600;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.9);pointer-events:none;display:none;"></div>
+              <!-- Scene info overlay -->
+              <div id="edit-scene-info" style="position:absolute;top:10px;left:10px;background:rgba(0,0,0,.6);padding:4px 8px;border-radius:5px;font-size:10px;color:rgba(255,255,255,.5);display:none;"></div>
+            </div>
+
+            <!-- Playback controls -->
+            <div style="flex-shrink:0;padding:8px 12px;background:rgba(0,0,0,.5);display:flex;align-items:center;gap:6px;border-top:.5px solid rgba(255,255,255,.06);">
+              <button class="studio-btn" onclick="editSeek(-10)" style="padding:4px 8px;">«10s</button>
+              <button class="studio-btn" onclick="editSeek(-1)" style="padding:4px 7px;">«1s</button>
+              <button class="studio-btn" onclick="editPlayPause()" id="edit-play-btn"
+                style="padding:4px 16px;background:rgba(0,212,255,.15);border-color:rgba(0,212,255,.4);color:var(--accent);">▶ Play</button>
+              <button class="studio-btn" onclick="editSeek(1)" style="padding:4px 7px;">1s»</button>
+              <button class="studio-btn" onclick="editSeek(10)" style="padding:4px 8px;">10s»</button>
+              <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+                <span id="edit-time-display" style="font-size:10px;font-family:'JetBrains Mono',monospace;color:rgba(255,255,255,.4);">0:00 / 0:00</span>
+                <input type="range" id="edit-volume" min="0" max="1" step="0.05" value="1"
+                  style="width:70px;accent-color:var(--accent);" oninput="edit_setVolume(this.value)" title="Volume">
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT: CLIPS STRIP (vertical list of scene thumbnails) -->
+          <div id="edit-clips-strip" style="width:48%;display:flex;flex-direction:column;background:#050810;overflow:hidden;">
+            <div style="flex-shrink:0;padding:8px 12px;border-bottom:.5px solid rgba(255,255,255,.05);font-size:9px;font-weight:700;color:rgba(255,255,255,.3);text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:center;gap:8px;">
+              <span>📋 Scene Clips</span>
+              <span id="edit-clip-count" style="color:rgba(255,255,255,.2);font-weight:400;"></span>
+              <button class="studio-btn" style="margin-left:auto;font-size:9px;padding:2px 7px;" onclick="edit_buildPlaylist()">↻ Refresh</button>
+            </div>
+            <div id="edit-clips-strip-inner" style="flex:1;overflow-y:auto;overflow-x:hidden;padding:8px;display:flex;flex-direction:column;gap:6px;scrollbar-width:thin;">
+              <div style="font-size:11px;color:rgba(255,255,255,.2);text-align:center;padding:20px 0;">No clips yet</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- BOTTOM: FULL-WIDTH TIMELINE -->
+        <div id="timeline-panel" style="flex-shrink:0;height:220px;display:flex;flex-direction:column;border-top:.5px solid rgba(255,255,255,.08);background:#040609;">
+
+          <!-- Timeline toolbar -->
+          <div style="flex-shrink:0;height:38px;display:flex;align-items:center;gap:6px;padding:0 10px;background:rgba(0,0,0,.3);border-bottom:.5px solid rgba(255,255,255,.05);">
+            <div class="tl-tools-group" style="display:flex;gap:4px;align-items:center;">
+              <button class="tl-tool tl-tool-select on" id="tl-tool-select" onclick="tl_setTool('select')" title="Select (V)">↖ Select</button>
+              <button class="tl-tool tl-tool-trim" id="tl-tool-trim" onclick="tl_setTool('trim')" title="Trim (T)">↔ Trim</button>
+              <button class="tl-tool tl-tool-split" id="tl-tool-split" onclick="tl_split()" title="Split at playhead (S)">⊣ Split</button>
+              <button class="tl-tool tl-tool-del" onclick="tl_deleteSelected()" title="Delete selected (Del)">🗑 Del</button>
+            </div>
+            <div style="width:.5px;height:18px;background:rgba(255,255,255,.08);margin:0 4px;"></div>
+            <button class="studio-btn" onclick="tl_addText()" style="padding:3px 8px;font-size:10px;">🔤 Text</button>
+            <button class="studio-btn" onclick="tl_addTrack()" style="padding:3px 8px;font-size:10px;">+ Track</button>
+            <div style="width:.5px;height:18px;background:rgba(255,255,255,.08);margin:0 4px;"></div>
+            <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:3px 8px;">🎵 Music<input type="file" style="display:none;" accept="audio/*" onchange="importToTimeline(this,'audio')"></label>
+            <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:3px 8px;">🎬 Video<input type="file" style="display:none;" accept="video/*" onchange="importToTimeline(this,'video')"></label>
+            <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:3px 8px;">🖼 Image<input type="file" style="display:none;" accept="image/*" onchange="importToTimeline(this,'image')"></label>
+            <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:3px 8px;">🎤 SFX<input type="file" style="display:none;" accept="audio/*" onchange="importToTimeline(this,'sfx')"></label>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
+              <button class="studio-btn" onclick="tl_fitToWindow()" style="padding:2px 7px;font-size:10px;">Fit</button>
+              <button class="studio-btn" onclick="tl_zoomIn()" style="padding:2px 6px;font-size:10px;">+</button>
+              <button class="studio-btn" onclick="tl_zoomOut()" style="padding:2px 6px;font-size:10px;">−</button>
+              <button class="studio-btn" onclick="tl_toggleSubtitles()" id="tl-sub-btn" style="font-size:10px;color:rgba(255,255,255,.4);">CC</button>
+              <span id="tl-duration-display" style="font-size:9px;font-family:'JetBrains Mono',monospace;color:rgba(255,255,255,.3);"></span>
+            </div>
+          </div>
+
+          <!-- Track area: labels (fixed left) + scrollable tracks (right) -->
+          <div style="flex:1;display:flex;overflow:hidden;min-height:0;">
+            <div id="tl-labels" style="width:88px;flex-shrink:0;border-right:.5px solid rgba(255,255,255,.07);overflow:hidden;"></div>
+            <div style="flex:1;overflow:auto;position:relative;" id="tl-scroll-container" onscroll="syncLabelScroll(this)">
+              <div id="tl-ruler" style="height:20px;background:rgba(255,255,255,.04);border-bottom:.5px solid rgba(255,255,255,.06);position:sticky;top:0;z-index:10;"></div>
+              <div id="tl-tracks" style="position:relative;min-width:max-content;">
+                <div id="tl-playhead" style="position:absolute;top:0;bottom:0;width:2px;background:var(--accent);z-index:20;pointer-events:none;"></div>
+                <div style="position:absolute;top:0;left:-5px;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid var(--accent);z-index:21;pointer-events:none;" id="tl-playhead-arrow"></div>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Bottom controls -->
-        <div style="flex-shrink:0;height:36px;display:flex;align-items:center;gap:8px;padding:0 10px;border-top:.5px solid rgba(255,255,255,.05);background:rgba(0,0,0,.2);">
-          <span style="font-size:9px;color:rgba(255,255,255,.25);white-space:nowrap;">MUSIC VOL</span>
-          <input type="range" id="music-vol" min="0" max="100" value="30" style="width:60px;accent-color:var(--gold);" oninput="setMusicVol(this.value)">
-          <span id="music-vol-val" style="font-size:10px;color:var(--gold);min-width:26px;">30%</span>
-          <div style="width:.5px;height:16px;background:rgba(255,255,255,.08);"></div>
-          <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:2px 8px;">🎵 Add music<input type="file" style="display:none;" accept="audio/*" onchange="importToTimeline(this,'audio')"></label>
-          <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:2px 8px;">🎬 Import video<input type="file" style="display:none;" accept="video/*" onchange="importToTimeline(this,'video')"></label>
-          <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:2px 8px;">🖼 Import image<input type="file" style="display:none;" accept="image/*" onchange="importToTimeline(this,'image')"></label>
-          <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:2px 8px;">🎤 Import SFX<input type="file" style="display:none;" accept="audio/*" onchange="importToTimeline(this,'sfx')"></label>
-          <div style="width:.5px;height:16px;background:rgba(255,255,255,.08);"></div>
-          <button class="studio-btn" onclick="tl_toggleSubtitles()" id="tl-sub-btn" style="font-size:10px;color:#a78bfa;border-color:rgba(139,92,246,.25);">💬 Subtitles: OFF</button>
-        </div>
-
       </div>
-    </div>
-  </div>
 
 
   <div id="export-pg" class="pg" style="background:var(--off);padding-top:52px;min-height:100vh;">
@@ -12135,7 +12220,7 @@ if (isApp) {
 /* ── Mobile: Portrait stacking ── */
 @media(max-width:768px){
   .studio-layout{flex-direction:column!important}
-  .studio-cam{width:100%!important;height:50vw!important;min-height:200px}
+  .studio-cam{width:100%!important;height:100%!important;object-fit:cover!important}
   .studio-tp{width:100%!important;height:auto!important;min-height:180px}
   .pg-header,.edit-header{flex-wrap:wrap;gap:8px}
   #aab-export-btn{width:100%}
@@ -12196,7 +12281,7 @@ if (isApp) {
 /* ── Mobile: Portrait stacking ── */
 @media(max-width:768px){
   .studio-layout{flex-direction:column!important}
-  .studio-cam{width:100%!important;height:50vw!important;min-height:200px}
+  .studio-cam{width:100%!important;height:100%!important;object-fit:cover!important}
   .studio-tp{width:100%!important;height:auto!important;min-height:180px}
   .pg-header,.edit-header{flex-wrap:wrap;gap:8px}
   #aab-export-btn{width:100%}
@@ -13400,7 +13485,7 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
     '.panel-group-label{display:flex!important;font-size:8px!important;font-weight:700!important;text-transform:uppercase!important;letter-spacing:.1em!important;padding:4px 10px 3px!important;border-bottom:1.5px solid!important;}'+
     '.panel-group-body{display:flex!important;align-items:center!important;gap:4px!important;padding:3px 10px!important;flex:1!important;}'+
     '.studio-wrap{display:flex!important;flex-direction:column!important;height:100vh!important;}'+
-    '.studio-main{flex:1!important;display:flex!important;overflow:hidden!important;min-height:0!important;}';
+    '.studio-main{flex:1!important;display:flex!important;overflow:hidden!important;min-height:0!important;max-height:calc(100vh - 46px - 128px)!important;}';
   document.head.appendChild(s);
 })();
 
@@ -17171,6 +17256,100 @@ tlStyle.textContent = [
   '#edit-pg .edit-main { min-height:0 !important; }',
 ].join('');
 document.head.appendChild(tlStyle);
+
+
+
+// ── EDIT SUITE LAYOUT FIX — clips strip vertical, timeline bottom ─
+// Override edit_renderClipStrip to render vertically (clips listed top-to-bottom)
+var _origRenderStrip = window.edit_renderClipStrip;
+window.edit_renderClipStrip = function() {
+  var inner = document.getElementById('edit-clips-strip-inner');
+  if (!inner) { if (typeof _origRenderStrip === 'function') return _origRenderStrip(); return; }
+
+  var clips = Object.values(PROJECT.clips || {});
+  // Sort chronologically by sceneNum
+  clips.sort(function(a,b){ return (a.sceneNum||a.sceneIdx||0) - (b.sceneNum||b.sceneIdx||0); });
+
+  var countEl = document.getElementById('edit-clip-count');
+  if (countEl) countEl.textContent = clips.length + ' clip' + (clips.length !== 1 ? 's' : '');
+
+  if (!clips.length) {
+    inner.innerHTML = '<div style="font-size:11px;color:rgba(255,255,255,.2);text-align:center;padding:20px 0;">No clips yet<br><small style="font-size:9px;opacity:.6;">Record scenes or generate with AI</small></div>';
+    return;
+  }
+
+  inner.innerHTML = '';
+  clips.forEach(function(clip, idx) {
+    var url = clip.url || clip.videoUrl;
+    if (!url) return;
+
+    var isSelected = (typeof EDIT_PLAYLIST !== 'undefined' && EDIT_PLAYLIST.current === idx);
+    var sourceIcon = clip.source === 'ai-presenter' ? '✨' : '🎥';
+    var duration   = clip.duration ? clip.duration.toFixed(1) + 's' : '';
+
+    var card = document.createElement('div');
+    card.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;border:.5px solid '
+      + (isSelected ? 'rgba(0,212,255,.4)' : 'rgba(255,255,255,.06)')
+      + ';background:' + (isSelected ? 'rgba(0,212,255,.08)' : 'rgba(255,255,255,.02)')
+      + ';transition:background .1s;flex-shrink:0;';
+
+    // Thumbnail
+    var thumb = document.createElement('video');
+    thumb.src = url;
+    thumb.style.cssText = 'width:80px;height:50px;object-fit:cover;border-radius:5px;flex-shrink:0;background:#000;';
+    thumb.muted = true;
+    thumb.preload = 'metadata';
+    thumb.onloadedmetadata = function(){ thumb.currentTime = 0.5; };
+    card.appendChild(thumb);
+
+    // Info
+    var info = document.createElement('div');
+    info.style.cssText = 'flex:1;min-width:0;';
+    info.innerHTML = '<div style="font-size:11px;font-weight:600;color:rgba(255,255,255,.8);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
+      + sourceIcon + ' Scene ' + (clip.sceneNum || idx+1) + '</div>'
+      + '<div style="font-size:9px;color:rgba(255,255,255,.35);margin-top:2px;">' + (clip.sceneName||'').slice(0,30) + '</div>'
+      + '<div style="font-size:9px;color:rgba(255,255,255,.25);margin-top:1px;">' + duration + '</div>';
+    card.appendChild(info);
+
+    card.onclick = function() { edit_selectClip(idx); };
+    card.onmouseenter = function(){ card.style.background = 'rgba(255,255,255,.05)'; };
+    card.onmouseleave = function(){ card.style.background = isSelected ? 'rgba(0,212,255,.08)' : 'rgba(255,255,255,.02)'; };
+
+    inner.appendChild(card);
+  });
+};
+
+// Also fix edit_buildPlaylist to use the new vertical strip renderer
+var _origBuildPlaylist = window.edit_buildPlaylist;
+window.edit_buildPlaylist = function() {
+  if (typeof _origBuildPlaylist === 'function') _origBuildPlaylist();
+  // Re-render the vertical strip after playlist is built
+  setTimeout(function() {
+    if (typeof edit_renderClipStrip === 'function') edit_renderClipStrip();
+  }, 50);
+};
+
+// Add edit suite CSS
+(function() {
+  var s = document.getElementById('edit-suite-layout-fix');
+  if (s) s.remove();
+  s = document.createElement('style');
+  s.id = 'edit-suite-layout-fix';
+  s.textContent = [
+    '#edit-pg { display:flex; flex-direction:column; height:100vh; overflow:hidden; }',
+    '#edit-pg > div:not(.edit-topbar-v2) { flex:1; min-height:0; }',
+    '#timeline-panel { flex-shrink:0 !important; height:220px !important; }',
+    '#tl-scroll-container { overflow-x:auto !important; overflow-y:auto !important; }',
+    '#tl-tracks { min-width:max-content; }',
+    '.tl-clip { cursor:pointer; border-radius:4px; }',
+    '.tl-clip:hover { opacity:.85; }',
+    '.tl-clip.selected { outline:2px solid var(--accent); }',
+    /* clips strip vertical scroll */
+    '#edit-clips-strip-inner::-webkit-scrollbar { width:4px; }',
+    '#edit-clips-strip-inner::-webkit-scrollbar-thumb { background:rgba(255,255,255,.15); border-radius:2px; }',
+  ].join('\n');
+  document.head.appendChild(s);
+})();
 
 
 console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgrounds, TP bg');
