@@ -1610,9 +1610,21 @@ async function ensureAabProjectsTable() {
   try {
     if (!process.env.SUPABASE_SERVICE_KEY) return;
     const sb = getSupaAdmin();
+
+    // Check legacy table
     const { error } = await sb.from('aab_projects').select('id').limit(1);
-    if (!error) { console.log('✓ aab_projects table ready'); return; }
-    if (error.code === 'PGRST205') console.warn('⚠ aab_projects table missing — create it in Supabase SQL editor.');
+    if (!error) { console.log('✓ aab_projects table ready'); }
+    else if (error.code === 'PGRST205') console.warn('⚠ aab_projects table missing');
+
+    // Check new tables — characters and assets
+    const { error: charErr } = await sb.from('characters').select('id').limit(1);
+    if (!charErr) { console.log('✓ characters table ready'); }
+    else { console.warn('⚠ characters table missing — run SQL migration'); }
+
+    const { error: assetsErr } = await sb.from('assets').select('id').limit(1);
+    if (!assetsErr) { console.log('✓ assets table ready'); }
+    else { console.warn('⚠ assets table missing — run SQL migration'); }
+
   } catch(e) { console.warn('ensureAabProjectsTable:', e.message); }
 }
 
@@ -1804,6 +1816,139 @@ app.post('/api/describe-image', async (req, res) => {
     console.error('/api/describe-image:', e.message);
     res.status(500).json({ error: e.message, description: '' });
   }
+});
+
+// ── Characters & Assets CRUD ─────────────────────────────────────────────────
+
+// GET /api/characters — list user's saved characters
+app.get('/api/characters', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.json({ characters: [] });
+    const sb = getSupaAdmin();
+    const { data: { user } } = await sb.auth.getUser(token);
+    if (!user) return res.json({ characters: [] });
+    const { data, error } = await sb.from('characters').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
+    if (error) {
+      if (error.code === 'PGRST205') return res.json({ characters: [] }); // table not yet created
+      throw error;
+    }
+    res.json({ characters: data || [] });
+  } catch(e) { res.status(500).json({ error: e.message, characters: [] }); }
+});
+
+// POST /api/characters — save/update a character
+app.post('/api/characters', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.status(401).json({ error: 'No auth token' });
+    const sb = getSupaAdmin();
+    const { data: { user } } = await sb.auth.getUser(token);
+    if (!user) return res.status(401).json({ error: 'Invalid token' });
+    const { name, talking_photo_id, photo_url, voice_id, voice_name, voice_gender, stability, clarity, framing, background_type } = req.body;
+    if (!name) return res.status(400).json({ error: 'name required' });
+    const record = { user_id: user.id, name, talking_photo_id, photo_url, voice_id, voice_name, voice_gender, stability, clarity, framing, background_type };
+    const { data, error } = await sb.from('characters').upsert(record, { onConflict: 'user_id,name' }).select().single();
+    if (error) {
+      if (error.code === 'PGRST205') return res.status(503).json({ error: 'characters table not created yet — run SQL migration' });
+      throw error;
+    }
+    console.log('Character saved:', name, 'for user', user.id);
+    res.json({ character: data, ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/characters/:name — delete a character
+app.delete('/api/characters/:name', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.status(401).json({ error: 'No auth token' });
+    const sb = getSupaAdmin();
+    const { data: { user } } = await sb.auth.getUser(token);
+    if (!user) return res.status(401).json({ error: 'Invalid token' });
+    await sb.from('characters').delete().eq('user_id', user.id).eq('name', req.params.name);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/assets — list user's uploaded assets
+app.get('/api/assets', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.json({ assets: [] });
+    const sb = getSupaAdmin();
+    const { data: { user } } = await sb.auth.getUser(token);
+    if (!user) return res.json({ assets: [] });
+    const type = req.query.type; // filter by type: 'image', 'audio', 'video'
+    let q = sb.from('assets').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
+    if (type) q = q.eq('type', type);
+    const { data, error } = await q.limit(200);
+    if (error) {
+      if (error.code === 'PGRST205') return res.json({ assets: [] });
+      throw error;
+    }
+    res.json({ assets: data || [] });
+  } catch(e) { res.status(500).json({ error: e.message, assets: [] }); }
+});
+
+// POST /api/assets — save an uploaded asset record
+app.post('/api/assets', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.status(401).json({ error: 'No auth token' });
+    const sb = getSupaAdmin();
+    const { data: { user } } = await sb.auth.getUser(token);
+    if (!user) return res.status(401).json({ error: 'Invalid token' });
+    const { name, type, url, mime_type, size_bytes, duration, tags, project_id } = req.body;
+    if (!name || !type || !url) return res.status(400).json({ error: 'name, type, url required' });
+    const { data, error } = await sb.from('assets').insert({ user_id: user.id, name, type, url, mime_type, size_bytes, duration, tags, project_id }).select().single();
+    if (error) {
+      if (error.code === 'PGRST205') return res.status(503).json({ error: 'assets table not created yet — run SQL migration' });
+      throw error;
+    }
+    res.json({ asset: data, ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/assets/:id
+app.delete('/api/assets/:id', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.status(401).json({ error: 'No auth token' });
+    const sb = getSupaAdmin();
+    const { data: { user } } = await sb.auth.getUser(token);
+    if (!user) return res.status(401).json({ error: 'Invalid token' });
+    await sb.from('assets').delete().eq('id', req.params.id).eq('user_id', user.id);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/assets/upload-image — upload image to Imgur and save to assets table
+app.post('/api/assets/upload-image', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.status(401).json({ error: 'No auth token' });
+    const sb = getSupaAdmin();
+    const { data: { user } } = await sb.auth.getUser(token);
+    if (!user) return res.status(401).json({ error: 'Invalid token' });
+    const { imageBase64, name, mimeType = 'image/jpeg', tags = [] } = req.body;
+    if (!imageBase64) return res.status(400).json({ error: 'imageBase64 required' });
+
+    // Upload to Imgur for permanent public URL
+    const url = await uploadToImgur(imageBase64);
+    if (!url) return res.status(500).json({ error: 'Image upload failed' });
+
+    // Save to assets table
+    const sizeBytes = Math.round(imageBase64.length * 0.75); // approx bytes from base64
+    const { data, error } = await sb.from('assets').insert({
+      user_id: user.id, name: name || 'Uploaded Image', type: 'image',
+      url, mime_type: mimeType, size_bytes: sizeBytes, tags
+    }).select().single();
+
+    if (error && error.code !== 'PGRST205') throw error;
+    console.log('Asset uploaded:', url.slice(0,50));
+    res.json({ url, asset: data || null, ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── POST /api/heygen/upload-photo ─────────────────────────────────────────────
