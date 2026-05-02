@@ -17352,6 +17352,319 @@ window.edit_buildPlaylist = function() {
 })();
 
 
+
+// ═══════════════════════════════════════════════════════════════
+// DASHBOARD — My Videos + My Assets full implementation
+// ═══════════════════════════════════════════════════════════════
+
+// dashNav — handle all dashboard sections including new ones
+var _origDashNav = window.dashNav;
+window.dashNav = function(section, btn) {
+  // Hide all dash sections
+  document.querySelectorAll('.dash-sec').forEach(function(s){ s.classList.remove('on'); });
+  // Remove active from all sidebar items
+  document.querySelectorAll('.sb-item').forEach(function(b){ b.classList.remove('on'); });
+  if (btn) btn.classList.add('on');
+
+  var panel = document.getElementById('dash-' + section);
+  if (panel) panel.classList.add('on');
+
+  // Load data for the section
+  if (section === 'my-videos')  dash_loadVideos();
+  if (section === 'my-assets')  dash_loadAssets();
+  if (section === 'projects' && typeof _origDashNav === 'function') {
+    // Let original handle projects loading
+    _origDashNav('projects', btn);
+    panel && panel.classList.add('on'); // re-add since origDashNav hides it
+  }
+};
+
+// ── My Videos ──────────────────────────────────────────────────
+window._allVideos = [];
+window._videoFilter = 'all';
+
+window.dash_loadVideos = function() {
+  var grid = document.getElementById('dash-videos-grid');
+  if (!grid) return;
+  grid.innerHTML = '<div style="color:rgba(255,255,255,.3);font-size:13px;grid-column:1/-1;padding:24px 0;text-align:center;"><div class="spin spin-dk" style="display:inline-block;margin-right:8px;"></div>Loading videos...</div>';
+
+  // Collect from all sources: PROJECT.clips, localStorage APS clips, recording clips
+  var videos = [];
+
+  // 1. Current project clips
+  Object.values(PROJECT.clips || {}).forEach(function(c) {
+    if (c.url || c.videoUrl) {
+      videos.push({
+        id: c.sceneId || ('clip_' + Date.now() + Math.random()),
+        url: c.url || c.videoUrl,
+        name: c.sceneName || ('Scene ' + (c.sceneNum || '')),
+        source: c.source || 'recording',
+        duration: c.duration || 0,
+        sceneNum: c.sceneNum || 0,
+        savedAt: c.ts || c.savedAt || 0,
+      });
+    }
+  });
+
+  // 2. Saved APS (AI) clips from localStorage
+  try {
+    var apsClips = JSON.parse(localStorage.getItem('aab_aps_clips') || '{}');
+    Object.values(apsClips).forEach(function(c) {
+      if ((c.url || c.videoUrl) && !videos.find(function(v){ return v.url === (c.url||c.videoUrl); })) {
+        videos.push({
+          id: c.sceneId || ('aps_'+Date.now()+Math.random()),
+          url: c.url || c.videoUrl,
+          name: c.sceneName || 'AI Scene',
+          source: 'ai-presenter',
+          duration: c.duration || 0,
+          sceneNum: c.sceneNum || 0,
+          savedAt: c.savedAt || 0,
+        });
+      }
+    });
+  } catch(e) {}
+
+  // 3. Recording clips from localStorage
+  try {
+    var recClips = JSON.parse(localStorage.getItem('aab_recording_clips') || '{}');
+    Object.values(recClips).forEach(function(c) {
+      if ((c.url || c.videoUrl) && !videos.find(function(v){ return v.url === (c.url||c.videoUrl); })) {
+        videos.push({
+          id: c.sceneId || ('rec_'+Date.now()+Math.random()),
+          url: c.url || c.videoUrl,
+          name: c.sceneName || ('Scene ' + (c.sceneNum || '')),
+          source: 'recording',
+          duration: c.duration || 0,
+          sceneNum: c.sceneNum || 0,
+          savedAt: c.ts || 0,
+        });
+      }
+    });
+  } catch(e) {}
+
+  // Sort by scene number then recency
+  videos.sort(function(a,b){ return (b.savedAt||0) - (a.savedAt||0); });
+  window._allVideos = videos;
+  dash_renderVideos(videos);
+};
+
+window.dash_filterVideos = function(filter, btn) {
+  window._videoFilter = filter;
+  document.querySelectorAll('.dash-vid-filter').forEach(function(b){ b.classList.remove('on'); });
+  if (btn) btn.classList.add('on');
+  var filtered = filter === 'all' ? window._allVideos
+    : window._allVideos.filter(function(v){ return v.source === filter; });
+  dash_renderVideos(filtered);
+};
+
+window.dash_renderVideos = function(videos) {
+  var grid = document.getElementById('dash-videos-grid');
+  if (!grid) return;
+  if (!videos.length) {
+    grid.innerHTML = '<div style="color:rgba(255,255,255,.3);font-size:13px;grid-column:1/-1;padding:40px 0;text-align:center;">No videos yet.<br><small style="opacity:.5;">Record scenes or generate with AI Presenter.</small></div>';
+    return;
+  }
+  grid.innerHTML = '';
+  videos.forEach(function(v) {
+    var icon = v.source === 'ai-presenter' ? '✨' : '🎥';
+    var dur  = v.duration ? v.duration.toFixed(1) + 's' : '';
+    var card = document.createElement('div');
+    card.style.cssText = 'background:rgba(255,255,255,.03);border:.5px solid rgba(255,255,255,.08);border-radius:10px;overflow:hidden;cursor:pointer;transition:border-color .15s;';
+    card.innerHTML =
+      '<video src="'+v.url+'" style="width:100%;height:120px;object-fit:cover;display:block;background:#000;" muted preload="metadata" onloadedmetadata="this.currentTime=0.5"></video>'
+      + '<div style="padding:8px 10px;">'
+      + '<div style="font-size:11px;font-weight:600;color:rgba(255,255,255,.85);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+icon+' '+v.name+'</div>'
+      + (dur ? '<div style="font-size:9px;color:rgba(255,255,255,.3);margin-top:2px;">'+dur+'</div>' : '')
+      + '<div style="display:flex;gap:6px;margin-top:8px;">'
+      + '<button onclick="event.stopPropagation();window._dashEditId=\''+v.id+'\';dash_loadIntoEdit(window._dashEditId)" style="flex:1;font-size:9px;padding:3px 0;background:rgba(0,212,255,.12);border:.5px solid rgba(0,212,255,.3);color:rgba(0,212,255,.8);border-radius:5px;cursor:pointer;">Edit →</button>'
+      + '<a href="'+v.url+'" download style="flex:1;font-size:9px;padding:3px 0;background:rgba(255,255,255,.05);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.5);border-radius:5px;cursor:pointer;text-align:center;text-decoration:none;">↓ Save</a>'
+      + '</div>'
+      + '</div>';
+    card.onmouseenter = function(){ card.style.borderColor = 'rgba(0,212,255,.3)'; };
+    card.onmouseleave = function(){ card.style.borderColor = 'rgba(255,255,255,.08)'; };
+    card.onclick = function() {
+      // Open in edit suite with this clip loaded
+      var vid = document.getElementById('edit-video');
+      if (vid) { vid.src = v.url; vid.style.display = 'block'; vid.load(); }
+      var noClips = document.getElementById('edit-no-clips');
+      if (noClips) noClips.style.display = 'none';
+      nav('edit-pg');
+    };
+    grid.appendChild(card);
+  });
+};
+
+window.dash_loadIntoEdit = function(id) {
+  var v = window._allVideos.find(function(x){ return x.id === id; });
+  if (!v) return;
+  var vid = document.getElementById('edit-video');
+  if (vid) { vid.src = v.url; vid.style.display = 'block'; vid.load(); }
+  nav('edit-pg');
+};
+
+// ── My Assets ──────────────────────────────────────────────────
+window._allAssets = [];
+window._assetFilter = 'all';
+
+window.dash_loadAssets = function() {
+  var grid = document.getElementById('dash-assets-grid');
+  if (!grid) return;
+
+  var assets = [];
+  try {
+    assets = JSON.parse(localStorage.getItem('aab_assets') || '[]');
+  } catch(e) {}
+
+  // Also include presenter photo if saved
+  var presPhoto = localStorage.getItem('aps_presenter_photo');
+  if (presPhoto && !assets.find(function(a){ return a.name === 'Presenter Photo'; })) {
+    assets.unshift({ id: 'pres_photo', name: 'Presenter Photo', type: 'image', url: 'data:image/jpeg;base64,' + presPhoto.slice(0, 50000), savedAt: Date.now() });
+  }
+
+  window._allAssets = assets;
+  dash_renderAssets(assets);
+};
+
+window.dash_filterAssets = function(type, btn) {
+  window._assetFilter = type;
+  document.querySelectorAll('.dash-asset-filter').forEach(function(b){ b.classList.remove('on'); });
+  if (btn) btn.classList.add('on');
+  var filtered = type === 'all' ? window._allAssets
+    : window._allAssets.filter(function(a){ return a.type === type; });
+  dash_renderAssets(filtered);
+};
+
+window.dash_renderAssets = function(assets) {
+  var grid = document.getElementById('dash-assets-grid');
+  if (!grid) return;
+  if (!assets.length) {
+    grid.innerHTML = '<div style="color:rgba(255,255,255,.3);font-size:13px;grid-column:1/-1;padding:40px 0;text-align:center;">No assets yet.<br><small style="opacity:.5;">Upload images, audio, video or SFX above.</small></div>';
+    return;
+  }
+  grid.innerHTML = '';
+  assets.forEach(function(a) {
+    var icon = a.type==='image'?'🖼':a.type==='audio'?'🎵':a.type==='video'?'🎬':a.type==='sfx'?'🎤':'📁';
+    var thumb = (a.type==='image' && a.url && (a.url.startsWith('http') || a.url.startsWith('data:')))
+      ? '<img src="'+a.url+'" style="width:100%;height:90px;object-fit:cover;display:block;background:#111;" loading="lazy">'
+      : '<div style="height:90px;display:flex;align-items:center;justify-content:center;font-size:28px;background:rgba(255,255,255,.03);">'+icon+'</div>';
+    var card = document.createElement('div');
+    card.style.cssText = 'background:rgba(255,255,255,.03);border:.5px solid rgba(255,255,255,.08);border-radius:8px;overflow:hidden;';
+    card.innerHTML = thumb
+      + '<div style="padding:6px 8px;">'
+      + '<div style="font-size:10px;font-weight:600;color:rgba(255,255,255,.7);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+a.name+'">'+a.name+'</div>'
+      + '<div style="font-size:9px;color:rgba(255,255,255,.3);margin-top:1px;text-transform:uppercase;">'+a.type+'</div>'
+      + '</div>';
+    grid.appendChild(card);
+  });
+};
+
+window.dash_uploadAsset = function(file, type) {
+  if (!file) return;
+  if (typeof asset_upload === 'function') {
+    asset_upload(file, type).then(function() {
+      dash_loadAssets();
+      toast('✓ ' + file.name.slice(0,25) + ' saved to My Assets', 'ok');
+    });
+  } else {
+    // Fallback: save to localStorage directly
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var items = [];
+      try { items = JSON.parse(localStorage.getItem('aab_assets') || '[]'); } catch(x) {}
+      items.unshift({ id: 'a_'+Date.now(), name: file.name, type: type, url: e.target.result, savedAt: Date.now() });
+      try { localStorage.setItem('aab_assets', JSON.stringify(items.slice(0,200))); } catch(x) {}
+      dash_loadAssets();
+      toast('✓ ' + file.name.slice(0,25) + ' saved', 'ok');
+    };
+    reader.readAsDataURL(file);
+  }
+};
+
+// Add "My Videos" and "My Assets" buttons to dashboard sidebar if not already there
+(function addDashButtons() {
+  var nav = document.querySelector('.dash-sidebar .sb-nav, #dashboard-pg .sb-nav');
+  if (!nav) return;
+  if (nav.querySelector('[onclick*="my-videos"]')) return; // already added
+
+  var divider = nav.querySelector('.sb-div');
+  if (!divider) return;
+
+  // Insert before the divider before Account
+  var accountBtn = nav.querySelector('[onclick*="account"]');
+  if (!accountBtn) return;
+
+  var myVideosBtn = document.createElement('button');
+  myVideosBtn.className = 'sb-item';
+  myVideosBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="1" y="2" width="12" height="10" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M6 5l4 2-4 2V5z" fill="currentColor"/></svg>My Videos';
+  myVideosBtn.onclick = function() { dashNav('my-videos', this); };
+
+  var myAssetsBtn = document.createElement('button');
+  myAssetsBtn.className = 'sb-item';
+  myAssetsBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="7" y="1" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="7" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="7" y="7" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/></svg>My Assets';
+  myAssetsBtn.onclick = function() { dashNav('my-assets', this); };
+
+  var sep = document.createElement('div');
+  sep.className = 'sb-div';
+
+  // Add before account button's preceding divider
+  accountBtn.parentElement.insertBefore(myVideosBtn, accountBtn);
+  accountBtn.parentElement.insertBefore(myAssetsBtn, accountBtn);
+  accountBtn.parentElement.insertBefore(sep, accountBtn);
+})();
+
+// Add My Videos + My Assets panels to dash-main if not there
+(function addDashPanels() {
+  var dashMain = document.querySelector('.dash-main');
+  if (!dashMain || document.getElementById('dash-my-videos')) return;
+
+  var videosPanel = document.createElement('div');
+  videosPanel.className = 'dash-sec';
+  videosPanel.id = 'dash-my-videos';
+  videosPanel.innerHTML = '<div class="dash-hdr"><div><div class="dash-title">My Videos</div><div class="dash-sub">All your recorded and AI-generated clips</div></div>'
+    + '<div style="display:flex;gap:8px;"><button class="btn btn-ghost btn-sm" onclick="dash_loadVideos()">↻ Refresh</button>'
+    + '<button class="btn btn-primary btn-sm" onclick="nav(&apos;edit-pg&apos;)">Open Edit Suite →</button></div></div>'
+    + '<div style="display:flex;gap:6px;margin-bottom:16px;">'
+    + '<button class="btn btn-ghost btn-sm dash-vid-filter on" onclick="dash_filterVideos(&apos;all&apos;,this)">All</button>'
+    + '<button class="btn btn-ghost btn-sm dash-vid-filter" onclick="dash_filterVideos(&apos;recording&apos;,this)">🎥 Recorded</button>'
+    + '<button class="btn btn-ghost btn-sm dash-vid-filter" onclick="dash_filterVideos(&apos;ai-presenter&apos;,this)">✨ AI Generated</button>'
+    + '</div>'
+    + '<div id="dash-videos-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;">'
+    + '<div style="color:rgba(255,255,255,.3);font-size:13px;grid-column:1/-1;padding:24px 0;text-align:center;">Click Refresh to load your videos</div>'
+    + '</div>';
+
+  var assetsPanel = document.createElement('div');
+  assetsPanel.className = 'dash-sec';
+  assetsPanel.id = 'dash-my-assets';
+  assetsPanel.innerHTML = '<div class="dash-hdr"><div><div class="dash-title">My Assets</div><div class="dash-sub">Images, audio, video and SFX</div></div></div>'
+    + '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">'
+    + '<label class="btn btn-ghost btn-sm" style="cursor:pointer;">🖼 Image<input type="file" style="display:none;" accept="image/*" onchange="dash_uploadAsset(this.files[0],&apos;image&apos;)"></label>'
+    + '<label class="btn btn-ghost btn-sm" style="cursor:pointer;">🎵 Audio<input type="file" style="display:none;" accept="audio/*" onchange="dash_uploadAsset(this.files[0],&apos;audio&apos;)"></label>'
+    + '<label class="btn btn-ghost btn-sm" style="cursor:pointer;">🎬 Video<input type="file" style="display:none;" accept="video/*" onchange="dash_uploadAsset(this.files[0],&apos;video&apos;)"></label>'
+    + '<label class="btn btn-ghost btn-sm" style="cursor:pointer;">🎤 SFX<input type="file" style="display:none;" accept="audio/*" onchange="dash_uploadAsset(this.files[0],&apos;sfx&apos;)"></label>'
+    + '</div>'
+    + '<div style="display:flex;gap:6px;margin-bottom:14px;">'
+    + '<button class="btn btn-ghost btn-sm dash-asset-filter on" onclick="dash_filterAssets(&apos;all&apos;,this)">All</button>'
+    + '<button class="btn btn-ghost btn-sm dash-asset-filter" onclick="dash_filterAssets(&apos;image&apos;,this)">🖼 Images</button>'
+    + '<button class="btn btn-ghost btn-sm dash-asset-filter" onclick="dash_filterAssets(&apos;audio&apos;,this)">🎵 Audio</button>'
+    + '<button class="btn btn-ghost btn-sm dash-asset-filter" onclick="dash_filterAssets(&apos;video&apos;,this)">🎬 Video</button>'
+    + '<button class="btn btn-ghost btn-sm dash-asset-filter" onclick="dash_filterAssets(&apos;sfx&apos;,this)">🎤 SFX</button>'
+    + '</div>'
+    + '<div id="dash-assets-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;">'
+    + '<div style="color:rgba(255,255,255,.3);font-size:13px;grid-column:1/-1;padding:24px 0;text-align:center;">No assets yet — upload above</div>'
+    + '</div>';
+
+  // Insert before dash-account
+  var accountSec = document.getElementById('dash-account');
+  if (accountSec) {
+    dashMain.insertBefore(videosPanel, accountSec);
+    dashMain.insertBefore(assetsPanel, accountSec);
+  } else {
+    dashMain.appendChild(videosPanel);
+    dashMain.appendChild(assetsPanel);
+  }
+})();
+
+
 console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgrounds, TP bg');
 </script>
 
