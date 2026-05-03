@@ -4728,19 +4728,7 @@
               <path d="M3 5h8M3 7h6M3 9h4" stroke="currentColor" stroke-width="1" stroke-linecap="round" />
             </svg>My projects
           </button>
-          <button class="sb-item" onclick="nav('script-pg')">
-            <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-              <circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.2" />
-              <path d="M7 4v3l2 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
-            </svg>New project
-          </button>
-          <button class="sb-item" onclick="openTeleprompter()">
-            <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-              <rect x="1" y="3" width="12" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2" />
-              <path d="M5 11l2 2 2-2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"
-                stroke-linejoin="round" />
-            </svg>Teleprompter
-          </button>
+
           <div class="sb-div"></div>
           <button class="sb-item" onclick="dashNav('my-videos',this)">
             <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
@@ -5170,7 +5158,7 @@
             style="color:rgba(239,68,68,.6);border-color:rgba(239,68,68,.2);">Sign out</button>
         </div>
       </div>
-      <div class="studio-main">
+      <div class="studio-main" style="flex:1;min-height:0;overflow:hidden;max-height:calc(100vh - 46px - 128px);">
         <!-- Scene queue -->
         <div class="studio-q">
           <div class="studio-q-hdr">Scenes</div>
@@ -5457,7 +5445,7 @@
 
       </div>
     </div>
-  </div>
+
 
   <!-- ══ EDIT SUITE ═══════════════════════════════════════════════════════════════ -->
   <div id="edit-pg" class="pg-flex"
@@ -5565,6 +5553,8 @@
             <div style="width:.5px;height:18px;background:rgba(255,255,255,.08);margin:0 4px;"></div>
             <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:3px 8px;">🎵 Music<input type="file" style="display:none;" accept="audio/*" onchange="importToTimeline(this,'audio')"></label>
             <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:3px 8px;">🎬 Video<input type="file" style="display:none;" accept="video/*" onchange="importToTimeline(this,'video')"></label>
+            <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:3px 8px;">🖼 Image<input type="file" style="display:none;" accept="image/*" onchange="importToTimeline(this,'image')"></label>
+            <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:3px 8px;">🎤 SFX<input type="file" style="display:none;" accept="audio/*" onchange="importToTimeline(this,'sfx')"></label>
             <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:3px 8px;">🖼 Image<input type="file" style="display:none;" accept="image/*" onchange="importToTimeline(this,'image')"></label>
             <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:3px 8px;">🎤 SFX<input type="file" style="display:none;" accept="audio/*" onchange="importToTimeline(this,'sfx')"></label>
             <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
@@ -5738,7 +5728,8 @@
     </div>
   </div>
   </div>
-  </div>
+
+
 
 
 
@@ -11110,9 +11101,9 @@
           <!-- Character Name & Saved Characters -->
           <div class="aps-label">Character Name</div>
           <div style="display:flex;gap:6px;margin-bottom:8px;">
-            <input id="aps-char-name-input" type="text" class="aps-select" placeholder="e.g. John Anchor"
+            <input id="aps-char-name" type="text" class="aps-select" placeholder="e.g. John Anchor"
               style="flex:1;" oninput="APS.charName=this.value">
-            <button onclick="aps_saveCharacter(document.getElementById('aps-char-name-input').value)"
+            <button onclick="aps_saveCharacter(document.getElementById('aps-char-name').value)"
               style="background:rgba(0,212,255,.15);border:.5px solid rgba(0,212,255,.3);color:var(--accent);border-radius:6px;padding:5px 10px;font-size:10px;cursor:pointer;white-space:nowrap;font-family:'Sora',sans-serif;">Save</button>
           </div>
           <div id="aps-char-name-display" style="font-size:9px;color:rgba(255,255,255,.3);margin-bottom:8px;margin-top:-4px;">No character saved</div>
@@ -15535,6 +15526,27 @@ window.remoteSend = function(action, value) {
 // ── 1. CHARACTER NAMING & PERSISTENCE ─────────────────────────────
 // Users can name their presenter and reuse across projects
 window.aps_saveCharacter = function(name) {
+  // Always save locally first — survives server failures
+  try {
+    var chars = JSON.parse(localStorage.getItem('aab_characters') || '{}');
+    var nm = (name || '').trim();
+    if (nm) {
+      chars[nm] = {
+        name: nm,
+        photoB64: APS.photoB64 ? APS.photoB64.slice(0, 40000) : null,
+        talkingPhotoId: APS.talkingPhotoId || null,
+        voiceId: (APS.settings && APS.settings.voiceId) || null,
+        voiceName: (APS.settings && APS.settings.voiceName) || null,
+        stability: (APS.settings && APS.settings.stability) || 0.85,
+        clarity: (APS.settings && APS.settings.clarity) || 0.80,
+        framing: APS.framing || 'medium',
+        bgType: APS.bgType || 'news-studio',
+        savedAt: Date.now()
+      };
+      localStorage.setItem('aab_characters', JSON.stringify(chars));
+    }
+  } catch(lsErr) { console.warn('char local save:', lsErr); }
+
   if (!name || !name.trim()) return;
   var charName = name.trim();
   var photoId  = APS.talkingPhotoId || localStorage.getItem('aps_talking_photo_id');
@@ -15558,6 +15570,28 @@ window.aps_saveCharacter = function(name) {
 };
 
 window.aps_loadCharacter = function(name) {
+  // Load from localStorage
+  try {
+    var chars = JSON.parse(localStorage.getItem('aab_characters') || '{}');
+    var nameInput = document.getElementById('aps-char-name');
+    var sel = document.getElementById('aps-char-selector');
+    var charName = (sel && sel.value) || (nameInput && nameInput.value) || name;
+    var charData = chars[charName];
+    if (charData) {
+      if (charData.photoB64) {
+        APS.photoB64 = charData.photoB64;
+        var wrap = document.getElementById('aps-presenter-img-wrap');
+        if (wrap) wrap.innerHTML = '<img src="data:image/jpeg;base64,' + charData.photoB64 + '" style="width:100%;height:100%;object-fit:cover;border-radius:100px 100px 0 0;">';
+      }
+      if (charData.talkingPhotoId) APS.talkingPhotoId = charData.talkingPhotoId;
+      if (charData.voiceId && APS.settings) APS.settings.voiceId = charData.voiceId;
+      if (charData.framing) APS.framing = charData.framing;
+      if (charData.bgType) APS.bgType = charData.bgType;
+      if (typeof toast === 'function') toast('✓ Loaded character: ' + charName, 'ok');
+      return; // loaded from local, no need to call server
+    }
+  } catch(e) { console.warn('char local load:', e); }
+
   var chars = JSON.parse(localStorage.getItem('aps_characters') || '{}');
   var char = chars[name];
   if (!char) { toast('Character "' + name + '" not found', 'error'); return; }
@@ -15583,6 +15617,37 @@ window.aps_listCharacters = function() {
 
 // Render character selector in APS sidebar
 window.aps_renderCharSelector = function() {
+  // Populate from localStorage
+  try {
+    var chars = JSON.parse(localStorage.getItem('aab_characters') || '{}');
+    var sel = document.getElementById('aps-char-selector');
+    if (sel) {
+      var current = sel.value;
+      while (sel.options.length > 1) sel.remove(1);
+      Object.keys(chars).forEach(function(nm) {
+        var opt = document.createElement('option');
+        opt.value = nm; opt.textContent = nm;
+        if (nm === current) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
+  } catch(e) {}
+
+  // Load saved characters from localStorage
+  try {
+    var chars = JSON.parse(localStorage.getItem('aab_characters') || '{}');
+    var sel = document.getElementById('aps-char-selector');
+    if (sel && Object.keys(chars).length) {
+      // Clear existing options except first
+      while (sel.options.length > 1) sel.remove(1);
+      Object.keys(chars).forEach(function(name) {
+        var opt = document.createElement('option');
+        opt.value = name; opt.textContent = name;
+        sel.appendChild(opt);
+      });
+    }
+  } catch(e) {}
+
   var chars = aps_listCharacters();
   var sel = document.getElementById('aps-char-select');
   if (!sel) return;
@@ -16248,7 +16313,7 @@ window.aps_loadCharacter = async function(name) {
   // Update name display and input
   var display = document.getElementById('aps-char-name-display');
   if (display) display.textContent = 'Loaded: ' + char.name;
-  var nameInput = document.getElementById('aps-char-name-input');
+  var nameInput = document.getElementById('aps-char-name');
   if (nameInput) nameInput.value = char.name;
 
   // Apply voice settings to dropdowns
@@ -16284,7 +16349,7 @@ document.addEventListener('aab_nav', function(e) {
       if (last) {
         var d = document.getElementById('aps-char-name-display');
         if (d) d.textContent = 'Last used: ' + last;
-        var ni = document.getElementById('aps-char-name-input');
+        var ni = document.getElementById('aps-char-name');
         if (ni) ni.value = last;
       }
     }, 300);
