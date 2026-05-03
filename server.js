@@ -181,7 +181,7 @@ const CREATOMATE_KEY = process.env.CREATOMATE_API_KEY;
 const STRIPE_KEY     = process.env.STRIPE_SECRET_KEY;
 // Imgur client ID — free, no auth needed, images are truly public
 const IMGUR_CLIENT_ID = process.env.IMGUR_CLIENT_ID || '546c25a59c58ad7';
-const DID_API_KEY     = process.env.DID_API_KEY;  // D-ID API key from Railway env vars
+const DID_API_KEY     = process.env.D_ID_API_KEY || process.env.DID_API_KEY;  // Railway uses D_ID_API_KEY
 
 const MODEL          = 'claude-sonnet-4-6';
 const MODEL_FALLBACK = 'claude-sonnet-4-5-20250929';
@@ -347,7 +347,6 @@ app.get('/health', (req, res) => res.json({
   anthropic: !!process.env.ANTHROPIC_API_KEY,
   elevenlabs: !!ELEVENLABS_KEY,
   heygen: !!HEYGEN_KEY,
-  did: !!DID_API_KEY,
   did: !!DID_API_KEY,
   kling_piapi: !!PIAPI_KEY,
   kling_direct: !!(KLING_AK && KLING_SK),
