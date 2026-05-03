@@ -15844,18 +15844,45 @@ document.addEventListener('aab_nav', function(e) {
 
 // ── 2. BATCH COMPLETION → ADD ALL CLIPS TO EDIT SUITE ────────────
 // After batch generates, push ALL scenes to APS_CLIPS and show Go button
-var _origGenAll = window.aps_generateAll;
+// aps_generateAll — direct implementation, no chaining
 window.aps_generateAll = async function() {
-  // Restore photo if needed
+  if (!APS || !APS.scenes || !APS.scenes.length) {
+    toast('No scenes to generate', 'info'); return;
+  }
+  // Restore saved photo/voice if APS lost state
   if (!APS.photoB64) {
-    var saved = localStorage.getItem('aps_presenter_photo');
-    if (saved) APS.photoB64 = saved.split(',')[1] || saved;
+    var savedP = localStorage.getItem('aps_presenter_photo');
+    if (savedP) APS.photoB64 = savedP.split(',')[1] || savedP;
   }
   if (!APS.talkingPhotoId) {
     var savedId = localStorage.getItem('aps_talking_photo_id');
     if (savedId) APS.talkingPhotoId = savedId;
   }
-  if (typeof _origGenAll === 'function') return _origGenAll.apply(this, arguments);
+  if (typeof aps_saveSettings === 'function') aps_saveSettings();
+  APS.stopRequested = false;
+  APS.generating = true;
+  var genBtn = document.getElementById('aps-gen-all-btn');
+  var stopBtn = document.getElementById('aps-stop-btn');
+  if (genBtn) genBtn.disabled = true;
+  if (stopBtn) stopBtn.style.display = 'block';
+  toast('Generating ' + APS.scenes.length + ' scenes…', 'info');
+  var succeeded = 0, failed = 0;
+  for (var i = 0; i < APS.scenes.length; i++) {
+    if (APS.stopRequested) break;
+    try {
+      var ok = await aps_generateScene(i);
+      if (ok !== false) succeeded++; else failed++;
+    } catch(e) {
+      console.error('Scene', i+1, 'error:', e.message);
+      failed++;
+    }
+  }
+  APS.generating = false;
+  if (genBtn) genBtn.disabled = false;
+  if (stopBtn) stopBtn.style.display = 'none';
+  toast('Done: ' + succeeded + ' generated' + (failed ? ', ' + failed + ' failed' : ''), succeeded > 0 ? 'ok' : 'error');
+  // Show Go to Edit Suite button
+  if (succeeded > 0 && typeof aps_showGoToEditBtn === 'function') aps_showGoToEditBtn(succeeded);
 };
 
 // When batch video completes, split into per-scene clips and add all to APS_CLIPS
