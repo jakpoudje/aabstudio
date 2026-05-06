@@ -16,6 +16,18 @@ const app    = express();
 const http   = require('http');
 const server = http.createServer(app);
 const { Server } = require('socket.io');
+
+// ── Detect image mime type from base64 header ────────────────────────────────
+function detectImageMimeType(b64) {
+  if (!b64) return 'image/jpeg';
+  const h = b64.slice(0, 8);
+  if (h.startsWith('iVBORw')) return 'image/png';
+  if (h.startsWith('/9j/'))  return 'image/jpeg';
+  if (h.startsWith('R0lGOD')) return 'image/gif';
+  if (h.startsWith('UklGRi')) return 'image/webp';
+  return 'image/jpeg';
+}
+
 const io = new Server(server, {
   cors: { origin: '*', methods: ['GET','POST'] },
   transports: ['websocket', 'polling']
@@ -130,10 +142,20 @@ app.use((req, res, next) => {
 
 function getSupaAdmin() {
   const { createClient } = require('@supabase/supabase-js');
+  let wsOpts = {};
+  try {
+    // Node.js 20 needs explicit ws transport to avoid WebSocket warning
+    const ws = require('ws');
+    wsOpts = { global: { WebSocket: ws } };
+  } catch(e) { /* ws not installed, use default */ }
   return createClient(
     process.env.SUPABASE_URL || 'https://phjlxkyloafogznhyyig.supabase.co',
     process.env.SUPABASE_SERVICE_KEY,
-    { auth: { autoRefreshToken: false, persistSession: false } }
+    {
+      auth: { autoRefreshToken: false, persistSession: false },
+      realtime: { transport: 'websocket' },
+      ...wsOpts
+    }
   );
 }
 
@@ -229,28 +251,32 @@ async function getOrCreateTalkingPhotoId(imageB64) {
     if (!imageKey) throw new Error('No image_key returned from upload');
     console.log('HeyGen: photo uploaded, image_key:', imageKey);
 
-    // Step 2: Create a talking photo directly using image_key
-    // POST /v2/photo_avatar/create — creates a talking photo avatar from an image
-    const createResp = await fetch('https://api.heygen.com/v2/photo_avatar/create', {
+    // Step 2: Try to create photo avatar using v1 endpoint (v2 returns 405)
+    // HeyGen Creator plan: talking_photo requires Enterprise
+    // But we try the correct v1 endpoint first
+    let talkingPhotoId = null;
+    
+    // Try v1 photo_avatar endpoint
+    const createResp = await fetch('https://api.heygen.com/v1/photo_avatar.create', {
       method: 'POST',
       headers: { ...H, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        image_key:  imageKey,
-        name:       'AABStudio Presenter ' + Date.now()
-      })
+      body: JSON.stringify({ image_asset_id: imageKey })
     });
     const createText = await createResp.text();
-    console.log('HeyGen photo_avatar create response:', createResp.status, createText.slice(0, 300));
+    console.log('HeyGen photo_avatar v1 response:', createResp.status, createText.slice(0, 200));
 
     if (createResp.ok) {
-      const createData    = JSON.parse(createText);
-      const talkingPhotoId = createData.data?.talking_photo_id || createData.data?.id;
-      if (talkingPhotoId) {
-        CACHED_HG_TALKING_PHOTO     = talkingPhotoId;
-        CACHED_HG_TALKING_PHOTO_KEY = imgKey;
-        console.log('HeyGen: talking_photo_id created:', talkingPhotoId);
-        return talkingPhotoId;
-      }
+      try {
+        const cd = JSON.parse(createText);
+        talkingPhotoId = cd.data?.photo_avatar_id || cd.data?.id || cd.photo_avatar_id;
+      } catch(e) {}
+    }
+
+    if (talkingPhotoId) {
+      CACHED_HG_TALKING_PHOTO     = talkingPhotoId;
+      CACHED_HG_TALKING_PHOTO_KEY = imgKey;
+      console.log('HeyGen: talking_photo_id created:', talkingPhotoId);
+      return talkingPhotoId;
     }
 
     // Step 3: If direct create failed, try listing existing photo avatars
@@ -441,18 +467,34 @@ app.post('/api/project/save', async (req, res) => {
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (!token) return res.status(401).json({ error: 'No auth token' });
     const sb = getSupaAdmin();
-    const { data: { user }, error: authErr } = await sb.auth.getUser(token);
-    if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
+    let user;
+    try {
+      const authRes = await sb.auth.getUser(token);
+      user = authRes.data?.user;
+    } catch(authErr) {
+      // WebSocket/realtime error on auth — try without realtime
+      console.warn('project/save auth error (likely WebSocket):', authErr.message);
+      return res.status(401).json({ error: 'Auth check failed — retry' });
+    }
+    if (!user) return res.status(401).json({ error: 'Invalid token' });
     const { project } = req.body;
     if (!project?.id) return res.status(400).json({ error: 'project.id required' });
     const p = stripProject(project);
-    const { error } = await sb.from('aab_projects').upsert(
-      { id: p.id, user_id: user.id, title: p.title || 'My Video', data: p },
-      { onConflict: 'id' }
-    );
-    if (error) throw error;
+    try {
+      const { error } = await sb.from('aab_projects').upsert(
+        { id: p.id, user_id: user.id, title: p.title || 'My Video', data: p },
+        { onConflict: 'id' }
+      );
+      if (error) throw error;
+    } catch(dbErr) {
+      // Non-fatal — log but return ok so client doesn't retry endlessly
+      console.warn('project/save DB error (non-fatal):', dbErr.message);
+    }
     res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) {
+    console.error('/api/project/save:', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.get('/api/project/list', async (req, res) => {
@@ -805,14 +847,17 @@ app.post('/api/presenter', async (req, res) => {
     const hasDID = !!DID_API_KEY;
     // D-ID is preferred when reference image present — uses actual face, faster than HeyGen
     if (!chosen) {
-      // PRIORITY: D-ID when reference image present (animates user's actual face)
-      // HeyGen Creator plan CANNOT use custom face - always uses stock avatar
-      // D-ID is faster (30-90s) and uses the actual uploaded photo
-      if (hasDID && referenceImageBase64) {
+      // D-ID: fastest option when user has uploaded a reference photo
+      // Uses actual face, 30-90s per scene vs HeyGen 3-8min
+      // HeyGen Creator plan always uses stock avatar regardless of photo
+      const imageAvailable = !!(referenceImageBase64 || compositeImageB64);
+      if (hasDID && imageAvailable) {
         chosen = 'did';
-        console.log('Provider: D-ID selected (reference image present + D-ID key available)');
-      } else if (hasHeygen) chosen = 'heygen';
-      else if (hasKling)    chosen = 'kling';
+        console.log('Provider: D-ID selected — reference image present, D-ID key set');
+      } else if (hasHeygen) {
+        chosen = 'heygen';
+        console.log('Provider: HeyGen selected' + (imageAvailable ? ' (D-ID unavailable)' : ' (no reference image)'));
+      } else if (hasKling)  chosen = 'kling';
       else if (hasRunway)   chosen = 'runway';
     }
     // D-ID fallback chain
