@@ -10556,16 +10556,18 @@
           try {
             var statR = await fetch(API + '/api/presenter-status?taskId=' + encodeURIComponent(sc.taskId));
             var statD = await statR.json();
+            console.log('Poll scene', sc.num, ':', statD.status || 'unknown', 'done:', statD.done, 'hasUrl:', !!statD.videoUrl);
 
             if (statD.done && statD.videoUrl) {
               sc.status = 'done';
               sc.videoUrl = statD.videoUrl;
               APS.results[sc.id] = statD.videoUrl;
-              aps_updateSceneRow(sc);
-              aps_addClipToBar(sc);
-              aps_addClipToTimeline(sc);
-              if (sceneIdx === APS.currentIdx) aps_selectScene(sceneIdx);
-              toast('Scene ' + sc.num + ' video ready ✓', 'ok');
+              // Safely update UI — don't let errors here break the return
+              try { aps_updateSceneRow(sc); } catch(e) {}
+              try { aps_addClipToBar(sc); } catch(e) {}
+              try { aps_addClipToTimeline(sc); } catch(e) {}
+              try { if (sceneIdx === APS.currentIdx) aps_selectScene(sceneIdx); } catch(e) {}
+              toast('Scene ' + sc.num + ' ready ✓', 'ok');
               aps_showStep(sc.num, 3, 3, 'Scene ' + sc.num + ' complete ✓');
               return true;
             } else if (statD.failed) {
