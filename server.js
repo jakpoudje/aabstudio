@@ -256,28 +256,14 @@ async function getOrCreateTalkingPhotoId(imageB64) {
     // But we try the correct v1 endpoint first
     let talkingPhotoId = null;
     
-    // Try v1 photo_avatar endpoint
-    const createResp = await fetch('https://api.heygen.com/v1/photo_avatar.create', {
-      method: 'POST',
-      headers: { ...H, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_asset_id: imageKey })
-    });
-    const createText = await createResp.text();
-    console.log('HeyGen photo_avatar v1 response:', createResp.status, createText.slice(0, 200));
-
-    if (createResp.ok) {
-      try {
-        const cd = JSON.parse(createText);
-        talkingPhotoId = cd.data?.photo_avatar_id || cd.data?.id || cd.photo_avatar_id;
-      } catch(e) {}
-    }
-
-    if (talkingPhotoId) {
-      CACHED_HG_TALKING_PHOTO     = talkingPhotoId;
-      CACHED_HG_TALKING_PHOTO_KEY = imgKey;
-      console.log('HeyGen: talking_photo_id created:', talkingPhotoId);
-      return talkingPhotoId;
-    }
+    // HeyGen talking photo requires Enterprise plan
+    // Creator plan ($24/mo) only supports stock avatars
+    // Skip the API call entirely and return null to use stock avatar
+    console.log('HeyGen: talking_photo creation requires Enterprise plan — using stock avatar');
+    // Cache null so we don't retry on every scene
+    CACHED_HG_TALKING_PHOTO     = null;
+    CACHED_HG_TALKING_PHOTO_KEY = imgKey;
+    return null;
 
     // Step 3: If direct create failed, try listing existing photo avatars
     console.log('HeyGen: trying to list existing photo avatars...');
@@ -1326,33 +1312,49 @@ async function generateWithDID(req, res, args) {
     // OR use ElevenLabs streaming URL. For now, upload audio to D-ID as blob
     const audioBuf = Buffer.from(audioBase64, 'base64');
 
-    // Upload audio file to D-ID
-    const FormData = require('form-data');
-    const form = new FormData();
-    form.append('audio', audioBuf, { filename: 'audio.mp3', contentType: 'audio/mpeg' });
-
+    // Upload audio to Imgur as MP3 is not supported — use D-ID's clips/audio endpoint
+    // Try multiple approaches for D-ID audio
     let audioUrl = null;
+
+    // Upload audio to D-ID
+    // D-ID /audios endpoint - try with correct multipart format
     try {
+      const FormData = require('form-data');
+      const form = new FormData();
+      // D-ID requires the field to be named 'audio' with correct mime
+      form.append('audio', audioBuf, {
+        filename: 'audio.mp3',
+        contentType: 'audio/mpeg',
+        knownLength: audioBuf.length
+      });
+      const headers = {
+        'Authorization': 'Basic ' + DID_API_KEY,
+        'Accept': 'application/json',
+        ...form.getHeaders()
+      };
       const audioUpload = await fetch('https://api.d-id.com/audios', {
         method: 'POST',
-        headers: {
-          'Authorization': 'Basic ' + DID_API_KEY,
-          ...form.getHeaders()
-        },
+        headers,
         body: form
       });
+      const respText = await audioUpload.text();
       if (audioUpload.ok) {
-        const audioData = await audioUpload.json();
+        const audioData = JSON.parse(respText);
         audioUrl = audioData.url;
-        console.log('D-ID audio uploaded:', audioUrl);
+        console.log('D-ID audio uploaded:', audioUrl ? 'OK' : 'no URL in response');
       } else {
-        console.warn('D-ID audio upload failed:', audioUpload.status, await audioUpload.text());
+        console.warn('D-ID /audios failed:', audioUpload.status, respText.slice(0, 150));
       }
     } catch(e) {
-      console.warn('D-ID audio upload error:', e.message);
+      console.warn('D-ID audio upload exception:', e.message);
     }
 
-    if (!audioUrl) throw new Error('D-ID audio upload failed — cannot generate without audio URL');
+    // Fallback: use base64 data URI directly
+    // D-ID supports this on Lite plan and above
+    if (!audioUrl) {
+      audioUrl = 'data:audio/mpeg;base64,' + audioBase64;
+      console.log('D-ID: using base64 data URI for audio');
+    }
 
     // Step 3: Create talk (animate photo with audio)
     // Framing notes:
@@ -1399,8 +1401,15 @@ async function generateWithDID(req, res, args) {
 
   } catch(e) {
     console.error('generateWithDID:', e.message);
-    // Fall back to HeyGen if D-ID fails
-    if (HEYGEN_KEY) return await generateWithHeyGen(req, res, args);
+    // Only fall back to HeyGen for unexpected errors, not auth/config errors
+    if (e.message.includes('audio upload failed') || e.message.includes('requires')) {
+      // Return error so user knows what happened
+      return res.status(500).json({ error: 'D-ID: ' + e.message, provider: 'did' });
+    }
+    if (HEYGEN_KEY) {
+      console.log('D-ID failed, falling back to HeyGen stock avatar');
+      return await generateWithHeyGen(req, res, args);
+    }
     return res.status(500).json({ error: e.message });
   }
 }
