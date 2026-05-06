@@ -15665,59 +15665,56 @@ window.aps_saveCharacter = async function(name) {
   if (!name || !name.trim()) { toast('Enter a character name first', 'error'); return; }
   name = name.trim();
 
-  var photoId  = APS.talkingPhotoId || localStorage.getItem('aps_talking_photo_id');
-  var photoUrl = APS.photoPreviewUrl || localStorage.getItem('aps_photo_url') || null;
-
+  // Build character data object
   var charData = {
-    name,
-    talking_photo_id: photoId || null,
-    photo_url:        photoUrl || null,
-    voice_id:         APS.settings && APS.settings.voiceId     || 'EXAVITQu4vr4xnSDxMaL',
-    voice_name:       APS.settings && APS.settings.voiceName   || null,
-    voice_gender:     APS.settings && APS.settings.voiceGender || 'male',
-    stability:        APS.settings && APS.settings.stability   || 0.85,
-    clarity:          APS.settings && APS.settings.clarity     || 0.80,
-    framing:          APS.settings && APS.settings.framing     || 'news-desk',
-    background_type:  APS.settings && APS.settings.bg          || 'news-studio',
+    name:             name,
+    photoB64:         APS.photoB64 ? APS.photoB64.slice(0, 80000) : null,
+    photoMimeType:    APS.photoMimeType || 'image/jpeg',
+    talkingPhotoId:   APS.talkingPhotoId || null,
+    voiceId:          APS.settings && APS.settings.voiceId   || null,
+    voiceName:        APS.settings && APS.settings.voiceName || null,
+    stability:        APS.settings && APS.settings.stability || 0.85,
+    clarity:          APS.settings && APS.settings.clarity   || 0.80,
+    provider:         APS.settings && APS.settings.provider  || 'did',
+    framing:          APS.framing  || 'medium',
+    bgType:           APS.bgType   || 'news-studio',
+    savedAt:          Date.now()
   };
 
-  // Always save to localStorage as fast backup
+  // 1. Save to localStorage immediately
   try {
-    var chars = JSON.parse(localStorage.getItem('aps_characters') || '{}');
-    chars[name] = Object.assign({ savedAt: Date.now() }, charData);
-    localStorage.setItem('aps_characters', JSON.stringify(chars));
-    localStorage.setItem('aps_current_char', name);
-  } catch(e) {}
+    var chars = JSON.parse(localStorage.getItem('aab_characters') || '{}');
+    chars[name] = charData;
+    localStorage.setItem('aab_characters', JSON.stringify(chars));
+    // Also save photo separately for quick restore
+    if (charData.photoB64) {
+      localStorage.setItem('aab_photo_' + name, charData.photoB64);
+    }
+    // Update selector
+    if (typeof aps_renderCharSelector === 'function') aps_renderCharSelector();
+    toast('✓ Character "' + name + '" saved', 'ok');
+    localStorage.setItem('aab_last_character', name);
+  } catch(lsErr) {
+    console.warn('Character localStorage save failed:', lsErr);
+    toast('Character save failed (storage full?)', 'error');
+    return;
+  }
 
-  // Save to Supabase if signed in
-  var token = getAuthToken();
-  if (token) {
-    try {
-      var r = await fetch((window.API||API) + '/api/characters', {
+  // 2. Sync to server in background (non-blocking)
+  try {
+    var token = APP && APP.token;
+    if (token) {
+      fetch(API + '/api/character/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
         body: JSON.stringify(charData)
-      });
-      var d = await r.json();
-      if (d.ok) {
-        toast('Character "' + name + '" saved ✓ — available on all your devices', 'ok');
-      } else {
-        toast('Character "' + name + '" saved locally (' + (d.error||'sync pending') + ')', 'info');
-      }
-    } catch(e) {
-      toast('Character "' + name + '" saved locally ✓', 'ok');
+      }).then(function(r) {
+        if (r.ok) console.log('Character synced to server:', name);
+        else console.warn('Character server sync failed:', r.status);
+      }).catch(function(e) { console.warn('Character server sync error:', e.message); });
     }
-  } else {
-    toast('Character "' + name + '" saved ✓ (sign in to sync across devices)', 'ok');
-  }
-
-  APS.charName = name;
-  var display = document.getElementById('aps-char-name-display');
-  if (display) display.textContent = 'Saved: ' + name;
-
-  // Refresh dropdown
-  await aps_renderCharSelector();
-};
+  } catch(e) { /* non-fatal */ }
+};;
 
 window.aps_loadCharacters = async function() {
   var all = {};
@@ -16005,14 +16002,29 @@ window.aps_generateAll = async function() {
   if (stopBtn) stopBtn.style.display = 'block';
   toast('Generating ' + APS.scenes.length + ' scenes…', 'info');
   var succeeded = 0, failed = 0;
-  for (var i = 0; i < APS.scenes.length; i++) {
+  // Process in batches of 3 for faster generation
+  var batchSize = 3;
+  for (var i = 0; i < APS.scenes.length; i += batchSize) {
     if (APS.stopRequested) break;
-    try {
-      var ok = await aps_generateScene(i);
-      if (ok !== false) succeeded++; else failed++;
-    } catch(e) {
-      console.error('Scene', i+1, 'error:', e.message);
-      failed++;
+    var batch = [];
+    for (var b = i; b < Math.min(i + batchSize, APS.scenes.length); b++) {
+      if (APS.scenes[b] && APS.scenes[b].status !== 'done') {
+        batch.push(b);
+      }
+    }
+    if (!batch.length) continue;
+    toast('Generating scenes ' + (batch.map(function(x){return x+1;}).join(', ')) + '…', 'info');
+    // Run batch in parallel
+    var results = await Promise.allSettled(batch.map(function(idx) {
+      return aps_generateScene(idx);
+    }));
+    results.forEach(function(r) {
+      if (r.status === 'fulfilled' && r.value !== false) succeeded++;
+      else failed++;
+    });
+    // Small gap between batches to avoid rate limiting
+    if (i + batchSize < APS.scenes.length && !APS.stopRequested) {
+      await new Promise(function(r){ setTimeout(r, 2000); });
     }
   }
   APS.generating = false;
