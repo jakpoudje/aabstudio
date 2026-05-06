@@ -10958,6 +10958,12 @@
         <button onclick="aps_stopQueue()" id="aps-stop-btn"
           style="display:none;background:#ef4444;color:#fff;border:none;padding:7px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">■
           Stop</button>
+        <!-- Go to Edit Suite — always visible, enabled after clips generated -->
+        <button id="aps-go-edit-btn-top" onclick="aps_goToEditSuite()"
+          style="background:rgba(16,185,129,.15);color:rgba(16,185,129,.5);border:1px solid rgba(16,185,129,.25);padding:7px 16px;border-radius:6px;cursor:not-allowed;font-size:12px;font-weight:700;transition:all .2s;"
+          disabled title="Generate scenes first, then go to Edit Suite">
+          🎬 Go to Edit Suite →
+        </button>
         <button onclick="closeAIPresenterStudio()"
           style="background:none;border:none;color:#6b7280;font-size:20px;cursor:pointer;line-height:1;margin-left:6px;">✕</button>
       </div>
@@ -16078,6 +16084,17 @@ window.aps_generateAll = async function() {
     goBtn.style.display = 'block';
     goBtn.textContent = '🎬 Go to Edit Suite (' + succeeded + ' clips) →';
   }
+  // Enable topbar button
+  var topBtn2 = document.getElementById('aps-go-edit-btn-top');
+  if (topBtn2 && succeeded > 0) {
+    topBtn2.disabled = false;
+    topBtn2.style.background = '#10b981';
+    topBtn2.style.color = '#fff';
+    topBtn2.style.borderColor = '#10b981';
+    topBtn2.style.cursor = 'pointer';
+    topBtn2.style.boxShadow = '0 0 16px rgba(16,185,129,.5)';
+    topBtn2.textContent = '🎬 Go to Edit Suite (' + succeeded + ') →';
+  }
   var emptyMsg = document.getElementById('aps-clips-empty');
   if (emptyMsg && succeeded > 0) emptyMsg.style.display = 'none';
 };
@@ -16367,40 +16384,72 @@ window.asset_upload = async function(file, type) {
 
 // ── 3. aps_goToEditSuite — show button, load AI clips ───────────────
 window.aps_goToEditSuite = function() {
-  // Only load APS clips (not recording clips)
-  var saved = {};
-  try { saved = JSON.parse(localStorage.getItem('aab_aps_clips') || '{}'); } catch(e) {}
-  Object.assign(window.APS_CLIPS, saved);
+  // Collect ALL generated clips from APS_CLIPS and PROJECT.clips
+  var clips = {};
   
-  var apsClips = Object.assign({}, window.APS_CLIPS);
+  // From APS_CLIPS (runtime)
+  try {
+    if (window.APS_CLIPS) Object.assign(clips, APS_CLIPS);
+  } catch(e) {}
   
-  if (!Object.keys(apsClips).length) {
-    // No APS clips — check PROJECT.clips for ai-presenter clips
-    Object.entries(PROJECT.clips||{}).forEach(function([k,v]) {
-      if (v.source && v.source.includes('ai')) apsClips[k] = v;
-    });
-  }
+  // From localStorage (persisted)
+  try {
+    var saved = JSON.parse(localStorage.getItem('aab_aps_clips') || '{}');
+    Object.assign(clips, saved);
+  } catch(e) {}
   
-  if (!Object.keys(apsClips).length) {
-    toast('No AI clips yet — generate scenes first', 'info');
+  // From PROJECT.clips (current project)
+  try {
+    if (PROJECT && PROJECT.clips) Object.assign(clips, PROJECT.clips);
+  } catch(e) {}
+
+  var clipList = Object.values(clips).filter(function(c) { return c && (c.url || c.videoUrl); });
+  
+  if (!clipList.length) {
+    toast('No generated clips yet — generate at least one scene first', 'info');
     return;
   }
-  
-  // Set edit mode to AI and load clips
-  PROJECT._editMode = 'ai';
-  PROJECT.clips = apsClips;
-  
+
+  // Add all clips to PROJECT.clips for the edit suite
+  if (!PROJECT.clips) PROJECT.clips = {};
+  clipList.forEach(function(c) {
+    var key = c.sceneId || ('aps_' + (c.sceneNum || Date.now()));
+    PROJECT.clips[key] = {
+      sceneId:   c.sceneId || key,
+      sceneNum:  c.sceneNum || 0,
+      sceneName: c.sceneName || ('AI Scene ' + (c.sceneNum || '')),
+      url:       c.url || c.videoUrl,
+      videoUrl:  c.url || c.videoUrl,
+      duration:  c.duration || 8,
+      source:    'ai-presenter',
+      provider:  c.provider || APS.settings.provider || 'did',
+      addedAt:   Date.now()
+    };
+  });
+
+  // Save to localStorage and server
+  try { saveProject(); } catch(e) {}
+  try {
+    var lsClips = JSON.parse(localStorage.getItem('aab_aps_clips') || '{}');
+    Object.assign(lsClips, PROJECT.clips);
+    localStorage.setItem('aab_aps_clips', JSON.stringify(lsClips));
+  } catch(e) {}
+
+  // Build the edit suite timeline from these clips
+  if (typeof tl_buildTracksFromProject === 'function') {
+    setTimeout(tl_buildTracksFromProject, 100);
+  }
+  if (typeof edit_buildPlaylist === 'function') {
+    setTimeout(edit_buildPlaylist, 150);
+  }
+  if (typeof edit_renderClipStrip === 'function') {
+    setTimeout(edit_renderClipStrip, 200);
+  }
+
+  // Navigate to edit suite
   nav('edit-pg');
-  
-  setTimeout(function() {
-    if (typeof tl_buildTracksFromProject === 'function') tl_buildTracksFromProject();
-    if (typeof edit_buildPlaylist         === 'function') edit_buildPlaylist();
-    if (typeof edit_renderClipStrip       === 'function') edit_renderClipStrip();
-    if (typeof tl_render                  === 'function') tl_render();
-  }, 300);
-  
-  toast('✓ AI clips loaded in Edit Suite', 'ok');
-};
+  toast('✓ ' + clipList.length + ' clip' + (clipList.length !== 1 ? 's' : '') + ' transferred to Edit Suite', 'ok');
+};;
 
 // ── 4. Show "Go to Edit Suite" button after batch completes ─────────
 // Patch the batch success handler to also show the button
@@ -16413,6 +16462,14 @@ window.aps_showGoToEditBtn = function(clipCount) {
     btn.textContent = '🎬 Go to Edit Suite (' + clipCount + ' clips) →';
   }
   if (empty) empty.style.display = 'none';
+  // Enable topbar button immediately when first clip is ready
+  var topBtn = document.getElementById('aps-go-edit-btn-top');
+  if (topBtn) {
+    topBtn.disabled = false;
+    topBtn.style.cssText = 'background:#10b981;color:#fff;border:1px solid #10b981;padding:7px 16px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;transition:all .2s;box-shadow:0 0 14px rgba(16,185,129,.45);';
+    topBtn.textContent = '🎬 Go to Edit Suite (' + clipCount + ') →';
+    topBtn.title = 'Transfer all ' + clipCount + ' clip' + (clipCount !== 1 ? 's' : '') + ' to Edit Suite timeline';
+  }
 };
 
 // Intercept every aps_addClipToBar call to show the Go button
