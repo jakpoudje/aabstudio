@@ -360,6 +360,28 @@ async function uploadToImgur(base64Image) {
 }
 
 // ── Health ────────────────────────────────────────────────────────────────────
+// D-ID diagnostic endpoint
+app.get('/api/did/test', async (req, res) => {
+  if (!DID_API_KEY) return res.json({ ok: false, error: 'D_ID_API_KEY not set' });
+  try {
+    // Test D-ID auth by calling /user endpoint
+    const r = await fetch('https://api.d-id.com/credits', {
+      headers: { 'Authorization': 'Basic ' + DID_API_KEY, 'accept': 'application/json' }
+    });
+    const text = await r.text();
+    let data = {};
+    try { data = JSON.parse(text); } catch(e) {}
+    res.json({
+      ok: r.ok,
+      status: r.status,
+      credits: data,
+      keyPrefix: DID_API_KEY ? DID_API_KEY.slice(0,8) + '...' : 'not set'
+    });
+  } catch(e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
 app.get('/health', (req, res) => res.json({
   status: 'ok', version: '3.9',
   anthropic: !!process.env.ANTHROPIC_API_KEY,
@@ -1273,6 +1295,28 @@ async function generateWithDID(req, res, args) {
   const { referenceImageBase64, audioBase64, ratio, sceneText, gender } = args;
   try {
     if (!DID_API_KEY) throw new Error('DID_API_KEY not configured');
+    
+    // Quick auth test - if D-ID returns 401/403, key is wrong
+    // If 500, likely credits exhausted or account issue
+    try {
+      const authTest = await fetch('https://api.d-id.com/credits', {
+        headers: { 'Authorization': 'Basic ' + DID_API_KEY, 'accept': 'application/json' }
+      });
+      if (authTest.status === 401 || authTest.status === 403) {
+        throw new Error('D-ID authentication failed — check D_ID_API_KEY format in Railway');
+      }
+      if (authTest.ok) {
+        const credits = await authTest.json();
+        const remaining = credits.remaining || credits.credits_remaining || credits.total;
+        console.log('D-ID credits:', JSON.stringify(credits).slice(0,100));
+        if (remaining !== undefined && remaining <= 0) {
+          throw new Error('D-ID credits exhausted — top up at studio.d-id.com');
+        }
+      }
+    } catch(authErr) {
+      if (authErr.message.includes('exhausted') || authErr.message.includes('authentication')) throw authErr;
+      console.warn('D-ID credits check failed (non-fatal):', authErr.message);
+    }
 
     const H = {
       'Authorization': 'Basic ' + DID_API_KEY,
