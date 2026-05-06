@@ -10119,7 +10119,7 @@
         bg: 'news-studio',
         shot: 'medium',
         motion: 'static',
-        provider: 'kling',
+        provider: 'did',  // D-ID default: uses uploaded photo, fastest
         ratio: '16:9',
         bgLocked: true,
         stability: 0.5,
@@ -11166,11 +11166,14 @@
         <!-- 5. Video Provider -->
         <div class="aps-section">
           <div class="aps-section-hdr">⚙ Video Provider</div>
-          <select id="aps-provider" class="aps-select">
-            <option value="kling">Kling AI (recommended)</option>
-            <option value="heygen">HeyGen</option>
-            <option value="piapi">PiAPI (multi-platform)</option>
+          <select id="aps-provider" class="aps-select" onchange="aps_onProviderChange(this.value)">
+            <option value="did" selected>D-ID ⚡ (fast, uses your face)</option>
+            <option value="heygen">HeyGen (stock avatar)</option>
+            <option value="kling">Kling AI (motion video)</option>
           </select>
+          <div id="aps-provider-note" style="font-size:9px;color:rgba(0,212,255,.6);margin-top:3px;">
+            ⚡ D-ID animates your uploaded photo in 30-90s per scene
+          </div>
           <div class="aps-label">Aspect Ratio</div>
           <select id="aps-ratio" class="aps-select">
             <option value="16:9">16:9 — YouTube / LinkedIn</option>
@@ -16982,6 +16985,36 @@ window.dash_uploadAsset = function(file, type) {
   }
 })();
 
+
+
+// Provider selection info
+window.aps_onProviderChange = function(val) {
+  var note = document.getElementById('aps-provider-note');
+  if (!note) return;
+  var msgs = {
+    'did':    '⚡ D-ID: animates your photo in 30-90s/scene. Requires photo upload.',
+    'heygen': '⏱ HeyGen: stock avatar only on Creator plan (3-8min/scene). Your photo ignored.',
+    'kling':  '🎬 Kling: image-to-video motion. No lip-sync. Good for cinematic backgrounds.',
+  };
+  note.textContent = msgs[val] || '';
+  note.style.color = val === 'did' ? 'rgba(0,212,255,.7)' : 'rgba(255,200,0,.6)';
+};
+
+// Auto-select D-ID when photo is uploaded
+var _origApsLoadPhoto = window.aps_loadPhoto;
+window.aps_loadPhoto = function(input) {
+  if (typeof _origApsLoadPhoto === 'function') _origApsLoadPhoto.apply(this, arguments);
+  // Auto-switch to D-ID when photo uploaded (it's the only provider that uses it reliably)
+  setTimeout(function() {
+    var sel = document.getElementById('aps-provider');
+    if (sel && sel.value !== 'did') {
+      sel.value = 'did';
+      if (APS && APS.settings) APS.settings.provider = 'did';
+      if (typeof aps_onProviderChange === 'function') aps_onProviderChange('did');
+      toast('Provider auto-switched to D-ID — uses your uploaded photo ⚡', 'ok');
+    }
+  }, 500);
+};
 
 console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgrounds, TP bg');
 </script>
