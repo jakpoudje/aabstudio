@@ -361,6 +361,48 @@ async function uploadToImgur(base64Image) {
 
 // ── Health ────────────────────────────────────────────────────────────────────
 // D-ID diagnostic endpoint
+
+// ── Character save/load (persists across projects) ──────────────────────
+app.post('/api/character/save', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.json({ ok: true }); // non-fatal, localStorage already saved
+    const sb = getSupaAdmin();
+    const { data: { user } } = await sb.auth.getUser(token).catch(() => ({ data: {} }));
+    if (!user) return res.json({ ok: true });
+    const char = req.body;
+    if (!char.name) return res.status(400).json({ error: 'name required' });
+    // Store photoB64 truncated (DB limit) 
+    const charToSave = { ...char, photoB64: char.photoB64 ? char.photoB64.slice(0, 65000) : null };
+    await sb.from('characters').upsert(
+      { user_id: user.id, name: char.name, data: charToSave, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,name' }
+    ).catch(e => console.warn('character save DB:', e.message));
+    res.json({ ok: true });
+  } catch(e) {
+    console.warn('/api/character/save:', e.message);
+    res.json({ ok: true }); // non-fatal
+  }
+});
+
+app.get('/api/character/list', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.json({ characters: [] });
+    const sb = getSupaAdmin();
+    const { data: { user } } = await sb.auth.getUser(token).catch(() => ({ data: {} }));
+    if (!user) return res.json({ characters: [] });
+    const { data } = await sb.from('characters')
+      .select('name, data, updated_at')
+      .eq('user_id', user.id)
+      .order('updated_at', { ascending: false })
+      .limit(50);
+    res.json({ characters: (data || []).map(r => r.data) });
+  } catch(e) {
+    res.json({ characters: [] });
+  }
+});
+
 app.get('/api/did/test', async (req, res) => {
   if (!DID_API_KEY) return res.json({ ok: false, error: 'D_ID_API_KEY not set' });
   try {
@@ -1292,186 +1334,44 @@ async function generateWithRunway(req, res, args) {
 // Docs: https://docs.d-id.com/reference/createtalk
 // ══════════════════════════════════════════════════════════════════════════════
 async function generateWithDID(req, res, args) {
-  const { referenceImageBase64, audioBase64, ratio, sceneText, gender } = args;
+  const { referenceImageBase64, audioBase64, ratio, sceneText } = args;
   try {
-    if (!DID_API_KEY) throw new Error('DID_API_KEY not configured');
-    
-    // Quick auth test - if D-ID returns 401/403, key is wrong
-    // If 500, likely credits exhausted or account issue
+    if (!DID_API_KEY) throw new Error('D_ID_API_KEY not configured in Railway');
+
+    const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+      ? 'https://' + process.env.RAILWAY_PUBLIC_DOMAIN
+      : 'https://aabstudio-production.up.railway.app';
+
+    const H = { 'Authorization': 'Basic ' + DID_API_KEY, 'accept': 'application/json' };
+
+    // ── STEP 1: Prepare image ──────────────────────────────────────────────
+    // Convert to JPEG and serve via our own server (D-ID needs public HTTPS URL)
+    let imageUrl = null;
     try {
-      const authTest = await fetch('https://api.d-id.com/credits', {
-        headers: { 'Authorization': 'Basic ' + DID_API_KEY, 'accept': 'application/json' }
-      });
-      if (authTest.status === 401 || authTest.status === 403) {
-        throw new Error('D-ID authentication failed — check D_ID_API_KEY format in Railway');
-      }
-      if (authTest.ok) {
-        const credits = await authTest.json();
-        const remaining = credits.remaining || credits.credits_remaining || credits.total;
-        console.log('D-ID credits:', JSON.stringify(credits).slice(0,100));
-        if (remaining !== undefined && remaining <= 0) {
-          throw new Error('D-ID credits exhausted — top up at studio.d-id.com');
-        }
-      }
-    } catch(authErr) {
-      if (authErr.message.includes('exhausted') || authErr.message.includes('authentication')) throw authErr;
-      console.warn('D-ID credits check failed (non-fatal):', authErr.message);
-    }
-
-    const H = {
-      'Authorization': 'Basic ' + DID_API_KEY,
-      'Content-Type': 'application/json',
-      'accept': 'application/json'
-    };
-
-    // Step 1: Upload presenter image to Imgur first → get public URL
-    // D-ID works more reliably with a URL than a data URI (especially for large images)
-    // URL also allows D-ID to process at full resolution without base64 overhead
-    if (!referenceImageBase64) throw new Error('D-ID requires a reference image');
-
-    // Convert to JPEG if needed (D-ID and Imgur work best with JPEG)
-    let imageForUpload = referenceImageBase64;
-    try {
-      const rawBuf = Buffer.from(referenceImageBase64, 'base64');
-      const jpegBuf = await sharp(rawBuf).jpeg({ quality: 90 }).toBuffer();
-      imageForUpload = jpegBuf.toString('base64');
-      console.log('D-ID: converted image to JPEG', jpegBuf.length, 'bytes');
-    } catch(convErr) {
-      console.warn('D-ID: image conversion failed, using original:', convErr.message);
-    }
-
-    // Upload image to D-ID's OWN CDN — Imgur URLs are rejected by D-ID with 400
-    let imageSourceUrl = null;
-    try {
-      const imgBuf = Buffer.from(imageForUpload, 'base64');
-      const FormData = require('form-data');
-      const imgForm = new FormData();
-      imgForm.append('image', imgBuf, {
-        filename: 'presenter.jpg',
-        contentType: 'image/jpeg',
-        knownLength: imgBuf.length
-      });
-      const didImgResp = await fetch('https://api.d-id.com/images', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Basic ' + DID_API_KEY,
-          'Accept': 'application/json',
-          ...imgForm.getHeaders()
-        },
-        body: imgForm
-      });
-      const didImgText = await didImgResp.text();
-      if (didImgResp.ok) {
-        const didImgData = JSON.parse(didImgText);
-        imageSourceUrl = didImgData.url;
-        console.log('D-ID: image uploaded to D-ID CDN OK:', imageSourceUrl ? imageSourceUrl.slice(0,60) : 'no URL');
-      } else {
-        console.warn('D-ID /images upload failed:', didImgResp.status, didImgText.slice(0,120));
-      }
+      let imgBuf = Buffer.from(referenceImageBase64, 'base64');
+      try { imgBuf = await sharp(imgBuf).jpeg({ quality: 92 }).toBuffer(); } catch(e) {}
+      const imgId = storeTempFile(imgBuf, 'image/jpeg', 600); // 10 min
+      imageUrl = baseUrl + '/api/temp/' + imgId;
+      console.log('D-ID: image served at:', imageUrl.slice(0, 70));
     } catch(e) {
-      console.warn('D-ID image upload error:', e.message);
+      throw new Error('D-ID: image preparation failed: ' + e.message);
     }
-    
-    // D-ID does accept base64 data URIs for source_url (unlike audio_url)
-    const imageDataUri = imageSourceUrl || ('data:image/jpeg;base64,' + imageForUpload);
-    if (!imageDataUri) throw new Error('D-ID: could not prepare image source');
-    console.log('D-ID: image source =', imageSourceUrl ? 'D-ID CDN URL' : 'base64 data URI');
 
-    const audioBuf = Buffer.from(audioBase64, 'base64');
-
-    // Upload audio to Imgur as MP3 is not supported — use D-ID's clips/audio endpoint
-    // Try multiple approaches for D-ID audio
+    // ── STEP 2: Prepare audio ──────────────────────────────────────────────
+    // Serve audio via our own server
     let audioUrl = null;
-
-    // D-ID requires a PUBLIC HTTPS URL for audio_url — not base64 data URIs
-    // Strategy 1: Upload to D-ID's own /audios endpoint
     try {
-      const FormData = require('form-data');
-      const form = new FormData();
-      form.append('audio', audioBuf, {
-        filename: 'audio.mp3',
-        contentType: 'audio/mpeg',
-        knownLength: audioBuf.length
-      });
-      const audioUpload = await fetch('https://api.d-id.com/audios', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Basic ' + DID_API_KEY,
-          'Accept': 'application/json',
-          ...form.getHeaders()
-        },
-        body: form
-      });
-      const respText = await audioUpload.text();
-      if (audioUpload.ok) {
-        try { audioUrl = JSON.parse(respText).url; } catch(e) {}
-        if (audioUrl) console.log('D-ID audio uploaded to /audios OK');
-        else console.warn('D-ID /audios: no URL in response:', respText.slice(0,100));
-      } else {
-        console.warn('D-ID /audios failed:', audioUpload.status, respText.slice(0,150));
-      }
+      const audioBuf = Buffer.from(audioBase64, 'base64');
+      const audioId = storeTempFile(audioBuf, 'audio/mpeg', 600); // 10 min
+      audioUrl = baseUrl + '/api/temp/' + audioId;
+      console.log('D-ID: audio served at:', audioUrl.slice(0, 70));
     } catch(e) {
-      console.warn('D-ID audio upload error:', e.message);
+      throw new Error('D-ID: audio preparation failed: ' + e.message);
     }
 
-    // Strategy 2: Upload audio to HeyGen asset storage (gives public URL)
-    if (!audioUrl && HEYGEN_KEY) {
-      try {
-        const hgAudioResp = await fetch('https://upload.heygen.com/v1/asset', {
-          method: 'POST',
-          headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'audio/mpeg' },
-          body: audioBuf
-        });
-        if (hgAudioResp.ok) {
-          const hgData = await hgAudioResp.json();
-          // HeyGen returns an asset URL we can use for D-ID
-          const assetId = hgData.data?.id || hgData.data?.asset_id;
-          if (assetId) {
-            // HeyGen audio assets have a CDN URL format
-            audioUrl = 'https://resource.heygen.com/audio/' + assetId + '.mp3';
-            console.log('D-ID: using HeyGen-hosted audio URL:', audioUrl.slice(0,60));
-          }
-        }
-      } catch(e) {
-        console.warn('HeyGen audio upload for D-ID failed:', e.message);
-      }
-    }
-
-    // Strategy 3: Upload audio to file.io (free, no auth, 14-day link)
-    if (!audioUrl) {
-      try {
-        const FormData = require('form-data');
-        const form2 = new FormData();
-        form2.append('file', audioBuf, { filename: 'audio.mp3', contentType: 'audio/mpeg' });
-        const fileioResp = await fetch('https://file.io/?expires=1d', {
-          method: 'POST',
-          body: form2,
-          headers: form2.getHeaders()
-        });
-        if (fileioResp.ok) {
-          const fileData = await fileioResp.json();
-          if (fileData.link) {
-            audioUrl = fileData.link;
-            console.log('D-ID: audio uploaded to file.io:', audioUrl);
-          }
-        }
-      } catch(e) {
-        console.warn('file.io upload failed:', e.message);
-      }
-    }
-
-    if (!audioUrl) {
-      throw new Error('D-ID audio upload failed — could not get a public URL for audio (tried /audios, HeyGen, file.io)');
-    }
-
-    // Step 3: Create talk (animate photo with audio)
-    // Framing notes:
-    // - Do NOT use presenter_config.crop 'rectangle' — it auto-crops to face, cutting off head
-    // - Use 'stitch: false' to preserve the full source image framing
-    // - The image should already be framed correctly (uploaded by user)
-    // - D-ID does NOT need gender specification — it reads your actual photo
-    const talkPayload = {
-      source_url: imageDataUri,
+    // ── STEP 3: Create D-ID talk ──────────────────────────────────────────
+    const talkBody = {
+      source_url: imageUrl,
       script: {
         type:          'audio',
         audio_url:     audioUrl,
@@ -1479,46 +1379,43 @@ async function generateWithDID(req, res, args) {
         ssml:          false
       },
       config: {
-        fluent:        false,      // false = less aggressive lip sync, better head preservation  
-        pad_audio:     0.5,
-        stitch:        false,      // false = preserve full source image framing (head not cropped)
-        result_format: 'mp4',
-        normalization_factor: 0    // 0 = no face stabilization zoom, full image preserved
+        fluent:           false,
+        stitch:           false,
+        result_format:    'mp4',
+        pad_audio:        0.5,
+        normalization_factor: 0
       }
-      // No presenter_config.crop — use full image as-is
-      // This preserves the user's framing (full body, waist-up, etc.)
     };
 
     console.log('D-ID: creating talk...');
     const talkResp = await fetch('https://api.d-id.com/talks', {
       method: 'POST',
-      headers: H,
-      body: JSON.stringify(talkPayload)
+      headers: { ...H, 'Content-Type': 'application/json' },
+      body: JSON.stringify(talkBody)
     });
     const talkText = await talkResp.text();
-    console.log('D-ID talk response:', talkResp.status, talkText.slice(0, 300));
+    console.log('D-ID talk response:', talkResp.status, talkText.slice(0, 150));
 
-    if (!talkResp.ok) throw new Error('D-ID talk failed: ' + talkResp.status + ' ' + talkText.slice(0, 300));
+    if (!talkResp.ok) {
+      throw new Error('D-ID talk failed: ' + talkResp.status + ' ' + talkText.slice(0, 200));
+    }
 
     const talkData = JSON.parse(talkText);
-    const talkId   = talkData.id;
-    if (!talkId) throw new Error('D-ID: no talk id returned');
-
+    const talkId = talkData.id;
+    if (!talkId) throw new Error('D-ID: no talk id in response');
     console.log('D-ID talk id:', talkId);
-    return res.json({ taskId: 'did-' + talkId, provider: 'did', done: false });
+
+    // ── STEP 4: Return task ID for frontend polling ────────────────────────
+    res.json({ taskId: 'did-' + talkId, provider: 'did', done: false });
 
   } catch(e) {
     console.error('generateWithDID:', e.message);
-    // Only fall back to HeyGen for unexpected errors, not auth/config errors
-    if (e.message.includes('audio upload failed') || e.message.includes('requires')) {
-      // Return error so user knows what happened
-      return res.status(500).json({ error: 'D-ID: ' + e.message, provider: 'did' });
-    }
+    // Fall back to HeyGen
     if (HEYGEN_KEY) {
-      console.log('D-ID failed, falling back to HeyGen stock avatar');
+      console.log('D-ID failed — falling back to HeyGen');
       return await generateWithHeyGen(req, res, args);
     }
-    return res.status(500).json({ error: e.message });
+    res.status(500).json({ error: e.message });
   }
 }
 
@@ -2346,3 +2243,26 @@ app.use((err, req, res, next) => {
   console.error('Unhandled error:', err?.message || err);
   if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
 });
+
+// ── Temporary file storage for D-ID (serves audio/images via public URL) ──
+const TEMP_FILES = new Map(); // id -> { buffer, mimeType, expires }
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, f] of TEMP_FILES.entries()) {
+    if (f.expires < now) TEMP_FILES.delete(id);
+  }
+}, 60000); // clean up every minute
+
+app.get('/api/temp/:id', (req, res) => {
+  const file = TEMP_FILES.get(req.params.id);
+  if (!file || file.expires < Date.now()) return res.status(404).send('Not found or expired');
+  res.set('Content-Type', file.mimeType);
+  res.set('Cache-Control', 'no-cache');
+  res.send(file.buffer);
+});
+
+function storeTempFile(buffer, mimeType, ttlSeconds = 300) {
+  const id = require('crypto').randomBytes(16).toString('hex');
+  TEMP_FILES.set(id, { buffer, mimeType, expires: Date.now() + ttlSeconds * 1000 });
+  return id;
+}
