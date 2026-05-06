@@ -1422,62 +1422,10 @@ async function generateWithDID(req, res, args) {
 // ── Presenter wait — server polls HeyGen until done (max 10 min) ─────────────
 // Frontend calls this ONCE and waits up to 10 min for the response.
 // Avoids the frontend timing out from short HTTP timeouts.
-app.get('/api/presenter-wait', async (req, res) => {
-  const { taskId } = req.query;
-  if (!taskId) return res.status(400).json({ error: 'taskId required' });
-  
-  // Set a very long timeout on this response
-  req.socket.setTimeout(620000); // 10 min + 20s buffer
-  res.setTimeout(620000);
-  
-  const maxPolls = 40; // 40 × 15s = 10 min
-  for (let i = 0; i < maxPolls; i++) {
-    await new Promise(r => setTimeout(r, 15000));
-    try {
-      let status, videoUrl, failed;
-      // D-ID talk status polling
-    if (taskId.startsWith('did-')) {
-      const id = taskId.replace('did-', '');
-      const r  = await fetch('https://api.d-id.com/talks/' + id, {
-        headers: { 'Authorization': 'Basic ' + DID_API_KEY, 'accept': 'application/json' }
-      });
-      const d  = await r.json();
-      const status   = d.status;
-      const videoUrl = d.result_url || null;
-      const done     = status === 'done';
-      const failed   = status === 'error';
-      console.log('D-ID status:', status, videoUrl ? '✓' : '');
-      return res.json({ status, videoUrl, done, failed, error: failed ? (d.error?.description || 'D-ID error') : null });
-    }
-
-    if (taskId.startsWith('heygen-')) {
-        const id = taskId.replace('heygen-', '');
-        const sr = await fetch('https://api.heygen.com/v1/video_status.get?video_id=' + id, { headers: { 'X-Api-Key': HEYGEN_KEY } });
-        const sd = await sr.json();
-        status   = sd.data?.status;
-        videoUrl = sd.data?.video_url || null;
-        failed   = status === 'failed';
-        console.log('HeyGen wait poll', i+1, '/', maxPolls, ':', status, videoUrl ? '✓' : '');
-        if (status === 'completed' && videoUrl) return res.json({ done: true, videoUrl, status });
-        if (failed) return res.json({ done: false, failed: true, error: sd.data?.error || 'HeyGen failed', status });
-      } else if (taskId.startsWith('kling-piapi-')) {
-        const id = taskId.replace('kling-piapi-', '');
-        const r  = await fetch('https://api.piapi.ai/api/v1/task/' + id, { headers: { 'x-api-key': PIAPI_KEY } });
-        const d  = await r.json();
-        status   = d.data?.status;
-        videoUrl = d.data?.output?.works?.[0]?.video?.resource_without_watermark || d.data?.output?.works?.[0]?.video?.resource || null;
-        failed   = status === 'failed';
-        console.log('PiAPI wait poll', i+1, '/', maxPolls, ':', status, videoUrl ? '✓' : '');
-        if ((status === 'completed' || status === 'succeed') && videoUrl) return res.json({ done: true, videoUrl, status });
-        if (failed) return res.json({ done: false, failed: true, error: 'PiAPI failed', status });
-      } else {
-        return res.status(400).json({ error: 'Unknown provider for wait endpoint' });
-      }
-    } catch(e) {
-      console.warn('presenter-wait poll error:', e.message);
-    }
-  }
-  res.json({ done: false, failed: false, timedOut: true, error: 'Timed out after 10 min' });
+app.get('/api/presenter-wait', (req, res) => {
+  // DEPRECATED: client now polls /api/presenter-status directly
+  // This endpoint caused server-side polling loops — removed
+  res.json({ done: false, deprecated: true, message: 'Use /api/presenter-status instead' });
 });
 
 // ── Status polling ────────────────────────────────────────────────────────────
@@ -1521,7 +1469,7 @@ app.get('/api/presenter-status', async (req, res) => {
       const videoUrl = d.result_url || null;
       const done     = status === 'done';
       const failed   = status === 'error';
-      console.log('D-ID status:', status, videoUrl ? '✓' : '');
+      console.log('D-ID status:', status, videoUrl ? '✓ videoUrl='+videoUrl.slice(0,40) : '(no videoUrl)');
       return res.json({ status, videoUrl, done, failed, error: failed ? (d.error?.description || 'D-ID error') : null });
     }
 
