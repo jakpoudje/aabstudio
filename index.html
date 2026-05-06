@@ -11067,34 +11067,59 @@
         <!-- 1. Presenter -->
         <div class="aps-section">
           <div class="aps-section-hdr">👤 Presenter</div>
-          <label
-            style="display:flex;align-items:center;gap:8px;padding:8px;border:1.5px dashed #374151;border-radius:8px;cursor:pointer;font-size:12px;color:#9ca3af;margin-bottom:8px;transition:border-color .15s;"
-            onmouseover="this.style.borderColor='#00d4ff'" onmouseout="this.style.borderColor='#374151'">
-            📷 Upload presenter photo
-            <input type="file" accept="image/*" style="display:none;" onchange="aps_loadPhoto(this)">
-          </label>
-          <img id="aps-photo-preview"
-            style="display:none;width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid #00d4ff;margin-bottom:8px;">
-          <!-- Character Name & Save -->
+
+          <!-- STEP 1: Saved Characters (shown first so returning users just pick one) -->
+          <div class="aps-label" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <span>Saved Characters</span>
+            <button onclick="aps_renderCharGrid()" style="background:none;border:none;color:rgba(255,255,255,.3);font-size:9px;cursor:pointer;padding:0;">↻ Refresh</button>
+          </div>
+          <div id="aps-char-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px;max-height:180px;overflow-y:auto;">
+            <div style="grid-column:1/-1;text-align:center;color:rgba(255,255,255,.2);font-size:10px;padding:12px 0;">
+              No saved characters yet
+            </div>
+          </div>
+
+          <!-- Divider -->
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+            <div style="flex:1;height:.5px;background:rgba(255,255,255,.08);"></div>
+            <span style="font-size:9px;color:rgba(255,255,255,.2);white-space:nowrap;">OR ADD NEW</span>
+            <div style="flex:1;height:.5px;background:rgba(255,255,255,.08);"></div>
+          </div>
+
+          <!-- STEP 2: Photo upload (for new character or to update existing) -->
+          <div id="aps-photo-drop" style="position:relative;margin-bottom:8px;">
+            <!-- Upload button -->
+            <label id="aps-upload-label"
+              style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border:1.5px dashed rgba(255,255,255,.15);border-radius:8px;cursor:pointer;font-size:12px;color:#9ca3af;transition:all .2s;background:rgba(255,255,255,.02);"
+              onmouseover="this.style.borderColor='#00d4ff';this.style.color='#00d4ff';"
+              onmouseout="this.style.borderColor='rgba(255,255,255,.15)';this.style.color='#9ca3af';">
+              <span>📷</span>
+              <span id="aps-upload-label-text">Upload presenter photo</span>
+              <input id="aps-photo-input" type="file" accept="image/*" style="display:none;"
+                onchange="aps_loadPhoto(this)">
+            </label>
+            <!-- Preview (shown after upload) -->
+            <div id="aps-photo-preview-wrap" style="display:none;margin-top:8px;display:none;align-items:center;gap:10px;">
+              <img id="aps-photo-preview" style="width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid #00d4ff;flex-shrink:0;">
+              <div style="flex:1;min-width:0;">
+                <div id="aps-photo-name" style="font-size:10px;color:rgba(255,255,255,.6);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+                <button onclick="document.getElementById('aps-photo-input').click()" style="font-size:9px;color:rgba(0,212,255,.6);background:none;border:none;cursor:pointer;padding:0;margin-top:2px;">↻ Change photo</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- STEP 3: Character name + Save -->
           <div class="aps-label">Character Name</div>
-          <div style="display:flex;gap:6px;margin-bottom:6px;">
+          <div style="display:flex;gap:6px;margin-bottom:4px;">
             <input id="aps-char-name" type="text" class="aps-select" placeholder="e.g. John Anchor"
               style="flex:1;" oninput="APS.charName=this.value">
             <button onclick="aps_saveCharacter(document.getElementById('aps-char-name').value)"
               style="background:rgba(0,212,255,.15);border:.5px solid rgba(0,212,255,.3);color:var(--accent);border-radius:6px;padding:5px 10px;font-size:10px;cursor:pointer;white-space:nowrap;">💾 Save</button>
           </div>
-          <div id="aps-char-name-display" style="font-size:9px;color:rgba(0,212,255,.5);margin-bottom:10px;margin-top:-2px;">Enter a name and click Save to store this character</div>
+          <div id="aps-char-name-display" style="font-size:9px;color:rgba(0,212,255,.5);margin-bottom:10px;">
+            Name your presenter to save and reuse across projects
+          </div>
 
-          <!-- Saved Characters Visual Picker -->
-          <div class="aps-label" style="display:flex;align-items:center;justify-content:space-between;">
-            <span>Saved Characters</span>
-            <button onclick="aps_renderCharGrid()" style="background:none;border:none;color:rgba(255,255,255,.3);font-size:9px;cursor:pointer;padding:0;">↻ Refresh</button>
-          </div>
-          <div id="aps-char-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px;max-height:160px;overflow-y:auto;">
-            <div style="grid-column:1/-1;text-align:center;color:rgba(255,255,255,.2);font-size:10px;padding:16px 0;">
-              No saved characters yet — upload a photo, enter a name and click Save
-            </div>
-          </div>
           <div class="aps-label">Framing</div>
           <select id="aps-framing" class="aps-select">
             <option value="medium">Medium shot (chest up)</option>
@@ -16573,61 +16598,57 @@ window.aps_loadPhoto = function(input) {
   var file = input && input.files && input.files[0];
   if (!file) return;
   var reader = new FileReader();
-  reader.onload = async function(e) {
+  reader.onload = function(e) {
     var dataUrl = e.target.result;
     var b64 = dataUrl.split(',')[1];
-    
-    APS.photoB64 = b64;
-    APS.photoMimeType = file.type || 'image/jpeg'; // Track actual mime type
+
+    // Store on APS
+    APS.photoB64      = b64;
     APS.photoMimeType = file.type || 'image/jpeg';
-    APS.talkingPhotoId = null;
-    APS.photoPreviewUrl = null;
-    
-    // Show preview
+    APS.talkingPhotoId   = null;
+    APS.photoPreviewUrl  = null;
+
+    // Persist immediately
+    try { localStorage.setItem('aps_presenter_photo', dataUrl); } catch(e) {}
+
+    // Update large presenter preview (centre canvas)
     var wrap = document.getElementById('aps-presenter-img-wrap');
-    if (wrap) wrap.innerHTML = '<img src="'+dataUrl+'" style="width:100%;height:100%;object-fit:cover;border-radius:100px 100px 0 0;">';
-    var prev = document.getElementById('aps-photo-preview');
-    if (prev) { prev.src = dataUrl; prev.style.display = 'block'; }
-    
-    // Save to localStorage + asset library
-    try { localStorage.setItem('aps_presenter_photo', b64.slice(0,60000)); } catch(e) {}
-    var assetItems = [];
-    try { assetItems = JSON.parse(localStorage.getItem('aab_assets')||'[]'); } catch(e) {}
-    assetItems.unshift({ id:'pres_'+Date.now(), name:'Presenter: '+file.name, type:'image', url:dataUrl, savedAt:Date.now() });
-    try { localStorage.setItem('aab_assets', JSON.stringify(assetItems.slice(0,200))); } catch(e) {}
-    
-    toast('📸 Photo loaded ✓ — uploading to HeyGen...', 'info');
-    
-    // Try HeyGen photo upload
-    try {
-      var token = typeof getAuthToken === 'function' ? getAuthToken() : null;
-      var headers = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = 'Bearer ' + token;
-      
-      var r = await fetch((window.API||API) + '/api/heygen/upload-photo', {
-        method:'POST', headers,
-        body:JSON.stringify({ imageBase64:b64, mimeType:file.type||'image/jpeg' })
-      });
-      var d = await r.json();
-      
-      if (d.talking_photo_id) {
-        APS.talkingPhotoId = d.talking_photo_id;
-        APS.photoPreviewUrl = dataUrl;
-        try { localStorage.setItem('aps_talking_photo_id', d.talking_photo_id); } catch(e) {}
-        toast('✓ Presenter face registered — your face will appear in generated videos', 'ok');
-      } else if (d.fallback) {
-        // HeyGen Creator/Scale plan — no custom face
-        aps_showPlanNotice('Custom face generation requires HeyGen Enterprise plan ($350/mo). Currently using stock avatar with your voice. Your photo is saved for when you upgrade.');
-        toast('Photo saved — using stock avatar (HeyGen Enterprise needed for custom face)', 'info');
-        APS.photoPreviewUrl = dataUrl;
-      }
-    } catch(e) {
-      console.warn('Photo upload:', e.message);
-      toast('Photo saved locally ✓', 'ok');
+    if (wrap) wrap.innerHTML = '<img src="' + dataUrl + '" style="width:100%;height:100%;object-fit:cover;object-position:top;border-radius:100px 100px 0 0;">';
+
+    // Update small circular preview in right panel
+    var prevWrap = document.getElementById('aps-photo-preview-wrap');
+    var prev     = document.getElementById('aps-photo-preview');
+    var nameEl   = document.getElementById('aps-photo-name');
+    var labelTxt = document.getElementById('aps-upload-label-text');
+    if (prev)     { prev.src = dataUrl; }
+    if (prevWrap) { prevWrap.style.display = 'flex'; }
+    if (nameEl)   { nameEl.textContent = file.name.slice(0, 30); }
+    if (labelTxt) { labelTxt.textContent = 'Photo loaded ✓'; }
+
+    // Auto-switch provider to D-ID
+    var provSel = document.getElementById('aps-provider');
+    if (provSel && provSel.value !== 'did') {
+      provSel.value = 'did';
+      if (APS.settings) APS.settings.provider = 'did';
+      if (typeof aps_onProviderChange === 'function') aps_onProviderChange('did');
+    }
+
+    // Auto-save to current character if name is set
+    var charName = APS.charName || (document.getElementById('aps-char-name') || {}).value;
+    if (charName && charName.trim()) {
+      try {
+        var chars = JSON.parse(localStorage.getItem('aab_characters') || '{}');
+        if (chars[charName.trim()]) {
+          chars[charName.trim()].photoB64 = b64;
+          chars[charName.trim()].photoMimeType = file.type || 'image/jpeg';
+          localStorage.setItem('aab_characters', JSON.stringify(chars));
+          if (typeof aps_renderCharGrid === 'function') setTimeout(aps_renderCharGrid, 100);
+        }
+      } catch(e) {}
     }
   };
   reader.readAsDataURL(file);
-};
+};;
 
 // ── 7. Recording studio → Edit Suite path stays separate ────────────
 // When user records a video clip, it saves to REC_CLIPS
