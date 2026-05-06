@@ -11045,19 +11045,26 @@
           </label>
           <img id="aps-photo-preview"
             style="display:none;width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid #00d4ff;margin-bottom:8px;">
-          <!-- Character Name & Saved Characters -->
+          <!-- Character Name & Save -->
           <div class="aps-label">Character Name</div>
-          <div style="display:flex;gap:6px;margin-bottom:8px;">
+          <div style="display:flex;gap:6px;margin-bottom:6px;">
             <input id="aps-char-name" type="text" class="aps-select" placeholder="e.g. John Anchor"
               style="flex:1;" oninput="APS.charName=this.value">
             <button onclick="aps_saveCharacter(document.getElementById('aps-char-name').value)"
-              style="background:rgba(0,212,255,.15);border:.5px solid rgba(0,212,255,.3);color:var(--accent);border-radius:6px;padding:5px 10px;font-size:10px;cursor:pointer;white-space:nowrap;font-family:'Sora',sans-serif;">Save</button>
+              style="background:rgba(0,212,255,.15);border:.5px solid rgba(0,212,255,.3);color:var(--accent);border-radius:6px;padding:5px 10px;font-size:10px;cursor:pointer;white-space:nowrap;">💾 Save</button>
           </div>
-          <div id="aps-char-name-display" style="font-size:9px;color:rgba(255,255,255,.3);margin-bottom:8px;margin-top:-4px;">No character saved</div>
-          <div class="aps-label">Saved Characters</div>
-          <select id="aps-char-select" class="aps-select" onchange="if(this.value){aps_loadCharacter(this.value);aps_renderCharSelector();}" style="margin-bottom:10px;">
-            <option value="">— Select saved character —</option>
-          </select>
+          <div id="aps-char-name-display" style="font-size:9px;color:rgba(0,212,255,.5);margin-bottom:10px;margin-top:-2px;">Enter a name and click Save to store this character</div>
+
+          <!-- Saved Characters Visual Picker -->
+          <div class="aps-label" style="display:flex;align-items:center;justify-content:space-between;">
+            <span>Saved Characters</span>
+            <button onclick="aps_renderCharGrid()" style="background:none;border:none;color:rgba(255,255,255,.3);font-size:9px;cursor:pointer;padding:0;">↻ Refresh</button>
+          </div>
+          <div id="aps-char-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px;max-height:160px;overflow-y:auto;">
+            <div style="grid-column:1/-1;text-align:center;color:rgba(255,255,255,.2);font-size:10px;padding:16px 0;">
+              No saved characters yet — upload a photo, enter a name and click Save
+            </div>
+          </div>
           <div class="aps-label">Framing</div>
           <select id="aps-framing" class="aps-select">
             <option value="medium">Medium shot (chest up)</option>
@@ -17027,6 +17034,167 @@ window.aps_loadPhoto = function(input) {
     }
   }, 500);
 };
+
+
+// ══ CHARACTER GRID — visual card picker for saved characters ══════════════
+window.aps_renderCharGrid = function() {
+  var grid = document.getElementById('aps-char-grid');
+  if (!grid) return;
+
+  var chars = {};
+  try { chars = JSON.parse(localStorage.getItem('aab_characters') || '{}'); } catch(e) {}
+
+  if (!Object.keys(chars).length) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:rgba(255,255,255,.2);font-size:10px;padding:16px 0;">No saved characters yet — upload a photo, enter a name and click Save</div>';
+    return;
+  }
+
+  grid.innerHTML = '';
+  Object.values(chars).forEach(function(char) {
+    var card = document.createElement('div');
+    var isActive = APS.charName === char.name;
+    card.style.cssText = 'border-radius:8px;overflow:hidden;cursor:pointer;border:1.5px solid ' +
+      (isActive ? 'rgba(0,212,255,.6)' : 'rgba(255,255,255,.08)') +
+      ';background:' + (isActive ? 'rgba(0,212,255,.08)' : 'rgba(255,255,255,.03)') +
+      ';transition:border-color .15s;';
+
+    // Photo or placeholder
+    var imgHtml;
+    if (char.photoB64) {
+      imgHtml = '<img src="data:' + (char.photoMimeType||'image/jpeg') + ';base64,' + char.photoB64 +
+        '" style="width:100%;height:52px;object-fit:cover;object-position:top;display:block;" />';
+    } else {
+      imgHtml = '<div style="width:100%;height:52px;background:rgba(255,255,255,.05);display:flex;align-items:center;justify-content:center;font-size:18px;">👤</div>';
+    }
+
+    card.innerHTML = imgHtml +
+      '<div style="padding:4px 5px;">' +
+      '<div style="font-size:9px;font-weight:600;color:rgba(255,255,255,.8);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + char.name + '">' + char.name + '</div>' +
+      '<div style="font-size:8px;color:rgba(255,255,255,.3);">' + (char.voiceName || '') + '</div>' +
+      '</div>' +
+      (isActive ? '<div style="font-size:8px;text-align:center;color:rgba(0,212,255,.7);padding:2px 0;border-top:.5px solid rgba(0,212,255,.2);">Active</div>' : '');
+
+    card.onclick = function() {
+      aps_loadCharacterFromData(char);
+      // Update active state
+      Array.from(grid.children).forEach(function(c) {
+        c.style.borderColor = 'rgba(255,255,255,.08)';
+        c.style.background  = 'rgba(255,255,255,.03)';
+      });
+      card.style.borderColor = 'rgba(0,212,255,.6)';
+      card.style.background  = 'rgba(0,212,255,.08)';
+    };
+
+    card.onmouseenter = function() {
+      if (APS.charName !== char.name) card.style.borderColor = 'rgba(255,255,255,.2)';
+    };
+    card.onmouseleave = function() {
+      if (APS.charName !== char.name) card.style.borderColor = 'rgba(255,255,255,.08)';
+    };
+
+    // Delete button
+    var del = document.createElement('button');
+    del.textContent = '×';
+    del.title = 'Delete character';
+    del.style.cssText = 'position:absolute;top:3px;right:3px;background:rgba(0,0,0,.6);border:none;color:rgba(255,255,255,.5);border-radius:50%;width:14px;height:14px;font-size:10px;cursor:pointer;line-height:1;display:none;';
+    del.onclick = function(e) {
+      e.stopPropagation();
+      if (!confirm('Delete character "' + char.name + '"?')) return;
+      var cs = JSON.parse(localStorage.getItem('aab_characters') || '{}');
+      delete cs[char.name];
+      localStorage.setItem('aab_characters', JSON.stringify(cs));
+      aps_renderCharGrid();
+      toast('Character deleted', 'ok');
+    };
+
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'position:relative;';
+    wrap.appendChild(card);
+    wrap.appendChild(del);
+    wrap.onmouseenter = function() { del.style.display = 'block'; };
+    wrap.onmouseleave = function() { del.style.display = 'none'; };
+
+    grid.appendChild(wrap);
+  });
+};
+
+// Load character from data object (not just name)
+window.aps_loadCharacterFromData = function(char) {
+  if (!char) return;
+
+  // Restore photo
+  if (char.photoB64) {
+    APS.photoB64      = char.photoB64;
+    APS.photoMimeType = char.photoMimeType || 'image/jpeg';
+    var imgWrap = document.getElementById('aps-presenter-img-wrap');
+    if (imgWrap) {
+      imgWrap.innerHTML = '<img src="data:' + (char.photoMimeType||'image/jpeg') + ';base64,' + char.photoB64 +
+        '" style="width:100%;height:100%;object-fit:cover;object-position:top;border-radius:100px 100px 0 0;" />';
+    }
+    var photoPreview = document.getElementById('aps-photo-preview');
+    if (photoPreview) {
+      photoPreview.src = 'data:' + (char.photoMimeType||'image/jpeg') + ';base64,' + char.photoB64;
+      photoPreview.style.display = 'block';
+    }
+  }
+
+  // Restore settings
+  if (char.talkingPhotoId) APS.talkingPhotoId = char.talkingPhotoId;
+  if (APS.settings) {
+    if (char.voiceId)   APS.settings.voiceId   = char.voiceId;
+    if (char.voiceName) APS.settings.voiceName = char.voiceName;
+    if (char.provider)  APS.settings.provider  = char.provider;
+    if (char.stability) APS.settings.stability = char.stability;
+    if (char.clarity)   APS.settings.clarity   = char.clarity;
+  }
+  if (char.framing) APS.framing  = char.framing;
+  if (char.bgType)  APS.bgType   = char.bgType;
+
+  // Update UI
+  APS.charName = char.name;
+  var nameInput = document.getElementById('aps-char-name');
+  if (nameInput) nameInput.value = char.name;
+
+  // Update voice selector if visible
+  var voiceSel = document.getElementById('aps-voice-id');
+  if (voiceSel && char.voiceId) voiceSel.value = char.voiceId;
+
+  // Update provider selector
+  var provSel = document.getElementById('aps-provider');
+  if (provSel && char.provider) {
+    provSel.value = char.provider;
+    if (typeof aps_onProviderChange === 'function') aps_onProviderChange(char.provider);
+  }
+
+  // Save as last used
+  localStorage.setItem('aab_last_character', char.name);
+
+  var display = document.getElementById('aps-char-name-display');
+  if (display) {
+    display.textContent = '✓ Loaded: ' + char.name;
+    display.style.color = 'rgba(0,212,255,.7)';
+  }
+
+  toast('✓ Character loaded: ' + char.name, 'ok');
+};
+
+// Patch aps_saveCharacter to refresh grid after save
+var _origSaveChar = window.aps_saveCharacter;
+window.aps_saveCharacter = async function(name) {
+  if (typeof _origSaveChar === 'function') await _origSaveChar(name);
+  // Refresh the visual grid
+  setTimeout(aps_renderCharGrid, 100);
+};
+
+// Auto-populate grid when APS page is shown
+document.addEventListener('aab_nav', function(e) {
+  if (e && e.detail && e.detail.page === 'ai-presenter-studio') {
+    setTimeout(aps_renderCharGrid, 200);
+  }
+});
+
+// Also populate on initial load
+setTimeout(aps_renderCharGrid, 500);
 
 console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgrounds, TP bg');
 </script>
