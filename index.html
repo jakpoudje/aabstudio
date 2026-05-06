@@ -4379,6 +4379,19 @@
 .grp-bg .panel-group-body { max-width: 280px !important; flex-wrap: wrap !important; }
 .s-btn { font-size: 9px !important; padding: 3px 6px !important; }
 </style>
+<style id="tp-smooth-css">
+/* Teleprompter smooth scroll */
+#studio-tp, #tp-wrap { position:relative; overflow:hidden !important; }
+#tp-cur {
+  will-change:transform;
+  display:block !important;
+  padding-top:32vh !important;
+  padding-bottom:60vh !important;
+  line-height:1.75 !important;
+  word-spacing:0.1em;
+  transition:none !important;
+}
+</style>
 </head>
 <body>
   <!-- TOASTS -->
@@ -4409,9 +4422,12 @@
       <a class="nav-logo" onclick="nav('home')" style="cursor:pointer;">AAB<span
           style="color:var(--accent);">Studio</span>.ai</a>
       <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
-        
-        <button class="btn btn-ghost btn-sm" onclick="nav('auth-pg')">Sign in</button>
-        <button class="btn btn-primary btn-sm" onclick="nav('auth-pg')">Get started free</button>
+        <!-- Logged OUT state -->
+        <button class="btn btn-ghost btn-sm" id="home-signin-btn" onclick="nav('auth-pg')">Sign in</button>
+        <button class="btn btn-primary btn-sm" id="home-start-btn" onclick="nav('auth-pg')">Get started free</button>
+        <!-- Logged IN state (hidden until auth) -->
+        <button class="btn btn-ghost btn-sm" id="home-dashboard-btn" style="display:none;" onclick="nav('dashboard-pg')">Dashboard</button>
+        <button class="btn btn-primary btn-sm" id="home-studio-btn" style="display:none;" onclick="heroStart()">Open Studio</button>
       </div>
     </div>
 
@@ -5351,6 +5367,8 @@
       <span style="font-size:9px;color:rgba(245,158,11,.5);">Speed</span>
       <input type="range" min="20" max="220" value="80" id="tp-spd-range" oninput="setTpSpd(this.value)" style="width:60px;accent-color:var(--gold);">
       <span id="tp-spd-val" style="font-size:10px;color:var(--gold);min-width:34px;">80wpm</span>
+      <span style="font-size:9px;color:rgba(255,255,255,.2);">|</span>
+      <select id="tp-mode-sel" onchange="window._tpMode=this.value" title="Scroll mode" style="font-size:9px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.5);border-radius:4px;padding:2px 4px;cursor:pointer;"><option value="scroll" selected>📜 Scroll</option><option value="word">💡 Word</option><option value="line">📄 Line</option></select>
       </div>
       <button class="s-btn" onclick="resetTpScroll()" style="font-size:10px;padding:4px 8px;" title="Reset scroll to top">↺</button>
       <div style="display:flex;align-items:center;gap:3px;">
@@ -5447,11 +5465,13 @@
 
 
   <!-- ══ EDIT SUITE ═══════════════════════════════════════════════════════════════ -->
-  <div id="edit-pg" class="pg-flex"
-    style="flex-direction:column;background:#07090f;color:#fff;height:100vh;overflow:hidden;">
+  <div id="edit-pg" class="pg"
+    style="display:none;flex-direction:column;background:#07090f;color:#fff;height:100vh;overflow:hidden;">
 
     <!-- ═══ EDIT SUITE TOPBAR ═══════════════════════════════════════════════ -->
     <div class="edit-topbar-v2" style="height:46px;display:flex;align-items:center;gap:0;background:#07090f;border-bottom:.5px solid rgba(255,255,255,.07);flex-shrink:0;">
+        <button onclick="nav('record-pg')" style="background:none;border:none;color:rgba(255,255,255,.5);font-size:11px;cursor:pointer;padding:0 12px;height:100%;border-right:.5px solid rgba(255,255,255,.08);">← Recording Studio</button>
+        <button onclick="nav('ai-presenter-studio')" style="background:none;border:none;color:rgba(255,255,255,.5);font-size:11px;cursor:pointer;padding:0 12px;height:100%;border-right:.5px solid rgba(255,255,255,.08);">✨ AI Presenter</button>
       <div class="edit-topbar-section" style="display:flex;align-items:center;gap:8px;padding:0 14px;border-right:.5px solid rgba(255,255,255,.07);height:100%;">
         <span class="nav-logo" style="font-size:12px;cursor:pointer;" onclick="nav('home')">AAB<span style="color:var(--accent);">Studio</span></span>
         <div style="width:.5px;height:18px;background:rgba(255,255,255,.08);"></div>
@@ -5492,9 +5512,7 @@
             <div style="flex:1;display:flex;align-items:center;justify-content:center;position:relative;background:#0a0c14;overflow:hidden;">
               <div id="edit-no-clips" style="text-align:center;color:rgba(255,255,255,.2);">
                 <div style="font-size:32px;margin-bottom:10px;">🎬</div>
-                <div style="font-size:13px;margin-bottom:10px;">Record or generate scenes first</div>
-                <button class="studio-btn" onclick="nav('record-pg')">← Recording Studio</button>
-                <button class="studio-btn" onclick="nav('ai-presenter-studio')" style="margin-top:6px;">✨ AI Presenter</button>
+                <div style="font-size:13px;margin-bottom:10px;">No clips yet — record scenes or generate with AI Presenter</div>
               </div>
               <video id="edit-video" preload="auto"
                 style="display:none;width:100%;height:100%;object-fit:contain;background:#000;"
@@ -6186,6 +6204,9 @@
       var show = function (id, v) { var e = document.getElementById(id); if (e) e.style.display = v ? '' : 'none'; };
       show('nav-app-links', li); show('credits-pill', li);
       show('nav-signin', !li); show('nav-start', !li); show('nav-signout', li);
+      // Home page nav buttons - switch between logged-out and logged-in state
+      show('home-signin-btn', !li); show('home-start-btn', !li);
+      show('home-dashboard-btn', li); show('home-studio-btn', li);
       if (li) {
         var ini = (APP.user.name || APP.user.email || 'U').slice(0, 2).toUpperCase();
         ['d-av'].forEach(function (id) { var e = document.getElementById(id); if (e) e.textContent = ini; });
@@ -10696,18 +10717,29 @@
     function aps_addClipToTimeline(sc) {
       // Add generated clip to the main project timeline
       if (!PROJECT.clips) PROJECT.clips = {};
-      PROJECT.clips[sc.id] = {
+      var clipKey = sc.id || ('aps_' + sc.num + '_' + Date.now());
+      PROJECT.clips[clipKey] = {
         sceneId: sc.id,
         sceneNum: sc.num,
         videoUrl: sc.videoUrl,
-        duration: sc.duration,
+        url: sc.videoUrl,
+        duration: sc.duration || 8,
         source: 'ai-presenter',
-        provider: APS.settings.provider,
-        voice: APS.settings.voiceName,
-        bg: APS.settings.bg,
+        provider: APS.settings ? APS.settings.provider : 'heygen',
+        voice: APS.settings ? APS.settings.voiceName : '',
+        bg: APS.settings ? APS.settings.bg : '',
         generatedAt: new Date().toISOString()
       };
-      saveProject();
+      // Also add to APS_CLIPS for the Go to Edit Suite function
+      if (window.APS_CLIPS) {
+        APS_CLIPS[clipKey] = PROJECT.clips[clipKey];
+        try {
+          var saved = JSON.parse(localStorage.getItem('aab_aps_clips') || '{}');
+          saved[clipKey] = APS_CLIPS[clipKey];
+          localStorage.setItem('aab_aps_clips', JSON.stringify(saved));
+        } catch(e) {}
+      }
+      if (typeof saveProject === 'function') saveProject();
     }
 
     // ── SAFARI COMPATIBILITY: Explicitly expose all handler functions on window ──
@@ -13439,98 +13471,168 @@ function _aabDoSyncStart() {
 var _aabTpRaf = null;
 
 function _aabTpScrollStart() {
-  // Stop all competing TP timers before starting
+  // Stop any competing timers
   if (window._studioTpTimer) { clearInterval(window._studioTpTimer); window._studioTpTimer = null; }
   if (window.STUDIO_TP) window.STUDIO_TP.running = false;
   if (_aabTpRaf) { cancelAnimationFrame(_aabTpRaf); _aabTpRaf = null; }
-  window._aabTpActive = true; // flag to block updateTP from overwriting
+  window._aabTpActive = true;
 
-  // Get speed from slider
-  var slider = document.getElementById('tp-spd-range');
-  var wpm = parseInt(slider ? slider.value : 80) || 80;
+  var slider  = document.getElementById('tp-spd-range');
+  var wpm     = parseInt(slider ? slider.value : 120) || 120;
+  var modeSel = document.getElementById('tp-mode-sel');
+  var tpMode  = (modeSel ? modeSel.value : null) || window._tpMode || 'scroll';
+  window._tpMode = tpMode;
   var msPerWord = 60000 / wpm;
 
-  // Get current scene narration
   var scene = PROJECT && PROJECT.scenes && PROJECT.scenes[STUDIO.currentScene || 0];
-  var text = scene ? (scene.narration || '') : '';
+  var text  = scene ? (scene.narration || '').trim() : '';
+  if (!text) { toast('No script text in this scene', 'error'); return; }
 
-  // Find TP text element (the large scrolling line)
   var tpCur = document.getElementById('tp-cur');
-  if (!tpCur) { console.warn('TP element not found'); return; }
+  if (!tpCur) { console.warn('tp-cur not found'); return; }
 
-  // Render words as highlightable spans
-  var words = text.trim().split(/\s+/).filter(Boolean);
-  if (!words.length) { toast('No script text in this scene for teleprompter','error'); return; }
-
+  // ── BUILD: Wrap every word in a span ──────────────────────────────────────
+  var words = text.split(/\s+/).filter(Boolean);
   tpCur.innerHTML = words.map(function(w, i) {
-    return '<span id="aab_tw'+i+'" style="display:inline;margin-right:0.35em;transition:color .1s,text-shadow .1s;">'+
-           w.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</span>';
+    return '<span id="aab_tw' + i + '" style="' +
+      'display:inline;' +
+      'margin-right:0.32em;' +
+      'transition:color 0.08s,text-shadow 0.08s,font-weight 0.08s;' +
+      'color:rgba(255,255,255,0.35);' +
+    '">' + w.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</span>';
   }).join('');
 
-  var startTime = null;
-  var lastWi = -1;
-
-  function frame(ts) {
-    if (!window._aab_practice && !window._aab_syncing) return; // stopped
-    if (!startTime) startTime = ts;
-    var elapsed = ts - startTime;
-    var wi = Math.min(Math.floor(elapsed / msPerWord), words.length - 1);
-
-    if (wi !== lastWi) {
-      lastWi = wi;
-      // Dim previous
-      if (wi > 0) {
-        var prev = document.getElementById('aab_tw'+(wi-1));
-        if (prev) { prev.style.color='rgba(255,255,255,.2)'; prev.style.textShadow='none'; }
-      }
-      // Highlight current
-      var cur = document.getElementById('aab_tw'+wi);
-      if (cur) {
-        cur.style.color='#f59e0b';
-        cur.style.fontWeight='700';
-        cur.style.textShadow='0 0 18px rgba(245,158,11,.7)';
-        // Scroll into view
-        cur.scrollIntoView({behavior:'smooth',block:'center'});
-      }
-      // Dim next (preview)
-      var nxt = document.getElementById('aab_tw'+(wi+1));
-      if (nxt) { nxt.style.color='rgba(255,255,255,.55)'; nxt.style.fontWeight=''; }
-    }
-
-    // Done with all words — auto-advance to next scene
-    if (wi >= words.length - 1 && elapsed > words.length * msPerWord) {
-      // Advance scene if more scenes remain
-      var nextScene = STUDIO.currentScene + 1;
-      if (nextScene < PROJECT.scenes.length) {
-        // Move to next scene
-        // Only auto-advance recording in sync-rec mode — NOT in practice mode
-        // Practice mode: TP finishes highlighting but recording continues until user stops
-        if (window._aab_syncing && typeof studioNext === 'function') studioNext();
-        // Restart TP scroll for new scene after a brief pause
-        setTimeout(function() {
-          if (window._aab_practice || window._aab_syncing) {
-            _aabTpScrollStart();
-          }
-        }, 400);
-      } else {
-        // All scenes done
-        window._aab_practice = false;
-        window._aab_syncing = false;
-        // If recording, stop
-        if (STUDIO.recording && typeof stopRec === 'function') {
-          stopRec();
-        }
-        toast('All scenes complete ✓', 'ok');
-      }
-      return;
-    }
-
-    _aabTpRaf = requestAnimationFrame(frame);
+  // ── LAYOUT: fixed reading line in upper-third of TP container ─────────────
+  // The text scrolls UP continuously. A fixed "reading cursor" line sits
+  // at 30% from top. Words above it are dimmed (read), word at line = bright,
+  // words below = slightly dimmed (coming up).
+  var tpWrap = tpCur.parentElement;
+  if (tpWrap) {
+    tpWrap.style.overflow = 'hidden';
+    tpWrap.style.position = 'relative';
   }
+  // Add reading guide line (semi-transparent horizontal bar)
+  var guide = document.getElementById('tp-reading-guide');
+  if (!guide) {
+    guide = document.createElement('div');
+    guide.id = 'tp-reading-guide';
+    guide.style.cssText = [
+      'position:absolute',
+      'left:0','right:0',
+      'top:30%',
+      'height:2px',
+      'background:linear-gradient(90deg,transparent,rgba(0,212,255,0.4),transparent)',
+      'pointer-events:none',
+      'z-index:10',
+      'border-radius:1px',
+    ].join(';');
+    if (tpWrap) tpWrap.appendChild(guide);
+  }
+  guide.style.display = 'block';
 
-  _aabTpRaf = requestAnimationFrame(frame);
+  // ── SCROLL: continuous smooth upward scroll ───────────────────────────────
+  // Scroll speed = pixels per millisecond, calculated from WPM and average word width
+  // We calculate how far to scroll per word, then drive it with requestAnimationFrame
 
-  // Also make sure the teleprompter panel is visible and not collapsed
+  var startTime = null;
+  var lastWi    = -1;
+  var containerH = tpWrap ? tpWrap.offsetHeight : 300;
+  var readingY    = containerH * 0.30; // reading guide at 30% from top
+
+  // Give the layout time to render before measuring word positions
+  requestAnimationFrame(function() {
+    requestAnimationFrame(function() {
+      // Measure total scroll distance = from first word to last word
+      var firstSpan = document.getElementById('aab_tw0');
+      var lastSpan  = document.getElementById('aab_tw' + (words.length - 1));
+      if (!firstSpan || !lastSpan) return;
+
+      // Total scroll = distance from first word top to last word top
+      var totalScroll = lastSpan.offsetTop - firstSpan.offsetTop;
+      // Total time for all words
+      var totalTime = words.length * msPerWord;
+      // Pixels per millisecond
+      var pxPerMs = totalTime > 0 ? totalScroll / totalTime : 0;
+
+      // Initial scroll: put first word at the reading line
+      var initialOffset = firstSpan.offsetTop - readingY;
+      tpCur.style.transform = 'translateY(' + (-initialOffset) + 'px)';
+      tpCur.style.transition = 'none';
+      tpCur.style.willChange = 'transform';
+
+      function frame(ts) {
+        if (!window._aab_practice && !window._aab_syncing) {
+          // Stopped - clean up
+          if (guide) guide.style.display = 'none';
+          return;
+        }
+        if (!startTime) startTime = ts;
+        var elapsed = ts - startTime;
+
+        // ── Smooth continuous scroll ─────────────────────────────────────────
+        var scrolled   = elapsed * pxPerMs;
+        var currentOffset = initialOffset + scrolled;
+        tpCur.style.transform = 'translateY(' + (-currentOffset) + 'px)';
+
+        // ── Word highlighting ─────────────────────────────────────────────────
+        var wi = Math.min(Math.floor(elapsed / msPerWord), words.length - 1);
+        if (wi !== lastWi) {
+          // Unhighlight previous
+          if (lastWi >= 0) {
+            var prev = document.getElementById('aab_tw' + lastWi);
+            if (prev) {
+              prev.style.color      = 'rgba(255,255,255,0.25)';
+              prev.style.fontWeight = '';
+              prev.style.textShadow = 'none';
+            }
+          }
+          // Highlight current word
+          var cur = document.getElementById('aab_tw' + wi);
+          if (cur) {
+            cur.style.color      = '#ffffff';
+            cur.style.fontWeight = '700';
+            cur.style.textShadow = '0 0 20px rgba(255,255,255,0.9), 0 0 40px rgba(0,212,255,0.5)';
+          }
+          // Soften upcoming words (next 3)
+          for (var ni = wi + 1; ni <= wi + 3 && ni < words.length; ni++) {
+            var nxt = document.getElementById('aab_tw' + ni);
+            if (nxt && nxt.style.color !== '#ffffff') {
+              // Gradually brighter as they approach
+              var alpha = 0.25 + (ni - wi - 1) * 0.1;
+              nxt.style.color      = 'rgba(255,255,255,' + Math.min(0.55, alpha) + ')';
+              nxt.style.fontWeight = '';
+              nxt.style.textShadow = 'none';
+            }
+          }
+          lastWi = wi;
+        }
+
+        // ── Scene advance ─────────────────────────────────────────────────────
+        if (wi >= words.length - 1 && elapsed >= words.length * msPerWord) {
+          if (guide) guide.style.display = 'none';
+          var nextScene = (STUDIO.currentScene || 0) + 1;
+          if (nextScene < (PROJECT.scenes || []).length) {
+            if (window._aab_syncing && typeof studioNext === 'function') studioNext();
+            setTimeout(function() {
+              if (window._aab_practice || window._aab_syncing) _aabTpScrollStart();
+            }, 300);
+          } else {
+            window._aab_practice = false;
+            window._aab_syncing  = false;
+            if (STUDIO.recording && typeof stopRec === 'function') stopRec();
+            toast('All scenes complete ✓', 'ok');
+          }
+          return;
+        }
+
+        _aabTpRaf = requestAnimationFrame(frame);
+      }
+
+      _aabTpRaf = requestAnimationFrame(frame);
+    });
+  });
+
+  // Ensure TP panel is visible
   var studioTp = document.getElementById('studio-tp');
   if (studioTp) studioTp.classList.remove('collapsed');
 }
@@ -13781,6 +13883,11 @@ window.uploadCustomBg = function(inp) {
 // Wire studio buttons via aab_nav event (no nav override needed)
 document.addEventListener('aab_nav', function(e) {
   var pg = e.detail && e.detail.page;
+  // edit-pg needs display:flex not block (it's a flex column layout)
+  if (pg === 'edit-pg') {
+    var ep = document.getElementById('edit-pg');
+    if (ep) ep.style.display = 'flex';
+  }
   if (pg === 'record-pg') {
     setTimeout(function(){
       var p = document.getElementById('btn-tp-start');
@@ -15909,8 +16016,14 @@ window.aps_generateAll = async function() {
   if (genBtn) genBtn.disabled = false;
   if (stopBtn) stopBtn.style.display = 'none';
   toast('Done: ' + succeeded + ' generated' + (failed ? ', ' + failed + ' failed' : ''), succeeded > 0 ? 'ok' : 'error');
-  // Show Go to Edit Suite button
-  if (succeeded > 0 && typeof aps_showGoToEditBtn === 'function') aps_showGoToEditBtn(succeeded);
+  // Show Go to Edit Suite button - make it visible
+  var goBtn = document.getElementById('aps-go-edit-btn');
+  if (goBtn && succeeded > 0) {
+    goBtn.style.display = 'block';
+    goBtn.textContent = '🎬 Go to Edit Suite (' + succeeded + ' clips) →';
+  }
+  var emptyMsg = document.getElementById('aps-clips-empty');
+  if (emptyMsg && succeeded > 0) emptyMsg.style.display = 'none';
 };
 
 // When batch video completes, split into per-scene clips and add all to APS_CLIPS
