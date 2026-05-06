@@ -1340,20 +1340,43 @@ async function generateWithDID(req, res, args) {
       console.warn('D-ID: image conversion failed, using original:', convErr.message);
     }
 
+    // Upload image to D-ID's OWN CDN — Imgur URLs are rejected by D-ID with 400
     let imageSourceUrl = null;
     try {
-      imageSourceUrl = await uploadToImgur(imageForUpload);
-      console.log('D-ID: presenter image on Imgur:', imageSourceUrl);
-    } catch(imgurErr) {
-      console.warn('D-ID: Imgur upload failed, using data URI fallback:', imgurErr.message);
+      const imgBuf = Buffer.from(imageForUpload, 'base64');
+      const FormData = require('form-data');
+      const imgForm = new FormData();
+      imgForm.append('image', imgBuf, {
+        filename: 'presenter.jpg',
+        contentType: 'image/jpeg',
+        knownLength: imgBuf.length
+      });
+      const didImgResp = await fetch('https://api.d-id.com/images', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + DID_API_KEY,
+          'Accept': 'application/json',
+          ...imgForm.getHeaders()
+        },
+        body: imgForm
+      });
+      const didImgText = await didImgResp.text();
+      if (didImgResp.ok) {
+        const didImgData = JSON.parse(didImgText);
+        imageSourceUrl = didImgData.url;
+        console.log('D-ID: image uploaded to D-ID CDN OK:', imageSourceUrl ? imageSourceUrl.slice(0,60) : 'no URL');
+      } else {
+        console.warn('D-ID /images upload failed:', didImgResp.status, didImgText.slice(0,120));
+      }
+    } catch(e) {
+      console.warn('D-ID image upload error:', e.message);
     }
-    // Fallback to data URI if Imgur fails
+    
+    // D-ID does accept base64 data URIs for source_url (unlike audio_url)
     const imageDataUri = imageSourceUrl || ('data:image/jpeg;base64,' + imageForUpload);
     if (!imageDataUri) throw new Error('D-ID: could not prepare image source');
+    console.log('D-ID: image source =', imageSourceUrl ? 'D-ID CDN URL' : 'base64 data URI');
 
-    // Step 2: Upload audio to get a URL D-ID can use
-    // D-ID needs an audio URL, not base64. Upload to their clips endpoint first
-    // OR use ElevenLabs streaming URL. For now, upload audio to D-ID as blob
     const audioBuf = Buffer.from(audioBase64, 'base64');
 
     // Upload audio to Imgur as MP3 is not supported — use D-ID's clips/audio endpoint
