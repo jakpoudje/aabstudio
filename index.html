@@ -15331,17 +15331,76 @@ window.aps_listCharacters = function() {
 
 // Render character selector in APS sidebar
 
-// Load character selector on APS open
+// APS page opened — restore character and render grid
 document.addEventListener('aab_nav', function(e) {
-  if (e.detail && e.detail.page === 'ai-presenter-studio') {
-    setTimeout(aps_renderCharSelector, 200);
-    // Restore last character name
-    var last = localStorage.getItem('aps_current_char');
-    if (last) {
-      var nameEl = document.getElementById('aps-char-name-display');
-      if (nameEl) nameEl.textContent = last;
-      APS.charName = last;
-    }
+  if (e && e.detail && e.detail.page === 'ai-presenter-studio') {
+    setTimeout(function() {
+      // Always render the character grid
+      if (typeof aps_renderCharGrid === 'function') aps_renderCharGrid();
+
+      // Restore last used character with full photo
+      try {
+        var chars = JSON.parse(localStorage.getItem('aab_characters') || '{}');
+        var lastName = localStorage.getItem('aab_last_character');
+        var charToLoad = (lastName && chars[lastName]) ? chars[lastName] : Object.values(chars)[0];
+
+        if (charToLoad) {
+          // Restore photo to APS state
+          if (charToLoad.photoB64 && !APS.photoB64) {
+            APS.photoB64 = charToLoad.photoB64;
+            APS.photoMimeType = charToLoad.photoMimeType || 'image/jpeg';
+            var dataUrl = 'data:' + (charToLoad.photoMimeType || 'image/jpeg') + ';base64,' + charToLoad.photoB64;
+
+            // Large canvas
+            var wrap = document.getElementById('aps-presenter-img-wrap');
+            if (wrap) wrap.innerHTML = '<img src="' + dataUrl + '" style="width:100%;height:100%;object-fit:cover;object-position:top;border-radius:100px 100px 0 0;">';
+
+            // Small panel preview
+            var prev = document.getElementById('aps-photo-preview');
+            var prevWrap = document.getElementById('aps-photo-preview-wrap');
+            var labelTxt = document.getElementById('aps-upload-label-text');
+            var nameElPrev = document.getElementById('aps-photo-name');
+            if (prev) prev.src = dataUrl;
+            if (prevWrap) prevWrap.style.display = 'flex';
+            if (labelTxt) labelTxt.textContent = 'Photo loaded ✓';
+            if (nameElPrev) nameElPrev.textContent = charToLoad.name + ' photo';
+
+            // Persist
+            try { localStorage.setItem('aps_presenter_photo', dataUrl); } catch(ex) {}
+          }
+
+          // Restore settings
+          if (charToLoad.talkingPhotoId) APS.talkingPhotoId = charToLoad.talkingPhotoId;
+          if (APS.settings) {
+            if (charToLoad.voiceId)   APS.settings.voiceId   = charToLoad.voiceId;
+            if (charToLoad.voiceName) APS.settings.voiceName = charToLoad.voiceName;
+            if (charToLoad.provider)  APS.settings.provider  = charToLoad.provider;
+          }
+          if (charToLoad.framing) APS.framing = charToLoad.framing;
+
+          // Update name field
+          APS.charName = charToLoad.name;
+          var nameInput = document.getElementById('aps-char-name');
+          if (nameInput) nameInput.value = charToLoad.name;
+
+          // Update provider selector
+          var provSel = document.getElementById('aps-provider');
+          if (provSel && charToLoad.provider) {
+            provSel.value = charToLoad.provider;
+            if (typeof aps_onProviderChange === 'function') aps_onProviderChange(charToLoad.provider);
+          }
+
+          // Update status display
+          var display = document.getElementById('aps-char-name-display');
+          if (display) {
+            display.textContent = '✓ Using: ' + charToLoad.name;
+            display.style.color = 'rgba(0,212,255,.6)';
+          }
+        }
+      } catch(ex) {
+        console.warn('APS character restore failed:', ex.message);
+      }
+    }, 300);
   }
 });
 
@@ -15760,6 +15819,7 @@ window.aps_saveCharacter = async function(name) {
     if (typeof aps_renderCharSelector === 'function') aps_renderCharSelector();
     toast('✓ Character "' + name + '" saved', 'ok');
     localStorage.setItem('aab_last_character', name);
+    localStorage.setItem('aps_current_char', name);
   } catch(lsErr) {
     console.warn('Character localStorage save failed:', lsErr);
     toast('Character save failed (storage full?)', 'error');
@@ -17309,8 +17369,10 @@ document.addEventListener('aab_nav', function(e) {
   }
 });
 
-// Also populate on initial load
-setTimeout(aps_renderCharGrid, 500);
+// Also populate on initial load and restore character
+setTimeout(function() {
+  if (typeof aps_renderCharGrid === 'function') aps_renderCharGrid();
+}, 500);
 
 console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgrounds, TP bg');
 </script>
