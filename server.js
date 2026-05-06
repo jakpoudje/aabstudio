@@ -1351,7 +1351,7 @@ async function generateWithDID(req, res, args) {
       let imgBuf = Buffer.from(referenceImageBase64, 'base64');
       try { imgBuf = await sharp(imgBuf).jpeg({ quality: 92 }).toBuffer(); } catch(e) {}
       const imgId = storeTempFile(imgBuf, 'image/jpeg', 600); // 10 min
-      imageUrl = baseUrl + '/api/temp/' + imgId;
+      imageUrl = baseUrl + '/api/temp/' + imgId + '/presenter.jpg'; // D-ID requires URL ending in .jpg
       console.log('D-ID: image served at:', imageUrl.slice(0, 70));
     } catch(e) {
       throw new Error('D-ID: image preparation failed: ' + e.message);
@@ -1363,7 +1363,7 @@ async function generateWithDID(req, res, args) {
     try {
       const audioBuf = Buffer.from(audioBase64, 'base64');
       const audioId = storeTempFile(audioBuf, 'audio/mpeg', 600); // 10 min
-      audioUrl = baseUrl + '/api/temp/' + audioId;
+      audioUrl = baseUrl + '/api/temp/' + audioId + '/audio.mp3'; // explicit extension
       console.log('D-ID: audio served at:', audioUrl.slice(0, 70));
     } catch(e) {
       throw new Error('D-ID: audio preparation failed: ' + e.message);
@@ -2254,6 +2254,15 @@ setInterval(() => {
 }, 60000); // clean up every minute
 
 app.get('/api/temp/:id', (req, res) => {
+  const file = TEMP_FILES.get(req.params.id);
+  if (!file || file.expires < Date.now()) return res.status(404).send('Not found or expired');
+  res.set('Content-Type', file.mimeType);
+  res.set('Cache-Control', 'no-cache');
+  res.send(file.buffer);
+});
+
+// Handle URLs with extension suffix: /api/temp/:id/filename.jpg
+app.get('/api/temp/:id/:filename', (req, res) => {
   const file = TEMP_FILES.get(req.params.id);
   if (!file || file.expires < Date.now()) return res.status(404).send('Not found or expired');
   res.set('Content-Type', file.mimeType);
