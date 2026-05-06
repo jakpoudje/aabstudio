@@ -1360,44 +1360,85 @@ async function generateWithDID(req, res, args) {
     // Try multiple approaches for D-ID audio
     let audioUrl = null;
 
-    // Upload audio to D-ID
-    // D-ID /audios endpoint - try with correct multipart format
+    // D-ID requires a PUBLIC HTTPS URL for audio_url — not base64 data URIs
+    // Strategy 1: Upload to D-ID's own /audios endpoint
     try {
       const FormData = require('form-data');
       const form = new FormData();
-      // D-ID requires the field to be named 'audio' with correct mime
       form.append('audio', audioBuf, {
         filename: 'audio.mp3',
         contentType: 'audio/mpeg',
         knownLength: audioBuf.length
       });
-      const headers = {
-        'Authorization': 'Basic ' + DID_API_KEY,
-        'Accept': 'application/json',
-        ...form.getHeaders()
-      };
       const audioUpload = await fetch('https://api.d-id.com/audios', {
         method: 'POST',
-        headers,
+        headers: {
+          'Authorization': 'Basic ' + DID_API_KEY,
+          'Accept': 'application/json',
+          ...form.getHeaders()
+        },
         body: form
       });
       const respText = await audioUpload.text();
       if (audioUpload.ok) {
-        const audioData = JSON.parse(respText);
-        audioUrl = audioData.url;
-        console.log('D-ID audio uploaded:', audioUrl ? 'OK' : 'no URL in response');
+        try { audioUrl = JSON.parse(respText).url; } catch(e) {}
+        if (audioUrl) console.log('D-ID audio uploaded to /audios OK');
+        else console.warn('D-ID /audios: no URL in response:', respText.slice(0,100));
       } else {
-        console.warn('D-ID /audios failed:', audioUpload.status, respText.slice(0, 150));
+        console.warn('D-ID /audios failed:', audioUpload.status, respText.slice(0,150));
       }
     } catch(e) {
-      console.warn('D-ID audio upload exception:', e.message);
+      console.warn('D-ID audio upload error:', e.message);
     }
 
-    // Fallback: use base64 data URI directly
-    // D-ID supports this on Lite plan and above
+    // Strategy 2: Upload audio to HeyGen asset storage (gives public URL)
+    if (!audioUrl && HEYGEN_KEY) {
+      try {
+        const hgAudioResp = await fetch('https://upload.heygen.com/v1/asset', {
+          method: 'POST',
+          headers: { 'X-Api-Key': HEYGEN_KEY, 'Content-Type': 'audio/mpeg' },
+          body: audioBuf
+        });
+        if (hgAudioResp.ok) {
+          const hgData = await hgAudioResp.json();
+          // HeyGen returns an asset URL we can use for D-ID
+          const assetId = hgData.data?.id || hgData.data?.asset_id;
+          if (assetId) {
+            // HeyGen audio assets have a CDN URL format
+            audioUrl = 'https://resource.heygen.com/audio/' + assetId + '.mp3';
+            console.log('D-ID: using HeyGen-hosted audio URL:', audioUrl.slice(0,60));
+          }
+        }
+      } catch(e) {
+        console.warn('HeyGen audio upload for D-ID failed:', e.message);
+      }
+    }
+
+    // Strategy 3: Upload audio to file.io (free, no auth, 14-day link)
     if (!audioUrl) {
-      audioUrl = 'data:audio/mpeg;base64,' + audioBase64;
-      console.log('D-ID: using base64 data URI for audio');
+      try {
+        const FormData = require('form-data');
+        const form2 = new FormData();
+        form2.append('file', audioBuf, { filename: 'audio.mp3', contentType: 'audio/mpeg' });
+        const fileioResp = await fetch('https://file.io/?expires=1d', {
+          method: 'POST',
+          body: form2,
+          headers: form2.getHeaders()
+        });
+        if (fileioResp.ok) {
+          const fileData = await fileioResp.json();
+          if (fileData.link) {
+            audioUrl = fileData.link;
+            console.log('D-ID: audio uploaded to file.io:', audioUrl);
+          }
+        }
+      } catch(e) {
+        console.warn('file.io upload failed:', e.message);
+      }
+    }
+
+    if (!audioUrl) {
+      throw new Error('D-ID audio upload failed — could not get a public URL for audio (tried /audios, HeyGen, file.io)');
     }
 
     // Step 3: Create talk (animate photo with audio)
