@@ -10500,6 +10500,7 @@
           body: JSON.stringify({
             audioBase64: voiceD.audio,
             referenceImageBase64: APS.photoB64 || null,
+            referenceImageMimeType: APS.photoMimeType || 'image/jpeg',
             studioType: APS.settings.bg,
             customBgBase64: APS.customBgB64 || null,
             framingStyle: APS.settings.framing,
@@ -10523,10 +10524,14 @@
 
         // ── POLL for video completion ──────────────────────────────
         aps_showStep(sc.num, 3, 3, 'Video rendering (2–5 min)… polling every 10s');
-        var maxPolls = 60; var pollCount = 0;
+        var maxPolls = 180; var pollCount = 0; // 180 × 5s = 15 min max
         while (pollCount < maxPolls && !APS.stopRequested) {
-          await new Promise(function (r) { setTimeout(r, 10000); });
+          // Poll every 5s for faster feedback (HeyGen takes 2-8min per scene)
+          await new Promise(function (r) { setTimeout(r, 5000); });
           pollCount++;
+          // Update progress display every poll
+          var pct = Math.min(90, Math.round((pollCount / maxPolls) * 100));
+          aps_showStep(sc.num, 3, 3, 'Scene ' + sc.num + ' rendering… ' + (pollCount*5) + 's (' + pct + '%)');
           try {
             var statR = await fetch(API + '/api/presenter-status?taskId=' + encodeURIComponent(sc.taskId));
             var statD = await statR.json();
@@ -10553,7 +10558,19 @@
             // Poll error — continue
           }
         }
-        throw new Error('Timed out after ' + (maxPolls * 10) + 's waiting for video');
+        // One final check before giving up
+        try {
+          var finalR = await fetch(API + '/api/presenter-status?taskId=' + encodeURIComponent(sc.taskId));
+          var finalD = await finalR.json();
+          if (finalD.done && finalD.videoUrl) {
+            sc.status = 'done'; sc.videoUrl = finalD.videoUrl;
+            APS.results[sc.id] = finalD.videoUrl;
+            aps_updateSceneRow(sc); aps_addClipToBar(sc); aps_addClipToTimeline(sc);
+            toast('Scene ' + sc.num + ' video ready ✓', 'ok');
+            return true;
+          }
+        } catch(fe) {}
+        throw new Error('Timed out after ' + (maxPolls * 5) + 's waiting for video');
 
       } catch (e) {
         sc.status = 'failed';
@@ -13534,6 +13551,17 @@ function _aabTpStop() {
 // Override stopRec to also stop TP
 var _origStopRecFinal = window.stopRec;
 window.stopRec = function() {
+  // Safety: release UI lock after 5s if MediaRecorder.onstop doesn't fire
+  var _releaseTimer = setTimeout(function() {
+    if (typeof STUDIO !== 'undefined' && STUDIO.recording) {
+      STUDIO.recording = false;
+      if (typeof setStudioState === 'function') setStudioState('READY');
+      console.warn('stopRec: safety release fired (onstop did not fire in 5s)');
+    }
+  }, 5000);
+  // Store timer so onstop can cancel it
+  if (typeof STUDIO !== 'undefined') STUDIO._releaseTimer = _releaseTimer;
+
   _aabTpStop();
   window._aab_syncing = false;
   var syncBtn = document.getElementById('btn-auto');
@@ -16324,6 +16352,7 @@ window.aps_loadPhoto = function(input) {
     var b64 = dataUrl.split(',')[1];
     
     APS.photoB64 = b64;
+    APS.photoMimeType = file.type || 'image/jpeg'; // Track actual mime type
     APS.photoMimeType = file.type || 'image/jpeg';
     APS.talkingPhotoId = null;
     APS.photoPreviewUrl = null;
