@@ -9955,7 +9955,7 @@
           toast('AI video ready', 'ok');
         } catch(e) {
           setStatus('<div style="color:var(--red)">❌ ' + (e.message||'Generation failed') + '</div>');
-          toast(e.message || 'Generation failed', 'error');
+          toast('Scene ' + (sc ? sc.num : '?') + ' generation failed — check logs', 'error');
         }
         return;
       }
@@ -10604,22 +10604,34 @@
     }
 
     function aps_showStep(sceneNum, step, totalSteps, message) {
+      var wrap  = document.getElementById('aps-progress-wrap');
       var label = document.getElementById('aps-progress-label');
-      var pct = document.getElementById('aps-progress-pct');
-      var bar = document.getElementById('aps-progress-bar');
-      var wrap = document.getElementById('aps-progress-wrap');
+      var stepEl= document.getElementById('aps-progress-step');
+      var pct   = document.getElementById('aps-progress-pct');
+      var bar   = document.getElementById('aps-progress-bar');
       var queue = document.getElementById('aps-queue-status');
 
       if (wrap) wrap.style.display = 'block';
+
       var p = Math.round((step / totalSteps) * 100);
       if (bar) bar.style.width = p + '%';
-      if (pct) pct.textContent = 'Step ' + step + '/' + totalSteps;
-      if (label) label.textContent = 'Scene ' + sceneNum + ': ' + message;
+      if (pct) pct.textContent = p + '%';
 
-      var done = APS.scenes.filter(function (s) { return s.status === 'done'; }).length;
-      var failed = APS.scenes.filter(function (s) { return s.status === 'failed'; }).length;
-      var total = APS.scenes.length;
-      if (queue) queue.textContent = done + ' done · ' + failed + ' failed · ' + (total - done - failed) + ' pending';
+      // Scene label — clean, no technical details
+      if (label) label.textContent = 'Scene ' + sceneNum + ' of ' + APS.scenes.length;
+
+      // Step description — human readable
+      var stepNames = ['', 'Generating voice…', 'Compositing scene…', 'Creating video…'];
+      if (stepEl) stepEl.textContent = message || stepNames[step] || 'Processing…';
+
+      // Queue summary
+      var done   = APS.scenes.filter(function(s){ return s.status === 'done'; }).length;
+      var failed = APS.scenes.filter(function(s){ return s.status === 'failed'; }).length;
+      var total  = APS.scenes.length;
+      var pending = total - done - failed;
+      if (queue) {
+        queue.textContent = done + ' done' + (failed ? ' · ' + failed + ' failed' : '') + (pending ? ' · ' + pending + ' pending' : '');
+      }
     }
     window.aps_showStep = aps_showStep;
 
@@ -11017,16 +11029,28 @@
         </div>
 
         <!-- Progress bar -->
-        <div id="aps-progress-wrap" style="display:none;width:100%;max-width:640px;margin-top:12px;">
-          <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-            <span id="aps-progress-label" style="font-size:11px;color:#9ca3af;"></span>
-            <span id="aps-progress-pct" style="font-size:11px;color:#9ca3af;"></span>
+        <!-- Generation Progress Panel with animation -->
+        <div id="aps-progress-wrap" style="display:none;width:100%;max-width:640px;margin-top:12px;padding:14px;background:rgba(0,212,255,.04);border:.5px solid rgba(0,212,255,.2);border-radius:12px;">
+          <style>@keyframes aps-spin{to{transform:rotate(360deg)}}@keyframes aps-pulse{0%,100%{opacity:.5}50%{opacity:1}}</style>
+          <!-- Header: spinner + scene label + percent -->
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+            <div id="aps-spinner" style="width:20px;height:20px;border:2.5px solid rgba(0,212,255,.15);border-top-color:#00d4ff;border-radius:50%;animation:aps-spin .8s linear infinite;flex-shrink:0;"></div>
+            <div style="flex:1;min-width:0;">
+              <div id="aps-progress-label" style="font-size:12px;font-weight:600;color:rgba(255,255,255,.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+              <div id="aps-progress-step" style="font-size:10px;color:rgba(0,212,255,.7);margin-top:1px;animation:aps-pulse 2s ease infinite;"></div>
+            </div>
+            <span id="aps-progress-pct" style="font-size:13px;font-weight:700;color:#00d4ff;flex-shrink:0;"></span>
           </div>
-          <div style="height:4px;background:#1f2937;border-radius:2px;overflow:hidden;">
-            <div id="aps-progress-bar"
-              style="height:100%;background:#00d4ff;width:0%;transition:width .3s;border-radius:2px;"></div>
+          <!-- Progress bar -->
+          <div style="height:5px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden;margin-bottom:8px;">
+            <div id="aps-progress-bar" style="height:100%;background:linear-gradient(90deg,rgba(0,212,255,.7),#00d4ff);border-radius:3px;width:0%;transition:width .5s ease;box-shadow:0 0 8px rgba(0,212,255,.4);"></div>
           </div>
-          <div id="aps-queue-status" style="margin-top:8px;font-size:11px;color:#6b7280;text-align:center;"></div>
+          <!-- Footer: queue count + stop button -->
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div id="aps-queue-status" style="font-size:10px;color:rgba(255,255,255,.3);"></div>
+            <button id="aps-stop-btn" onclick="APS.stopRequested=true;this.textContent='Stopping…';this.disabled=true;"
+              style="display:none;font-size:9px;padding:3px 10px;background:rgba(255,60,60,.1);border:.5px solid rgba(255,60,60,.3);color:rgba(255,100,100,.8);border-radius:6px;cursor:pointer;">⏹ Stop</button>
+          </div>
         </div>
       </div>
 
@@ -15675,7 +15699,11 @@ window.aps_saveCharacter = async function(name) {
   // Build character data object
   var charData = {
     name:             name,
-    photoB64:         APS.photoB64 ? APS.photoB64.slice(0, 80000) : null,
+    photoB64:         APS.photoB64 ? APS.photoB64.slice(0, 80000) : (function(){
+      // Try to get from localStorage if APS.photoB64 is temporarily null
+      var saved = localStorage.getItem('aps_presenter_photo');
+      return saved ? saved.split(',')[1] || saved : null;
+    }()),
     photoMimeType:    APS.photoMimeType || 'image/jpeg',
     talkingPhotoId:   APS.talkingPhotoId || null,
     voiceId:          APS.settings && APS.settings.voiceId   || null,
@@ -16005,8 +16033,11 @@ window.aps_generateAll = async function() {
   APS.generating = true;
   var genBtn = document.getElementById('aps-gen-all-btn');
   var stopBtn = document.getElementById('aps-stop-btn');
-  if (genBtn) genBtn.disabled = true;
-  if (stopBtn) stopBtn.style.display = 'block';
+  if (genBtn) { genBtn.disabled = true; genBtn.textContent = '⏳ Generating…'; }
+  if (stopBtn) { stopBtn.style.display = 'block'; stopBtn.textContent = '⏹ Stop'; stopBtn.disabled = false; }
+  // Show progress panel immediately
+  var wrap = document.getElementById('aps-progress-wrap');
+  if (wrap) wrap.style.display = 'block';
   toast('Generating ' + APS.scenes.length + ' scenes…', 'info');
   var succeeded = 0, failed = 0;
   // Process in batches of 3 for faster generation
@@ -16035,8 +16066,11 @@ window.aps_generateAll = async function() {
     }
   }
   APS.generating = false;
-  if (genBtn) genBtn.disabled = false;
+  if (genBtn) { genBtn.disabled = false; genBtn.textContent = '⚡ Generate All'; }
   if (stopBtn) stopBtn.style.display = 'none';
+  // Hide spinner in progress panel when done
+  var spinner = document.getElementById('aps-spinner');
+  if (spinner) spinner.style.display = 'none';
   toast('Done: ' + succeeded + ' generated' + (failed ? ', ' + failed + ' failed' : ''), succeeded > 0 ? 'ok' : 'error');
   // Show Go to Edit Suite button - make it visible
   var goBtn = document.getElementById('aps-go-edit-btn');
@@ -17030,7 +17064,7 @@ window.aps_loadPhoto = function(input) {
       sel.value = 'did';
       if (APS && APS.settings) APS.settings.provider = 'did';
       if (typeof aps_onProviderChange === 'function') aps_onProviderChange('did');
-      toast('Provider auto-switched to D-ID — uses your uploaded photo ⚡', 'ok');
+      toast('Photo uploaded ✓ — D-ID will animate your face in 30-90s per scene', 'ok');
     }
   }, 500);
 };
@@ -17166,8 +17200,12 @@ window.aps_loadCharacterFromData = function(char) {
     if (typeof aps_onProviderChange === 'function') aps_onProviderChange(char.provider);
   }
 
-  // Save as last used
+  // Save as last used and persist photo for generation
   localStorage.setItem('aab_last_character', char.name);
+  if (char.photoB64) {
+    // Save to the standard aps_presenter_photo key so generation finds it
+    localStorage.setItem('aps_presenter_photo', 'data:' + (char.photoMimeType||'image/jpeg') + ';base64,' + char.photoB64);
+  }
 
   var display = document.getElementById('aps-char-name-display');
   if (display) {
