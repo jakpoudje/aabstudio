@@ -210,7 +210,13 @@ async function getOrCreateTalkingPhotoId(imageB64) {
 
   try {
     // Step 1: Upload image as asset
-    const imgBuf = Buffer.from(imageB64, 'base64');
+    // Convert to JPEG regardless of input format (HeyGen requires JPEG)
+    let imgBuf = Buffer.from(imageB64, 'base64');
+    try {
+      imgBuf = await sharp(imgBuf).jpeg({ quality: 90 }).toBuffer();
+    } catch(convErr) {
+      console.warn('HeyGen: image conversion failed, using raw:', convErr.message);
+    }
     console.log('HeyGen: uploading presenter photo for talking photo avatar...', imgBuf.length, 'bytes');
     const uploadResp = await fetch('https://upload.heygen.com/v1/asset', {
       method: 'POST',
@@ -799,14 +805,15 @@ app.post('/api/presenter', async (req, res) => {
     const hasDID = !!DID_API_KEY;
     // D-ID is preferred when reference image present — uses actual face, faster than HeyGen
     if (!chosen) {
-      // D-ID is the best option when reference image is present:
-      // - Animates YOUR actual face (unlike HeyGen Creator plan)
-      // - Faster: 30-90s vs 3-8min for HeyGen
-      // - Works on any D-ID plan
-      if (hasDID && (referenceImageBase64 || compositeImageB64)) chosen = 'did';
-      else if (hasHeygen) chosen = 'heygen';
-      else if (hasKling)  chosen = 'kling';
-      else if (hasRunway) chosen = 'runway';
+      // PRIORITY: D-ID when reference image present (animates user's actual face)
+      // HeyGen Creator plan CANNOT use custom face - always uses stock avatar
+      // D-ID is faster (30-90s) and uses the actual uploaded photo
+      if (hasDID && referenceImageBase64) {
+        chosen = 'did';
+        console.log('Provider: D-ID selected (reference image present + D-ID key available)');
+      } else if (hasHeygen) chosen = 'heygen';
+      else if (hasKling)    chosen = 'kling';
+      else if (hasRunway)   chosen = 'runway';
     }
     // D-ID fallback chain
     if (chosen === 'did' && !hasDID) chosen = hasHeygen ? 'heygen' : (hasKling ? 'kling' : null);
@@ -966,7 +973,7 @@ async function generateWithHeyGen(req, res, args) {
         const descResp = await anthropic.messages.create({
           model: MODEL, max_tokens: 200,
           messages: [{ role: 'user', content: [
-            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageToUse.slice(0,100000) } },
+            { type: 'image', source: { type: 'base64', media_type: req.body.referenceImageMimeType || detectImageMimeType(imageToUse), data: imageToUse.slice(0,100000) } },
             { type: 'text', text: 'Describe this person in 1 sentence: gender, skin tone, hair. Be precise.' }
           ]}]
         });
@@ -1247,15 +1254,26 @@ async function generateWithDID(req, res, args) {
     // URL also allows D-ID to process at full resolution without base64 overhead
     if (!referenceImageBase64) throw new Error('D-ID requires a reference image');
 
+    // Convert to JPEG if needed (D-ID and Imgur work best with JPEG)
+    let imageForUpload = referenceImageBase64;
+    try {
+      const rawBuf = Buffer.from(referenceImageBase64, 'base64');
+      const jpegBuf = await sharp(rawBuf).jpeg({ quality: 90 }).toBuffer();
+      imageForUpload = jpegBuf.toString('base64');
+      console.log('D-ID: converted image to JPEG', jpegBuf.length, 'bytes');
+    } catch(convErr) {
+      console.warn('D-ID: image conversion failed, using original:', convErr.message);
+    }
+
     let imageSourceUrl = null;
     try {
-      imageSourceUrl = await uploadToImgur(referenceImageBase64);
+      imageSourceUrl = await uploadToImgur(imageForUpload);
       console.log('D-ID: presenter image on Imgur:', imageSourceUrl);
     } catch(imgurErr) {
       console.warn('D-ID: Imgur upload failed, using data URI fallback:', imgurErr.message);
     }
     // Fallback to data URI if Imgur fails
-    const imageDataUri = imageSourceUrl || ('data:image/jpeg;base64,' + referenceImageBase64);
+    const imageDataUri = imageSourceUrl || ('data:image/jpeg;base64,' + imageForUpload);
     if (!imageDataUri) throw new Error('D-ID: could not prepare image source');
 
     // Step 2: Upload audio to get a URL D-ID can use
@@ -1306,11 +1324,11 @@ async function generateWithDID(req, res, args) {
         ssml:          false
       },
       config: {
-        fluent:        true,
-        pad_audio:     0,
-        stitch:        false,      // false = preserve full source image, no background blending
+        fluent:        false,      // false = less aggressive lip sync, better head preservation  
+        pad_audio:     0.5,
+        stitch:        false,      // false = preserve full source image framing (head not cropped)
         result_format: 'mp4',
-        normalization_factor: 0    // 0 = minimal face stabilization, preserves framing
+        normalization_factor: 0    // 0 = no face stabilization zoom, full image preserved
       }
       // No presenter_config.crop — use full image as-is
       // This preserves the user's framing (full body, waist-up, etc.)
