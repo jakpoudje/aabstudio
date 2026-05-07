@@ -71,11 +71,26 @@ io.on('connection', (socket) => {
   });
 
   // remote_control — legacy event name  
-  socket.on('remote_control', (data) => {
-    const room = data.project_id || data.projectId;
-    if (!room) return;
-    socket.to(room).emit('command_to_teleprompter', data);
-    socket.to(room).emit('remote_execute', data);  // also fire new event name
+  socket.on('remote_control', function(data) {
+    // Relay command from phone remote to studio in the same project room
+    var projectId = data.project_id || data.projectId;
+    if (projectId) {
+      // Broadcast to all other sockets in this project room
+      socket.to(projectId).emit('command_to_teleprompter', {
+        action: data.action,
+        value:  data.value,
+        cmd:    data.action, // backward compat
+        from:   'remote'
+      });
+      console.log('Remote control:', data.action, '-> project:', projectId);
+    } else {
+      // Fallback: broadcast to everyone (old behavior)
+      socket.broadcast.emit('command_to_teleprompter', {
+        action: data.action,
+        cmd:    data.action,
+        value:  data.value
+      });
+    }
   });
 
   // Teleprompter speed sync — desktop tells phone the current WPM
