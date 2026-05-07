@@ -4393,6 +4393,26 @@
 }
 </style>
 </head>
+
+    <style>
+    /* Professional track color system */
+    .tl-track[data-type="video"]   { --track-color: #3b82f6; }  /* Blue = main video */
+    .tl-track[data-type="voice"]   { --track-color: #8b5cf6; }  /* Purple = voice */
+    .tl-track[data-type="music"]   { --track-color: #10b981; }  /* Green = music */
+    .tl-track[data-type="sfx"]     { --track-color: #10b981; }  /* Green = SFX */
+    .tl-track[data-type="image"]   { --track-color: #f59e0b; }  /* Orange = images */
+    .tl-track[data-type="effects"] { --track-color: #00d4ff; }  /* Cyan = effects */
+    .tl-track[data-type="text"]    { --track-color: #eab308; }  /* Yellow = text */
+    .tl-clip { background: var(--track-color, rgba(0,212,255,.25)) !important; border-color: var(--track-color, rgba(0,212,255,.4)) !important; }
+    /* Timeline resize cursor */
+    #tl-resize-handle:hover { background: rgba(0,212,255,.2) !important; }
+    /* Studio ctrl - ensure rows wrap properly not cut off */
+    .studio-ctrl-v2 { overflow: visible !important; }
+    .studio-ctrl-row { flex-wrap: wrap; overflow: visible; }
+    /* TP body - ensure visible */
+    .tp-body { display: flex !important; flex-direction: column; min-height: 80px; }
+    #tp-cur:empty::after { content: 'Open a project with scenes to see your script here'; color: rgba(255,255,255,.2); font-size: 14px; }
+    </style>
 <body>
   <!-- TOASTS -->
   <div id="toasts"></div>
@@ -5233,9 +5253,10 @@
           <!-- Teleprompter -->
           <div class="studio-tp" id="studio-tp">
             <!-- Collapse handle -->
-            <div class="tp-handle" id="tp-drag-handle" style="cursor:move;" title="Drag to reposition">
-              <span style="font-size:11px;color:rgba(255,255,255,.2);margin-right:6px;">⠿</span>
-              <span class="tp-handle-label" onclick="toggleTpPanel()">Teleprompter</span>
+            <div class="tp-handle" id="tp-drag-handle" style="cursor:move;display:flex;align-items:center;gap:6px;" title="Click label to expand/collapse">
+              <span style="font-size:11px;color:rgba(255,255,255,.15);margin-right:2px;">⠿</span>
+              <span class="tp-handle-label" onclick="toggleTpPanel()" style="cursor:pointer;font-size:11px;font-weight:600;color:rgba(255,255,255,.5);letter-spacing:.04em;">TELEPROMPTER</span>
+              <span id="tp-collapse-icon" onclick="toggleTpPanel()" style="cursor:pointer;font-size:10px;color:rgba(255,255,255,.3);margin-left:2px;" title="Expand/Collapse">▲</span>
               <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
                 <button onclick="resetTpScroll()"
                   style="background:none;border:none;cursor:pointer;font-size:10px;color:rgba(255,255,255,.3);"
@@ -5311,7 +5332,7 @@
         </div>
       </div>
       <!-- Controls Bar v2 — OUTSIDE canvas, always visible -->
-      <div class="studio-ctrl-v2" style="position:relative;z-index:50;flex-shrink:0;min-height:128px;max-height:132px;overflow:hidden;">
+      <div class="studio-ctrl-v2" style="position:relative;z-index:50;flex-shrink:0;min-height:128px;overflow:visible;">
 
       <!-- ROW 1: PRIMARY — Input · Record · Scene · Teleprompter · Session -->
       <div class="studio-ctrl-row">
@@ -5465,143 +5486,165 @@
 
 
   <!-- ══ EDIT SUITE ═══════════════════════════════════════════════════════════════ -->
-  <div id="edit-pg" class="pg"
-    style="display:none;flex-direction:column;background:#07090f;color:#fff;height:100vh;overflow:hidden;">
-
-    <!-- ═══ EDIT SUITE TOPBAR ═══════════════════════════════════════════════ -->
-    <div class="edit-topbar-v2" style="height:46px;display:flex;align-items:center;gap:0;background:#07090f;border-bottom:.5px solid rgba(255,255,255,.07);flex-shrink:0;">
-        <button onclick="nav('record-pg')" style="background:none;border:none;color:rgba(255,255,255,.5);font-size:11px;cursor:pointer;padding:0 12px;height:100%;border-right:.5px solid rgba(255,255,255,.08);">← Recording Studio</button>
-        <button onclick="nav('ai-presenter-studio')" style="background:none;border:none;color:rgba(255,255,255,.5);font-size:11px;cursor:pointer;padding:0 12px;height:100%;border-right:.5px solid rgba(255,255,255,.08);">✨ AI Presenter</button>
-      <div class="edit-topbar-section" style="display:flex;align-items:center;gap:8px;padding:0 14px;border-right:.5px solid rgba(255,255,255,.07);height:100%;">
-        <span class="nav-logo" style="font-size:12px;cursor:pointer;" onclick="nav('home')">AAB<span style="color:var(--accent);">Studio</span></span>
-        <div style="width:.5px;height:18px;background:rgba(255,255,255,.08);"></div>
-        <span style="font-size:12px;font-weight:600;color:rgba(255,255,255,.8);" id="edit-title">Edit</span>
+  <div id="edit-pg" class="pg-full" style="display:none;flex-direction:column;height:100vh;overflow:hidden;background:#070910;">
+    
+    <!-- ═══ TOPBAR ═══════════════════════════════════════════════════════ -->
+    <div id="edit-topbar" style="flex-shrink:0;height:44px;display:flex;align-items:center;gap:0;background:#07090f;border-bottom:.5px solid rgba(255,255,255,.06);z-index:100;">
+      <!-- Back + title -->
+      <div style="display:flex;align-items:center;gap:8px;padding:0 14px;border-right:.5px solid rgba(255,255,255,.06);height:100%;">
+        <button onclick="nav('dashboard-pg')" style="background:none;border:none;color:rgba(255,255,255,.3);font-size:11px;cursor:pointer;padding:0;display:flex;align-items:center;gap:4px;">← Dashboard</button>
+        <div style="width:.5px;height:14px;background:rgba(255,255,255,.08);"></div>
+        <span style="font-size:12px;font-weight:700;color:rgba(255,255,255,.9);" id="edit-title">✂️ Edit Suite</span>
+        <span id="edit-save-status" style="font-size:9px;color:rgba(255,255,255,.2);margin-left:4px;">Saved</span>
       </div>
-      <div class="edit-topbar-section" style="display:flex;align-items:center;gap:6px;padding:0 12px;border-right:.5px solid rgba(255,255,255,.07);height:100%;">
-        <button class="studio-btn" onclick="nav('record-pg')" style="font-size:11px;">← Studio</button>
-        <button class="studio-btn" onclick="editUndo()" style="font-size:11px;">↩ Undo</button>
+      <!-- Tool groups -->
+      <div style="display:flex;align-items:center;height:100%;padding:0 8px;gap:2px;border-right:.5px solid rgba(255,255,255,.06);">
+        <button class="edit-tool-btn" onclick="tl_setTool('select')" id="tl-btn-select" title="Select (V)" style="background:rgba(0,212,255,.15);color:#00d4ff;border:.5px solid rgba(0,212,255,.3);border-radius:5px;padding:4px 8px;font-size:10px;cursor:pointer;">↖ Select</button>
+        <button class="edit-tool-btn" onclick="tl_setTool('trim')" id="tl-btn-trim" title="Trim (T)" style="background:none;border:.5px solid rgba(255,255,255,.1);border-radius:5px;padding:4px 8px;font-size:10px;cursor:pointer;color:rgba(255,255,255,.5);">↔ Trim</button>
+        <button class="edit-tool-btn" onclick="tl_split()" id="tl-btn-split" title="Split (S)" style="background:none;border:.5px solid rgba(255,255,255,.1);border-radius:5px;padding:4px 8px;font-size:10px;cursor:pointer;color:rgba(255,255,255,.5);">⊣ Split</button>
+        <button class="edit-tool-btn" onclick="tl_setTool('razor')" id="tl-btn-razor" title="Razor (R)" style="background:none;border:.5px solid rgba(255,255,255,.1);border-radius:5px;padding:4px 8px;font-size:10px;cursor:pointer;color:rgba(255,255,255,.5);">✂ Razor</button>
       </div>
-      <div class="edit-topbar-section" style="display:flex;align-items:center;gap:6px;padding:0 12px;border-right:.5px solid rgba(255,255,255,.07);height:100%;position:relative;">
-        <div class="dropdown-panel-wrap">
-          <button class="dropdown-panel-trigger" id="edit-tools-btn" onclick="toggleDropdown('edit-tools-panel','edit-tools-btn')" style="font-size:11px;">🛠 Tools <span class="caret">▾</span></button>
-          <div class="dropdown-panel" id="edit-tools-panel" style="min-width:200px;left:0;top:calc(100% + 4px);bottom:auto;">
-            <div class="dropdown-panel-title">Edit tools</div>
-            <button class="studio-btn" onclick="openSubtitleEditor();closeDropdown('edit-tools-panel','edit-tools-btn')" style="width:100%;justify-content:flex-start;margin-bottom:4px;">💬 Subtitles</button>
-            <button class="studio-btn" onclick="exportTranscript();closeDropdown('edit-tools-panel','edit-tools-btn')" style="width:100%;justify-content:flex-start;margin-bottom:4px;">📋 Transcript</button>
-            <button class="studio-btn" onclick="generateSubtitles();closeDropdown('edit-tools-panel','edit-tools-btn')" style="width:100%;justify-content:flex-start;margin-bottom:4px;">📋 .SRT subtitles</button>
-            <button class="studio-btn" onclick="exportYTChapters();closeDropdown('edit-tools-panel','edit-tools-btn')" style="width:100%;justify-content:flex-start;">📋 YouTube chapters</button>
-          </div>
-        </div>
+      <!-- Import -->
+      <div style="display:flex;align-items:center;height:100%;padding:0 8px;gap:2px;border-right:.5px solid rgba(255,255,255,.06);">
+        <button onclick="importMedia('video')" style="background:none;border:.5px solid rgba(255,255,255,.1);border-radius:5px;padding:4px 8px;font-size:10px;cursor:pointer;color:rgba(255,255,255,.4);">+ Video</button>
+        <button onclick="importMedia('audio')" style="background:none;border:.5px solid rgba(255,255,255,.1);border-radius:5px;padding:4px 8px;font-size:10px;cursor:pointer;color:rgba(255,255,255,.4);">+ Audio</button>
+        <button onclick="importMedia('image')" style="background:none;border:.5px solid rgba(255,255,255,.1);border-radius:5px;padding:4px 8px;font-size:10px;cursor:pointer;color:rgba(255,255,255,.4);">+ Image</button>
       </div>
+      <!-- AI Presenter link -->
+      <div style="display:flex;align-items:center;height:100%;padding:0 8px;border-right:.5px solid rgba(255,255,255,.06);">
+        <button onclick="openAIPresenterStudio()" style="background:rgba(139,92,246,.12);border:.5px solid rgba(139,92,246,.3);border-radius:5px;padding:4px 10px;font-size:10px;cursor:pointer;color:rgba(139,92,246,.9);">🤖 AI Presenter</button>
+      </div>
+      <!-- Right: export -->
       <div style="margin-left:auto;display:flex;align-items:center;gap:8px;padding:0 14px;height:100%;">
-        <button class="studio-btn" style="background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.3);color:#6ee7b7;font-size:11px;" onclick="edit_downloadAll()">⬇ Download All</button>
-        <button class="studio-btn" style="background:rgba(0,212,255,.15);border-color:rgba(0,212,255,.4);color:var(--accent);font-size:12px;font-weight:700;padding:6px 18px;" onclick="nav('export-pg')">🚀 Export</button>
+        <span id="tl-duration-display" style="font-size:9px;font-family:'JetBrains Mono',monospace;color:rgba(255,255,255,.2);">0:00</span>
+        <button onclick="nav('export-pg')" style="background:linear-gradient(135deg,rgba(0,212,255,.2),rgba(139,92,246,.2));border:.5px solid rgba(0,212,255,.3);border-radius:6px;padding:5px 14px;font-size:11px;font-weight:600;color:#00d4ff;cursor:pointer;">Export →</button>
       </div>
     </div>
 
-      <!-- ═══ EDIT SUITE BODY: Preview (left) + Clips (right) + Timeline (bottom) ═══ -->
-      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0;">
+    <!-- ═══ MAIN BODY (preview + inspector + clips) ═════════════════════ -->
+    <div style="flex:1;display:flex;overflow:hidden;min-height:0;">
 
-        <!-- TOP SECTION: Preview + Clips strip side by side -->
-        <div style="flex:1;display:flex;overflow:hidden;min-height:0;">
-
-          <!-- LEFT: VIDEO PREVIEW -->
-          <div id="edit-preview-pane" style="width:52%;flex-shrink:0;display:flex;flex-direction:column;background:#050810;border-right:.5px solid rgba(255,255,255,.06);">
-
-            <!-- Preview screen -->
-            <div style="flex:1;display:flex;align-items:center;justify-content:center;position:relative;background:#0a0c14;overflow:hidden;">
-              <div id="edit-no-clips" style="text-align:center;color:rgba(255,255,255,.2);">
-                <div style="font-size:32px;margin-bottom:10px;">🎬</div>
-                <div style="font-size:13px;margin-bottom:10px;">No clips yet — record scenes or generate with AI Presenter</div>
-              </div>
-              <video id="edit-video" preload="auto"
-                style="display:none;width:100%;height:100%;object-fit:contain;background:#000;"
-                onended="edit_nextClip()" ontimeupdate="edit_onTimeUpdate()" onpause="edit_onPause()" onplay="edit_onPlay()">
-              </video>
-              <!-- Subtitle overlay -->
-              <div id="edit-subtitle-overlay" style="position:absolute;bottom:50px;left:10%;right:10%;text-align:center;font-size:16px;font-weight:600;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.9);pointer-events:none;display:none;"></div>
-              <!-- Scene info overlay -->
-              <div id="edit-scene-info" style="position:absolute;top:10px;left:10px;background:rgba(0,0,0,.6);padding:4px 8px;border-radius:5px;font-size:10px;color:rgba(255,255,255,.5);display:none;"></div>
-            </div>
-
-            <!-- Playback controls -->
-            <div style="flex-shrink:0;padding:8px 12px;background:rgba(0,0,0,.5);display:flex;align-items:center;gap:6px;border-top:.5px solid rgba(255,255,255,.06);">
-              <button class="studio-btn" onclick="editSeek(-10)" style="padding:4px 8px;">«10s</button>
-              <button class="studio-btn" onclick="editSeek(-1)" style="padding:4px 7px;">«1s</button>
-              <button class="studio-btn" onclick="editPlayPause()" id="edit-play-btn"
-                style="padding:4px 16px;background:rgba(0,212,255,.15);border-color:rgba(0,212,255,.4);color:var(--accent);">▶ Play</button>
-              <button class="studio-btn" onclick="editSeek(1)" style="padding:4px 7px;">1s»</button>
-              <button class="studio-btn" onclick="editSeek(10)" style="padding:4px 8px;">10s»</button>
-              <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
-                <span id="edit-time-display" style="font-size:10px;font-family:'JetBrains Mono',monospace;color:rgba(255,255,255,.4);">0:00 / 0:00</span>
-                <input type="range" id="edit-volume" min="0" max="1" step="0.05" value="1"
-                  style="width:70px;accent-color:var(--accent);" oninput="edit_setVolume(this.value)" title="Volume">
-              </div>
-            </div>
-          </div>
-
-          <!-- RIGHT: CLIPS STRIP (vertical list of scene thumbnails) -->
-          <div id="edit-clips-strip" style="width:48%;display:flex;flex-direction:column;background:#050810;overflow:hidden;">
-            <div style="flex-shrink:0;padding:8px 12px;border-bottom:.5px solid rgba(255,255,255,.05);font-size:9px;font-weight:700;color:rgba(255,255,255,.3);text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:center;gap:8px;">
-              <span>📋 Scene Clips</span>
-              <span id="edit-clip-count" style="color:rgba(255,255,255,.2);font-weight:400;"></span>
-              <button class="studio-btn" style="margin-left:auto;font-size:9px;padding:2px 7px;" onclick="edit_buildPlaylist()">↻ Refresh</button>
-            </div>
-            <div id="edit-clips-strip-inner" style="flex:1;overflow-y:auto;overflow-x:hidden;padding:8px;display:flex;flex-direction:column;gap:6px;scrollbar-width:thin;">
-              <div style="font-size:11px;color:rgba(255,255,255,.2);text-align:center;padding:20px 0;">No clips yet</div>
-            </div>
-          </div>
+      <!-- LEFT: Clips / Media bin -->
+      <div id="edit-media-bin" style="width:200px;flex-shrink:0;display:flex;flex-direction:column;background:#050810;border-right:.5px solid rgba(255,255,255,.06);overflow:hidden;">
+        <div style="flex-shrink:0;padding:8px 10px;border-bottom:.5px solid rgba(255,255,255,.05);font-size:9px;font-weight:700;color:rgba(255,255,255,.3);letter-spacing:.08em;">MEDIA BIN</div>
+        <div id="edit-clips-strip-inner" style="flex:1;overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:4px;">
+          <div style="font-size:10px;color:rgba(255,255,255,.2);text-align:center;padding:20px 0;">No clips yet</div>
         </div>
-
-        <!-- BOTTOM: FULL-WIDTH TIMELINE -->
-        <div id="timeline-panel" style="flex-shrink:0;height:220px;display:flex;flex-direction:column;border-top:.5px solid rgba(255,255,255,.08);background:#040609;">
-
-          <!-- Timeline toolbar -->
-          <div style="flex-shrink:0;height:38px;display:flex;align-items:center;gap:6px;padding:0 10px;background:rgba(0,0,0,.3);border-bottom:.5px solid rgba(255,255,255,.05);">
-            <div class="tl-tools-group" style="display:flex;gap:4px;align-items:center;">
-              <button class="tl-tool tl-tool-select on" id="tl-tool-select" onclick="tl_setTool('select')" title="Select (V)">↖ Select</button>
-              <button class="tl-tool tl-tool-trim" id="tl-tool-trim" onclick="tl_setTool('trim')" title="Trim (T)">↔ Trim</button>
-              <button class="tl-tool tl-tool-split" id="tl-tool-split" onclick="tl_split()" title="Split at playhead (S)">⊣ Split</button>
-              <button class="tl-tool tl-tool-del" onclick="tl_deleteSelected()" title="Delete selected (Del)">🗑 Del</button>
-            </div>
-            <div style="width:.5px;height:18px;background:rgba(255,255,255,.08);margin:0 4px;"></div>
-            <button class="studio-btn" onclick="tl_addText()" style="padding:3px 8px;font-size:10px;">🔤 Text</button>
-            <button class="studio-btn" onclick="tl_addTrack()" style="padding:3px 8px;font-size:10px;">+ Track</button>
-            <div style="width:.5px;height:18px;background:rgba(255,255,255,.08);margin:0 4px;"></div>
-            <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:3px 8px;">🎵 Music<input type="file" style="display:none;" accept="audio/*" onchange="importToTimeline(this,'audio')"></label>
-            <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:3px 8px;">🎬 Video<input type="file" style="display:none;" accept="video/*" onchange="importToTimeline(this,'video')"></label>
-            <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:3px 8px;">🖼 Image<input type="file" style="display:none;" accept="image/*" onchange="importToTimeline(this,'image')"></label>
-            <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:3px 8px;">🎤 SFX<input type="file" style="display:none;" accept="audio/*" onchange="importToTimeline(this,'sfx')"></label>
-            <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:3px 8px;">🖼 Image<input type="file" style="display:none;" accept="image/*" onchange="importToTimeline(this,'image')"></label>
-            <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:3px 8px;">🎤 SFX<input type="file" style="display:none;" accept="audio/*" onchange="importToTimeline(this,'sfx')"></label>
-            <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:3px 8px;">🖼 Image<input type="file" style="display:none;" accept="image/*" onchange="importToTimeline(this,'image')"></label>
-            <label class="studio-btn" style="cursor:pointer;font-size:10px;padding:3px 8px;">🎤 SFX<input type="file" style="display:none;" accept="audio/*" onchange="importToTimeline(this,'sfx')"></label>
-            <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
-              <button class="studio-btn" onclick="tl_fitToWindow()" style="padding:2px 7px;font-size:10px;">Fit</button>
-              <button class="studio-btn" onclick="tl_zoomIn()" style="padding:2px 6px;font-size:10px;">+</button>
-              <button class="studio-btn" onclick="tl_zoomOut()" style="padding:2px 6px;font-size:10px;">−</button>
-              <button class="studio-btn" onclick="tl_toggleSubtitles()" id="tl-sub-btn" style="font-size:10px;color:rgba(255,255,255,.4);">CC</button>
-              <span id="tl-duration-display" style="font-size:9px;font-family:'JetBrains Mono',monospace;color:rgba(255,255,255,.3);"></span>
-            </div>
-          </div>
-
-          <!-- Track area: labels (fixed left) + scrollable tracks (right) -->
-          <div style="flex:1;display:flex;overflow:hidden;min-height:0;">
-            <div id="tl-labels" style="width:88px;flex-shrink:0;border-right:.5px solid rgba(255,255,255,.07);overflow:hidden;"></div>
-            <div style="flex:1;overflow:auto;position:relative;" id="tl-scroll-container" onscroll="syncLabelScroll(this)">
-              <div id="tl-ruler" style="height:20px;background:rgba(255,255,255,.04);border-bottom:.5px solid rgba(255,255,255,.06);position:sticky;top:0;z-index:10;"></div>
-              <div id="tl-tracks" style="position:relative;min-width:max-content;">
-                <div id="tl-playhead" style="position:absolute;top:0;bottom:0;width:2px;background:var(--accent);z-index:20;pointer-events:none;"></div>
-                <div style="position:absolute;top:0;left:-5px;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid var(--accent);z-index:21;pointer-events:none;" id="tl-playhead-arrow"></div>
-              </div>
-            </div>
-          </div>
+        <div style="flex-shrink:0;border-top:.5px solid rgba(255,255,255,.05);padding:6px;">
+          <div id="edit-clip-count" style="font-size:9px;color:rgba(255,255,255,.2);text-align:center;"></div>
         </div>
-
       </div>
 
-  </div>
+      <!-- CENTER: Preview monitor -->
+      <div id="edit-preview-pane" style="flex:1;display:flex;flex-direction:column;background:#050810;min-width:0;overflow:hidden;">
+        <!-- Video area -->
+        <div style="flex:1;display:flex;align-items:center;justify-content:center;position:relative;background:#080b16;overflow:hidden;">
+          <div id="edit-no-clips" style="text-align:center;color:rgba(255,255,255,.2);">
+            <div style="font-size:32px;margin-bottom:10px;">🎬</div>
+            <div style="font-size:13px;margin-bottom:8px;">No clips yet</div>
+            <div style="font-size:10px;color:rgba(255,255,255,.12);">Record scenes or generate with AI Presenter</div>
+          </div>
+          <video id="edit-video" preload="auto"
+            style="display:none;max-width:100%;max-height:100%;object-fit:contain;"
+            ontimeupdate="edit_onTimeUpdate()"
+            onended="edit_onEnded()"
+            onloadedmetadata="edit_onMetadata()"></video>
+          <!-- Subtitle overlay -->
+          <div id="edit-subtitle-overlay" style="position:absolute;bottom:40px;left:8%;right:8%;text-align:center;font-size:18px;font-weight:600;color:#fff;text-shadow:0 2px 4px rgba(0,0,0,.8);pointer-events:none;display:none;"></div>
+          <!-- Scene info badge -->
+          <div id="edit-scene-info" style="position:absolute;top:8px;left:8px;background:rgba(0,0,0,.6);padding:3px 7px;border-radius:5px;font-size:9px;color:rgba(255,255,255,.5);display:none;"></div>
+          <!-- Safe zones overlay -->
+          <div id="edit-safe-zones" style="position:absolute;inset:0;pointer-events:none;display:none;">
+            <div style="position:absolute;inset:5%;border:.5px solid rgba(255,255,255,.1);border-radius:2px;"></div>
+            <div style="position:absolute;inset:10%;border:.5px solid rgba(255,255,255,.06);border-radius:2px;"></div>
+          </div>
+        </div>
+        <!-- Transport controls -->
+        <div style="flex-shrink:0;padding:6px 12px;background:rgba(0,0,0,.5);display:flex;align-items:center;gap:6px;border-top:.5px solid rgba(255,255,255,.06);">
+          <button onclick="edit_skipTo(0)" title="Go to start" style="background:none;border:none;color:rgba(255,255,255,.4);font-size:12px;cursor:pointer;padding:2px 5px;">⏮</button>
+          <button onclick="editPlayPause()" id="edit-play-btn" style="background:rgba(0,212,255,.15);border:.5px solid rgba(0,212,255,.3);color:#00d4ff;border-radius:6px;padding:5px 14px;font-size:12px;cursor:pointer;">▶</button>
+          <button onclick="edit_skipTo(999999)" title="Go to end" style="background:none;border:none;color:rgba(255,255,255,.4);font-size:12px;cursor:pointer;padding:2px 5px;">⏭</button>
+          <input type="range" id="edit-seek-bar" min="0" max="100" value="0" step="0.1"
+            style="flex:1;accent-color:#00d4ff;height:3px;"
+            oninput="edit_seekTo(this.value)">
+          <span id="edit-time-display" style="font-size:10px;font-family:'JetBrains Mono',monospace;color:rgba(255,255,255,.4);min-width:80px;text-align:right;">0:00 / 0:00</span>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <span style="font-size:9px;color:rgba(255,255,255,.2);">🔊</span>
+            <input type="range" id="edit-volume" min="0" max="1" step="0.05" value="1"
+              style="width:60px;accent-color:#00d4ff;"
+              oninput="if(document.getElementById('edit-video'))document.getElementById('edit-video').volume=this.value">
+          </div>
+          <button onclick="toggleSafeZones()" title="Safe zones" style="background:none;border:.5px solid rgba(255,255,255,.08);border-radius:4px;padding:3px 6px;font-size:9px;color:rgba(255,255,255,.3);cursor:pointer;">⊞</button>
+          <button onclick="tl_toggleSubtitles()" id="tl-sub-btn" style="background:none;border:.5px solid rgba(255,255,255,.08);border-radius:4px;padding:3px 6px;font-size:9px;color:rgba(255,255,255,.3);cursor:pointer;">CC</button>
+        </div>
+      </div>
 
+      <!-- RIGHT: Inspector panel -->
+      <div id="edit-inspector" style="width:220px;flex-shrink:0;display:flex;flex-direction:column;background:#050810;border-left:.5px solid rgba(255,255,255,.06);overflow-y:auto;">
+        <div style="flex-shrink:0;padding:8px 10px;border-bottom:.5px solid rgba(255,255,255,.05);font-size:9px;font-weight:700;color:rgba(255,255,255,.3);letter-spacing:.08em;">INSPECTOR</div>
+        <div id="edit-inspector-body" style="flex:1;padding:10px;">
+          <div style="font-size:10px;color:rgba(255,255,255,.2);text-align:center;padding:20px 0;">Select a clip to inspect</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ═══ TIMELINE RESIZE HANDLE ════════════════════════════════════ -->
+    <div id="tl-resize-handle"
+      style="flex-shrink:0;height:5px;background:rgba(255,255,255,.04);cursor:ns-resize;border-top:.5px solid rgba(255,255,255,.06);transition:background .15s;"
+      onmouseenter="this.style.background='rgba(0,212,255,.2)'"
+      onmouseleave="this.style.background='rgba(255,255,255,.04)'"
+      onmousedown="tl_startResize(event)"
+      title="Drag to resize timeline"></div>
+
+    <!-- ═══ TIMELINE ════════════════════════════════════════════════════ -->
+    <div id="timeline-panel" style="flex-shrink:0;height:260px;min-height:140px;display:flex;flex-direction:column;border-top:.5px solid rgba(255,255,255,.07);background:#04060e;">
+      <!-- Timeline toolbar -->
+      <div style="flex-shrink:0;height:36px;display:flex;align-items:center;gap:4px;padding:0 8px;background:rgba(0,0,0,.3);border-bottom:.5px solid rgba(255,255,255,.05);">
+        <!-- Tool buttons -->
+        <div style="display:flex;gap:2px;">
+          <button class="tl-tool on" id="tl-tool-select" onclick="tl_setTool('select')" title="Select (V)" style="padding:2px 7px;font-size:9px;border-radius:3px;border:.5px solid rgba(0,212,255,.3);background:rgba(0,212,255,.12);color:#00d4ff;cursor:pointer;">↖</button>
+          <button class="tl-tool" id="tl-tool-trim" onclick="tl_setTool('trim')" title="Trim (T)" style="padding:2px 7px;font-size:9px;border-radius:3px;border:.5px solid rgba(255,255,255,.08);background:none;color:rgba(255,255,255,.4);cursor:pointer;">↔</button>
+          <button class="tl-tool" id="tl-tool-split" onclick="tl_split()" title="Split (S)" style="padding:2px 7px;font-size:9px;border-radius:3px;border:.5px solid rgba(255,255,255,.08);background:none;color:rgba(255,255,255,.4);cursor:pointer;">⊣</button>
+        </div>
+        <div style="width:.5px;height:14px;background:rgba(255,255,255,.08);margin:0 4px;"></div>
+        <!-- Zoom -->
+        <button onclick="tl_zoom(-1)" title="Zoom out" style="padding:2px 6px;font-size:9px;border-radius:3px;border:.5px solid rgba(255,255,255,.08);background:none;color:rgba(255,255,255,.3);cursor:pointer;">−</button>
+        <span id="tl-zoom-label" style="font-size:9px;color:rgba(255,255,255,.2);min-width:28px;text-align:center;">1x</span>
+        <button onclick="tl_zoom(1)" title="Zoom in" style="padding:2px 6px;font-size:9px;border-radius:3px;border:.5px solid rgba(255,255,255,.08);background:none;color:rgba(255,255,255,.3);cursor:pointer;">+</button>
+        <div style="width:.5px;height:14px;background:rgba(255,255,255,.08);margin:0 4px;"></div>
+        <!-- Add tracks -->
+        <button onclick="tl_addTrack('text')" style="padding:2px 8px;font-size:9px;border-radius:3px;border:.5px solid rgba(234,179,8,.2);background:rgba(234,179,8,.06);color:rgba(234,179,8,.7);cursor:pointer;">+ Text</button>
+        <button onclick="tl_addTrack('music')" style="padding:2px 8px;font-size:9px;border-radius:3px;border:.5px solid rgba(16,185,129,.2);background:rgba(16,185,129,.06);color:rgba(16,185,129,.7);cursor:pointer;">+ Music</button>
+        <!-- Right -->
+        <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
+          <span id="tl-duration-display" style="font-size:9px;font-family:'JetBrains Mono',monospace;color:rgba(255,255,255,.2);">0:00</span>
+        </div>
+      </div>
+      <!-- Timeline tracks area -->
+      <div style="flex:1;display:flex;overflow:hidden;min-height:0;">
+        <!-- Track labels -->
+        <div id="tl-labels" style="width:90px;flex-shrink:0;border-right:.5px solid rgba(255,255,255,.07);overflow:hidden;display:flex;flex-direction:column;">
+          <!-- Ruler spacer -->
+          <div style="height:20px;border-bottom:.5px solid rgba(255,255,255,.05);flex-shrink:0;background:rgba(0,0,0,.2);"></div>
+          <div id="tl-label-list" style="flex:1;overflow:hidden;"></div>
+        </div>
+        <!-- Scrollable track area -->
+        <div style="flex:1;overflow:auto;position:relative;" id="tl-scroll-container" onscroll="syncLabelScroll(this)">
+          <!-- Ruler -->
+          <div id="tl-ruler" style="height:20px;background:rgba(255,255,255,.03);border-bottom:.5px solid rgba(255,255,255,.06);position:sticky;top:0;z-index:10;"></div>
+          <!-- Tracks -->
+          <div id="tl-tracks" style="position:relative;min-width:max-content;min-height:80px;">
+            <!-- Playhead -->
+            <div id="tl-playhead" style="position:absolute;top:0;bottom:0;width:2px;background:#00d4ff;z-index:20;pointer-events:none;left:0;">
+              <div style="position:absolute;top:-1px;left:-5px;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:7px solid #00d4ff;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
   <div id="export-pg" class="pg" style="background:var(--off);padding-top:52px;min-height:100vh;">
     <div class="export-inner">
       <h2 style="margin-bottom:6px;color:var(--ink);">Export your video</h2>
@@ -6151,7 +6194,10 @@
       if (pg === 'dashboard-pg') loadDashboard();
       if (pg === 'scenes-pg') renderSceneBoard();
       if (pg === 'edit-pg') renderEditSuite();
-      if (pg === 'record-pg') initStudio();
+      if (pg === 'record-pg') {
+      initStudio();
+      setTimeout(function() { if (typeof updateTP === 'function') updateTP(); }, 200);
+    }
       if (pg !== 'record-pg' && pg !== 'teleprompter-pg') window.scrollTo(0, 0);
     }
 
@@ -8306,59 +8352,59 @@
 
     // Override updateTP to also schedule assets
     function updateTP() {
-        if (window._aabTpActive) return; // guard
-      var scene = PROJECT.scenes[STUDIO.currentScene];
-      var prevScene = PROJECT.scenes[STUDIO.currentScene - 1];
-      var nextScene = PROJECT.scenes[STUDIO.currentScene + 1];
+      // Only guard during active scrolling (not on page load)
+      if (window._aabTpScrolling) return;
+      var scene   = PROJECT.scenes[STUDIO.currentScene || 0];
+      var prevSc  = PROJECT.scenes[(STUDIO.currentScene || 0) - 1];
+      var nextSc  = PROJECT.scenes[(STUDIO.currentScene || 0) + 1];
+      var curEl   = document.getElementById('tp-cur');
+      var prevEl  = document.getElementById('tp-prev');
+      var nextEl  = document.getElementById('tp-next');
 
-      var prevEl = document.getElementById('tp-prev');
-      var curEl = document.getElementById('tp-cur');
-      var nextEl = document.getElementById('tp-next');
+      if (!curEl) return;
 
-      // Prev: last words of previous scene
+      // No scenes - guide user
+      if (!PROJECT.scenes || !PROJECT.scenes.length) {
+        curEl.innerHTML = '<div style="color:rgba(255,255,255,.25);font-size:16px;text-align:center;padding:20px;">' +
+          '📝 No script yet — go to Script to add your content, then come back to record.' +
+          '</div>';
+        if (prevEl) prevEl.innerHTML = '';
+        if (nextEl) nextEl.innerHTML = '';
+        return;
+      }
+
+      // No narration in current scene
+      var narration = (scene && scene.narration) ? scene.narration.trim() : '';
+      if (!narration) {
+        curEl.innerHTML = '<div style="color:rgba(255,255,255,.3);font-size:15px;text-align:center;padding:20px;">' +
+          '⚠️ Scene ' + ((STUDIO.currentScene || 0) + 1) + ' has no script. Select this scene in Script editor to add text.' +
+          '</div>';
+        if (prevEl) prevEl.innerHTML = '';
+        if (nextEl) nextEl.innerHTML = '';
+        return;
+      }
+
+      // Build word spans for highlighting
+      var words = narration.split(/\s+/).filter(Boolean);
+      var spans = words.map(function(w, i) {
+        return '<span id="aab_tw' + i + '" class="tp-word" style="display:inline;margin-right:0.3em;color:rgba(255,255,255,0.55);transition:color 0.08s,font-weight 0.08s;">' +
+          w.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</span>';
+      }).join('');
+
+      curEl.innerHTML = '<div class="tp-cur-inner" id="tp-cur-inner">' + spans + '</div>';
+
+      // Prev scene — last line
       if (prevEl) {
-        var pt = prevScene ? (prevScene.narration || '').trim() : '';
-        if (pt.length > 70) pt = '…' + pt.slice(-70);
-        prevEl.textContent = pt;
+        var pt = prevSc ? (prevSc.narration || '').trim() : '';
+        if (pt.length > 80) pt = '…' + pt.slice(-70);
+        prevEl.innerHTML = pt ? '<span style="color:rgba(255,255,255,.2);font-size:13px;">' + pt + '</span>' : '';
       }
-
-      // Next: first words of next scene
+      // Next scene — first line
       if (nextEl) {
-        var nt = nextScene ? (nextScene.narration || '').trim() : '';
-        if (nt.length > 80) nt = nt.slice(0, 80) + '…';
-        nextEl.textContent = nt;
+        var nt = nextSc ? (nextSc.narration || '').trim() : '';
+        if (nt.length > 80) nt = nt.slice(0,70) + '…';
+        nextEl.innerHTML = nt ? '<span style="color:rgba(255,255,255,.2);font-size:13px;">' + nt + '</span>' : '';
       }
-
-      // Current: word spans inside an inner scrolling container
-      if (curEl) {
-        if (!scene) {
-          curEl.innerHTML = '<div class="tp-cur-inner"><span style="color:rgba(255,255,255,.3);">Select a scene to begin</span></div>';
-        } else {
-          var words = (scene.narration || '').trim().split(/\s+/);
-          var spans = words.map(function (w, i) {
-            return '<span id="tw' + i + '" style="display:inline-block;margin-right:8px;color:rgba(255,255,255,.45);transition:color .2s ease,transform .2s ease,opacity .2s ease;">' +
-              w.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</span>';
-          }).join('');
-          curEl.innerHTML = '<div class="tp-cur-inner" id="tp-cur-inner">' + spans + '</div>';
-        }
-      }
-
-      // Counters
-      var total = PROJECT.scenes.length;
-      var scNum = STUDIO.currentScene + 1;
-      var pill = document.getElementById('st-scene-pill');
-      var stName = document.getElementById('st-scene-name');
-      var cnt = document.getElementById('st-scene-cnt');
-      var scnCtr = document.getElementById('studio-scene-counter');
-      if (pill) pill.textContent = 'Scene ' + scNum;
-      if (stName) stName.textContent = scene ? (scene.type || 'MAIN') : '';
-      if (cnt) cnt.textContent = scNum + '/' + total;
-      if (scnCtr) scnCtr.textContent = scNum + '/' + total;
-
-      var pf = document.getElementById('scene-prog-fill');
-      if (pf) pf.style.width = '0%';
-
-      scheduleSceneAssets(STUDIO.currentScene);
     }
 
     // ── AUTO-SAVE EVERY 30s ────────────────────────────────────────────────────────
@@ -17414,7 +17460,101 @@ setTimeout(function() {
 }, 500);
 
 console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgrounds, TP bg');
-</script>
+
+    // ── Timeline resize drag ──────────────────────────────────────
+    window.tl_startResize = function(e) {
+      e.preventDefault();
+      var panel = document.getElementById('timeline-panel');
+      if (!panel) return;
+      var startY = e.clientY;
+      var startH = panel.offsetHeight;
+      function onMove(ev) {
+        var delta = startY - ev.clientY; // drag up = larger
+        var newH = Math.max(140, Math.min(500, startH + delta));
+        panel.style.height = newH + 'px';
+      }
+      function onUp() {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        localStorage.setItem('aab_tl_height', panel.offsetHeight);
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    };
+    // Restore saved timeline height
+    (function() {
+      var saved = parseInt(localStorage.getItem('aab_tl_height') || '0');
+      if (saved > 140) {
+        document.addEventListener('aab_nav', function(e) {
+          if (e && e.detail && e.detail.page === 'edit-pg') {
+            var panel = document.getElementById('timeline-panel');
+            if (panel) panel.style.height = saved + 'px';
+          }
+        });
+      }
+    })();
+
+    
+    // ── Edit Suite Inspector ──────────────────────────────────────
+    window.edit_showInspector = function(clip) {
+      var body = document.getElementById('edit-inspector-body');
+      if (!body || !clip) return;
+      body.innerHTML = [
+        '<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.7);margin-bottom:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + (clip.sceneName||'Clip') + '">' + (clip.sceneName || 'Clip') + '</div>',
+        '<div style="font-size:9px;color:rgba(255,255,255,.3);margin-bottom:14px;">' + (clip.provider||'').toUpperCase() + ' · ' + (clip.duration||0) + 's</div>',
+        '<div class="insp-label">Volume</div>',
+        '<input type="range" min="0" max="1" step="0.05" value="1" style="width:100%;accent-color:#00d4ff;margin-bottom:10px;" oninput="edit_setClipVolume(this.value)">',
+        '<div class="insp-label">Speed</div>',
+        '<select style="width:100%;background:rgba(255,255,255,.05);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.7);border-radius:4px;padding:4px;font-size:10px;margin-bottom:10px;" onchange="edit_setSpeed(this.value)">',
+        '<option value="0.5">0.5x</option><option value="0.75">0.75x</option><option value="1" selected>1x (normal)</option><option value="1.25">1.25x</option><option value="1.5">1.5x</option><option value="2">2x</option>',
+        '</select>',
+        '<div class="insp-label" style="margin-bottom:6px;">Clip URL</div>',
+        '<div style="font-size:8px;color:rgba(255,255,255,.2);word-break:break-all;background:rgba(255,255,255,.03);padding:4px;border-radius:3px;">' + (clip.url||clip.videoUrl||'').slice(0,60) + '…</div>',
+      ].join('');
+    };
+
+    window.toggleSafeZones = function() {
+      var sz = document.getElementById('edit-safe-zones');
+      if (sz) sz.style.display = sz.style.display === 'none' ? 'block' : 'none';
+    };
+
+    window.importMedia = function(type) {
+      var input = document.createElement('input');
+      input.type = 'file';
+      input.accept = type === 'video' ? 'video/*' : type === 'audio' ? 'audio/*' : 'image/*';
+      input.onchange = function() {
+        var f = input.files[0];
+        if (!f) return;
+        var url = URL.createObjectURL(f);
+        var clip = { id: 'import_' + Date.now(), sceneName: f.name, url: url, videoUrl: url, duration: 10, source: 'import', provider: type };
+        if (!PROJECT.clips) PROJECT.clips = {};
+        PROJECT.clips[clip.id] = clip;
+        if (typeof aps_addClipToBar === 'function') aps_addClipToBar(clip);
+        if (typeof tl_buildTracksFromProject === 'function') tl_buildTracksFromProject();
+        toast('✓ ' + f.name + ' imported', 'ok');
+      };
+      input.click();
+    };
+
+    window.edit_skipTo = function(t) {
+      var v = document.getElementById('edit-video');
+      if (v && isFinite(v.duration)) v.currentTime = Math.min(t, v.duration);
+    };
+
+    window.edit_seekTo = function(pct) {
+      var v = document.getElementById('edit-video');
+      if (v && isFinite(v.duration)) v.currentTime = v.duration * pct / 100;
+    };
+
+    // ── CSS for inspector labels ──────────────────────────────────
+    (function() {
+      var s = document.createElement('style');
+      s.textContent = '.insp-label{font-size:9px;color:rgba(255,255,255,.3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;}' +
+        '.edit-tool-btn.active,.tl-tool.on{background:rgba(0,212,255,.15)!important;color:#00d4ff!important;border-color:rgba(0,212,255,.3)!important;}';
+      document.head.appendChild(s);
+    })();
+
+    </script>
 
 </body>
 </html>
