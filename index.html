@@ -5190,7 +5190,9 @@
             style="color:rgba(239,68,68,.6);border-color:rgba(239,68,68,.2);">Sign out</button>
         </div>
       </div>
-      <div class="studio-main" style="flex:1;min-height:0;overflow:hidden;">
+      <div class="studio-main" style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;">
+        <!-- Camera row: scene queue + canvas + panel -->
+        <div style="flex:1;display:flex;min-height:0;overflow:hidden;">
         <!-- Scene queue -->
         <div class="studio-q">
           <div class="studio-q-hdr">Scenes</div>
@@ -5250,31 +5252,7 @@
           <div class="studio-scene-prog">
             <div class="studio-scene-prog-fill" id="scene-prog-fill"></div>
           </div>
-          <!-- Teleprompter -->
-          <div class="studio-tp" id="studio-tp">
-            <!-- Collapse handle -->
-            <div class="tp-handle" id="tp-drag-handle" style="cursor:move;display:flex;align-items:center;gap:6px;" title="Click label to expand/collapse">
-              <span style="font-size:11px;color:rgba(255,255,255,.15);margin-right:2px;">⠿</span>
-              <span class="tp-handle-label" onclick="toggleTpPanel()" style="cursor:pointer;font-size:11px;font-weight:600;color:rgba(255,255,255,.5);letter-spacing:.04em;">TELEPROMPTER</span>
-              <span id="tp-collapse-icon" onclick="toggleTpPanel()" style="cursor:pointer;font-size:10px;color:rgba(255,255,255,.3);margin-left:2px;" title="Expand/Collapse">▲</span>
-              <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
-                <button onclick="resetTpScroll()"
-                  style="background:none;border:none;cursor:pointer;font-size:10px;color:rgba(255,255,255,.3);"
-                  title="Reset scroll">↺</button>
-                <span id="tp-collapse-icon" onclick="toggleTpPanel()"
-                  style="font-size:11px;color:rgba(255,255,255,.3);cursor:pointer;">▼ collapse</span>
-              </div>
-            </div>
-            <!-- Teleprompter body -->
-            <div class="tp-body" id="tp-body">
-              <!-- Previous line (fading out) -->
-              <div class="tp-prev-txt" id="tp-prev" style="opacity:.3;"></div>
-              <!-- Current line with word highlights -->
-              <div class="tp-cur-txt" id="tp-cur" style="position:relative;"></div>
-              <!-- Next line (preview) -->
-              <div class="tp-next-txt" id="tp-next" style="opacity:.25;"></div>
-            </div>
-          </div>
+          <!-- teleprompter moved below camera -->
         </div>
         <!-- Right panel -->
         <div class="studio-panel" id="studio-panel">
@@ -5328,6 +5306,46 @@
               <div style="font-size:10px;color:rgba(255,255,255,.2);">No clips yet</div>
             </div>
             <button class="sp-upload-btn" style="margin-top:5px;" onclick="exportAllClips()">↓ Export all clips</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TELEPROMPTER PANEL — below camera, full width ══ -->
+      <div id="studio-tp-panel" style="flex-shrink:0;width:100%;background:rgba(0,0,0,.88);border-top:.5px solid rgba(255,255,255,.07);border-bottom:.5px solid rgba(255,255,255,.04);z-index:30;">
+        <!-- TP Header bar -->
+        <div style="display:flex;align-items:center;gap:6px;padding:5px 14px;border-bottom:.5px solid rgba(255,255,255,.05);">
+          <span style="font-size:9px;font-weight:700;color:rgba(255,255,255,.3);letter-spacing:.08em;">TELEPROMPTER</span>
+          <div style="display:flex;align-items:center;gap:3px;margin-left:6px;">
+            <span style="font-size:8px;color:rgba(255,255,255,.2);">Speed</span>
+            <input type="range" id="tp-speed-slider" min="20" max="300" value="80" style="width:65px;accent-color:#facc15;height:2px;" oninput="TP_SPEED=parseInt(this.value);document.getElementById('tp-spd-val').textContent=this.value;">
+            <span id="tp-spd-val" style="font-size:8px;color:rgba(255,212,0,.6);min-width:18px;">80</span>
+          </div>
+          <button onclick="decreaseTpFont()" style="background:none;border:.5px solid rgba(255,255,255,.1);border-radius:3px;padding:1px 5px;font-size:9px;color:rgba(255,255,255,.25);cursor:pointer;">A-</button>
+          <button onclick="increaseTpFont()" style="background:none;border:.5px solid rgba(255,255,255,.1);border-radius:3px;padding:1px 5px;font-size:9px;color:rgba(255,255,255,.25);cursor:pointer;">A+</button>
+          <button onclick="toggleMirror()" style="background:none;border:.5px solid rgba(255,255,255,.08);border-radius:3px;padding:1px 6px;font-size:9px;color:rgba(255,255,255,.25);cursor:pointer;">⇄ Mirror</button>
+          <div style="display:flex;align-items:center;gap:2px;margin-left:2px;">
+            <span style="font-size:8px;color:rgba(255,255,255,.15);">BG</span>
+            <span onclick="setTpBg('#000000')" style="display:inline-block;width:14px;height:14px;border-radius:2px;background:#000;cursor:pointer;border:1.5px solid rgba(255,255,255,.25);" title="Black"></span>
+            <span onclick="setTpBg('#111827')" style="display:inline-block;width:14px;height:14px;border-radius:2px;background:#111827;cursor:pointer;border:1.5px solid rgba(255,255,255,.12);" title="Navy"></span>
+            <span onclick="setTpBg('rgba(0,0,0,.75)')" style="display:inline-block;width:14px;height:14px;border-radius:2px;background:rgba(0,0,0,.75);cursor:pointer;border:1.5px solid rgba(255,212,0,.3);" title="Semi-transparent"></span>
+            <span onclick="setTpBg('#ffffff')" style="display:inline-block;width:14px;height:14px;border-radius:2px;background:#fff;cursor:pointer;border:1.5px solid rgba(0,212,255,.3);" title="White"></span>
+          </div>
+          <select id="tp-scroll-mode" style="background:rgba(255,255,255,.04);border:.5px solid rgba(255,255,255,.07);color:rgba(255,255,255,.35);border-radius:3px;padding:2px 4px;font-size:9px;margin-left:2px;" onchange="setTpScrollMode(this.value)">
+            <option value="auto">Auto-scroll</option>
+            <option value="manual">Manual</option>
+            <option value="word">Word-by-word</option>
+          </select>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:5px;">
+            <button onclick="resetTpScroll()" style="background:none;border:none;cursor:pointer;font-size:9px;color:rgba(255,255,255,.2);" title="Reset scroll">↺ Reset</button>
+            <button onclick="toggleTpPanel()" id="tp-toggle-btn" style="background:none;border:.5px solid rgba(255,255,255,.1);border-radius:4px;padding:2px 7px;font-size:9px;color:rgba(255,255,255,.3);cursor:pointer;">▼ Hide</button>
+          </div>
+        </div>
+        <!-- Script display -->
+        <div id="studio-tp" class="studio-tp" style="position:relative;overflow:hidden;min-height:90px;">
+          <div class="tp-body" id="tp-body" style="padding:10px 28px 12px;display:flex;flex-direction:column;gap:4px;">
+            <div class="tp-prev-txt" id="tp-prev" style="font-size:13px;color:rgba(255,255,255,.25);line-height:1.5;min-height:18px;"></div>
+            <div class="tp-cur-txt"  id="tp-cur"  style="font-size:clamp(16px,2.2vw,26px);line-height:1.65;color:rgba(255,255,255,.92);min-height:50px;position:relative;"></div>
+            <div class="tp-next-txt" id="tp-next" style="font-size:13px;color:rgba(255,255,255,.2);line-height:1.5;min-height:18px;"></div>
           </div>
         </div>
       </div>
@@ -10051,30 +10069,24 @@
 
 
     function toggleTpPanel() {
-      var tp = document.getElementById('studio-tp');
-      var icon = document.getElementById('tp-collapse-icon');
-      var collapseBtn = document.querySelector('[onclick*="toggleTpPanel"]');
-      if (!tp) return;
-      var collapsed = tp.classList.contains('tp-collapsed');
+      var panel = document.getElementById('studio-tp-panel');
+      var tp    = document.getElementById('studio-tp');
+      var btn   = document.getElementById('tp-toggle-btn');
+      if (!panel) return;
+      var body = document.getElementById('tp-body');
+      var collapsed = panel.dataset.collapsed === '1';
       if (collapsed) {
         // EXPAND
-        tp.classList.remove('tp-collapsed');
-        tp.style.minHeight = '';
-        tp.style.height = '';
-        var inner = tp.querySelector('#tp-cur, .tp-cur-inner, [id*="tp-cur"]');
-        if (inner) inner.style.display = '';
-        var controls = tp.querySelector('.tp-controls, .studio-tp-controls');
-        if (controls) controls.style.display = '';
-        if (icon) icon.textContent = '▲';
-        if (collapseBtn) collapseBtn.title = 'Collapse teleprompter';
+        panel.dataset.collapsed = '0';
+        if (body) body.style.display = '';
+        if (btn) btn.textContent = '▼';
+        panel.style.height = '';
       } else {
-        // COLLAPSE — keep only the handle visible
-        tp.classList.add('tp-collapsed');
-        tp.style.height = '28px';
-        tp.style.minHeight = '28px';
-        tp.style.overflow = 'hidden';
-        if (icon) icon.textContent = '▼';
-        if (collapseBtn) collapseBtn.title = 'Expand teleprompter';
+        // COLLAPSE — show only the header bar
+        panel.dataset.collapsed = '1';
+        if (body) body.style.display = 'none';
+        if (btn) btn.textContent = '▲ Show';
+        panel.style.height = 'auto';
       }
     }
 
@@ -11329,7 +11341,67 @@
         <!-- Progress bar -->
         <!-- Generation Progress Panel with animation -->
         <div id="aps-progress-wrap" style="display:none;width:100%;max-width:640px;margin-top:12px;padding:14px;background:rgba(0,212,255,.04);border:.5px solid rgba(0,212,255,.2);border-radius:12px;">
-          <style>@keyframes aps-spin{to{transform:rotate(360deg)}}@keyframes aps-pulse{0%,100%{opacity:.5}50%{opacity:1}}</style>
+          <style>@keyframes aps-spin{to{transform:rotate(360deg)}}@keyframes aps-pulse{0%,100%{opacity:.5}50%{opacity:1}}
+@media(max-width:480px) {
+  #home-nav .btn-ghost { display: none; }
+  #home-nav .btn-primary { font-size: 12px; padding: 6px 12px; }
+}
+
+/* ══ TABLET (iPad 768–1024px) ════════════════════════════════════ */
+@media(min-width:769px) and (max-width:1024px) {
+  .dash-sidebar { width: 180px !important; }
+  .proj-grid { grid-template-columns: 1fr 1fr !important; }
+  #edit-media-bin { width: 160px !important; }
+  #edit-inspector { width: 180px !important; }
+  #timeline-panel { height: 200px !important; }
+  .studio-q { width: 140px !important; }
+  .studio-panel { width: 160px !important; }
+  .panel-group-body { flex-wrap: wrap; gap: 4px; }
+}
+
+/* ══ MOBILE CRITICAL FIXES ═══════════════════════════════════════ */
+@media(max-width:768px) {
+  /* Prevent horizontal overflow on every page */
+  html, body { overflow-x: hidden !important; }
+  .pg, .pg-full { max-width: 100vw !important; overflow-x: hidden !important; }
+
+  /* Edit suite mobile */
+  #edit-media-bin { width: 130px !important; }
+  #edit-inspector { display: none !important; }
+  #edit-topbar { overflow-x: auto; flex-wrap: nowrap; gap: 0; }
+  #edit-topbar .edit-dd-trigger { font-size: 9px !important; padding: 0 7px !important; }
+  #timeline-panel { height: 170px !important; }
+  #tl-labels { width: 66px !important; }
+  #edit-preview-pane { min-width: 0; }
+
+  /* AI Presenter mobile — stack vertically */
+  #ai-presenter-studio > div.aps-layout { flex-direction: column !important; }
+  .aps-right-panel, [id="aps-right-panel"] { width: 100% !important; border-left: none !important; border-top: .5px solid rgba(255,255,255,.07) !important; max-height: 45vh; overflow-y: auto; }
+  .aps-scenes-col { width: 100% !important; height: 200px !important; overflow-y: auto; border-right: none !important; border-bottom: .5px solid rgba(255,255,255,.07); }
+
+  /* Recording studio — horizontal scroll controls */
+  .studio-ctrl-v2 { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+  .studio-ctrl-row { flex-wrap: nowrap !important; min-width: max-content; padding: 5px 8px; }
+  .panel-group { min-width: max-content; flex-shrink: 0; }
+
+  /* Teleprompter panel mobile */
+  #studio-tp-panel > div:first-child { overflow-x: auto; flex-wrap: nowrap; }
+  #tp-cur { font-size: clamp(15px, 4vw, 22px) !important; }
+
+  /* Dashboard mobile */
+  .proj-grid { grid-template-columns: 1fr !important; }
+  .dash-sidebar { width: 100%; flex-direction: row; overflow-x: auto; }
+
+  /* Touch targets */
+  button:not(.s-btn-sm), .s-btn, .btn { min-height: 38px; }
+  input[type="range"] { height: 22px; }
+
+  /* Scrollbars hidden on mobile */
+  .studio-ctrl-v2::-webkit-scrollbar,
+  #edit-topbar::-webkit-scrollbar,
+  .dash-sidebar::-webkit-scrollbar { display: none; }
+}
+</style>
           <!-- Header: spinner + scene label + percent -->
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
             <div id="aps-spinner" style="width:20px;height:20px;border:2.5px solid rgba(0,212,255,.15);border-top-color:#00d4ff;border-radius:50%;animation:aps-spin .8s linear infinite;flex-shrink:0;"></div>
@@ -18464,6 +18536,112 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
         }, 150);
       }
     });
+    
+    window.setTpScrollMode = function(mode) {
+      window._tpScrollMode = mode;
+      if (mode === 'manual') {
+        // Stop any auto-scroll
+        if (window._tpAutoTimer) { clearInterval(window._tpAutoTimer); window._tpAutoTimer = null; }
+      }
+      toast('Teleprompter: ' + mode + ' mode', 'ok');
+    };
+
+    // ══ CLOUD PROJECT SYNC ═══════════════════════════════════════════
+    // Ensures projects are visible across ALL browsers and devices
+    // Server (Supabase) is the source of truth; localStorage is cache
+
+    // On login: fetch projects from server and merge
+    var _origOnLogin = window.onLogin || function(){};
+    window.onLogin = async function(user, session) {
+      if (typeof _origOnLogin === 'function') _origOnLogin(user, session);
+      // Sync projects from server in background
+      setTimeout(async function() {
+        try {
+          var token = session && session.access_token;
+          if (!token) return;
+          var r = await fetch(API + '/api/project/list', {
+            headers: { 'Authorization': 'Bearer ' + token }
+          });
+          if (!r.ok) return;
+          var data = await r.json();
+          var serverProjects = data.projects || data || [];
+          if (!serverProjects.length) return;
+          // Merge: server projects take priority, then local
+          var localProjects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+          var merged = Object.values(
+            [...serverProjects, ...localProjects].reduce(function(acc, p) {
+              if (!acc[p.id] || (p.updatedAt || p.updated_at || 0) > (acc[p.id].updatedAt || acc[p.id].updated_at || 0)) {
+                acc[p.id] = p;
+              }
+              return acc;
+            }, {})
+          );
+          merged.sort(function(a,b){ return (b.updatedAt||b.updated_at||0) - (a.updatedAt||a.updated_at||0); });
+          localStorage.setItem('aab_projects', JSON.stringify(merged.slice(0,50)));
+          console.log('Cloud sync: ' + serverProjects.length + ' projects from server merged');
+          // Refresh dashboard if visible
+          if (typeof dash_loadProjects === 'function') dash_loadProjects();
+        } catch(e) {
+          console.warn('Cloud sync failed:', e.message);
+        }
+      }, 500);
+    };
+
+    // Ensure saveProject always syncs to server
+    var _realSaveProject = window._oSP || function(){};
+    window._oSP = async function() {
+      _realSaveProject.apply(this, arguments);
+      // Also save to server for cross-device sync
+      try {
+        var token = APP && APP.token;
+        if (!token || !PROJECT || !PROJECT.id) return;
+        PROJECT.updatedAt = Date.now();
+        // Update localStorage immediately
+        var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+        var idx = projects.findIndex(function(p){ return p.id === PROJECT.id; });
+        if (idx >= 0) projects[idx] = Object.assign(projects[idx], { title: PROJECT.title, updatedAt: PROJECT.updatedAt, scenes: (PROJECT.scenes||[]).length, clips: Object.keys(PROJECT.clips||{}).length });
+        else projects.unshift({ id: PROJECT.id, title: PROJECT.title, updatedAt: PROJECT.updatedAt, scenes: (PROJECT.scenes||[]).length, clips: Object.keys(PROJECT.clips||{}).length });
+        localStorage.setItem('aab_projects', JSON.stringify(projects.slice(0,50)));
+        // Background server save
+        fetch(API + '/api/project/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ project: PROJECT })
+        }).catch(function(e){ console.warn('Server save failed:', e.message); });
+      } catch(e) { console.warn('saveProject sync error:', e.message); }
+    };
+
+    // Ensure dash_loadProjects always tries server first
+    var _origLoadProjects = window.dash_loadProjects || function(){};
+    window.dash_loadProjects = async function() {
+      // Load from localStorage immediately (fast)
+      _origLoadProjects.apply(this, arguments);
+      // Then refresh from server (cross-device sync)
+      try {
+        var token = APP && APP.token;
+        if (!token) return;
+        var r = await fetch(API + '/api/project/list', {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!r.ok) return;
+        var data = await r.json();
+        var serverProjects = data.projects || data || [];
+        if (!serverProjects.length) return;
+        var localProjects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+        var merged = Object.values(
+          [...serverProjects, ...localProjects].reduce(function(acc, p) {
+            if (p && p.id && (!acc[p.id] || (p.updatedAt||p.updated_at||0) > (acc[p.id].updatedAt||acc[p.id].updated_at||0)))
+              acc[p.id] = p;
+            return acc;
+          }, {})
+        );
+        merged.sort(function(a,b){ return (b.updatedAt||b.updated_at||0) - (a.updatedAt||a.updated_at||0); });
+        localStorage.setItem('aab_projects', JSON.stringify(merged.slice(0,50)));
+        // Re-render dashboard with server projects
+        _origLoadProjects.apply(this, arguments);
+      } catch(e) { console.warn('dash_loadProjects server sync failed:', e.message); }
+    };
+
     </script>
 
 </body>
