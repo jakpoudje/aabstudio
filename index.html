@@ -7781,11 +7781,25 @@
     }
     function tpLoadSample() { var inp = document.getElementById('tp-input'); if (inp) inp.value = 'Welcome everyone. Today I want to share something that has completely changed how I think about video production.\n\nFor the longest time, I struggled with remembering my script while looking natural on camera. The teleprompter changed everything.\n\nNow I can speak confidently, maintain eye contact, and deliver professional content every single time.'; }
     function tpExit() { clearInterval(TP.scrollTimer); TP.playing = false; navFree("home"); }
-    function tpToggleAdaptive() { TP.adaptive = !TP.adaptive; var btn = document.getElementById('tp-adapt-btn'); if (btn) btn.textContent = TP.adaptive ? '🎤 Adaptive: on' : '🎤 Adaptive: off'; toast(TP.adaptive ? 'Adaptive sync ON — speak and it follows' : 'Adaptive sync OFF', 'info'); } function remoteSend(cmd) {
-      var sid = window._remoteSid; if (!sid) return;
-      var speedEl = document.getElementById('remote-speed');
-      if (cmd === 'speed' && speedEl) cmd = 'speed:' + speedEl.value;
-      localStorage.setItem('aab_remote_' + sid, cmd + ':' + Date.now());
+    function tpToggleAdaptive() { TP.adaptive = !TP.adaptive; var btn = document.getElementById('tp-adapt-btn'); if (btn) btn.textContent = TP.adaptive ? '🎤 Adaptive: on' : '🎤 Adaptive: off'; toast(TP.adaptive ? 'Adaptive sync ON — speak and it follows' : 'Adaptive sync OFF', 'info'); } function remoteSend(cmd, val) {
+      // Send via Socket.IO to server, which relays to the studio
+      if (typeof socket !== 'undefined' && socket.connected) {
+        socket.emit('remote_control', {
+          action: cmd,
+          value: val || null,
+          project_id: PROJECT ? PROJECT.id : null,
+          ts: Date.now()
+        });
+        // Flash feedback on button
+        var dot = document.getElementById('remote-conn-dot');
+        if (dot) { dot.style.background = '#00d4ff'; setTimeout(function(){ dot.style.background = '#10b981'; }, 200); }
+      } else {
+        // Fallback: localStorage polling (when socket not available)
+        var sid = window._remoteSid;
+        if (sid) localStorage.setItem('aab_remote_' + sid, cmd + ':' + (val||'') + ':' + Date.now());
+        // Try to reconnect socket
+        if (typeof socket !== 'undefined') socket.connect();
+      }
     }// ══ MODALS ════════════════════════════════════════════════════════════════════
     function openModal(id) { var m = document.getElementById(id); if (m) m.classList.add('on'); }
     function closeModal(id) { var m = document.getElementById(id); if (m) m.classList.remove('on'); }
@@ -9786,9 +9800,29 @@
     function toggleTpPanel() {
       var tp = document.getElementById('studio-tp');
       var icon = document.getElementById('tp-collapse-icon');
+      var collapseBtn = document.querySelector('[onclick*="toggleTpPanel"]');
       if (!tp) return;
-      var collapsed = tp.classList.toggle('collapsed');
-      if (icon) icon.textContent = collapsed ? '▲ expand' : '▼ collapse';
+      var collapsed = tp.classList.contains('tp-collapsed');
+      if (collapsed) {
+        // EXPAND
+        tp.classList.remove('tp-collapsed');
+        tp.style.minHeight = '';
+        tp.style.height = '';
+        var inner = tp.querySelector('#tp-cur, .tp-cur-inner, [id*="tp-cur"]');
+        if (inner) inner.style.display = '';
+        var controls = tp.querySelector('.tp-controls, .studio-tp-controls');
+        if (controls) controls.style.display = '';
+        if (icon) icon.textContent = '▲';
+        if (collapseBtn) collapseBtn.title = 'Collapse teleprompter';
+      } else {
+        // COLLAPSE — keep only the handle visible
+        tp.classList.add('tp-collapsed');
+        tp.style.height = '28px';
+        tp.style.minHeight = '28px';
+        tp.style.overflow = 'hidden';
+        if (icon) icon.textContent = '▼';
+        if (collapseBtn) collapseBtn.title = 'Expand teleprompter';
+      }
     }
 
     function setPipMode(enable) {
@@ -10339,7 +10373,10 @@
       var genOneBtn = document.getElementById('aps-gen-one-btn');
 
       if (numEl) numEl.textContent = 'Scene ' + String(sc.num).padStart(2, '0') + ' / ' + sc.total + ' — ' + sc.type;
-      if (durEl) durEl.textContent = sc.duration + 's · ' + Math.ceil(sc.narration.split(' ').length / 2.5) + ' words';
+      if (durEl) var _wc = (sc.narration || '').trim().split(/\s+/).filter(Boolean).length;
+      var _wpm = 130; // average speaking WPM
+      var _estDur = Math.round(_wc / (_wpm / 60));
+      durEl.textContent = sc.duration + 's · ' + _wc + ' words (~' + _estDur + 's to read)';
 
       if (scriptEl) {
         scriptEl.textContent = sc.narration.slice(0, 120) + (sc.narration.length > 120 ? '…' : '');
