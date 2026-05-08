@@ -451,6 +451,17 @@ app.get('/api/did/test', async (req, res) => {
   }
 });
 
+
+// Credits status endpoint — lets UI show which providers are available
+app.get('/api/credits-status', (req, res) => {
+  res.json({
+    did:    { ok: !global._didCreditsExhausted,    provider: 'D-ID' },
+    heygen: { ok: !global._heygenCreditsExhausted, provider: 'HeyGen' },
+    kling:  { ok: (global._klingFailCount || 0) < 2, provider: 'Kling' },
+    anyAvailable: !global._didCreditsExhausted || !global._heygenCreditsExhausted
+  });
+});
+
 app.get('/health', (req, res) => res.json({
   status: 'ok', version: '3.9',
   anthropic: !!process.env.ANTHROPIC_API_KEY,
@@ -957,6 +968,24 @@ app.post('/api/presenter', async (req, res) => {
 
     // Queue all scene submissions — only one processes at a time
     // This prevents all 49 scenes firing simultaneously and timing out
+    // Skip providers with exhausted credits
+    if (global._didCreditsExhausted && chosen === 'did') {
+      if (hasHeygen && !global._heygenCreditsExhausted) {
+        console.warn('D-ID credits exhausted — using HeyGen');
+        chosen = 'heygen';
+      } else if (global._heygenCreditsExhausted) {
+        return res.status(402).json({ error: 'ALL_NO_CREDITS: Both D-ID and HeyGen have insufficient credits. Please top up your accounts.' });
+      }
+    }
+    if (global._heygenCreditsExhausted && chosen === 'heygen') {
+      if (hasDID && !global._didCreditsExhausted) {
+        console.warn('HeyGen credits exhausted — using D-ID');
+        chosen = 'did';
+      } else if (global._didCreditsExhausted) {
+        return res.status(402).json({ error: 'ALL_NO_CREDITS: Both D-ID and HeyGen have insufficient credits. Please top up your accounts.' });
+      }
+    }
+
     if (chosen === 'did')    return await enqueueScene(() => generateWithDID(req, res, args));  // ~30-90s per scene
     if (chosen === 'heygen') return await enqueueScene(() => generateWithHeyGen(req, res, args));
     if (chosen === 'kling') {
@@ -1434,6 +1463,10 @@ async function generateWithDID(req, res, args) {
     console.log('D-ID talk response:', talkResp.status, talkText.slice(0, 150));
 
     if (!talkResp.ok) {
+      if (talkResp.status === 402) {
+        global._didCreditsExhausted = true;
+        throw new Error('D-ID_NO_CREDITS: D-ID account has insufficient credits. Please top up at studio.d-id.com');
+      }
       throw new Error('D-ID talk failed: ' + talkResp.status + ' ' + talkText.slice(0, 200));
     }
 
@@ -1524,10 +1557,25 @@ app.get('/api/presenter-status', async (req, res) => {
       const hgError  = sd.data?.error;
       // Log full error so we can see what HeyGen is rejecting
       if (hgStatus === 'failed') {
-        console.error('HeyGen video FAILED:', JSON.stringify(sd.data).slice(0, 500));
-      } else {
-        console.log('HeyGen status:', hgStatus, '| video_id:', id);
+        const errCode = hgError?.code || '';
+        const errMsg  = typeof hgError === 'object' ? (hgError?.message || JSON.stringify(hgError)) : (hgError || '');
+        const isCredit = errCode.includes('INSUFFICIENT') || errCode.includes('PAYMENT') || errMsg.includes('Insufficient') || errMsg.includes('insufficient');
+        if (isCredit) {
+          global._heygenCreditsExhausted = true;
+          console.error('HeyGen: INSUFFICIENT CREDITS — ' + errMsg);
+        } else {
+          console.error('HeyGen video FAILED:', JSON.stringify(sd.data).slice(0, 500));
+        }
+        return res.json({
+          status:   hgStatus,
+          videoUrl: null,
+          done:     false,
+          failed:   true,
+          noCredits: isCredit,
+          error:    isCredit ? 'HEYGEN_NO_CREDITS: HeyGen has insufficient credits. Top up at app.heygen.com/billing' : errMsg
+        });
       }
+      console.log('HeyGen status:', hgStatus, '| video_id:', id);
       return res.json({
         status:   hgStatus,
         videoUrl: sd.data?.video_url || null,
