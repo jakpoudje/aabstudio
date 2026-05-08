@@ -9724,31 +9724,65 @@
 
 
     function openStudioSettings() {
-      // Populate device dropdowns
-      if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-        navigator.mediaDevices.enumerateDevices().then(function (devices) {
-          var camSel = document.getElementById('settings-cam-select');
-          var micSel = document.getElementById('settings-mic-select');
-          var cams = devices.filter(function (d) { return d.kind === 'videoinput'; });
-          var mics = devices.filter(function (d) { return d.kind === 'audioinput'; });
-          if (camSel) camSel.innerHTML = cams.length
-            ? cams.map(function (d, i) { return '<option value="' + d.deviceId + '">' + (d.label || 'Camera ' + (i + 1)) + '</option>'; }).join('')
-            : '<option>No cameras found</option>';
-          if (micSel) micSel.innerHTML = mics.length
-            ? mics.map(function (d, i) { return '<option value="' + d.deviceId + '">' + (d.label || 'Microphone ' + (i + 1)) + '</option>'; }).join('')
-            : '<option>No microphones found</option>';
-          // Select current device
-          if (camSel && STUDIO._preferredCam) camSel.value = STUDIO._preferredCam;
-          if (micSel && STUDIO._preferredMic) micSel.value = STUDIO._preferredMic;
-        }).catch(function () {
-          // If not yet granted permission, show message
-          var camSel = document.getElementById('settings-cam-select');
-          if (camSel) camSel.innerHTML = '<option>Click "Apply" to grant camera access first</option>';
-        });
-      }
-      // Populate current WPM
+      // ── Restore saved values from STUDIO + localStorage ─────────
+      try {
+        var savedWpm  = localStorage.getItem('aab_studio_wpm');
+        var savedFont = localStorage.getItem('aab_studio_tp_font');
+        var savedCd   = localStorage.getItem('aab_studio_countdown');
+        var savedAdv  = localStorage.getItem('aab_studio_auto_advance');
+        if (savedWpm)  STUDIO.tpSpeed = parseInt(savedWpm);
+        if (savedCd)   STUDIO._countdown = parseInt(savedCd);
+        if (savedAdv !== null) STUDIO._autoAdvance = savedAdv === 'on';
+      } catch(e) {}
+
+      // ── Pre-populate all fields ──────────────────────────────────
       var wpmInp = document.getElementById('settings-wpm');
       if (wpmInp) wpmInp.value = STUDIO.tpSpeed || 80;
+
+      var resSel = document.getElementById('settings-res');
+      if (resSel && STUDIO._resolution) resSel.value = STUDIO._resolution;
+
+      var fpsSel = document.getElementById('settings-fps');
+      if (fpsSel && STUDIO._fps) fpsSel.value = STUDIO._fps;
+
+      var cdSel = document.getElementById('settings-countdown');
+      if (cdSel && STUDIO._countdown !== undefined) cdSel.value = STUDIO._countdown;
+
+      var advSel = document.getElementById('settings-auto-advance');
+      if (advSel) advSel.value = STUDIO._autoAdvance ? 'on' : 'off';
+
+      var noiseSel = document.getElementById('settings-noise');
+      if (noiseSel && STUDIO._noiseReduction) noiseSel.value = STUDIO._noiseReduction;
+
+      var echoSel = document.getElementById('settings-echo');
+      if (echoSel) echoSel.value = STUDIO._echoCancellation === false ? 'off' : 'browser';
+
+      var fontSel = document.getElementById('settings-tp-font');
+      try {
+        var savedFont2 = localStorage.getItem('aab_studio_tp_font');
+        if (fontSel && savedFont2) fontSel.value = savedFont2;
+      } catch(e) {}
+
+      // ── Populate device dropdowns ────────────────────────────────
+      if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+        navigator.mediaDevices.enumerateDevices().then(function(devices) {
+          var camSel = document.getElementById('settings-cam-select');
+          var micSel = document.getElementById('settings-mic-select');
+          var cams = devices.filter(function(d){ return d.kind === 'videoinput'; });
+          var mics = devices.filter(function(d){ return d.kind === 'audioinput'; });
+          if (camSel) camSel.innerHTML = cams.length
+            ? cams.map(function(d,i){ return '<option value="'+d.deviceId+'">'+(d.label||'Camera '+(i+1))+'</option>'; }).join('')
+            : '<option>No cameras found</option>';
+          if (micSel) micSel.innerHTML = mics.length
+            ? mics.map(function(d,i){ return '<option value="'+d.deviceId+'">'+(d.label||'Microphone '+(i+1))+'</option>'; }).join('')
+            : '<option>No microphones found</option>';
+          if (camSel && STUDIO._preferredCam) camSel.value = STUDIO._preferredCam;
+          if (micSel && STUDIO._preferredMic) micSel.value = STUDIO._preferredMic;
+        }).catch(function() {
+          var camSel = document.getElementById('settings-cam-select');
+          if (camSel) camSel.innerHTML = '<option>Grant camera permission first</option>';
+        });
+      }
 
       openModal('studio-settings-modal');
     }
@@ -9757,39 +9791,99 @@
     function applySettingsMic(deviceId) { STUDIO._preferredMic = deviceId; }
 
     function applyStudioSettings() {
-      // Camera device
+
+      // ── Camera device ───────────────────────────────────────────
       var camSel = document.getElementById('settings-cam-select');
       var micSel = document.getElementById('settings-mic-select');
       if (camSel && camSel.value) STUDIO._preferredCam = camSel.value;
       if (micSel && micSel.value) STUDIO._preferredMic = micSel.value;
 
-      // WPM
+      // ── Resolution ──────────────────────────────────────────────
+      var resSel = document.getElementById('settings-res');
+      if (resSel && resSel.value) {
+        STUDIO._resolution = parseInt(resSel.value);
+        // Apply to camera constraints when restarted
+        STUDIO._camConstraints = STUDIO._camConstraints || {};
+        STUDIO._camConstraints.width  = { ideal: STUDIO._resolution === 2160 ? 3840 : STUDIO._resolution === 1440 ? 2560 : STUDIO._resolution === 1080 ? 1920 : 1280 };
+        STUDIO._camConstraints.height = { ideal: STUDIO._resolution };
+      }
+
+      // ── Frame rate ──────────────────────────────────────────────
+      var fpsSel = document.getElementById('settings-fps');
+      if (fpsSel && fpsSel.value) {
+        STUDIO._fps = parseInt(fpsSel.value);
+        STUDIO._camConstraints = STUDIO._camConstraints || {};
+        STUDIO._camConstraints.frameRate = { ideal: STUDIO._fps };
+      }
+
+      // ── Noise reduction ─────────────────────────────────────────
+      var noiseSel = document.getElementById('settings-noise');
+      if (noiseSel) STUDIO._noiseReduction = noiseSel.value;
+
+      // ── Echo cancellation ───────────────────────────────────────
+      var echoSel = document.getElementById('settings-echo');
+      if (echoSel) STUDIO._echoCancellation = echoSel.value !== 'off';
+
+      // ── Countdown ───────────────────────────────────────────────
+      var cdSel = document.getElementById('settings-countdown');
+      if (cdSel) {
+        STUDIO._countdown = parseInt(cdSel.value) || 0;
+        // Persist so REC button uses it
+        try { localStorage.setItem('aab_studio_countdown', STUDIO._countdown); } catch(e) {}
+      }
+
+      // ── Auto-advance scenes ─────────────────────────────────────
+      var advSel = document.getElementById('settings-auto-advance');
+      if (advSel) {
+        STUDIO._autoAdvance = advSel.value === 'on';
+        try { localStorage.setItem('aab_studio_auto_advance', advSel.value); } catch(e) {}
+      }
+
+      // ── WPM — sync to ALL speed controls ───────────────────────
       var wpmInp = document.getElementById('settings-wpm');
       if (wpmInp && wpmInp.value) {
-        STUDIO.tpSpeed = parseInt(wpmInp.value);
-        var spd = document.getElementById('tp-spd-val');
-        var spdR = document.getElementById('tp-spd-range');
-        if (spd) spd.textContent = STUDIO.tpSpeed + 'wpm';
-        if (spdR) spdR.value = STUDIO.tpSpeed;
+        var wpm = Math.max(20, Math.min(400, parseInt(wpmInp.value) || 80));
+        STUDIO.tpSpeed = wpm;
+        if (typeof window._syncTpSpeed === 'function') {
+          window._syncTpSpeed(wpm);
+        } else {
+          // Sync all four speed controls manually
+          ['tp-spd-val','tp-spd-val2'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.textContent = wpm + 'wpm';
+          });
+          ['tp-spd-range','tp-speed-slider'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.value = wpm;
+          });
+        }
+        try { localStorage.setItem('aab_studio_wpm', wpm); } catch(e) {}
       }
 
-      // Font size
+      // ── TP Font size — use setProperty to beat !important ──────
       var fontSel = document.getElementById('settings-tp-font');
-      if (fontSel) {
-        var sizes = { small: '14px', medium: '20px', large: '28px', xlarge: '38px' };
+      if (fontSel && fontSel.value) {
+        var sizes = { small: '13px', medium: '18px', large: '26px', xlarge: '36px' };
+        var sz = sizes[fontSel.value] || '18px';
         var tpEl = document.getElementById('tp-cur');
-        if (tpEl) tpEl.style.fontSize = sizes[fontSel.value] || '20px';
+        if (tpEl) {
+          tpEl.style.setProperty('font-size', sz, 'important');
+          document.documentElement.style.setProperty('--tp-font-size', sz);
+          document.documentElement.style.setProperty('--tp-font-size-px', parseFloat(sz));
+        }
+        STUDIO._tpFontSize = sz;
+        try { localStorage.setItem('aab_studio_tp_font', fontSel.value); } catch(e) {}
       }
 
-      // If stream exists, restart with new devices
+      // ── Restart camera if stream active ────────────────────────
       if (STUDIO.stream) {
-        STUDIO.stream.getTracks().forEach(function (t) { t.stop(); });
+        STUDIO.stream.getTracks().forEach(function(t){ t.stop(); });
         STUDIO.stream = null;
-        startCamera();
+        if (typeof startCamera === 'function') startCamera();
       }
 
       closeModal('studio-settings-modal');
-      toast('Studio settings applied ✓', 'ok');
+      toast('Settings applied ✓', 'ok');
     }
 
     // ── uploadStudioAssets — studio right panel upload ────────────────────────────
@@ -19682,18 +19776,22 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
     
     // ── Sync all TP speed controls together ──────────────────────
     window._syncTpSpeed = function(value) {
-      var v = parseInt(value) || 80;
+      var v = Math.max(20, Math.min(400, parseInt(value) || 80));
       if (typeof STUDIO !== 'undefined') STUDIO.tpSpeed = v;
-      if (typeof TP_SPEED !== 'undefined') window.TP_SPEED = v;
-      // Update ALL speed display elements and sliders
+      window.TP_SPEED = v;
+      // Update ALL four speed controls
       ['tp-spd-val','tp-spd-val2'].forEach(function(id) {
         var el = document.getElementById(id);
-        if (el) el.textContent = v + (el.textContent.includes('wpm') ? 'wpm' : '');
+        if (el) el.textContent = v + 'wpm';
       });
       ['tp-speed-slider','tp-spd-range'].forEach(function(id) {
         var el = document.getElementById(id);
         if (el && parseInt(el.value) !== v) el.value = v;
       });
+      // Also update settings dialog if open
+      var wpmInp = document.getElementById('settings-wpm');
+      if (wpmInp && parseInt(wpmInp.value) !== v) wpmInp.value = v;
+      try { localStorage.setItem('aab_studio_wpm', v); } catch(e) {}
     };
 
     // Wire both speed sliders to the sync function
