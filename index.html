@@ -4747,11 +4747,19 @@
 .tp-word {
   color: rgba(255,255,255,.45) !important;
   margin-right: 0.28em !important;
-  transition: color .07s !important;
+  transition: color .07s, background .07s !important;
+  border-radius: 3px !important;
+  padding: 0 2px !important;
+  display: inline !important;
 }
 .tp-word.active {
-  color: #fff !important;
+  color: #ffffff !important;
   font-weight: 700 !important;
+  background: rgba(0,212,255,.2) !important;
+}
+.tp-word.past {
+  color: rgba(255,255,255,.18) !important;
+  background: none !important;
 }
 
 /* ── CONTROLS BAR ───────────────────────────────────── */
@@ -9324,7 +9332,7 @@
           w.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</span>';
       }).join('');
 
-      curEl.innerHTML = '<div class="tp-cur-inner" id="tp-cur-inner">' + spans + '</div>';
+      curEl.innerHTML = '<div class="tp-cur-inner" id="tp-cur-inner" style="display:block;white-space:normal;word-wrap:break-word;width:100%;will-change:transform;transition:transform 0.25s ease;line-height:1.7;">' + spans + '</div>';
 
       // Prev scene — last line
       if (prevEl) {
@@ -9606,13 +9614,29 @@
       var words = (scene.narration || '').trim().split(/\s+/).filter(Boolean);
       if (!words.length) return;
 
-      // Get current mode and speed
       var mode = window._tpScrollMode || window._tpMode || 'auto';
-      var wpm = STUDIO.tpSpeed || 80;
+      var wpm = Math.max(20, Math.min(400, STUDIO.tpSpeed || 80));
       var msPerW = 60000 / wpm;
       var totalMs = words.length * msPerW;
       var startTs = null;
       var lastWi = -1;
+
+      // Make tp-cur wrap properly for multi-line display
+      var curEl = document.getElementById('tp-cur');
+      var inner = document.getElementById('tp-cur-inner');
+      if (curEl) {
+        curEl.style.overflow = 'hidden';
+        curEl.style.display = 'block';
+      }
+      if (inner) {
+        // Reset transform — use vertical scroll not horizontal
+        inner.style.transform = '';
+        inner.style.whiteSpace = 'normal'; // allow line wrapping
+        inner.style.width = '100%';
+        inner.style.display = 'block';
+        inner.style.lineHeight = '1.7';
+        inner.style.transition = 'transform 0.3s ease';
+      }
 
       function frame(ts) {
         if (!STUDIO_TP.running && !STUDIO.tpAuto) return;
@@ -9624,38 +9648,49 @@
         if (wi !== lastWi) {
           lastWi = wi;
 
-          // Highlight word spans (updateTP uses id="aab_tw0" prefix)
+          // Update word highlighting
           for (var k = 0; k < words.length; k++) {
             var span = document.getElementById('aab_tw' + k);
             if (!span) continue;
             if (k < wi) {
-              span.style.color = 'rgba(255,255,255,.18)';
+              // Past words — dim
+              span.style.color = 'rgba(255,255,255,.2)';
               span.style.fontWeight = '';
+              span.style.background = '';
             } else if (k === wi) {
-              span.style.color = '#f59e0b';
+              // Current word — bright highlight
+              span.style.color = '#ffffff';
               span.style.fontWeight = '700';
+              span.style.background = 'rgba(0,212,255,.15)';
+              span.style.borderRadius = '3px';
+              span.style.padding = '0 2px';
 
-              // SCROLL MODES:
-              if (mode === 'word' || mode === 'auto') {
-                // Word-by-word: scroll inner container so current word visible
-                var inner = document.getElementById('tp-cur-inner');
-                var curEl = document.getElementById('tp-cur');
-                if (inner && curEl) {
-                  var containerW = curEl.offsetWidth;
-                  var shift = Math.max(0, span.offsetLeft - containerW * 0.3);
-                  inner.style.transform = 'translateX(-' + shift + 'px)';
+              // SCROLL MODES
+              if (mode === 'scroll' || mode === 'auto') {
+                // Smooth vertical scroll — keep current word in upper-third of view
+                if (curEl && inner && span) {
+                  var spanOffsetTop = span.offsetTop;
+                  var viewHeight = curEl.offsetHeight;
+                  var targetScrollTop = Math.max(0, spanOffsetTop - viewHeight * 0.25);
+                  // Smooth scroll using transform on inner element
+                  inner.style.transform = 'translateY(-' + targetScrollTop + 'px)';
                 }
-              } else if (mode === 'scroll' || mode === 'manual') {
-                // Line scroll: scroll tp-body vertically so current word is centered
-                var tpBody = document.getElementById('tp-body');
-                if (tpBody && span) {
-                  var spanTop = span.offsetTop;
-                  tpBody.scrollTop = Math.max(0, spanTop - tpBody.offsetHeight * 0.3);
+              } else if (mode === 'word') {
+                // Word-by-word: jump to current word, hide others
+                // Keep all words but scroll to current
+                if (curEl && span) {
+                  var spanTop2 = span.offsetTop;
+                  var viewH2 = curEl.offsetHeight;
+                  if (inner) inner.style.transform = 'translateY(-' + Math.max(0, spanTop2 - viewH2 * 0.3) + 'px)';
                 }
               }
+              // manual mode: no auto scroll
             } else {
-              span.style.color = 'rgba(255,255,255,.6)';
+              // Upcoming words — slightly dim
+              span.style.color = 'rgba(255,255,255,.55)';
               span.style.fontWeight = '';
+              span.style.background = '';
+              span.style.padding = '';
             }
           }
 
@@ -9668,12 +9703,13 @@
           _tpAutoTimer = requestAnimationFrame(frame);
         } else {
           STUDIO_TP.running = false;
+          if (inner) inner.style.transform = '';
           var btn = document.getElementById('btn-tp-start');
           if (btn) { btn.textContent = '▶ Practice'; btn.style.background = ''; btn.style.borderColor = ''; btn.style.color = ''; }
           if (STUDIO.currentScene < PROJECT.scenes.length - 1) {
-            setTimeout(function () {
+            setTimeout(function() {
               studioNext();
-              if (STUDIO_TP.wasRunning || STUDIO.tpAuto) setTimeout(function () { studioTpStart(); }, 300);
+              if (STUDIO_TP.wasRunning || STUDIO.tpAuto) setTimeout(function() { studioTpStart(); }, 300);
             }, 400);
           } else {
             toast('✓ All scenes complete', 'ok');
@@ -10339,7 +10375,7 @@
       if (!labelsEl || !tracksEl || !rulerEl) return;
 
       var pxPerSec = Math.max(10, TL.zoom);
-      var totalW = Math.max(900, Math.ceil(TL.duration * pxPerSec) + 300);
+      var totalW = Math.max(1200, Math.ceil((TL.duration || 30) * pxPerSec) + 400);
       var TRACK_HEIGHTS = { video: 52, audio: 34, subtitle: 26, image: 34 };
 
       // ── Ruler ────────────────────────────────────────────────────────────────
@@ -10381,7 +10417,8 @@
         // Label
         var lbl = document.createElement('div');
         lbl.style.cssText = 'height:' + rowH + 'px;display:flex;align-items:center;gap:5px;'
-          + 'padding:0 6px;border-bottom:.5px solid rgba(255,255,255,.04);background:rgba(0,0,0,.2);flex-shrink:0;';
+          + 'padding:0 6px;border-bottom:.5px solid rgba(255,255,255,.04);background:rgba(0,0,0,.2);flex-shrink:0;'
+          + 'min-height:' + rowH + 'px;max-height:' + rowH + 'px;';
 
         var muteBtn = document.createElement('button');
         muteBtn.title = track.muted ? 'Unmute' : 'Mute';
@@ -19814,18 +19851,39 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
     
     // ── setTpBg — set teleprompter background color ──────────
     window.setTpBg = function(color) {
-      // Apply to all TP containers
+      // Apply bold background to all TP containers
       ['studio-tp-panel','studio-tp','tp-body'].forEach(function(id) {
         var el = document.getElementById(id);
-        if (el) el.style.background = color;
+        if (!el) return;
+        el.style.background = color;
+        el.style.backgroundColor = color;
+        el.style.backdropFilter = (color === 'transparent' || color === 'none') ? 'blur(4px)' : 'none';
       });
-      // Adjust text color for light backgrounds
-      var isLight = color === '#ffffff' || color === '#fff' || color === 'white';
-      var textColor = isLight ? '#000000' : 'rgba(255,255,255,.92)';
-      var dimColor  = isLight ? 'rgba(0,0,0,.3)'  : 'rgba(255,255,255,.2)';
+      // Bold visual indicator on swatches — show which is active
+      document.querySelectorAll('[onclick*="setTpBg"]').forEach(function(btn) {
+        btn.style.outline = '';
+        btn.style.transform = '';
+      });
+      // Find the clicked swatch and highlight it
+      var clickedSwatch = null;
+      document.querySelectorAll('[onclick*="setTpBg"]').forEach(function(btn) {
+        var onclickAttr = btn.getAttribute('onclick') || '';
+        if (onclickAttr.includes("'" + color + "'") || onclickAttr.includes('"' + color + '"')) {
+          btn.style.outline = '2px solid #00d4ff';
+          btn.style.outlineOffset = '2px';
+          btn.style.transform = 'scale(1.2)';
+        }
+      });
+      // Adjust text colour for light backgrounds
+      var isLight = color === '#ffffff' || color === '#fff' || color === 'white' || color === '#f8fafc';
+      var isDark = color === '#000000' || color === '#000' || color.includes('rgba(0,0,0') || color.includes('rgba(0, 0, 0');
+      var textColor = isLight ? '#000000' : 'rgba(255,255,255,.95)';
+      var dimColor  = isLight ? 'rgba(0,0,0,.4)' : 'rgba(255,255,255,.25)';
       ['tp-cur','tp-prev','tp-next'].forEach(function(id) {
         var el = document.getElementById(id);
-        if (el) el.style.color = id === 'tp-cur' ? textColor : dimColor;
+        if (el) {
+          el.style.setProperty('color', id === 'tp-cur' ? textColor : dimColor, 'important');
+        }
       });
     };
 
