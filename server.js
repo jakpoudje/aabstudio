@@ -312,28 +312,40 @@ async function getOrCreateTalkingPhotoId(imageB64) {
 let _sceneQueueBusy = false;
 const _sceneQueue = [];
 
+// Concurrency limiter — max 3 parallel scene generations
+// (was serial queue — was making 79 scenes wait hours)
+let _activeCount = 0;
+const _MAX_CONCURRENT = 3;
+const _waitQueue = [];
+
 function enqueueScene(fn) {
   return new Promise((resolve, reject) => {
-    _sceneQueue.push({ fn, resolve, reject });
-    processSceneQueue();
+    const run = async () => {
+      _activeCount++;
+      try {
+        const result = await fn();
+        resolve(result);
+      } catch(e) {
+        reject(e);
+      } finally {
+        _activeCount--;
+        // Wake next waiting task
+        if (_waitQueue.length > 0) {
+          const next = _waitQueue.shift();
+          next();
+        }
+      }
+    };
+    if (_activeCount < _MAX_CONCURRENT) {
+      run();
+    } else {
+      _waitQueue.push(run);
+    }
   });
 }
 
-async function processSceneQueue() {
-  if (_sceneQueueBusy || _sceneQueue.length === 0) return;
-  _sceneQueueBusy = true;
-  const { fn, resolve, reject } = _sceneQueue.shift();
-  try {
-    const result = await fn();
-    resolve(result);
-  } catch(e) {
-    reject(e);
-  } finally {
-    _sceneQueueBusy = false;
-    // Small delay between scenes so HeyGen doesn't rate-limit
-    setTimeout(processSceneQueue, 2000);
-  }
-}
+// Legacy — kept for compatibility
+function processSceneQueue() {}
 
 const KLING_BASE = 'https://api2.klingai.com';
 
@@ -945,9 +957,19 @@ app.post('/api/presenter', async (req, res) => {
 
     // Queue all scene submissions — only one processes at a time
     // This prevents all 49 scenes firing simultaneously and timing out
-    if (chosen === 'did')    return await enqueueScene(() => generateWithDID(req, res, args));
+    if (chosen === 'did')    return await enqueueScene(() => generateWithDID(req, res, args));  // ~30-90s per scene
     if (chosen === 'heygen') return await enqueueScene(() => generateWithHeyGen(req, res, args));
-    if (chosen === 'kling')  return await enqueueScene(() => generateWithKling(req, res, args));
+    if (chosen === 'kling') {
+      // Check if Kling has been failing (circuit breaker)
+      if (global._klingFailCount >= 2) {
+        console.warn('Kling circuit breaker open — falling back to D-ID');
+        chosen = hasDID ? 'did' : (hasHeygen ? 'heygen' : null);
+        if (!chosen) return res.status(503).json({ error: 'All providers unavailable' });
+        if (chosen === 'did')    return await enqueueScene(() => generateWithDID(req, res, args));
+        if (chosen === 'heygen') return await enqueueScene(() => generateWithHeyGen(req, res, args));
+      }
+      return await enqueueScene(() => generateWithKling(req, res, args));
+    }
     if (chosen === 'runway') return await generateWithRunway(req, res, args);
 
   } catch(e) {
