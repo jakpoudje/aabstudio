@@ -9668,17 +9668,22 @@
               span.style.borderRadius = '3px';
               span.style.padding = '0 2px';
 
-              // SCROLL MODES — all use translateY on inner div
-              if (mode === 'manual') {
-                // No auto scroll in manual mode
-              } else {
-                // Auto, scroll, word — all scroll to keep current word visible
+              // SCROLL MODES — vertical translateY on inner div
+              if (mode !== 'manual') {
                 if (curEl && inner && span) {
-                  var spanTop3 = span.offsetTop;
-                  var viewH3 = curEl.offsetHeight;
-                  // Keep current word at 30% from top
-                  var target = Math.max(0, spanTop3 - viewH3 * 0.30);
-                  inner.style.transform = 'translateY(-' + target + 'px)';
+                  // Calculate span's position relative to tp-cur-inner
+                  // (not offsetParent which could be different)
+                  var spanRect = span.getBoundingClientRect();
+                  var innerRect = inner.getBoundingClientRect();
+                  var curRect = curEl.getBoundingClientRect();
+                  // Current Y position of span relative to the inner container's natural top
+                  // We need how far span is from the top of inner's content
+                  var currentTranslate = parseFloat(inner.style.transform.replace('translateY(','').replace('px)','')) || 0;
+                  var spanPosInContent = spanRect.top - innerRect.top - currentTranslate;
+                  // Keep current word 25% from top of view
+                  var viewH4 = curRect.height;
+                  var targetTranslate = Math.max(0, spanPosInContent - currentTranslate - viewH4 * 0.25);
+                  inner.style.transform = 'translateY(-' + Math.max(0, targetTranslate) + 'px)';
                 }
               }
             } else {
@@ -9704,10 +9709,25 @@
           if (btn) { btn.textContent = '▶ Practice'; btn.style.background = ''; btn.style.borderColor = ''; btn.style.color = ''; }
           if (STUDIO.currentScene < PROJECT.scenes.length - 1) {
             setTimeout(function() {
-              studioNext();
-              if (STUDIO_TP.wasRunning || STUDIO.tpAuto) setTimeout(function() { studioTpStart(); }, 300);
+              // Advance scene counter
+              STUDIO.currentScene++;
+              // Reset scroll position for new scene
+              var innerEl2 = document.getElementById('tp-cur-inner');
+              if (innerEl2) innerEl2.style.transform = '';
+              // Build NEW scene word spans BEFORE restarting timer
+              if (typeof updateTP === 'function') updateTP();
+              if (typeof renderStudioQueue === 'function') renderStudioQueue();
+              // Restart timer after DOM has updated
+              if (STUDIO_TP.wasRunning || STUDIO.tpAuto) {
+                setTimeout(function() { studioTpStart(); }, 150);
+              }
             }, 400);
           } else {
+            var innerEl3 = document.getElementById('tp-cur-inner');
+            if (innerEl3) innerEl3.style.transform = '';
+            STUDIO_TP.running = false;
+            STUDIO_TP.wasRunning = false;
+            if (typeof studioTpStop === 'function') studioTpStop();
             toast('✓ All scenes complete', 'ok');
           }
         }
@@ -13106,8 +13126,18 @@
       function startPracticeMode() {
         if (typeof STUDIO === 'undefined') return;
         if (STUDIO_STATE === 'PRACTICE') { if (typeof studioTpStop === 'function') studioTpStop(); setStudioState('READY'); var btn = document.getElementById('btn-tp-start'); if (btn) { btn.textContent = '\u25b6 Practice'; btn.style.cssText = ''; } toast('Practice stopped', 'info'); return; }
-        STUDIO.currentScene = 0; if (typeof updateTP === 'function') updateTP(); if (typeof renderStudioQueue === 'function') renderStudioQueue();
-        setStudioState('PRACTICE'); if (typeof studioTpStart === 'function') studioTpStart();
+        STUDIO.currentScene = 0;
+        // Reset scroll position
+        var innerReset = document.getElementById('tp-cur-inner');
+        if (innerReset) innerReset.style.transform = '';
+        // Build word spans for scene 0 BEFORE starting timer
+        if (typeof updateTP === 'function') updateTP();
+        if (typeof renderStudioQueue === 'function') renderStudioQueue();
+        setStudioState('PRACTICE');
+        // Small delay to let DOM reflow after updateTP
+        setTimeout(function() {
+          if (typeof studioTpStart === 'function') studioTpStart();
+        }, 100);
         toast('Practice \u2014 teleprompter from Scene 1. Click again to stop.', 'info');
       }
       window.startPracticeMode = startPracticeMode;
