@@ -4921,6 +4921,79 @@
   gap: 6px !important;
 }
 </style>
+
+<style id="edit-dd-css">
+/* Edit suite dropdown panels */
+.edit-dd-wrap { position:relative; height:100%; display:flex; align-items:center; }
+.edit-dd-panel {
+  display:none;
+  position:absolute;
+  top:calc(100% + 2px);
+  left:0;
+  background:#12141f;
+  border:.5px solid rgba(255,255,255,.12);
+  border-radius:8px;
+  min-width:200px;
+  z-index:500;
+  box-shadow:0 16px 48px rgba(0,0,0,.7);
+  padding:4px 0;
+}
+.edit-dd-panel.open { display:block !important; }
+.edit-dd-title { font-size:8px; color:rgba(255,255,255,.25); letter-spacing:.08em; padding:8px 12px 4px; text-transform:uppercase; }
+.edit-dd-item {
+  display:flex; align-items:center; gap:8px;
+  width:100%; padding:7px 14px;
+  font-size:11px; color:rgba(255,255,255,.6);
+  background:none; border:none;
+  cursor:pointer; text-align:left;
+  font-family:inherit;
+  transition:background .1s;
+}
+.edit-dd-item:hover { background:rgba(255,255,255,.05); color:rgba(255,255,255,.9); }
+.edit-dd-sep { height:.5px; background:rgba(255,255,255,.07); margin:4px 0; }
+.edit-dd-trigger {
+  height:100%; padding:0 10px;
+  background:none; border:none;
+  color:rgba(255,255,255,.5); font-size:11px;
+  cursor:pointer; display:flex; align-items:center; gap:4px;
+  font-family:inherit; white-space:nowrap;
+}
+.edit-dd-trigger:hover { color:rgba(255,255,255,.8); }
+.edit-tool-btn {
+  background:none;
+  border:.5px solid rgba(255,255,255,.1);
+  border-radius:4px; padding:3px 8px;
+  font-size:11px; cursor:pointer;
+  color:rgba(255,255,255,.45); font-family:inherit;
+  transition:all .12s;
+}
+.edit-tool-btn:hover { border-color:rgba(255,255,255,.25); color:rgba(255,255,255,.7); }
+.edit-tool-btn.active {
+  background:rgba(0,212,255,.12);
+  border-color:rgba(0,212,255,.35);
+  color:#00d4ff;
+}
+.edit-add-btn {
+  background:none;
+  border:.5px solid rgba(255,255,255,.1);
+  border-radius:4px; padding:3px 8px;
+  font-size:10px; cursor:pointer;
+  color:rgba(255,255,255,.35); font-family:inherit;
+  transition:all .15s;
+}
+.edit-add-btn:hover { border-color:rgba(0,212,255,.3); color:rgba(0,212,255,.7); }
+.edit-clip-card {
+  background:#12161f;
+  border:.5px solid rgba(255,255,255,.08);
+  border-radius:6px;
+  margin-bottom:4px;
+  cursor:pointer;
+  overflow:hidden;
+  transition:border-color .15s;
+}
+.edit-clip-card:hover { border-color:rgba(0,212,255,.3); }
+.edit-clip-card.selected { border-color:#00d4ff; background:rgba(0,212,255,.06); }
+</style>
 </head>
 
     <style>
@@ -9005,16 +9078,38 @@
     }
 
     function endStudioSession() {
-      if (STUDIO.recording) stopRec();
-      if (STUDIO.stream) { STUDIO.stream.getTracks().forEach(function (t) { t.stop(); }); STUDIO.stream = null; }
+      // If actively recording, stop and wait for blob before navigating
+      if (STUDIO.recording && STUDIO.mr && STUDIO.mr.state !== 'inactive') {
+        toast('Saving recording…', 'info');
+        var origOnStop = STUDIO.mr.onstop;
+        STUDIO.mr.onstop = function() {
+          if (origOnStop) origOnStop();
+          // Now navigate after clip is saved
+          setTimeout(function() {
+            if (STUDIO.stream) { STUDIO.stream.getTracks().forEach(function(t){ t.stop(); }); STUDIO.stream = null; }
+            clearInterval(STUDIO.elTimer);
+            saveProject();
+            nav('edit-pg');
+            setTimeout(function() {
+              if (typeof edit_buildPlaylist === 'function') edit_buildPlaylist();
+            }, 400);
+          }, 200);
+        };
+        STUDIO.recording = false;
+        clearInterval(STUDIO.recTimer);
+        setRecState('STOPPED');
+        STUDIO.mr.stop();
+        return;
+      }
+
+      // Not recording — navigate immediately
+      if (STUDIO.stream) { STUDIO.stream.getTracks().forEach(function(t){ t.stop(); }); STUDIO.stream = null; }
       clearInterval(STUDIO.elTimer);
       saveProject();
-      // Navigate to edit suite and build playlist from recorded clips
       nav('edit-pg');
       setTimeout(function() {
         if (typeof edit_buildPlaylist === 'function') edit_buildPlaylist();
-        if (typeof tl_buildTracksFromProject === 'function') tl_buildTracksFromProject();
-      }, 300);
+      }, 400);
     }
 
     function startElapsedTimer() {
@@ -10178,7 +10273,7 @@
 
       if (clips.length) {
         var firstId = Object.keys(PROJECT.clips).find(function (k) { return PROJECT.clips[k].url; });
-        if (firstId) selectClip(firstId);
+        if (firstId) { var _sc = typeof selectClip==='function' ? selectClip : (typeof edit_selectClip==='function' ? edit_selectClip : null); if(_sc) _sc(firstId); }
       }
 
       // Generate subtitles from script
@@ -10213,6 +10308,26 @@
       }
       if (!TL.tracks.find(function (tr) { return tr.id === 'track_sub'; })) {
         TL.tracks.push({ id: 'track_sub', type: 'subtitle', name: 'Subtitles', muted: false, locked: false, clips: [] });
+      }
+
+      // RENDER the timeline UI from TL state
+      if (typeof tl_render === 'function') tl_render();
+
+      // POPULATE the media bin clip cards
+      if (typeof renderEditClips === 'function') renderEditClips();
+
+      // Auto-load first clip into preview
+      var firstClip = Object.values(PROJECT.clips || {}).filter(function(c){return c&&(c.url||c.videoUrl);}).sort(function(a,b){return (a.sceneNum||0)-(b.sceneNum||0);})[0];
+      if (firstClip) {
+        var noClipsEl = document.getElementById('edit-no-clips');
+        if (noClipsEl) noClipsEl.style.display = 'none';
+        var editVid = document.getElementById('edit-video');
+        if (editVid && !editVid.src) {
+          editVid.src = firstClip.url || firstClip.videoUrl;
+          editVid.style.display = 'block';
+        }
+        var countEl = document.getElementById('edit-clip-count');
+        if (countEl) countEl.textContent = Object.keys(PROJECT.clips||{}).length + ' clips';
       }
     }
 
@@ -10727,7 +10842,7 @@
         d.style.cssText = 'display:flex;gap:6px;align-items:center;padding:6px 8px;border-bottom:.5px solid rgba(255,255,255,.04);cursor:pointer;' + (isSelected ? 'background:rgba(0,212,255,.06);' : '');
         d.innerHTML = '<div style="width:44px;height:30px;border-radius:3px;background:#111;overflow:hidden;flex-shrink:0;"><video src="' + c.url + '" style="width:100%;height:100%;object-fit:cover;" onloadeddata="this.currentTime=0.1"></video></div>'
           + '<div style="flex:1;min-width:0;">'
-          + '<div style="font-size:10px;font-weight:500;color:rgba(255,255,255,.7);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">S' + (c.sceneIdx + 1) + ' · ' + (c.sceneName || 'CLIP') + '</div>'
+          + '<div style="font-size:10px;font-weight:500;color:rgba(255,255,255,.7);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">S' + ((c.sceneNum || c.sceneIdx || 0)) + ' · ' + (c.sceneName || c.title || 'CLIP') + '</div>'
           + '<div style="font-size:9px;color:rgba(255,255,255,.3);">' + formatDur(c.duration || 0) + '</div>'
           + '</div>'
           + '<button data-cid="' + id + '" onclick="deleteClip(this.dataset.cid);event.stopPropagation();" style="background:transparent;border:none;color:rgba(255,255,255,.2);cursor:pointer;font-size:12px;padding:2px 4px;">×</button>';
@@ -11787,31 +11902,35 @@
     }
 
     function aps_addClipToTimeline(sc) {
-      // Add generated clip to the main project timeline
-      if (!PROJECT.clips) PROJECT.clips = {};
-      var clipKey = sc.id || ('aps_' + sc.num + '_' + Date.now());
-      PROJECT.clips[clipKey] = {
-        sceneId: sc.id,
-        sceneNum: sc.num,
-        videoUrl: sc.videoUrl,
-        url: sc.videoUrl,
-        duration: sc.duration || 8,
-        source: 'ai-presenter',
-        provider: APS.settings ? APS.settings.provider : 'heygen',
-        voice: APS.settings ? APS.settings.voiceName : '',
-        bg: APS.settings ? APS.settings.bg : '',
-        generatedAt: new Date().toISOString()
-      };
-      // Also add to APS_CLIPS for the Go to Edit Suite function
-      if (window.APS_CLIPS) {
-        APS_CLIPS[clipKey] = PROJECT.clips[clipKey];
-        try {
-          var saved = JSON.parse(localStorage.getItem('aab_aps_clips') || '{}');
-          saved[clipKey] = APS_CLIPS[clipKey];
-          localStorage.setItem('aab_aps_clips', JSON.stringify(saved));
-        } catch(e) {}
+      // aab_sceneDone already saves to PROJECT.clips — we just
+      // also cache to APS_CLIPS for the Go to Edit Suite button
+      if (!sc.videoUrl) return;
+      var clipKey = 'aps_' + sc.id;
+      var clipData = PROJECT.clips && PROJECT.clips[clipKey];
+      if (!clipData) {
+        clipData = {
+          id: clipKey,
+          sceneId: sc.id,
+          sceneNum: sc.num,
+          sceneName: sc.title || ('Scene ' + sc.num),
+          url: sc.videoUrl,
+          videoUrl: sc.videoUrl,
+          duration: sc.duration || 8,
+          source: 'ai-presenter',
+          provider: window.APS && APS.settings ? APS.settings.provider : 'did',
+          generatedAt: new Date().toISOString()
+        };
+        if (!PROJECT.clips) PROJECT.clips = {};
+        PROJECT.clips[clipKey] = clipData;
       }
-      if (typeof saveProject === 'function') saveProject();
+      // Cache to APS_CLIPS
+      if (!window.APS_CLIPS) window.APS_CLIPS = {};
+      APS_CLIPS[clipKey] = clipData;
+      try {
+        var saved = JSON.parse(localStorage.getItem('aab_aps_clips') || '{}');
+        saved[clipKey] = clipData;
+        localStorage.setItem('aab_aps_clips', JSON.stringify(saved));
+      } catch(e) {}
     }
 
     // ── SAFARI COMPATIBILITY: Explicitly expose all handler functions on window ──
@@ -14089,7 +14208,8 @@ function aab_sceneDone(sc, idx, videoUrl) {
     goEditBtn.style.background = 'rgba(0,212,255,.2)';
     goEditBtn.style.borderColor = 'rgba(0,212,255,.5)';
     goEditBtn.style.color = '#00d4ff';
-    goEditBtn.textContent = '✓ Go to Edit Suite →';
+    var clipCount = Object.keys(PROJECT.clips || {}).filter(function(k){ return PROJECT.clips[k] && (PROJECT.clips[k].url||PROJECT.clips[k].videoUrl); }).length;
+    goEditBtn.textContent = '✓ ' + clipCount + ' clip' + (clipCount!==1?'s':'') + ' → Go to Edit Suite';
   }
 
   // Save project with new clip
@@ -15466,6 +15586,18 @@ function edit_buildPlaylist() {
   EDIT_PLAYLIST = clips.map(function(c) {
     return Object.keys(PROJECT.clips).find(function(k){ return PROJECT.clips[k]===c; });
   }).filter(Boolean);
+
+  // Render clips in media bin
+  if (typeof renderEditClips === 'function') renderEditClips();
+  // Build TL tracks and render timeline
+  if (typeof tl_buildTracksFromProject === 'function') tl_buildTracksFromProject();
+  // Auto-select first clip
+  if (EDIT_PLAYLIST.length > 0 && !EDIT_PLAYLIST_IDX) {
+    EDIT_PLAYLIST_IDX = 0;
+    setTimeout(function() {
+      if (typeof edit_selectClip === 'function') edit_selectClip(EDIT_PLAYLIST[0]);
+    }, 100);
+  }
 }
 
 // Override editPlayPause to handle playlist
@@ -17855,16 +17987,18 @@ window.aps_goToEditSuite = function() {
   // Add all clips to PROJECT.clips for the edit suite
   if (!PROJECT.clips) PROJECT.clips = {};
   clipList.forEach(function(c) {
-    var key = c.sceneId || ('aps_' + (c.sceneNum || Date.now()));
+    // Use canonical key matching aab_sceneDone
+    var key = c.id || c.sceneId || ('aps_' + (c.sceneNum || Date.now()));
     PROJECT.clips[key] = {
+      id:        key,
       sceneId:   c.sceneId || key,
       sceneNum:  c.sceneNum || 0,
-      sceneName: c.sceneName || ('AI Scene ' + (c.sceneNum || '')),
+      sceneName: c.sceneName || c.title || ('AI Scene ' + (c.sceneNum || '')),
       url:       c.url || c.videoUrl,
       videoUrl:  c.url || c.videoUrl,
       duration:  c.duration || 8,
       source:    'ai-presenter',
-      provider:  c.provider || APS.settings.provider || 'did',
+      provider:  c.provider || (window.APS && APS.settings && APS.settings.provider) || 'did',
       addedAt:   Date.now()
     };
   });
@@ -17877,19 +18011,14 @@ window.aps_goToEditSuite = function() {
     localStorage.setItem('aab_aps_clips', JSON.stringify(lsClips));
   } catch(e) {}
 
-  // Build the edit suite timeline from these clips
-  if (typeof tl_buildTracksFromProject === 'function') {
-    setTimeout(tl_buildTracksFromProject, 100);
-  }
-  if (typeof edit_buildPlaylist === 'function') {
-    setTimeout(edit_buildPlaylist, 150);
-  }
-  if (typeof edit_renderClipStrip === 'function') {
-    setTimeout(edit_renderClipStrip, 200);
-  }
-
-  // Navigate to edit suite
+  // Navigate FIRST (renderEditSuite runs inside nav)
+  // then refresh timeline with latest clips
   nav('edit-pg');
+  setTimeout(function() {
+    if (typeof tl_buildTracksFromProject === 'function') tl_buildTracksFromProject();
+    if (typeof renderEditClips === 'function') renderEditClips();
+    if (typeof edit_renderClipStrip === 'function') edit_renderClipStrip();
+  }, 200);
   toast('✓ ' + clipList.length + ' clip' + (clipList.length !== 1 ? 's' : '') + ' transferred to Edit Suite', 'ok');
 };;
 
@@ -19848,17 +19977,23 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
     };
 
     // ── Dropdown toggle ──────────────────────────────────────────
-    window.edit_toggleDD = window.edit_toggleDD || function(id) {
+    window.edit_toggleDD = function(id) {
       var panels = document.querySelectorAll('.edit-dd-panel');
-      panels.forEach(function(p) { if (p.id !== id) p.style.display = 'none'; });
+      panels.forEach(function(p) {
+        if (p.id !== id) p.classList.remove('open');
+      });
       var el = document.getElementById(id);
-      if (el) el.style.display = (el.style.display === 'block') ? 'none' : 'block';
+      if (el) el.classList.toggle('open');
     };
-    document.addEventListener('click', function(e) {
-      if (!e.target.closest('.edit-dd-wrap') && !e.target.closest('.edit-dd-panel')) {
-        document.querySelectorAll('.edit-dd-panel').forEach(function(p) { p.style.display = 'none'; });
-      }
-    }, true);
+    // Close dropdowns on outside click
+    if (!window._editDDClickWired) {
+      window._editDDClickWired = true;
+      document.addEventListener('click', function(e) {
+        if (!e.target.closest('.edit-dd-wrap') && !e.target.closest('.edit-dd-panel')) {
+          document.querySelectorAll('.edit-dd-panel.open').forEach(function(p){ p.classList.remove('open'); });
+        }
+      }, true);
+    }
 
     // ── Video tools ───────────────────────────────────────────────
     window.edit_doTool = window.edit_doTool || function(action) {
