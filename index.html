@@ -5708,7 +5708,7 @@
           </div>
           <!-- Script display -->
           <div id="studio-tp" class="studio-tp" style="overflow:hidden;height:113px;">
-            <div class="tp-body" id="tp-body" style="padding:8px 24px 10px;display:flex;flex-direction:column;gap:3px;height:100%;overflow:hidden;">
+            <div class="tp-body" id="tp-body" style="padding:8px 24px 10px;display:flex;flex-direction:column;gap:3px;height:100%;overflow:auto;scroll-behavior:smooth;scrollbar-width:none;">
               <div class="tp-prev-txt" id="tp-prev" style="font-size:11px;color:rgba(255,255,255,.2);line-height:1.3;flex-shrink:0;height:15px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;"></div>
               <div class="tp-cur-txt"  id="tp-cur"  style="flex:1;overflow:hidden;font-size:clamp(15px,1.7vw,21px);line-height:1.55;color:rgba(255,255,255,.92);"></div>
               <div class="tp-next-txt" id="tp-next" style="font-size:11px;color:rgba(255,255,255,.15);line-height:1.3;flex-shrink:0;height:15px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;"></div>
@@ -6255,7 +6255,7 @@
   <!-- ════════════════════════════════════════════════════════════
        TIMELINE
   ════════════════════════════════════════════════════════════ -->
-  <div id="timeline-panel" style="flex-shrink:0;height:260px;min-height:140px;max-height:55vh;display:flex;flex-direction:column;background:#04060e;">
+  <div id="timeline-panel" style="flex-shrink:0;height:260px;min-height:140px;max-height:55vh;display:flex;flex-direction:column;background:#04060e;border-top:1.5px solid rgba(0,212,255,.2);">
 
     <!-- Timeline toolbar -->
     <div style="flex-shrink:0;height:36px;display:flex;align-items:center;gap:3px;padding:0 8px;background:rgba(0,0,0,.35);border-bottom:.5px solid rgba(255,255,255,.06);flex-shrink:0;">
@@ -6302,7 +6302,7 @@
         <!-- Ruler -->
         <div id="tl-ruler" style="height:20px;background:rgba(255,255,255,.025);border-bottom:.5px solid rgba(255,255,255,.06);position:sticky;top:0;z-index:10;min-width:100%;"></div>
         <!-- Tracks container -->
-        <div id="tl-tracks" style="position:relative;min-width:max-content;min-height:60px;">
+        <div id="tl-tracks" style="position:relative;min-width:max-content;min-height:160px;">
           <!-- Playhead -->
           <div id="tl-playhead" style="position:absolute;top:0;bottom:0;width:2px;background:#00d4ff;z-index:20;pointer-events:none;left:0;box-shadow:0 0 6px rgba(0,212,255,.5);">
             <div style="position:absolute;top:-1px;left:-5px;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:7px solid #00d4ff;"></div>
@@ -6324,6 +6324,16 @@
     </div>
   </div>
 
+
+  <!-- Edit suite status bar -->
+  <div style="flex-shrink:0;height:22px;background:#070910;border-top:.5px solid rgba(255,255,255,.06);display:flex;align-items:center;padding:0 12px;gap:16px;z-index:10;">
+    <span style="font-size:9px;color:rgba(16,185,129,.6);display:flex;align-items:center;gap:4px;"><span style="width:5px;height:5px;border-radius:50%;background:#10b981;display:inline-block;"></span> Ready</span>
+    <span id="sb-tool-display" style="font-size:9px;color:rgba(255,255,255,.25);font-family:'JetBrains Mono',monospace;">↖ Select</span>
+    <span id="sb-snap-display" style="font-size:9px;color:rgba(255,255,255,.2);">🧲 Snap: ON</span>
+    <span id="sb-ripple-display" style="font-size:9px;color:rgba(255,255,255,.2);">⟿ Ripple: OFF</span>
+    <span style="margin-left:auto;font-size:9px;color:rgba(255,255,255,.2);font-family:'JetBrains Mono',monospace;" id="sb-clip-count">0 clips</span>
+    <span style="font-size:9px;color:rgba(255,255,255,.2);">☁️ Saved</span>
+  </div>
   </div><!-- end edit-pg -->
 
   <div id="export-pg" class="pg" style="background:var(--off);padding-top:52px;min-height:100vh;">
@@ -9388,9 +9398,12 @@
 
     function startTpAutoTimer() {
       var scene = PROJECT.scenes[STUDIO.currentScene];
-      if (!scene) return;
-      var words = (scene.narration || '').trim().split(/\s+/);
+      if (!scene || !scene.narration) return;
+      var words = (scene.narration || '').trim().split(/\s+/).filter(Boolean);
       if (!words.length) return;
+
+      // Get current mode and speed
+      var mode = window._tpScrollMode || window._tpMode || 'auto';
       var wpm = STUDIO.tpSpeed || 80;
       var msPerW = 60000 / wpm;
       var totalMs = words.length * msPerW;
@@ -9407,9 +9420,9 @@
         if (wi !== lastWi) {
           lastWi = wi;
 
-          // Highlight spans
+          // Highlight word spans (updateTP uses id="aab_tw0" prefix)
           for (var k = 0; k < words.length; k++) {
-            var span = document.getElementById('tw' + k);
+            var span = document.getElementById('aab_tw' + k);
             if (!span) continue;
             if (k < wi) {
               span.style.color = 'rgba(255,255,255,.18)';
@@ -9417,14 +9430,24 @@
             } else if (k === wi) {
               span.style.color = '#f59e0b';
               span.style.fontWeight = '700';
-              // Scroll the inner container so current word is ~30% from left
-              var inner = document.getElementById('tp-cur-inner');
-              var curEl = document.getElementById('tp-cur');
-              if (inner && curEl) {
-                var containerW = curEl.offsetWidth;
-                var spanOffset = span.offsetLeft;
-                var shift = Math.max(0, spanOffset - containerW * 0.3);
-                inner.style.transform = 'translateX(-' + shift + 'px)';
+
+              // SCROLL MODES:
+              if (mode === 'word' || mode === 'auto') {
+                // Word-by-word: scroll inner container so current word visible
+                var inner = document.getElementById('tp-cur-inner');
+                var curEl = document.getElementById('tp-cur');
+                if (inner && curEl) {
+                  var containerW = curEl.offsetWidth;
+                  var shift = Math.max(0, span.offsetLeft - containerW * 0.3);
+                  inner.style.transform = 'translateX(-' + shift + 'px)';
+                }
+              } else if (mode === 'scroll' || mode === 'manual') {
+                // Line scroll: scroll tp-body vertically so current word is centered
+                var tpBody = document.getElementById('tp-body');
+                if (tpBody && span) {
+                  var spanTop = span.offsetTop;
+                  tpBody.scrollTop = Math.max(0, spanTop - tpBody.offsetHeight * 0.3);
+                }
               }
             } else {
               span.style.color = 'rgba(255,255,255,.6)';
@@ -9440,15 +9463,13 @@
         if (progress < 1) {
           _tpAutoTimer = requestAnimationFrame(frame);
         } else {
-          var wasRunning = STUDIO_TP.running;
-          var wasSynced = STUDIO.tpAuto;
           STUDIO_TP.running = false;
           var btn = document.getElementById('btn-tp-start');
           if (btn) { btn.textContent = '▶ Practice'; btn.style.background = ''; btn.style.borderColor = ''; btn.style.color = ''; }
           if (STUDIO.currentScene < PROJECT.scenes.length - 1) {
             setTimeout(function () {
               studioNext();
-              if (wasRunning || wasSynced) setTimeout(function () { studioTpStart(); }, 300);
+              if (STUDIO_TP.wasRunning || STUDIO.tpAuto) setTimeout(function () { studioTpStart(); }, 300);
             }, 400);
           } else {
             toast('✓ All scenes complete', 'ok');
@@ -9456,6 +9477,7 @@
         }
       }
 
+      STUDIO_TP.wasRunning = STUDIO_TP.running;
       if (_tpAutoTimer) { cancelAnimationFrame(_tpAutoTimer); _tpAutoTimer = null; }
       _tpAutoTimer = requestAnimationFrame(frame);
     }
@@ -11899,8 +11921,7 @@
     /* ══ RECORDING STUDIO DEFINITIVE LAYOUT FIX ═══════════════════════
        Bar: 46px | Camera: flex:1 | TP: ~130px | Controls: auto
     ═══════════════════════════════════════════════════════════════════ */
-    /* #record-pg display controlled by .pg-full.on class only */
-    .studio-wrap { flex:1; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+    /* /* record-pg display: .pg-full.on only */
     .studio-bar  { flex-shrink:0; height:46px; }
     .studio-main { flex:1 !important; display:flex !important; flex-direction:column !important; min-height:0 !important; overflow:hidden !important; }
     /* Camera row fills all available space */
@@ -11917,6 +11938,26 @@
 
 
 /* ctrl CSS replaced below */
+
+
+/* ══ EDIT SUITE — BLACK AREA FIX ════════════════════════════════
+   Ensure no black gap appears below timeline
+════════════════════════════════════════════════════════════════ */
+/* edit-pg display: .pg-full.on only */
+#edit-pg > * { flex-shrink: 0; }
+/* Only the main body panel takes remaining space */
+#edit-pg > #edit-topbar { flex: 0 0 44px !important; }
+#edit-pg > div:not(#edit-topbar):not(#tl-resize-handle):not(#timeline-panel):not([id$="-dialog"]):not([style*="22px"]) { 
+  flex: 1 1 0% !important; 
+  min-height: 0 !important; 
+}
+#timeline-panel { flex: 0 0 auto !important; }
+/* Timeline tracks fill the panel */
+#tl-body { flex: 1 !important; overflow: hidden !important; }
+#tl-scroll-container { overflow: auto !important; flex: 1 !important; }
+#tl-tracks { min-height: 180px !important; background: #04060d !important; }
+/* Track rows visible */
+.tl-track-row, .track-row { min-height: 36px !important; background: rgba(255,255,255,.01) !important; }
 
 </style>
           <!-- Header: spinner + scene label + percent -->
@@ -19057,19 +19098,23 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
     
     window.setTpScrollMode = function(mode) {
       window._tpScrollMode = mode;
-      window._tpMode = mode; // sync with controls bar selector
-      // Sync all scroll mode selectors to the same value
+      window._tpMode = mode;
+      // Sync all scroll mode selectors
       ['tp-scroll-mode','tp-mode-sel'].forEach(function(id) {
         var el = document.getElementById(id);
         if (el) el.value = mode;
       });
-      if (mode === 'manual') {
-        if (window._tpAutoTimer) { clearInterval(window._tpAutoTimer); window._tpAutoTimer = null; }
-        if (window.STUDIO_TP && STUDIO_TP.running) {
-          if (typeof studioTpStop === 'function') studioTpStop();
-        }
+      // Restart scroll if already running so new mode takes effect immediately
+      if (window.STUDIO_TP && STUDIO_TP.running) {
+        if (typeof studioTpStop === 'function') studioTpStop();
+        setTimeout(function() {
+          if (typeof studioTpStart === 'function') studioTpStart();
+        }, 100);
       }
-      var modeLabels = {auto:'Auto-scroll', manual:'Manual (use arrow keys)', word:'Word-by-word'};
+      if (mode === 'manual') {
+        if (_tpAutoTimer) { cancelAnimationFrame(_tpAutoTimer); _tpAutoTimer = null; }
+      }
+      var modeLabels = {auto:'Auto-scroll (word highlight)', scroll:'Line scroll', manual:'Manual', word:'Word-by-word'};
       toast('Teleprompter: ' + (modeLabels[mode]||mode), 'ok');
     };
 
