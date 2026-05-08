@@ -4520,7 +4520,7 @@
 #tp-cur {
   flex: 1 !important;
   overflow: hidden !important;
-  font-size: clamp(15px, 1.8vw, 22px) !important;
+  font-size:var(--tp-font-size, clamp(16px,1.8vw,22px));
   font-weight: 600 !important;
   line-height: 1.55 !important;
   color: rgba(255,255,255,.92) !important;
@@ -4726,7 +4726,7 @@
 #tp-cur {
   flex: 1 !important;
   overflow: hidden !important;
-  font-size: clamp(14px, 1.6vw, 20px) !important;
+  font-size:var(--tp-font-size, clamp(16px,1.8vw,22px));
   font-weight: 600 !important;
   line-height: 1.5 !important;
   color: rgba(255,255,255,.92) !important;
@@ -4808,6 +4808,9 @@
 
 /* Edit suite — no bad display rules */
 #edit-pg { background: #06080f; }
+/* TP font size CSS variable — controlled by A-/A+ buttons */
+:root { --tp-font-size: clamp(16px,1.8vw,22px); --tp-line-height: 1.55; }
+#tp-cur { font-size: var(--tp-font-size, clamp(16px,1.8vw,22px)) !important; }
 </style>
 </head>
 
@@ -8007,9 +8010,42 @@
       if (btn) btn.textContent = STUDIO.adaptive ? '🎤 Adapt: ON' : '🎤 Adapt';
       toast(STUDIO.adaptive ? 'Adaptive sync ON' : 'Adaptive sync OFF', 'info');
     }
-    function increaseTpFont() { var el = document.getElementById('tp-cur'); if (el) { var s = parseFloat(el.style.fontSize) || 1.3; el.style.fontSize = Math.min(4, s + 0.1) + 'rem'; } }
-    function decreaseTpFont() { var el = document.getElementById('tp-cur'); if (el) { var s = parseFloat(el.style.fontSize) || 1.3; el.style.fontSize = Math.max(0.7, s - 0.1) + 'rem'; } }
-    function toggleMirror() { var el = document.getElementById('studio-tp'); if (el) el.style.transform = el.style.transform ? '' : 'scaleX(-1)'; }
+    function increaseTpFont() {
+      var root = document.documentElement;
+      var cur = parseFloat(getComputedStyle(root).getPropertyValue('--tp-font-size-px') || '20');
+      cur = Math.min(44, cur + 1.5);
+      root.style.setProperty('--tp-font-size', cur + 'px');
+      root.style.setProperty('--tp-font-size-px', cur);
+      var el = document.getElementById('tp-cur');
+      if (el) el.style.setProperty('font-size', cur + 'px', 'important');
+      toast('Font size: ' + Math.round(cur) + 'px', 'ok');
+    }
+    function decreaseTpFont() {
+      // Reduce font size via CSS variable — works despite !important rules
+      var root = document.documentElement;
+      var cur = parseFloat(getComputedStyle(root).getPropertyValue('--tp-font-size-px') || '20');
+      cur = Math.max(11, cur - 1.5);
+      root.style.setProperty('--tp-font-size', cur + 'px');
+      root.style.setProperty('--tp-font-size-px', cur);
+      // Also directly set on element as backup
+      var el = document.getElementById('tp-cur');
+      if (el) el.style.setProperty('font-size', cur + 'px', 'important');
+      toast('Font size: ' + Math.round(cur) + 'px', 'ok');
+    }
+    function toggleMirror() {
+      // Apply mirror to tp-body (text content) so panel borders don't flip
+      var el = document.getElementById('tp-body') || document.getElementById('studio-tp');
+      if (el) {
+        var mirrored = el.style.transform === 'scaleX(-1)';
+        el.style.transform = mirrored ? '' : 'scaleX(-1)';
+        // Also update the mirror button state
+        document.querySelectorAll('[onclick*="toggleMirror"]').forEach(function(b) {
+          b.style.color = mirrored ? '' : '#00d4ff';
+          b.style.borderColor = mirrored ? '' : 'rgba(0,212,255,.4)';
+        });
+        toast(mirrored ? 'Mirror off' : 'Mirror on', 'ok');
+      }
+    }
     function toggleFocus() { var el = document.getElementById('tp-cur'); if (el) el.style.fontSize = el.style.fontSize === '2rem' ? '1.3rem' : '2rem'; }
 
     // ══ BACKGROUND & LIGHTING ═════════════════════════════════════════════════════
@@ -8492,9 +8528,9 @@
       }, Math.round(60000 / (TP.speed || 80)));
     }
     function tpSetSpd(v) { TP.speed = parseInt(v) || 80; var el = document.getElementById('tp-spd-disp'); if (el) el.textContent = v; if (TP.playing) { clearInterval(TP.scrollTimer); tpScroll(); } }
-    function tpFontUp() { var w = document.getElementById('tp-text') || document.getElementById('tp-text'); if (w) { var s = parseFloat(w.style.fontSize) || 1.4; w.style.fontSize = Math.min(4, s + 0.1) + 'rem'; } }
-    function tpFontDown() { var w = document.getElementById('tp-text') || document.getElementById('tp-text'); if (w) { var s = parseFloat(w.style.fontSize) || 1.4; w.style.fontSize = Math.max(0.8, s - 0.1) + 'rem'; } }
-    function tpMirror() { var disp = document.getElementById('tp-display-screen'); if (disp) disp.style.transform = disp.style.transform ? '' : 'scaleX(-1)'; }
+    function tpFontUp() { increaseTpFont(); }
+    function tpFontDown() { decreaseTpFont(); }
+    function tpMirror() { toggleMirror(); }
     function tpFullscreen() { var el = document.getElementById('tp-display-screen'); if (!el) return; if (document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen && el.requestFullscreen(); }
     function tpSetTheme(v) { TP.theme = v; tpApplyTheme(v); }
     function tpApplyTheme(v) {
@@ -8505,7 +8541,7 @@
     }
     function tpLoadSample() { var inp = document.getElementById('tp-input'); if (inp) inp.value = 'Welcome everyone. Today I want to share something that has completely changed how I think about video production.\n\nFor the longest time, I struggled with remembering my script while looking natural on camera. The teleprompter changed everything.\n\nNow I can speak confidently, maintain eye contact, and deliver professional content every single time.'; }
     function tpExit() { clearInterval(TP.scrollTimer); TP.playing = false; navFree("home"); }
-    function tpToggleAdaptive() { TP.adaptive = !TP.adaptive; var btn = document.getElementById('tp-adapt-btn'); if (btn) btn.textContent = TP.adaptive ? '🎤 Adaptive: on' : '🎤 Adaptive: off'; toast(TP.adaptive ? 'Adaptive sync ON — speak and it follows' : 'Adaptive sync OFF', 'info'); } function remoteSend(cmd, val) {
+    function tpToggleAdaptive() { toggleAdaptiveTp(); } function remoteSend(cmd, val) {
       // Send via Socket.IO to server, which relays to the studio
       if (typeof socket !== 'undefined' && socket.connected) {
         socket.emit('remote_control', {
@@ -11844,7 +11880,7 @@
 
   /* Teleprompter panel mobile */
   #studio-tp-panel > div:first-child { overflow-x: auto; flex-wrap: nowrap; }
-  #tp-cur { font-size: clamp(15px, 4vw, 22px) !important; }
+  #tp-cur { font-size:var(--tp-font-size, clamp(16px,1.8vw,22px)); }
 
   /* Dashboard mobile */
   .proj-grid { grid-template-columns: 1fr !important; }
@@ -11873,7 +11909,7 @@
     /* TP panel — compact strip, never expands */
     #studio-tp-panel { flex-shrink:0 !important; overflow:hidden !important; }
     #studio-tp       { overflow:hidden !important; }
-    #tp-cur          { font-size:clamp(14px,1.5vw,19px) !important; line-height:1.5 !important; overflow:visible !important; }
+    #tp-cur          { font-size:var(--tp-font-size, clamp(16px,1.8vw,22px)); line-height:1.5 !important; overflow:visible !important; }
     /* Controls — compact two rows */
     .studio-ctrl-v2  { flex-shrink:0 !important; overflow:visible !important; }
     .studio-q        { flex-shrink:0; width:160px; overflow:hidden; display:flex; flex-direction:column; }
@@ -19021,11 +19057,20 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
     
     window.setTpScrollMode = function(mode) {
       window._tpScrollMode = mode;
+      window._tpMode = mode; // sync with controls bar selector
+      // Sync all scroll mode selectors to the same value
+      ['tp-scroll-mode','tp-mode-sel'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.value = mode;
+      });
       if (mode === 'manual') {
-        // Stop any auto-scroll
         if (window._tpAutoTimer) { clearInterval(window._tpAutoTimer); window._tpAutoTimer = null; }
+        if (window.STUDIO_TP && STUDIO_TP.running) {
+          if (typeof studioTpStop === 'function') studioTpStop();
+        }
       }
-      toast('Teleprompter: ' + mode + ' mode', 'ok');
+      var modeLabels = {auto:'Auto-scroll', manual:'Manual (use arrow keys)', word:'Word-by-word'};
+      toast('Teleprompter: ' + (modeLabels[mode]||mode), 'ok');
     };
 
     // ══ CLOUD PROJECT SYNC ═══════════════════════════════════════════
@@ -19160,13 +19205,19 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
     
     // ── setTpBg — set teleprompter background color ──────────
     window.setTpBg = function(color) {
-      var tp = document.getElementById('studio-tp');
-      if (tp) tp.style.background = color;
-      var body = document.getElementById('tp-body');
-      if (body) body.style.background = color;
-      // Adjust text color for white backgrounds
-      var cur = document.getElementById('tp-cur');
-      if (cur) cur.style.color = (color === '#ffffff' || color === '#fff') ? '#000000' : 'rgba(255,255,255,.92)';
+      // Apply to all TP containers
+      ['studio-tp-panel','studio-tp','tp-body'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.style.background = color;
+      });
+      // Adjust text color for light backgrounds
+      var isLight = color === '#ffffff' || color === '#fff' || color === 'white';
+      var textColor = isLight ? '#000000' : 'rgba(255,255,255,.92)';
+      var dimColor  = isLight ? 'rgba(0,0,0,.3)'  : 'rgba(255,255,255,.2)';
+      ['tp-cur','tp-prev','tp-next'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.style.color = id === 'tp-cur' ? textColor : dimColor;
+      });
     };
 
     // ── openBgColorPicker — open color picker for custom BG ──
@@ -19241,6 +19292,54 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
       ].join('\n');
       document.head.appendChild(s);
     })();
+
+    
+    // ── Sync all TP speed controls together ──────────────────────
+    window._syncTpSpeed = function(value) {
+      var v = parseInt(value) || 80;
+      if (typeof STUDIO !== 'undefined') STUDIO.tpSpeed = v;
+      if (typeof TP_SPEED !== 'undefined') window.TP_SPEED = v;
+      // Update ALL speed display elements and sliders
+      ['tp-spd-val','tp-spd-val2'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.textContent = v + (el.textContent.includes('wpm') ? 'wpm' : '');
+      });
+      ['tp-speed-slider','tp-spd-range'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el && parseInt(el.value) !== v) el.value = v;
+      });
+    };
+
+    // Wire both speed sliders to the sync function
+    document.addEventListener('DOMContentLoaded', function() {
+      ['tp-speed-slider','tp-spd-range'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener('input', function() { window._syncTpSpeed(this.value); });
+      });
+      // Wire both scroll mode selectors together
+      ['tp-scroll-mode','tp-mode-sel'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener('change', function() { setTpScrollMode(this.value); });
+      });
+    });
+
+    // Also run immediately in case DOMContentLoaded already fired
+    setTimeout(function() {
+      ['tp-speed-slider','tp-spd-range'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el && !el._synced) {
+          el._synced = true;
+          el.addEventListener('input', function() { window._syncTpSpeed(this.value); });
+        }
+      });
+      ['tp-scroll-mode','tp-mode-sel'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el && !el._synced) {
+          el._synced = true;
+          el.addEventListener('change', function() { setTpScrollMode(this.value); });
+        }
+      });
+    }, 1000);
 
     </script>
 
