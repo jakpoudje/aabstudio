@@ -11356,6 +11356,11 @@
         sc.taskId = vidD.taskId;
         APS.clips[sc.id] = vidD.taskId;
 
+        // If provider returned immediately with videoUrl (rare but possible)
+        if (vidD.done && vidD.videoUrl) {
+          return aab_sceneDone(sc, sceneIdx, vidD.videoUrl);
+        }
+
         // Show scene image if returned
         if (vidD.sceneImageUrl || vidD.sceneImageB64) {
           aps_showSceneImagePreview(sceneIdx, vidD.sceneImageUrl || ('data:image/jpeg;base64,' + vidD.sceneImageB64));
@@ -13715,14 +13720,44 @@ window.aps_generateScene = async function(idx) {
 };
 
 function aab_sceneDone(sc, idx, videoUrl) {
-  sc.status='done'; sc.videoUrl=videoUrl;
-  APS.results[sc.id]=videoUrl;
-  if(typeof aps_updateSceneRow==='function') aps_updateSceneRow(sc);
-  if(idx===APS.currentIdx&&typeof aps_selectScene==='function') aps_selectScene(idx);
-  if(typeof aps_addClipToBar==='function') aps_addClipToBar(sc);
-  window.aps_addClipToTimeline(sc);
-  if(typeof saveProject==='function') saveProject();
-  if(typeof toast==='function') toast('Scene '+sc.num+' done ✓','ok');
+  sc.status = 'done';
+  sc.videoUrl = videoUrl;
+  APS.results[sc.id] = videoUrl;
+
+  // Also persist to PROJECT.clips so edit suite can access them
+  if (window.PROJECT) {
+    if (!PROJECT.clips) PROJECT.clips = {};
+    var clipId = 'aps_' + sc.id;
+    PROJECT.clips[clipId] = {
+      id: clipId,
+      sceneName: sc.title || ('Scene ' + sc.num),
+      sceneNum: sc.num,
+      url: videoUrl,
+      videoUrl: videoUrl,
+      duration: sc.duration || 8,
+      provider: sc.taskId ? (sc.taskId.startsWith('did-') ? 'did' : sc.taskId.startsWith('heygen-') ? 'heygen' : 'ai') : 'ai',
+      source: 'ai-presenter'
+    };
+  }
+
+  // Update UI
+  try { if (typeof aps_updateSceneRow === 'function') aps_updateSceneRow(sc); } catch(e) {}
+  try { if (idx === APS.currentIdx && typeof aps_selectScene === 'function') aps_selectScene(idx); } catch(e) {}
+  try { if (typeof aps_addClipToBar === 'function') aps_addClipToBar(sc); } catch(e) {}
+  try { if (typeof aps_addClipToTimeline === 'function') aps_addClipToTimeline(sc); } catch(e) {}
+
+  // Show Go to Edit Suite button
+  var goEditBtn = document.getElementById('aps-go-edit-btn-top');
+  if (goEditBtn) {
+    goEditBtn.style.background = 'rgba(0,212,255,.2)';
+    goEditBtn.style.borderColor = 'rgba(0,212,255,.5)';
+    goEditBtn.style.color = '#00d4ff';
+    goEditBtn.textContent = '✓ Go to Edit Suite →';
+  }
+
+  // Save project with new clip
+  try { if (typeof saveProject === 'function') saveProject(); } catch(e) {}
+  try { if (typeof toast === 'function') toast('✓ Scene ' + sc.num + ' ready', 'ok'); } catch(e) {}
   return true;
 }
 
@@ -15455,10 +15490,10 @@ window.aps_generateScene = async function(idx) {
     }
 
     // Step 3: Poll for completion
-    if (typeof aps_showStep === 'function') aps_showStep(sc.num, 3, 3, 'Rendering video (2-8 min)...');
+    if (typeof aps_showStep === 'function') aps_showStep(sc.num, 3, 3, (sc.taskId && sc.taskId.startsWith('did-') ? 'Rendering video (~30-90s D-ID)...' : 'Rendering video (2-5 min)...'));
     
-    var pollMs   = 10000;
-    var maxPolls = 180; // 180 × 10s = 30 min
+    var pollMs   = 5000;  // 5s — D-ID returns in 30-90s, HeyGen in 2-8min
+    var maxPolls = 180;   // 180 × 5s = 15 min max
     
     for (var i = 0; i < maxPolls && !APS.stopRequested; i++) {
       await new Promise(function(r){ setTimeout(r, pollMs); });
@@ -15502,17 +15537,49 @@ window.aps_generateScene = async function(idx) {
 // aps_generateSelected also uses batch for selected scenes
 window.aps_generateSelected = async function() {
   if (typeof aps_saveSettings === 'function') aps_saveSettings();
-  // Filter to selected scenes only, then hand off to aps_generateAll logic
-  // with a temporary override of APS.scenes
-  var originalScenes = APS.scenes;
-  APS.scenes = APS.scenes.filter(function(sc) { return sc.selected && sc.status !== 'done'; });
-  if (!APS.scenes.length) {
-    APS.scenes = originalScenes;
-    toast('No scenes selected', 'info');
+  // Generate only scenes that are selected and not already done
+  var toGenerate = APS.scenes.filter(function(sc) {
+    return sc.selected && sc.status !== 'done';
+  });
+  if (!toGenerate.length) {
+    toast('No scenes selected — click scene checkboxes first', 'info');
     return;
   }
-  await window.aps_generateAll();
-  APS.scenes = originalScenes;
+  toast('Generating ' + toGenerate.length + ' selected scene(s)…', 'info');
+
+  // Run directly using scene indices from the original APS.scenes array
+  // so results always write to the correct scene objects
+  APS.stopRequested = false;
+  APS.generating = true;
+  var genBtn = document.getElementById('aps-gen-sel-btn');
+  var stopBtn = document.getElementById('aps-stop-btn');
+  if (genBtn) { genBtn.disabled = true; genBtn.textContent = '⏳ Generating…'; }
+  if (stopBtn) { stopBtn.style.display = 'block'; stopBtn.disabled = false; }
+  var wrap = document.getElementById('aps-progress-wrap');
+  if (wrap) wrap.style.display = 'block';
+
+  var succeeded = 0, failed = 0;
+  var batchSize = 3;
+  for (var b = 0; b < toGenerate.length; b += batchSize) {
+    if (APS.stopRequested) break;
+    var batch = toGenerate.slice(b, b + batchSize);
+    var results = await Promise.allSettled(batch.map(function(sc) {
+      var idx = APS.scenes.indexOf(sc);
+      return aps_generateScene(idx >= 0 ? idx : APS.scenes.findIndex(function(s){ return s.id === sc.id; }));
+    }));
+    results.forEach(function(r) {
+      if (r.status === 'fulfilled' && r.value !== false) succeeded++;
+      else failed++;
+    });
+    if (b + batchSize < toGenerate.length && !APS.stopRequested) {
+      await new Promise(function(r){ setTimeout(r, 1000); });
+    }
+  }
+
+  APS.generating = false;
+  if (genBtn) { genBtn.disabled = false; genBtn.textContent = '▶ Generate Selected'; }
+  if (stopBtn) stopBtn.style.display = 'none';
+  toast('Done: ' + succeeded + ' succeeded, ' + failed + ' failed', succeeded > 0 ? 'ok' : 'error');
 };
 
 
