@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 
@@ -2325,10 +2324,13 @@
     }
 
     .tp-cur-inner {
-      display: inline-block;
-      white-space: nowrap;
-      transition: transform .25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      display: block;
+      white-space: normal;
+      word-wrap: break-word;
+      width: 100%;
+      transition: transform .3s ease;
       will-change: transform;
+      line-height: 1.75;
     }
 
     .tp-prev-txt {
@@ -9666,26 +9668,19 @@
               span.style.borderRadius = '3px';
               span.style.padding = '0 2px';
 
-              // SCROLL MODES
-              if (mode === 'scroll' || mode === 'auto') {
-                // Smooth vertical scroll — keep current word in upper-third of view
+              // SCROLL MODES — all use translateY on inner div
+              if (mode === 'manual') {
+                // No auto scroll in manual mode
+              } else {
+                // Auto, scroll, word — all scroll to keep current word visible
                 if (curEl && inner && span) {
-                  var spanOffsetTop = span.offsetTop;
-                  var viewHeight = curEl.offsetHeight;
-                  var targetScrollTop = Math.max(0, spanOffsetTop - viewHeight * 0.25);
-                  // Smooth scroll using transform on inner element
-                  inner.style.transform = 'translateY(-' + targetScrollTop + 'px)';
-                }
-              } else if (mode === 'word') {
-                // Word-by-word: jump to current word, hide others
-                // Keep all words but scroll to current
-                if (curEl && span) {
-                  var spanTop2 = span.offsetTop;
-                  var viewH2 = curEl.offsetHeight;
-                  if (inner) inner.style.transform = 'translateY(-' + Math.max(0, spanTop2 - viewH2 * 0.3) + 'px)';
+                  var spanTop3 = span.offsetTop;
+                  var viewH3 = curEl.offsetHeight;
+                  // Keep current word at 30% from top
+                  var target = Math.max(0, spanTop3 - viewH3 * 0.30);
+                  inner.style.transform = 'translateY(-' + target + 'px)';
                 }
               }
-              // manual mode: no auto scroll
             } else {
               // Upcoming words — slightly dim
               span.style.color = 'rgba(255,255,255,.55)';
@@ -10306,7 +10301,15 @@
       var noClips = document.getElementById('edit-no-clips');
       var vid = document.getElementById('edit-video');
       if (noClips) noClips.style.display = clips.length ? 'none' : 'block';
-      if (vid) vid.style.display = clips.length ? 'block' : 'none';
+      if (vid) {
+        if (clips.length) {
+          vid.style.display = 'block';
+        } else {
+          vid.style.display = 'none';
+          vid.removeAttribute('src'); // prevent homepage URL as src
+          vid.load();
+        }
+      }
 
       if (clips.length) {
         var firstId = Object.keys(PROJECT.clips).find(function (k) { return PROJECT.clips[k].url; });
@@ -10377,7 +10380,7 @@
 
       var pxPerSec = Math.max(10, TL.zoom);
       var totalW = Math.max(1200, Math.ceil((TL.duration || 30) * pxPerSec) + 400);
-      var TRACK_HEIGHTS = { video: 52, audio: 34, subtitle: 26, image: 34 };
+      var TRACK_HEIGHTS = { video: 64, audio: 42, subtitle: 30, image: 42 };
 
       // ── Ruler ────────────────────────────────────────────────────────────────
       rulerEl.style.width = totalW + 'px';
@@ -15571,9 +15574,19 @@ function edit_selectClip(key) {
   var info = document.getElementById('edit-scene-info');
   
   if (vid) {
-    vid.src = url;
-    vid.load();
-    vid.style.display = 'block';
+    if (url && url !== window.location.href && url.startsWith('http')) {
+      vid.src = url;
+      vid.load();
+      vid.style.display = 'block';
+    } else if (url && url.startsWith('blob:')) {
+      vid.src = url;
+      vid.load();
+      vid.style.display = 'block';
+    } else {
+      // Bad URL - don't set src
+      console.warn('edit-video: skipping bad URL:', url);
+      return;
+    }
     vid.volume = EDIT_VOL / 100;
     vid.onloadeddata = function() {
       var tc = document.getElementById('edit-time-display');
