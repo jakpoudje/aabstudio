@@ -12673,7 +12673,13 @@
       })
     });
     var pd = await pr.json();
-    if (pd.error) throw new Error(pd.error);
+    if (pd.error) {
+      if (pd.error.includes('NO_CREDITS') || pd.error.includes('Insufficient') || pd.error.includes('insufficient')) {
+        APS.stopRequested = true;
+        toast('💳 No credits — top up D-ID or HeyGen to generate videos', 'error');
+      }
+      throw new Error(pd.error);
+    }
 
     // If provider returned video immediately
     if (pd.done && pd.videoUrl) {
@@ -12710,6 +12716,31 @@
         if (sd.done && sd.videoUrl) {
           console.log('Scene', sc.num, 'done in', elapsedStr, '| url:', sd.videoUrl.slice(0,60));
           return aab_sceneDone(sc, idx, sd.videoUrl);
+        }
+        if (sd.noCredits || (sd.error && (sd.error.includes('NO_CREDITS') || sd.error.includes('Insufficient')))) {
+          // Show a clear banner — stop all generation
+          APS.stopRequested = true;
+          APS.generating = false;
+          var banner = document.getElementById('aps-no-credits-banner');
+          if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'aps-no-credits-banner';
+            banner.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1a0a0a;border:1.5px solid rgba(239,68,68,.6);border-radius:12px;padding:28px 36px;z-index:9999;text-align:center;max-width:440px;box-shadow:0 24px 60px rgba(0,0,0,.8);';
+            banner.innerHTML = '<div style="font-size:28px;margin-bottom:12px;">💳</div>' +
+              '<h3 style="color:#ef4444;font-size:16px;margin-bottom:8px;">Insufficient Credits</h3>' +
+              '<p style="color:rgba(255,255,255,.7);font-size:13px;line-height:1.6;margin-bottom:16px;">' +
+                'Your video generation credits have run out.<br>' +
+                'Top up to continue generating AI videos.' +
+              '</p>' +
+              '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">' +
+                '<a href="https://studio.d-id.com" target="_blank" style="padding:8px 18px;background:rgba(59,130,246,.2);border:.5px solid rgba(59,130,246,.4);color:#3b82f6;border-radius:8px;text-decoration:none;font-size:12px;">Top up D-ID →</a>' +
+                '<a href="https://app.heygen.com/billing" target="_blank" style="padding:8px 18px;background:rgba(16,185,129,.2);border:.5px solid rgba(16,185,129,.4);color:#10b981;border-radius:8px;text-decoration:none;font-size:12px;">Top up HeyGen →</a>' +
+              '</div>' +
+              '<button id="aps-credits-dismiss" style="margin-top:14px;background:none;border:none;color:rgba(255,255,255,.3);cursor:pointer;font-size:11px;">Dismiss</button>';
+            banner.querySelector('#aps-credits-dismiss').onclick = function(){ var b=document.getElementById('aps-no-credits-banner'); if(b)b.remove(); };
+            document.body.appendChild(banner);
+          }
+          throw new Error('NO_CREDITS: Video generation credits exhausted. Top up to continue.');
         }
         if (sd.failed) throw new Error('Provider returned failed: ' + (sd.error || ''));
 
