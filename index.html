@@ -6169,7 +6169,7 @@
 
     <!-- Back / AI -->
     <div style="display:flex;align-items:center;height:100%;border-right:.5px solid rgba(255,255,255,.06);flex-shrink:0;">
-      <button onclick="nav('record-pg')" style="background:none;border:none;color:rgba(255,255,255,.35);font-size:10px;cursor:pointer;padding:0 10px;height:100%;">← Studio</button>
+      <button onclick="saveProject(); nav('record-pg');" style="background:none;border:none;color:rgba(255,255,255,.35);font-size:10px;cursor:pointer;padding:0 10px;height:100%;">← Studio</button>
       <button onclick="nav('ai-presenter-studio')" style="background:none;border:none;color:rgba(255,255,255,.35);font-size:10px;cursor:pointer;padding:0 10px;height:100%;">🤖 AI</button>
     </div>
 
@@ -7060,11 +7060,14 @@
         setTimeout(function () { toast('Please sign in to continue', 'info'); }, 200);
         return;
       }
-      // Plan gate — paid pages need creator or studio plan
+      // Plan gate
       if (requiresPaid(pg) && APP.plan === 'free') {
         showUpgradeModal(pg);
         return;
       }
+
+      // Auto-save project before navigating away
+      try { if (typeof saveProject === 'function' && APP.user) saveProject(); } catch(e) {}
 
       document.querySelectorAll('.pg,.pg-flex,.pg-full').forEach(function (p) { p.classList.remove('on'); });
       var el = document.getElementById(pg);
@@ -7209,7 +7212,15 @@
       } catch (e) { showErr('err-up', e.message || 'Sign up failed.'); }
       btn.textContent = 'Create free account'; btn.disabled = false;
     }
-    async function doSignOut() { await getSupa().auth.signOut(); APP.user = null; updateNavState(); nav('home'); }
+    async function doSignOut() {
+      try { if (typeof saveProject === 'function') await saveProject(); } catch(e) {}
+      try { await getSupa().auth.signOut(); } catch(e) {}
+      APP.user = null;
+      APP.plan = 'free';
+      updateNavState();
+      nav('home');
+      toast('Signed out', 'ok');
+    }
     function setUser(u) {
       var meta = u.user_metadata || {};
       APP.user = { id: u.id, name: meta.name || u.email.split('@')[0], email: u.email };
@@ -9617,6 +9628,16 @@
       var words = (scene.narration || '').trim().split(/\s+/).filter(Boolean);
       if (!words.length) return;
 
+      // CRITICAL: Ensure word spans exist before starting
+      // If updateTP hasn't built them yet, build them now
+      var testSpan = document.getElementById('aab_tw0');
+      if (!testSpan) {
+        if (typeof updateTP === 'function') updateTP();
+        // Wait one frame for DOM to update
+        requestAnimationFrame(function() { startTpAutoTimer(); });
+        return;
+      }
+
       var mode = window._tpScrollMode || window._tpMode || 'auto';
       var wpm = Math.max(20, Math.min(400, STUDIO.tpSpeed || 80));
       var msPerW = 60000 / wpm;
@@ -9624,21 +9645,12 @@
       var startTs = null;
       var lastWi = -1;
 
-      // Make tp-cur wrap properly for multi-line display
       var curEl = document.getElementById('tp-cur');
       var inner = document.getElementById('tp-cur-inner');
-      if (curEl) {
-        curEl.style.overflow = 'hidden';
-        curEl.style.display = 'block';
-      }
+      // Reset scroll position to top
       if (inner) {
-        // Reset transform — use vertical scroll not horizontal
         inner.style.transform = '';
-        inner.style.whiteSpace = 'normal'; // allow line wrapping
-        inner.style.width = '100%';
-        inner.style.display = 'block';
-        inner.style.lineHeight = '1.7';
-        inner.style.transition = 'transform 0.3s ease';
+        inner.style.transition = 'transform 0.25s ease';
       }
 
       function frame(ts) {
@@ -11219,6 +11231,12 @@
         setProgress(100, 'Done!');
         setStatus('<div style="color:var(--green)">✅ <strong>' + clips.length + ' scenes downloaded as ' + filename + '</strong><br><small style="color:var(--muted)">Import into DaVinci Resolve, CapCut or Premiere to add transitions.</small></div>');
         toast('✅ Downloaded ' + clips.length + ' scenes stitched', 'ok');
+        // Save to My Videos list
+        try {
+          var myVids = JSON.parse(localStorage.getItem('aab_my_videos') || '[]');
+          myVids.unshift({ title: PROJECT.title || 'My Video', filename: filename, exportedAt: new Date().toISOString(), scenes: clips.length });
+          localStorage.setItem('aab_my_videos', JSON.stringify(myVids.slice(0,50)));
+        } catch(e) {}
         setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
       } catch (e) {
         // Fallback: download individually
