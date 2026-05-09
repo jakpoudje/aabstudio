@@ -5005,6 +5005,97 @@
 .edit-clip-card:hover { border-color:rgba(0,212,255,.3); }
 .edit-clip-card.selected { border-color:#00d4ff; background:rgba(0,212,255,.06); }
 </style>
+
+<style id="aab-mobile-responsive">
+/* ════════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE — applies to all pages after login
+   Breakpoints: phone <480px, tablet 480-768px, desktop >768px
+════════════════════════════════════════════════════════════ */
+
+/* ── RECORDING STUDIO ─────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Stack studio vertically on mobile */
+  .studio-main > div:first-child {
+    flex-direction: column !important;
+  }
+  
+  /* Scene queue — horizontal strip at top */
+  .studio-q {
+    width: 100% !important;
+    height: 70px !important;
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    border-right: none !important;
+    border-bottom: .5px solid rgba(255,255,255,.08) !important;
+  }
+  
+  /* Camera — takes most of screen */
+  .studio-canvas-col,
+  .studio-canvas {
+    flex: 1 !important;
+    min-height: 0 !important;
+  }
+  
+  /* Asset panel — hide on mobile, accessible via button */
+  .studio-panel {
+    display: none !important;
+  }
+  
+  /* TP panel — compact on mobile */
+  #studio-tp-panel {
+    max-height: 120px !important;
+  }
+  
+  /* Controls bar — smaller font */
+  .panel-group-label { font-size: 6px !important; }
+  .s-btn { font-size: 9px !important; padding: 3px 6px !important; }
+  
+  /* MIC label — hide */
+  .studio-bar [style*="MIC"] { display: none !important; }
+}
+
+@media (max-width: 480px) {
+  .studio-q { height: 56px !important; }
+  #studio-tp-panel { max-height: 100px !important; }
+  .studio-bar { height: 36px !important; }
+  .studio-bar-btn { font-size: 9px !important; padding: 4px 8px !important; }
+}
+
+/* ── EDIT SUITE ───────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Hide media bin on mobile — full width preview */
+  #edit-media-bin { display: none !important; }
+  #edit-inspector { display: none !important; }
+  
+  /* Timeline — full width but shorter */
+  #timeline-panel { min-height: 140px !important; max-height: 35vh !important; }
+  
+  /* Transport bar — wrap controls */
+  #edit-transport { flex-wrap: wrap !important; gap: 4px !important; padding: 4px 8px !important; }
+  
+  /* Topbar — hide non-essential */
+  #edit-topbar .edit-dd-wrap:nth-child(n+5) { display: none !important; }
+}
+
+/* ── AI PRESENTER ─────────────────────────────────────── */
+@media (max-width: 768px) {
+  #ai-presenter-studio { flex-direction: column !important; }
+  #aps-scenes-list { width: 100% !important; height: 120px !important; flex-direction: row !important; overflow-x: auto !important; overflow-y: hidden !important; }
+  #aps-preview-col { flex: 1 !important; }
+  #aps-settings-col { width: 100% !important; height: auto !important; max-height: 200px !important; overflow-y: auto !important; }
+}
+
+/* ── DASHBOARD ────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .dash-project-grid { grid-template-columns: 1fr !important; }
+}
+
+/* ── SCRIPT / SEGMENT / SCENES ───────────────────────── */
+@media (max-width: 768px) {
+  .script-pg-inner, .segment-inner, .scenes-inner { padding: 12px !important; }
+}
+</style>
 </head>
 
     <style>
@@ -9623,131 +9714,107 @@
     }
 
     function startTpAutoTimer() {
+      // Kill ALL competing TP engines immediately
+      window._aabTpActive = false;
+      if (window._studioTpTimer) { clearInterval(window._studioTpTimer); window._studioTpTimer = null; }
+      if (window._tpAutoTimer) { cancelAnimationFrame(window._tpAutoTimer); window._tpAutoTimer = null; }
+
       var scene = PROJECT.scenes[STUDIO.currentScene];
-      if (!scene || !scene.narration) return;
+      if (!scene || !scene.narration) { return; }
       var words = (scene.narration || '').trim().split(/\s+/).filter(Boolean);
-      if (!words.length) return;
+      if (!words.length) { return; }
 
-      // CRITICAL: Ensure word spans exist before starting
-      // If updateTP hasn't built them yet, build them now
-      var testSpan = document.getElementById('aab_tw0');
-      if (!testSpan) {
-        if (typeof updateTP === 'function') updateTP();
-        // Wait one frame for DOM to update
-        requestAnimationFrame(function() { startTpAutoTimer(); });
-        return;
-      }
+      // Always rebuild spans fresh so we own them
+      if (typeof updateTP === 'function') updateTP();
 
-      var mode = window._tpScrollMode || window._tpMode || 'auto';
-      var wpm = Math.max(20, Math.min(400, STUDIO.tpSpeed || 80));
-      var msPerW = 60000 / wpm;
-      var totalMs = words.length * msPerW;
-      var startTs = null;
-      var lastWi = -1;
+      // Wait one frame for DOM reflow after updateTP
+      requestAnimationFrame(function() {
+        var testSpan = document.getElementById('aab_tw0');
+        if (!testSpan) { return; } // no spans built — nothing to scroll
 
-      var curEl = document.getElementById('tp-cur');
-      var inner = document.getElementById('tp-cur-inner');
-      // Reset scroll position to top
-      if (inner) {
-        inner.style.transform = '';
-        inner.style.transition = 'transform 0.25s ease';
-      }
+        var mode = window._tpScrollMode || window._tpMode || 'auto';
+        var wpm = Math.max(20, Math.min(400, STUDIO.tpSpeed || 80));
+        var msPerW = 60000 / wpm;
+        var totalMs = words.length * msPerW;
+        var startTs = null;
+        var lastWi = -1;
 
-      function frame(ts) {
-        if (!STUDIO_TP.running && !STUDIO.tpAuto) return;
-        if (!startTs) startTs = ts;
-        var elapsed = ts - startTs;
-        var progress = Math.min(elapsed / totalMs, 1);
-        var wi = Math.min(Math.floor(elapsed / msPerW), words.length - 1);
+        var curEl = document.getElementById('tp-cur');
+        var inner = document.getElementById('tp-cur-inner');
+        // Reset scroll to top
+        if (inner) { inner.style.transform = ''; inner.style.transition = 'transform 0.25s ease'; }
+        if (curEl) { curEl.style.overflow = 'hidden'; }
 
-        if (wi !== lastWi) {
-          lastWi = wi;
+        function frame(ts) {
+          if (!STUDIO_TP.running && !STUDIO.tpAuto) { window._tpAutoTimer = null; return; }
+          if (!startTs) startTs = ts;
+          var elapsed = ts - startTs;
+          var progress = Math.min(elapsed / totalMs, 1);
+          var wi = Math.min(Math.floor(elapsed / msPerW), words.length - 1);
 
-          // Update word highlighting
-          for (var k = 0; k < words.length; k++) {
-            var span = document.getElementById('aab_tw' + k);
-            if (!span) continue;
-            if (k < wi) {
-              // Past words — dim
-              span.style.color = 'rgba(255,255,255,.2)';
-              span.style.fontWeight = '';
-              span.style.background = '';
-            } else if (k === wi) {
-              // Current word — bright highlight
-              span.style.color = '#ffffff';
-              span.style.fontWeight = '700';
-              span.style.background = 'rgba(0,212,255,.15)';
-              span.style.borderRadius = '3px';
-              span.style.padding = '0 2px';
-
-              // SCROLL MODES — vertical translateY on inner div
-              if (mode !== 'manual') {
-                if (curEl && inner && span) {
-                  // Calculate span's position relative to tp-cur-inner
-                  // (not offsetParent which could be different)
+          if (wi !== lastWi) {
+            lastWi = wi;
+            // Highlight all spans
+            for (var k = 0; k < words.length; k++) {
+              var span = document.getElementById('aab_tw' + k);
+              if (!span) continue;
+              if (k < wi) {
+                span.style.color = 'rgba(255,255,255,.2)';
+                span.style.fontWeight = '';
+                span.style.background = '';
+                span.style.padding = '';
+              } else if (k === wi) {
+                span.style.color = '#fff';
+                span.style.fontWeight = '700';
+                span.style.background = 'rgba(0,212,255,.18)';
+                span.style.borderRadius = '3px';
+                span.style.padding = '0 2px';
+                // Scroll to keep current word visible
+                if (mode !== 'manual' && curEl && inner) {
                   var spanRect = span.getBoundingClientRect();
                   var innerRect = inner.getBoundingClientRect();
                   var curRect = curEl.getBoundingClientRect();
-                  // Current Y position of span relative to the inner container's natural top
-                  // We need how far span is from the top of inner's content
-                  var currentTranslate = parseFloat(inner.style.transform.replace('translateY(','').replace('px)','')) || 0;
-                  var spanPosInContent = spanRect.top - innerRect.top - currentTranslate;
-                  // Keep current word 25% from top of view
-                  var viewH4 = curRect.height;
-                  var targetTranslate = Math.max(0, spanPosInContent - currentTranslate - viewH4 * 0.25);
-                  inner.style.transform = 'translateY(-' + Math.max(0, targetTranslate) + 'px)';
+                  var curT = parseFloat(inner.style.transform.replace('translateY(','').replace('px)','')) || 0;
+                  var spanPos = (spanRect.top - innerRect.top) - curT;
+                  var target = Math.max(0, spanPos - curT - curRect.height * 0.28);
+                  inner.style.transform = 'translateY(-' + target + 'px)';
                 }
+              } else {
+                span.style.color = 'rgba(255,255,255,.55)';
+                span.style.fontWeight = '';
+                span.style.background = '';
+                span.style.padding = '';
+              }
+            }
+            var pf = document.getElementById('scene-prog-fill');
+            if (pf) pf.style.width = (progress * 100) + '%';
+          }
+
+          if (progress < 1) {
+            window._tpAutoTimer = requestAnimationFrame(frame);
+          } else {
+            window._tpAutoTimer = null;
+            STUDIO_TP.running = false;
+            if (inner) inner.style.transform = '';
+            var btn = document.getElementById('btn-tp-start');
+            if (btn) { btn.textContent = '▶ Practice'; btn.style.cssText = ''; }
+            if (STUDIO.currentScene < PROJECT.scenes.length - 1) {
+              STUDIO.currentScene++;
+              if (inner) inner.style.transform = '';
+              if (typeof updateTP === 'function') updateTP();
+              if (STUDIO_TP.wasRunning || STUDIO.tpAuto) {
+                setTimeout(function() { studioTpStart(); }, 200);
               }
             } else {
-              // Upcoming words — slightly dim
-              span.style.color = 'rgba(255,255,255,.55)';
-              span.style.fontWeight = '';
-              span.style.background = '';
-              span.style.padding = '';
+              STUDIO_TP.wasRunning = false;
+              toast('✓ All scenes complete', 'ok');
             }
           }
-
-          // Progress bar
-          var pf = document.getElementById('scene-prog-fill');
-          if (pf) pf.style.width = (progress * 100) + '%';
         }
 
-        if (progress < 1) {
-          _tpAutoTimer = requestAnimationFrame(frame);
-        } else {
-          STUDIO_TP.running = false;
-          if (inner) inner.style.transform = '';
-          var btn = document.getElementById('btn-tp-start');
-          if (btn) { btn.textContent = '▶ Practice'; btn.style.background = ''; btn.style.borderColor = ''; btn.style.color = ''; }
-          if (STUDIO.currentScene < PROJECT.scenes.length - 1) {
-            setTimeout(function() {
-              // Advance scene counter
-              STUDIO.currentScene++;
-              // Reset scroll position for new scene
-              var innerEl2 = document.getElementById('tp-cur-inner');
-              if (innerEl2) innerEl2.style.transform = '';
-              // Build NEW scene word spans BEFORE restarting timer
-              if (typeof updateTP === 'function') updateTP();
-              if (typeof renderStudioQueue === 'function') renderStudioQueue();
-              // Restart timer after DOM has updated
-              if (STUDIO_TP.wasRunning || STUDIO.tpAuto) {
-                setTimeout(function() { studioTpStart(); }, 150);
-              }
-            }, 400);
-          } else {
-            var innerEl3 = document.getElementById('tp-cur-inner');
-            if (innerEl3) innerEl3.style.transform = '';
-            STUDIO_TP.running = false;
-            STUDIO_TP.wasRunning = false;
-            if (typeof studioTpStop === 'function') studioTpStop();
-            toast('✓ All scenes complete', 'ok');
-          }
-        }
-      }
-
-      STUDIO_TP.wasRunning = STUDIO_TP.running;
-      if (_tpAutoTimer) { cancelAnimationFrame(_tpAutoTimer); _tpAutoTimer = null; }
-      _tpAutoTimer = requestAnimationFrame(frame);
+        STUDIO_TP.wasRunning = true;
+        window._tpAutoTimer = requestAnimationFrame(frame);
+      }); // end requestAnimationFrame wrapper
     }
 
     // Override studioTpStop to cancel rAF not setInterval
@@ -10359,10 +10426,12 @@
       // Main video track
       var videoTrack = { id: 'track_video', type: 'video', name: 'Video', muted: false, locked: false, clips: [] };
       var t = 0;
+      // Sort by sceneNum to ensure correct horizontal order
+      clips.sort(function(a,b){ return ((a[1].sceneNum||0)-(b[1].sceneNum||0)); });
       clips.forEach(function (entry) {
         var id = entry[0], c = entry[1];
-        var dur = c.duration || 8;
-        videoTrack.clips.push({ id: id, url: c.url, start: t, duration: dur, name: 'S' + (c.sceneIdx + 1), trimIn: c.trimIn || 0, trimOut: c.trimOut || dur, color: '#1d4ed8' });
+        var dur = parseFloat(c.duration) || 8;
+        videoTrack.clips.push({ id: id, url: c.url || c.videoUrl, start: t, duration: dur, name: c.sceneName || ('Scene ' + (c.sceneNum || c.sceneIdx !== undefined ? (c.sceneIdx+1) : '?')), trimIn: c.trimIn || 0, trimOut: c.trimOut || dur, color: '#1d4ed8' });
         t += dur;
       });
       TL.duration = t;
@@ -19646,7 +19715,7 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
       }).join('');
 
       // Auto-load first clip
-      if (clips.length && !document.getElementById('edit-video').src) {
+      if (clips.length && (!document.getElementById('edit-video').src || document.getElementById('edit-video').src === window.location.href || document.getElementById('edit-video').src === location.origin + '/')) {
         edit_loadClip(clips[0]);
       }
 
