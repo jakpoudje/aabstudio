@@ -5271,59 +5271,7 @@
 </style>
 
 
-<style id="tp-panel-fix">
-/* ═══ TELEPROMPTER PANEL — TEXT NOT BURIED ══════════════════
-   The TP panel and tp-cur must show enough text
-   Users must be able to see their full script
-════════════════════════════════════════════════════════════ */
 
-/* tp-cur: the current scene text area — must be scrollable */
-#tp-cur {
-  flex: 1 !important;
-  overflow: hidden !important;           /* inner div scrolls via transform */
-  position: relative !important;
-  min-height: 0 !important;
-}
-
-/* tp-cur-inner: wraps text, scrolls via translateY */
-#tp-cur-inner {
-  display: block !important;
-  white-space: normal !important;        /* text wraps to multiple lines */
-  word-wrap: break-word !important;
-  width: 100% !important;
-  will-change: transform !important;
-  transition: transform 0.25s ease !important;
-  line-height: 1.7 !important;
-}
-
-/* tp-body: the container — must show enough of the script */
-#tp-body {
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 3px !important;
-  height: 100% !important;
-  overflow: hidden !important;
-  padding: 8px 24px 10px !important;
-}
-
-/* Studio TP panel — taller so more script is visible */
-#studio-tp-panel {
-  flex-shrink: 0 !important;
-  min-height: 130px !important;
-  height: 130px !important;
-  max-height: 35vh !important;          /* never taller than 35% of screen */
-  overflow: hidden !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
-
-/* Remove the nowrap that makes everything one horizontal line */
-.tp-prev-txt, .tp-next-txt {
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-}
-</style>
 
 
 <style id="studio-nav-css">
@@ -5364,6 +5312,71 @@
 }
 </style>
 
+<style id="tp-controller-css-static">
+/* ═══ TELEPROMPTER — DEFINITIVE LAYOUT FIX ═════════════════
+   Text must stay inside #tp-cur. Never overflow into panels.
+   This overrides all other TP CSS with highest specificity.
+═══════════════════════════════════════════════════════════ */
+
+/* The TP panel contains everything */
+#studio-tp-panel {
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* tp-body fills the panel */
+#tp-body {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  padding: 8px 20px 8px !important;
+  gap: 2px !important;
+  box-sizing: border-box !important;
+}
+
+/* tp-cur: the main text area — MUST clip its content */
+#tp-cur {
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;         /* ← CRITICAL: clips inner div */
+  position: relative !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* tp-cur-inner: scrolls via translateY inside #tp-cur */
+#tp-cur-inner {
+  display: block !important;
+  white-space: normal !important;      /* text wraps, no single line */
+  word-wrap: break-word !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  will-change: transform !important;
+  line-height: 1.65 !important;
+}
+
+/* Word spans: inline, normal wrap */
+.tp-word {
+  display: inline !important;
+  white-space: normal !important;
+  margin-right: 0.28em !important;
+}
+
+/* Prev/next scene hints: single line, ellipsis */
+#tp-prev, #tp-next {
+  flex-shrink: 0 !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  text-overflow: ellipsis !important;
+  max-width: 100% !important;
+  min-height: 0 !important;
+}
+</style>
 </head>
 
     <style>
@@ -12833,7 +12846,7 @@
     /* TP panel — compact strip, never expands */
     #studio-tp-panel { flex-shrink:0 !important; overflow:hidden !important; }
     #studio-tp       { overflow:hidden !important; }
-    #tp-cur          { font-size:var(--tp-font-size, clamp(16px,1.8vw,22px)); line-height:1.5 !important; overflow:visible !important; }
+    /* [removed rogue overflow:visible] */
     /* Controls — compact two rows */
     .studio-ctrl-v2  { flex-shrink:0 !important; overflow:visible !important; }
     .studio-q        { flex-shrink:0; width:160px; overflow:hidden; display:flex; flex-direction:column; }
@@ -21080,7 +21093,10 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
       inner.style.transform  = 'translateY(0px)';
 
       requestAnimationFrame(function() {
-        var scrollable = Math.max(0, inner.scrollHeight - curEl.offsetHeight);
+        // Re-measure after layout settles
+          var curH2 = curEl.getBoundingClientRect().height || curEl.offsetHeight;
+          var innerH2 = inner.scrollHeight;
+          var scrollable = Math.max(0, innerH2 - curH2);
         if (scrollable < 2) scrollable = 0; // nothing to scroll — text fits
 
         var pxPerMs = scrollable > 0 ? scrollable / totalMs : 0;
