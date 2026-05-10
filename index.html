@@ -5078,82 +5078,7 @@
 }
 </style>
 
-<style id="script-layout-fix">
-/* ═══ SCRIPT PAGE LAYOUT FIX ═══════════════════════════════════
-   Fixes: hidden words, no scroll, overflow issues
-═══════════════════════════════════════════════════════════════ */
-#script-pg {
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-}
 
-/* Critical: min-width:0 allows grid cells to shrink properly */
-.script-layout {
-  display: grid !important;
-  grid-template-columns: 1fr 280px !important;
-  width: 100% !important;
-  box-sizing: border-box !important;
-  min-width: 0 !important;
-}
-
-.script-main {
-  min-width: 0 !important; /* ← THIS is what stops overflow */
-  overflow: visible !important;
-  box-sizing: border-box !important;
-  padding: 28px !important;
-}
-
-.script-sidebar {
-  min-width: 0 !important;
-  overflow-y: auto !important;
-  box-sizing: border-box !important;
-}
-
-/* Textarea: fill width, scroll vertically, never overflow right */
-.textarea, #t-write, #t-paste, #t-extracted {
-  width: 100% !important;
-  max-width: 100% !important;
-  box-sizing: border-box !important;
-  resize: vertical !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-}
-
-/* Script title: never overflow */
-.script-title {
-  width: 100% !important;
-  max-width: 100% !important;
-  box-sizing: border-box !important;
-}
-
-/* Script tabs: wrap on tiny screens */
-.script-tabs {
-  width: 100% !important;
-  box-sizing: border-box !important;
-}
-
-/* Mobile: stack layout */
-@media (max-width: 768px) {
-  .script-layout {
-    grid-template-columns: 1fr !important;
-  }
-  .script-sidebar {
-    display: none !important;
-  }
-  .script-main {
-    padding: 16px !important;
-  }
-}
-
-@media (max-width: 480px) {
-  .script-main {
-    padding: 12px !important;
-  }
-  .script-title {
-    font-size: 1.1rem !important;
-  }
-}
-</style>
 
 <style id="mobile-studio-fix">
 /* ═══ MOBILE STUDIO — CAMERA DOMINANT ══════════════════════
@@ -5252,6 +5177,154 @@
   }
 }
 </style>
+
+<style id="script-layout-definitive">
+/* ═══ SCRIPT PAGE — DEFINITIVE LAYOUT ═════════════════════════
+   Fixes: text buried behind sidebar, no scroll, overflow
+════════════════════════════════════════════════════════════════ */
+
+/* The page itself must scroll vertically */
+#script-pg {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  box-sizing: border-box !important;
+}
+
+/* Layout: responsive grid, never overflows viewport */
+.script-layout {
+  display: grid !important;
+  grid-template-columns: 1fr 280px !important;  /* 1fr = fills remaining space */
+  min-height: calc(100vh - 52px) !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+/* Main writing area: MUST have min-width:0 or grid won't shrink */
+.script-main {
+  min-width: 0 !important;          /* ← KEY: allows grid cell to shrink */
+  overflow: visible !important;
+  box-sizing: border-box !important;
+  padding: 28px !important;
+}
+
+/* Sidebar: fixed width, scrollable, never overflow */
+.script-sidebar {
+  width: 280px !important;
+  min-width: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  box-sizing: border-box !important;
+}
+
+/* Title input: never wider than its container */
+.script-title {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* Tabs: fill width */
+.script-tabs {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* ALL textareas: fill width, scroll vertically, never overflow right */
+#script-pg textarea,
+#script-pg .textarea,
+#t-write, #t-paste, #t-extracted {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  resize: vertical !important;
+  word-wrap: break-word !important;
+  white-space: pre-wrap !important;
+}
+
+/* Mobile: hide sidebar, full width textarea */
+@media (max-width: 800px) {
+  .script-layout {
+    grid-template-columns: 1fr !important;
+  }
+  .script-sidebar {
+    display: none !important;
+  }
+  .script-main {
+    padding: 16px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .script-main {
+    padding: 12px !important;
+  }
+  .script-title {
+    font-size: 1.1rem !important;
+  }
+}
+</style>
+
+
+<style id="tp-panel-fix">
+/* ═══ TELEPROMPTER PANEL — TEXT NOT BURIED ══════════════════
+   The TP panel and tp-cur must show enough text
+   Users must be able to see their full script
+════════════════════════════════════════════════════════════ */
+
+/* tp-cur: the current scene text area — must be scrollable */
+#tp-cur {
+  flex: 1 !important;
+  overflow: hidden !important;           /* inner div scrolls via transform */
+  position: relative !important;
+  min-height: 0 !important;
+}
+
+/* tp-cur-inner: wraps text, scrolls via translateY */
+#tp-cur-inner {
+  display: block !important;
+  white-space: normal !important;        /* text wraps to multiple lines */
+  word-wrap: break-word !important;
+  width: 100% !important;
+  will-change: transform !important;
+  transition: transform 0.25s ease !important;
+  line-height: 1.7 !important;
+}
+
+/* tp-body: the container — must show enough of the script */
+#tp-body {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 3px !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  padding: 8px 24px 10px !important;
+}
+
+/* Studio TP panel — taller so more script is visible */
+#studio-tp-panel {
+  flex-shrink: 0 !important;
+  min-height: 130px !important;
+  height: 130px !important;
+  max-height: 35vh !important;          /* never taller than 35% of screen */
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* Remove the nowrap that makes everything one horizontal line */
+.tp-prev-txt, .tp-next-txt {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+</style>
+
 </head>
 
     <style>
@@ -6309,7 +6382,7 @@
       <input type="range" min="20" max="220" value="80" id="tp-spd-range" oninput="setTpSpd(this.value); var v2=document.getElementById('tp-spd-val2'); if(v2) v2.textContent=this.value+'wpm';" style="width:60px;accent-color:var(--gold);">
       <span id="tp-spd-val2" style="font-size:10px;color:var(--gold);min-width:34px;">80wpm</span>
       <span style="font-size:9px;color:rgba(255,255,255,.2);">|</span>
-      <select id="tp-mode-sel" onchange="window._tpMode=this.value" title="Scroll mode" style="font-size:9px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.5);border-radius:4px;padding:2px 4px;cursor:pointer;"><option value="scroll" selected>📜 Scroll</option><option value="word">💡 Word</option><option value="line">📄 Line</option></select>
+      <select id="tp-mode-sel" onchange="setTpScrollMode(this.value); document.getElementById('tp-scroll-mode') && (document.getElementById('tp-scroll-mode').value=this.value);" title="Scroll mode" style="font-size:9px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.5);border-radius:4px;padding:2px 4px;cursor:pointer;"><option value="auto" selected>📜 Auto-scroll</option><option value="word">💡 Word-by-word</option><option value="manual">✋ Manual</option></select>
       </div>
       <button class="s-btn" onclick="resetTpScroll()" style="font-size:10px;padding:4px 8px;" title="Reset scroll to top">↺</button>
       <div style="display:flex;align-items:center;gap:3px;">
@@ -20099,25 +20172,32 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
     });
     
     window.setTpScrollMode = function(mode) {
+      // Normalise legacy values
+      if (mode === 'scroll' || mode === 'line') mode = 'auto';
+
       window._tpScrollMode = mode;
       window._tpMode = mode;
-      // Sync all scroll mode selectors
+
+      // Sync BOTH selectors to the same value
       ['tp-scroll-mode','tp-mode-sel'].forEach(function(id) {
         var el = document.getElementById(id);
         if (el) el.value = mode;
       });
-      // Restart scroll if already running so new mode takes effect immediately
+
+      // If already running, restart with new mode immediately
       if (window.STUDIO_TP && STUDIO_TP.running) {
-        if (typeof studioTpStop === 'function') studioTpStop();
+        if (window._tpAutoTimer) { cancelAnimationFrame(window._tpAutoTimer); window._tpAutoTimer = null; }
+        if (window._studioTpTimer) { clearInterval(window._studioTpTimer); window._studioTpTimer = null; }
+        STUDIO_TP.running = false;
         setTimeout(function() {
           if (typeof studioTpStart === 'function') studioTpStart();
-        }, 100);
+        }, 50);
+      } else if (mode === 'manual') {
+        if (window._tpAutoTimer) { cancelAnimationFrame(window._tpAutoTimer); window._tpAutoTimer = null; }
       }
-      if (mode === 'manual') {
-        if (_tpAutoTimer) { cancelAnimationFrame(_tpAutoTimer); _tpAutoTimer = null; }
-      }
-      var modeLabels = {auto:'Auto-scroll (word highlight)', scroll:'Line scroll', manual:'Manual', word:'Word-by-word'};
-      toast('Teleprompter: ' + (modeLabels[mode]||mode), 'ok');
+
+      var labels = {auto:'Auto-scroll', word:'Word-by-word', manual:'Manual'};
+      if (typeof toast === 'function') toast('Teleprompter: ' + (labels[mode] || mode), 'ok');
     };
 
     // ══ CLOUD PROJECT SYNC ═══════════════════════════════════════════
