@@ -14490,35 +14490,8 @@ var _origStopRec = window.stopRec;
 // ══════════════════════════════════════════════════════════════════════════
 
 window.tpScroll = function() {
-  var TP = window.TP;
-  if (!TP) return;
-  clearInterval(TP.scrollTimer);
-  var wrap = document.getElementById('tp-text');
-  if (!wrap) return;
-  var spans = wrap.querySelectorAll('span[id^="tpw"]');
-  if (!spans.length) return;
-  var total  = spans.length;
-  var msPerW = 60000 / (TP.speed || 80);
-  TP.scrollTimer = setInterval(function() {
-    var wi = TP.currentWord;
-    if (wi > 0) {
-      var prev = document.getElementById('tpw' + (wi-1));
-      if (prev) { prev.className = 'tp-done'; }
-    }
-    var cur = document.getElementById('tpw' + wi);
-    if (cur) {
-      cur.className = 'tp-current';
-      cur.scrollIntoView({ behavior:'smooth', block:'center' });
-    }
-    TP.currentWord++;
-    if (TP.currentWord >= total) {
-      clearInterval(TP.scrollTimer);
-      TP.playing = false;
-      var btn = document.getElementById('tp-play-btn');
-      if (btn) btn.textContent = '▶ Play';
-    }
-  }, msPerW);
-};
+      // DISABLED — old engine replaced by teleprompterState controller
+    };
 
 // ══════════════════════════════════════════════════════════════════════════
 // PHONE REMOTE
@@ -15522,171 +15495,9 @@ function _aabDoSyncStart() {
 var _aabTpRaf = null;
 
 function _aabTpScrollStart() {
-  // Stop any competing timers
-  if (window._studioTpTimer) { clearInterval(window._studioTpTimer); window._studioTpTimer = null; }
-  if (window.STUDIO_TP) window.STUDIO_TP.running = false;
-  if (_aabTpRaf) { cancelAnimationFrame(_aabTpRaf); _aabTpRaf = null; }
-  // window._aabTpActive = true; // disabled — was blocking RAF engine
-
-  var slider  = document.getElementById('tp-spd-range');
-  var wpm     = parseInt(slider ? slider.value : 120) || 120;
-  var modeSel = document.getElementById('tp-mode-sel');
-  var tpMode  = (modeSel ? modeSel.value : null) || window._tpMode || 'scroll';
-  window._tpMode = tpMode;
-  var msPerWord = 60000 / wpm;
-
-  var scene = PROJECT && PROJECT.scenes && PROJECT.scenes[STUDIO.currentScene || 0];
-  var text  = scene ? (scene.narration || '').trim() : '';
-  if (!text) { toast('No script text in this scene', 'error'); return; }
-
-  var tpCur = document.getElementById('tp-cur');
-  if (!tpCur) { console.warn('tp-cur not found'); return; }
-
-  // ── BUILD: Wrap every word in a span ──────────────────────────────────────
-  var words = text.split(/\s+/).filter(Boolean);
-  tpCur.innerHTML = words.map(function(w, i) {
-    return '<span id="aab_tw' + i + '" style="' +
-      'display:inline;' +
-      'margin-right:0.32em;' +
-      'transition:color 0.08s,text-shadow 0.08s,font-weight 0.08s;' +
-      'color:rgba(255,255,255,0.35);' +
-    '">' + w.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</span>';
-  }).join('');
-
-  // ── LAYOUT: fixed reading line in upper-third of TP container ─────────────
-  // The text scrolls UP continuously. A fixed "reading cursor" line sits
-  // at 30% from top. Words above it are dimmed (read), word at line = bright,
-  // words below = slightly dimmed (coming up).
-  var tpWrap = tpCur.parentElement;
-  if (tpWrap) {
-    tpWrap.style.overflow = 'hidden';
-    tpWrap.style.position = 'relative';
-  }
-  // Add reading guide line (semi-transparent horizontal bar)
-  var guide = document.getElementById('tp-reading-guide');
-  if (!guide) {
-    guide = document.createElement('div');
-    guide.id = 'tp-reading-guide';
-    guide.style.cssText = [
-      'position:absolute',
-      'left:0','right:0',
-      'top:30%',
-      'height:2px',
-      'background:linear-gradient(90deg,transparent,rgba(0,212,255,0.4),transparent)',
-      'pointer-events:none',
-      'z-index:10',
-      'border-radius:1px',
-    ].join(';');
-    if (tpWrap) tpWrap.appendChild(guide);
-  }
-  guide.style.display = 'block';
-
-  // ── SCROLL: continuous smooth upward scroll ───────────────────────────────
-  // Scroll speed = pixels per millisecond, calculated from WPM and average word width
-  // We calculate how far to scroll per word, then drive it with requestAnimationFrame
-
-  var startTime = null;
-  var lastWi    = -1;
-  var containerH = tpWrap ? tpWrap.offsetHeight : 300;
-  var readingY    = containerH * 0.30; // reading guide at 30% from top
-
-  // Give the layout time to render before measuring word positions
-  requestAnimationFrame(function() {
-    requestAnimationFrame(function() {
-      // Measure total scroll distance = from first word to last word
-      var firstSpan = document.getElementById('aab_tw0');
-      var lastSpan  = document.getElementById('aab_tw' + (words.length - 1));
-      if (!firstSpan || !lastSpan) return;
-
-      // Total scroll = distance from first word top to last word top
-      var totalScroll = lastSpan.offsetTop - firstSpan.offsetTop;
-      // Total time for all words
-      var totalTime = words.length * msPerWord;
-      // Pixels per millisecond
-      var pxPerMs = totalTime > 0 ? totalScroll / totalTime : 0;
-
-      // Initial scroll: put first word at the reading line
-      var initialOffset = firstSpan.offsetTop - readingY;
-      tpCur.style.transform = 'translateY(' + (-initialOffset) + 'px)';
-      tpCur.style.transition = 'none';
-      tpCur.style.willChange = 'transform';
-
-      function frame(ts) {
-        if (!window._aab_practice && !window._aab_syncing) {
-          // Stopped - clean up
-          if (guide) guide.style.display = 'none';
-          return;
-        }
-        if (!startTime) startTime = ts;
-        var elapsed = ts - startTime;
-
-        // ── Smooth continuous scroll ─────────────────────────────────────────
-        var scrolled   = elapsed * pxPerMs;
-        var currentOffset = initialOffset + scrolled;
-        tpCur.style.transform = 'translateY(' + (-currentOffset) + 'px)';
-
-        // ── Word highlighting ─────────────────────────────────────────────────
-        var wi = Math.min(Math.floor(elapsed / msPerWord), words.length - 1);
-        if (wi !== lastWi) {
-          // Unhighlight previous
-          if (lastWi >= 0) {
-            var prev = document.getElementById('aab_tw' + lastWi);
-            if (prev) {
-              prev.style.color      = 'rgba(255,255,255,0.25)';
-              prev.style.fontWeight = '';
-              prev.style.textShadow = 'none';
-            }
-          }
-          // Highlight current word
-          var cur = document.getElementById('aab_tw' + wi);
-          if (cur) {
-            cur.style.color      = '#ffffff';
-            cur.style.fontWeight = '700';
-            cur.style.textShadow = '0 0 20px rgba(255,255,255,0.9), 0 0 40px rgba(0,212,255,0.5)';
-          }
-          // Soften upcoming words (next 3)
-          for (var ni = wi + 1; ni <= wi + 3 && ni < words.length; ni++) {
-            var nxt = document.getElementById('aab_tw' + ni);
-            if (nxt && nxt.style.color !== '#ffffff') {
-              // Gradually brighter as they approach
-              var alpha = 0.25 + (ni - wi - 1) * 0.1;
-              nxt.style.color      = 'rgba(255,255,255,' + Math.min(0.55, alpha) + ')';
-              nxt.style.fontWeight = '';
-              nxt.style.textShadow = 'none';
-            }
-          }
-          lastWi = wi;
-        }
-
-        // ── Scene advance ─────────────────────────────────────────────────────
-        if (wi >= words.length - 1 && elapsed >= words.length * msPerWord) {
-          if (guide) guide.style.display = 'none';
-          var nextScene = (STUDIO.currentScene || 0) + 1;
-          if (nextScene < (PROJECT.scenes || []).length) {
-            if (window._aab_syncing && typeof studioNext === 'function') studioNext();
-            setTimeout(function() {
-              if (window._aab_practice || window._aab_syncing) _aabTpScrollStart();
-            }, 300);
-          } else {
-            window._aab_practice = false;
-            window._aab_syncing  = false;
-            if (STUDIO.recording && typeof stopRec === 'function') stopRec();
-            toast('All scenes complete ✓', 'ok');
-          }
-          return;
-        }
-
-        _aabTpRaf = requestAnimationFrame(frame);
-      }
-
-      _aabTpRaf = requestAnimationFrame(frame);
-    });
-  });
-
-  // Ensure TP panel is visible
-  var studioTp = document.getElementById('studio-tp');
-  if (studioTp) studioTp.classList.remove('collapsed');
-}
+      // DISABLED — delegating to teleprompterState controller
+      if (typeof startTeleprompter === 'function') startTeleprompter();
+    }
 
 function _aabTpStop() {
   window._aab_practice = false;
@@ -21118,6 +20929,450 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
         });
       }
     })();
+    
+    // ════════════════════════════════════════════════════════════════════════
+    // TELEPROMPTER STATE CONTROLLER — Single source of truth
+    // Spec: one state object, one active loop, mode respected immediately
+    // ════════════════════════════════════════════════════════════════════════
+    window.teleprompterState = {
+      mode: 'auto',       // 'auto' | 'word' | 'manual'
+      running: false,
+      paused: false,
+      rafId: null,        // single RAF handle
+      manualScrollPos: 0
+    };
+
+    // ── cleanupTeleprompterLoops ─────────────────────────────────────────────
+    // Kill ALL possible TP timers from any engine
+    window.cleanupTeleprompterLoops = function() {
+      var ts = window.teleprompterState;
+      if (ts.rafId) { cancelAnimationFrame(ts.rafId); ts.rafId = null; }
+      // Kill legacy timers
+      if (window._tpAutoTimer) { cancelAnimationFrame(window._tpAutoTimer); window._tpAutoTimer = null; }
+      if (window._aabTpRaf) { cancelAnimationFrame(window._aabTpRaf); window._aabTpRaf = null; }
+      if (window._studioTpTimer) { clearInterval(window._studioTpTimer); window._studioTpTimer = null; }
+      if (window.TP && window.TP.scrollTimer) { clearInterval(window.TP.scrollTimer); window.TP.scrollTimer = null; }
+      window._aabTpActive = false;
+      window._aab_practice = false;
+      window._aab_syncing = false;
+      ts.running = false;
+      ts.paused = false;
+    };
+
+    // ── fitTeleprompterTextToPreview ─────────────────────────────────────────
+    // Ensures text stays inside TP panel, never overflows
+    window.fitTeleprompterTextToPreview = function() {
+      var panel = document.getElementById('studio-tp-panel') || document.getElementById('studio-tp');
+      var cur   = document.getElementById('tp-cur');
+      var inner = document.getElementById('tp-cur-inner');
+      if (!panel || !cur) return;
+
+      // Force correct layout on the container
+      cur.style.overflow   = 'hidden';
+      cur.style.position   = 'relative';
+      cur.style.maxWidth   = '100%';
+      cur.style.boxSizing  = 'border-box';
+
+      if (inner) {
+        inner.style.display     = 'block';
+        inner.style.whiteSpace  = 'normal';
+        inner.style.wordWrap    = 'break-word';
+        inner.style.wordBreak   = 'normal';
+        inner.style.overflowWrap= 'break-word';
+        inner.style.width       = '100%';
+        inner.style.maxWidth    = '100%';
+        inner.style.boxSizing   = 'border-box';
+        inner.style.lineHeight  = '1.65';
+      }
+    };
+
+    // ── setTeleprompterMode ──────────────────────────────────────────────────
+    window.setTeleprompterMode = function(mode) {
+      // Normalise
+      if (mode === 'scroll' || mode === 'line') mode = 'auto';
+      if (!['auto','word','manual'].includes(mode)) mode = 'auto';
+
+      var wasRunning = window.teleprompterState.running;
+
+      // Stop current loop before switching
+      window.cleanupTeleprompterLoops();
+      window.teleprompterState.mode = mode;
+
+      // Sync both selectors
+      ['tp-scroll-mode','tp-mode-sel'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.value = mode;
+      });
+      // Keep legacy vars in sync
+      window._tpScrollMode = mode;
+      window._tpMode = mode;
+
+      // Remove manual scroll listener if switching away from manual
+      if (mode !== 'manual') {
+        var inner = document.getElementById('tp-cur-inner');
+        if (inner) inner.style.transform = 'translateY(0px)';
+      }
+
+      // If was running, restart with new mode
+      if (wasRunning) {
+        window.teleprompterState.running = true;
+        setTimeout(window.startTeleprompter, 60);
+      }
+
+      var labels = { auto:'Auto-scroll', word:'Word-by-word', manual:'Manual' };
+      if (typeof toast === 'function') toast('Teleprompter: ' + (labels[mode] || mode), 'ok');
+    };
+
+    // ── stopTeleprompter ─────────────────────────────────────────────────────
+    window.stopTeleprompter = function() {
+      window.cleanupTeleprompterLoops();
+      window.teleprompterState.manualScrollPos = 0;
+      var inner = document.getElementById('tp-cur-inner');
+      if (inner) { inner.style.transition = 'none'; inner.style.transform = 'translateY(0px)'; }
+      // Reset button
+      var btn = document.getElementById('btn-tp-start');
+      if (btn) { btn.textContent = '▶ Practice'; btn.style.background = ''; btn.style.borderColor = ''; btn.style.color = ''; }
+      if (window.STUDIO_TP) STUDIO_TP.running = false;
+    };
+
+    // ── pauseTeleprompter ────────────────────────────────────────────────────
+    window.pauseTeleprompter = function() {
+      if (!window.teleprompterState.running) return;
+      window.cleanupTeleprompterLoops();
+      window.teleprompterState.paused = true;
+      window.teleprompterState.running = false;
+    };
+
+    // ── resumeTeleprompter ───────────────────────────────────────────────────
+    window.resumeTeleprompter = function() {
+      if (!window.teleprompterState.paused) return;
+      window.teleprompterState.paused = false;
+      window.teleprompterState.running = true;
+      window.startTeleprompter();
+    };
+
+    // ── resetTeleprompterToScene ─────────────────────────────────────────────
+    window.resetTeleprompterToScene = function(sceneId) {
+      window.stopTeleprompter();
+      if (typeof updateTP === 'function') updateTP();
+      window.fitTeleprompterTextToPreview();
+    };
+
+    // ── startAutoScroll ──────────────────────────────────────────────────────
+    window.startAutoScroll = function() {
+      var curEl = document.getElementById('tp-cur');
+      var inner = document.getElementById('tp-cur-inner');
+      var ts    = window.teleprompterState;
+      if (!curEl || !inner) return;
+
+      window.fitTeleprompterTextToPreview();
+
+      var scene = PROJECT && PROJECT.scenes && PROJECT.scenes[STUDIO.currentScene];
+      if (!scene || !scene.narration) return;
+      var words = scene.narration.trim().split(/\s+/).filter(Boolean);
+      if (!words.length) return;
+
+      var wpm     = Math.max(20, Math.min(400, (STUDIO && STUDIO.tpSpeed) || 80));
+      var totalMs = (words.length / wpm) * 60000;
+
+      // Reset to top, measure scrollable height
+      inner.style.transition = 'none';
+      inner.style.transform  = 'translateY(0px)';
+
+      requestAnimationFrame(function() {
+        var scrollable = Math.max(0, inner.scrollHeight - curEl.offsetHeight);
+        if (scrollable < 2) scrollable = 0; // nothing to scroll — text fits
+
+        var pxPerMs = scrollable > 0 ? scrollable / totalMs : 0;
+        var startTs = null;
+
+        function scrollFrame(now) {
+          if (!ts.running) return;
+          if (!startTs) startTs = now;
+          var elapsed = now - startTs;
+
+          if (pxPerMs > 0) {
+            var scrolled = Math.min(elapsed * pxPerMs, scrollable);
+            inner.style.transition = 'none';
+            inner.style.transform  = 'translateY(-' + scrolled + 'px)';
+          }
+
+          // Progress bar
+          var progress = Math.min(elapsed / totalMs, 1);
+          var pf = document.getElementById('scene-prog-fill');
+          if (pf) pf.style.width = (progress * 100) + '%';
+
+          if (elapsed < totalMs) {
+            ts.rafId = requestAnimationFrame(scrollFrame);
+          } else {
+            ts.rafId = null;
+            ts.running = false;
+            inner.style.transform = 'translateY(0px)';
+            _tpAdvanceScene();
+          }
+        }
+        ts.rafId = requestAnimationFrame(scrollFrame);
+      });
+    };
+
+    // ── startWordByWordMode ──────────────────────────────────────────────────
+    window.startWordByWordMode = function() {
+      var curEl = document.getElementById('tp-cur');
+      var inner = document.getElementById('tp-cur-inner');
+      var ts    = window.teleprompterState;
+      if (!curEl || !inner) return;
+
+      // Rebuild spans
+      if (typeof updateTP === 'function') updateTP();
+      window.fitTeleprompterTextToPreview();
+
+      var scene = PROJECT && PROJECT.scenes && PROJECT.scenes[STUDIO.currentScene];
+      if (!scene || !scene.narration) return;
+      var words = scene.narration.trim().split(/\s+/).filter(Boolean);
+      if (!words.length || !document.getElementById('aab_tw0')) return;
+
+      inner.style.transition = 'none';
+      inner.style.transform  = 'translateY(0px)';
+
+      var wpm     = Math.max(20, Math.min(400, (STUDIO && STUDIO.tpSpeed) || 80));
+      var msPerW  = 60000 / wpm;
+      var totalMs = words.length * msPerW;
+      var startTs = null;
+      var lastWi  = -1;
+
+      function wordFrame(now) {
+        if (!ts.running) return;
+        if (!startTs) startTs = now;
+        var elapsed  = now - startTs;
+        var progress = Math.min(elapsed / totalMs, 1);
+        var wi       = Math.min(Math.floor(elapsed / msPerW), words.length - 1);
+
+        if (wi !== lastWi) {
+          lastWi = wi;
+          // Update word styles
+          for (var k = 0; k < words.length; k++) {
+            var sp = document.getElementById('aab_tw' + k);
+            if (!sp) continue;
+            if (k < wi) {
+              sp.style.color = 'rgba(255,255,255,.22)';
+              sp.style.fontWeight = '';
+              sp.style.background = '';
+              sp.style.padding = '';
+            } else if (k === wi) {
+              sp.style.color = '#00d4ff';
+              sp.style.fontWeight = '700';
+              sp.style.background = 'rgba(0,212,255,.13)';
+              sp.style.borderRadius = '3px';
+              sp.style.padding = '0 2px';
+              // Scroll to keep word visible — translateY only, stays inside panel
+              var spanRect  = sp.getBoundingClientRect();
+              var innerRect = inner.getBoundingClientRect();
+              var curRect   = curEl.getBoundingClientRect();
+              var curT      = parseFloat(inner.style.transform.replace('translateY(','').replace('px)','')) || 0;
+              var spanPos   = (spanRect.top - innerRect.top) - curT;
+              var target    = Math.max(0, spanPos - curT - curRect.height * 0.28);
+              inner.style.transition = 'transform 0.18s ease';
+              inner.style.transform  = 'translateY(-' + target + 'px)';
+            } else {
+              sp.style.color = 'rgba(255,255,255,.55)';
+              sp.style.fontWeight = '';
+              sp.style.background = '';
+              sp.style.padding = '';
+            }
+          }
+          var pf = document.getElementById('scene-prog-fill');
+          if (pf) pf.style.width = (progress * 100) + '%';
+        }
+
+        if (progress < 1) {
+          ts.rafId = requestAnimationFrame(wordFrame);
+        } else {
+          ts.rafId = null;
+          ts.running = false;
+          inner.style.transform = 'translateY(0px)';
+          _tpAdvanceScene();
+        }
+      }
+      ts.rafId = requestAnimationFrame(wordFrame);
+    };
+
+    // ── startManualMode ──────────────────────────────────────────────────────
+    window.startManualMode = function() {
+      var ts = window.teleprompterState;
+      ts.running = false; // no auto loop in manual
+      ts.manualScrollPos = 0;
+      var inner = document.getElementById('tp-cur-inner');
+      if (inner) { inner.style.transition = 'none'; inner.style.transform = 'translateY(0px)'; }
+      // Keyboard scrolling handled by global keydown listener (see below)
+    };
+
+    // ── _tpAdvanceScene (internal) ───────────────────────────────────────────
+    function _tpAdvanceScene() {
+      var ts = window.teleprompterState;
+      if (PROJECT && PROJECT.scenes && STUDIO.currentScene < PROJECT.scenes.length - 1) {
+        STUDIO.currentScene++;
+        var inner = document.getElementById('tp-cur-inner');
+        if (inner) { inner.style.transition = 'none'; inner.style.transform = 'translateY(0px)'; }
+        if (typeof updateTP === 'function') updateTP();
+        if (typeof renderStudioQueue === 'function') renderStudioQueue();
+        if (ts.running || (window.STUDIO_TP && STUDIO_TP.wasRunning)) {
+          ts.running = true;
+          setTimeout(window.startTeleprompter, 220);
+        }
+      } else {
+        ts.running = false;
+        if (window.STUDIO_TP) { STUDIO_TP.running = false; STUDIO_TP.wasRunning = false; }
+        var btn = document.getElementById('btn-tp-start');
+        if (btn) { btn.textContent = '▶ Practice'; btn.style.cssText = ''; }
+        if (typeof toast === 'function') toast('✓ All scenes complete', 'ok');
+      }
+    }
+
+    // ── startTeleprompter ────────────────────────────────────────────────────
+    window.startTeleprompter = function() {
+      window.cleanupTeleprompterLoops();
+      var ts   = window.teleprompterState;
+      var mode = ts.mode || window._tpScrollMode || window._tpMode || 'auto';
+      ts.mode    = mode;
+      ts.running = (mode !== 'manual');
+      ts.paused  = false;
+      if (window.STUDIO_TP) { STUDIO_TP.running = ts.running; STUDIO_TP.wasRunning = true; }
+
+      if (mode === 'auto' || mode === 'scroll') {
+        if (typeof updateTP === 'function') updateTP();
+        window.fitTeleprompterTextToPreview();
+        window.startAutoScroll();
+      } else if (mode === 'word') {
+        window.startWordByWordMode();
+      } else if (mode === 'manual') {
+        window.startManualMode();
+      }
+    };
+
+    // ── syncRecordWithTeleprompter ───────────────────────────────────────────
+    window.syncRecordWithTeleprompter = function() {
+      if (typeof startRec === 'function') startRec();
+      setTimeout(window.startTeleprompter, 400);
+    };
+
+    // ── startPracticeWithTeleprompter ────────────────────────────────────────
+    window.startPracticeWithTeleprompter = function() {
+      STUDIO.currentScene = 0;
+      window.resetTeleprompterToScene(0);
+      setTimeout(window.startTeleprompter, 150);
+    };
+
+    // ── Override old entry points to use new controller ──────────────────────
+    // studioTpStart — called by Practice button and Sync REC
+    window.studioTpStart = function() {
+      window.startTeleprompter();
+      var btn = document.getElementById('btn-tp-start');
+      if (btn) {
+        btn.textContent = '⏸ Stop practice';
+        btn.style.background = 'rgba(245,158,11,.25)';
+        btn.style.borderColor = 'rgba(245,158,11,.5)';
+        btn.style.color = '#fde68a';
+      }
+    };
+
+    // studioTpStop — called by stop buttons
+    window.studioTpStop = function() {
+      window.stopTeleprompter();
+    };
+
+    // startTpAutoTimer — old entry point, delegate to new controller
+    window.startTpAutoTimer = function() {
+      window.startTeleprompter();
+    };
+
+    // setTpScrollMode — old entry point (dropdown onchange)
+    window.setTpScrollMode = function(mode) {
+      window.setTeleprompterMode(mode);
+    };
+
+    // startPracticeMode — the Practice button
+    window.startPracticeMode = function() {
+      if (typeof STUDIO === 'undefined') return;
+      if (window.teleprompterState.running || (STUDIO_STATE === 'PRACTICE')) {
+        window.stopTeleprompter();
+        if (typeof setStudioState === 'function') setStudioState('READY');
+        if (typeof toast === 'function') toast('Practice stopped', 'info');
+        return;
+      }
+      STUDIO.currentScene = 0;
+      if (typeof setStudioState === 'function') setStudioState('PRACTICE');
+      window.startPracticeWithTeleprompter();
+      if (typeof toast === 'function') toast('Practice started — ' + (window.teleprompterState.mode || 'auto') + ' mode', 'info');
+    };
+
+    // startSyncRecord — Sync REC button
+    window.startSyncRecord = function() {
+      if (typeof STUDIO === 'undefined') return;
+      if (STUDIO_STATE === 'RECORDING') { if (typeof stopRec === 'function') stopRec(); return; }
+      if (!STUDIO.stream || !STUDIO.stream.active) { if (typeof toast === 'function') toast('Start camera first', 'error'); return; }
+      window.syncRecordWithTeleprompter();
+      if (typeof toast === 'function') toast('Sync REC — recording + teleprompter (' + (window.teleprompterState.mode || 'auto') + ' mode)', 'ok');
+    };
+
+    // ── Manual mode keyboard scroll ───────────────────────────────────────────
+    (function() {
+      if (window._tpManualKeysWired2) return;
+      window._tpManualKeysWired2 = true;
+      document.addEventListener('keydown', function(e) {
+        if (window.teleprompterState.mode !== 'manual') return;
+        var rec = document.getElementById('record-pg');
+        if (!rec || !rec.classList.contains('on')) return;
+        var inner = document.getElementById('tp-cur-inner');
+        var curEl = document.getElementById('tp-cur');
+        if (!inner || !curEl) return;
+        var step = 24;
+        var ts   = window.teleprompterState;
+        if (e.key === 'ArrowDown' || e.key === 'PageDown') {
+          e.preventDefault();
+          var maxScroll = Math.max(0, inner.scrollHeight - curEl.offsetHeight);
+          ts.manualScrollPos = Math.min(ts.manualScrollPos + step, maxScroll);
+          inner.style.transition = 'transform 0.1s ease';
+          inner.style.transform  = 'translateY(-' + ts.manualScrollPos + 'px)';
+        } else if (e.key === 'ArrowUp' || e.key === 'PageUp') {
+          e.preventDefault();
+          ts.manualScrollPos = Math.max(0, ts.manualScrollPos - step);
+          inner.style.transition = 'transform 0.1s ease';
+          inner.style.transform  = 'translateY(-' + ts.manualScrollPos + 'px)';
+        }
+      });
+      // Touch/wheel scroll in manual mode
+      document.addEventListener('wheel', function(e) {
+        if (window.teleprompterState.mode !== 'manual') return;
+        var rec = document.getElementById('record-pg');
+        if (!rec || !rec.classList.contains('on')) return;
+        var inner = document.getElementById('tp-cur-inner');
+        var curEl = document.getElementById('tp-cur');
+        if (!inner || !curEl) return;
+        e.preventDefault();
+        var ts = window.teleprompterState;
+        var maxScroll = Math.max(0, inner.scrollHeight - curEl.offsetHeight);
+        ts.manualScrollPos = Math.max(0, Math.min(ts.manualScrollPos + e.deltaY * 0.5, maxScroll));
+        inner.style.transition = 'none';
+        inner.style.transform  = 'translateY(-' + ts.manualScrollPos + 'px)';
+      }, { passive: false });
+    })();
+
+    // ── TP CSS override — text stays in panel, never overflows ────────────────
+    (function() {
+      if (document.getElementById('tp-controller-css')) return;
+      var s = document.createElement('style');
+      s.id = 'tp-controller-css';
+      s.textContent = [
+        '#studio-tp-panel { overflow:hidden!important; }',
+        '#tp-body { overflow:hidden!important; height:100%!important; display:flex!important; flex-direction:column!important; }',
+        '#tp-cur { overflow:hidden!important; position:relative!important; flex:1!important; min-height:0!important; }',
+        '#tp-cur-inner { display:block!important; white-space:normal!important; word-wrap:break-word!important; word-break:normal!important; overflow-wrap:break-word!important; width:100%!important; max-width:100%!important; box-sizing:border-box!important; will-change:transform!important; }',
+        '.tp-word { display:inline!important; white-space:normal!important; }',
+        '#tp-prev, #tp-next { overflow:hidden!important; white-space:nowrap!important; text-overflow:ellipsis!important; flex-shrink:0!important; }'
+      ].join('\n');
+      document.head.appendChild(s);
+    })();
+
     </script>
 
 </body>
