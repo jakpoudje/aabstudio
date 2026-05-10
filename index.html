@@ -5154,6 +5154,104 @@
   }
 }
 </style>
+
+<style id="mobile-studio-fix">
+/* ═══ MOBILE STUDIO — CAMERA DOMINANT ══════════════════════
+   On mobile: camera fills the screen, panels stack below
+   User can always see themselves properly
+═══════════════════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  /* Studio main area — stack vertically */
+  .studio-main, #studio-canvas-col {
+    flex-direction: column !important;
+    height: 100% !important;
+  }
+  
+  /* Scene queue — horizontal strip at top, compact */
+  .studio-q, #studio-q {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 64px !important;
+    min-height: 64px !important;
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    border-right: none !important;
+    border-bottom: 1px solid rgba(255,255,255,.08) !important;
+    flex-shrink: 0 !important;
+  }
+  
+  /* Camera canvas — takes all remaining vertical space */
+  #studio-canvas, .studio-canvas {
+    flex: 1 1 0% !important;
+    min-height: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    aspect-ratio: auto !important;
+  }
+  
+  /* Asset panel — hidden on mobile (accessible via button) */
+  .studio-panel, #studio-assets {
+    display: none !important;
+  }
+  
+  /* TP panel — compact at bottom */
+  #studio-tp-panel, .studio-tp-panel {
+    max-height: 110px !important;
+    min-height: 90px !important;
+    flex-shrink: 0 !important;
+  }
+  
+  /* Controls bar — scrollable horizontally */
+  .studio-ctrl-bar {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  
+  /* MIC group — smaller on mobile */  
+  .panel-group { min-width: 80px !important; }
+  .panel-group-label { font-size: 6px !important; }
+  .s-btn { font-size: 9px !important; padding: 3px 6px !important; }
+  .s-btn-lg { font-size: 10px !important; }
+  
+  /* REC button — keep big and tappable */
+  #btn-rec, .studio-bar-btn-rec { min-width: 64px !important; height: 36px !important; }
+}
+
+@media (max-width: 480px) {
+  .studio-q, #studio-q { height: 52px !important; min-height: 52px !important; }
+  #studio-tp-panel, .studio-tp-panel { max-height: 90px !important; min-height: 75px !important; }
+  .studio-bar { height: 40px !important; }
+  .studio-bar-btn { font-size: 9px !important; padding: 4px 8px !important; }
+  .studio-bar-btn-green { font-size: 10px !important; padding: 5px 12px !important; }
+}
+
+/* ═══ EDIT SUITE MOBILE ═══════════════════════════════════ */
+@media (max-width: 900px) {
+  #edit-media-bin { display: none !important; }
+  #edit-inspector { display: none !important; }
+  #timeline-panel { min-height: 120px !important; max-height: 30vh !important; }
+}
+
+/* ═══ AI PRESENTER MOBILE ═════════════════════════════════ */  
+@media (max-width: 900px) {
+  #ai-presenter-studio > div { flex-direction: column !important; }
+  #aps-scenes-list {
+    width: 100% !important;
+    height: 80px !important;
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+  }
+  #aps-settings-col { 
+    width: 100% !important; 
+    max-height: 180px !important; 
+    overflow-y: auto !important; 
+  }
+}
+</style>
 </head>
 
     <style>
@@ -7218,6 +7316,7 @@
       // Auto-save project before navigating away
       try { if (typeof saveProject === 'function' && APP.user) saveProject(); } catch(e) {}
 
+      try { if (typeof saveProject === 'function' && typeof APP !== 'undefined' && APP.user) saveProject(); } catch(e) {}
       document.querySelectorAll('.pg,.pg-flex,.pg-full').forEach(function (p) { p.classList.remove('on'); });
       var el = document.getElementById(pg);
       if (el) el.classList.add('on');
@@ -7456,25 +7555,36 @@
       grid.innerHTML = '';
       grid.appendChild(inner);
     }
-    function loadProject(idx) {
-      var saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
-      var p = saved[idx]; if (!p) return;
-      PROJECT = Object.assign({
-        id: null, title: 'My Video', script: '', wpm: 150,
-        sceneDuration: 8, scenes: [], assets: [], clips: {}, clipsMeta: {}
-      }, p);
-      PROJECT.clips = {}; // blob URLs gone, start fresh
-
-      // Restore scene status from clipsMeta so user knows what was recorded
-      if (p.clipsMeta) {
-        Object.keys(p.clipsMeta).forEach(function (sceneId) {
-          var meta = p.clipsMeta[sceneId];
-          var scene = PROJECT.scenes.find(function (s) { return s.id === sceneId; });
-          if (scene && meta.recorded) scene.status = 'recorded';
-        });
-        toast(Object.keys(p.clipsMeta).length + ' scenes were previously recorded — retake any scene to re-record it', 'info');
+    async function loadProject(projectId) {
+      if (typeof APP !== 'undefined' && APP.user) {
+        try {
+          var r = await fetch(API + '/api/project/list?userId=' + encodeURIComponent(APP.user.id));
+          if (r.ok) {
+            var projects = await r.json();
+            if (projects && projects.length) {
+              var proj = projectId 
+                ? projects.find(function(p){ return p.id === projectId; }) 
+                : projects[0];
+              if (proj) {
+                window.PROJECT = proj;
+                if (window.STUDIO) STUDIO.currentScene = proj.currentScene || 0;
+                if (typeof updateTP === 'function') updateTP();
+                return proj;
+              }
+            }
+          }
+        } catch(e) { console.warn('Server load failed, trying local:', e.message); }
       }
-      nav('scenes-pg');
+      // Fallback: localStorage
+      try {
+        var local = JSON.parse(localStorage.getItem('aab_projects') || '{}');
+        var localProj = projectId ? local[projectId] : Object.values(local)[0];
+        if (localProj) {
+          window.PROJECT = localProj;
+          return localProj;
+        }
+      } catch(e) {}
+      return null;
     }
     function saveProject() {
       PROJECT.date = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -8347,8 +8457,8 @@
     function studioTpToggle() { STUDIO_TP.running ? studioTpStop() : studioTpStart(); }
     function studioTpStart() {
       STUDIO_TP.running = true;
-      // Cancel any running rAF frame first
-      if (_tpAutoTimer) { cancelAnimationFrame(_tpAutoTimer); _tpAutoTimer = null; }
+      // Do NOT set _aabTpActive — that kills startTpAutoTimer
+      if (window._tpAutoTimer) { cancelAnimationFrame(window._tpAutoTimer); window._tpAutoTimer = null; }
       var btn = document.getElementById('btn-tp-start');
       if (btn) {
         btn.textContent = '⏸ Stop practice';
@@ -8798,7 +8908,7 @@
     // ══ ASSET OVERLAY ═════════════════════════════════════════════════════════════// ══ EDIT SUITE ════════════════════════════════════════════════════════════════
     var EDIT_SELECTED = null; function renderVideoTimeline() {
       var rail = document.getElementById('tl-tracks'); if (!rail) return; rail.innerHTML = '';
-      var clips = Object.entries(PROJECT.clips || {}).filter(function (e) { return e[1].url; });
+      var clips = Object.entries(PROJECT.clips || {}).filter(function (e) { return e[1] && (e[1].url || e[1].videoUrl); });
       if (!clips.length) { var em = document.createElement('div'); em.style.cssText = 'font-size:10px;color:rgba(255,255,255,.2);padding:4px 8px;'; em.textContent = 'No clips recorded'; rail.appendChild(em); return; }
       var zoom = EDIT.zoom / 100;
       clips.forEach(function (entry, i) {
@@ -9772,107 +9882,209 @@
     }
 
     function startTpAutoTimer() {
-      // Kill ALL competing TP engines immediately
+      // Kill ALL competing engines — this is the ONLY TP engine
       window._aabTpActive = false;
       if (window._studioTpTimer) { clearInterval(window._studioTpTimer); window._studioTpTimer = null; }
       if (window._tpAutoTimer) { cancelAnimationFrame(window._tpAutoTimer); window._tpAutoTimer = null; }
 
-      var scene = PROJECT.scenes[STUDIO.currentScene];
-      if (!scene || !scene.narration) { return; }
-      var words = (scene.narration || '').trim().split(/\s+/).filter(Boolean);
-      if (!words.length) { return; }
+      var mode = window._tpScrollMode || window._tpMode || 'auto';
 
-      // Always rebuild spans fresh so we own them
+      // MANUAL mode — no auto movement, return immediately
+      if (mode === 'manual') return;
+
+      var scene = PROJECT && PROJECT.scenes && PROJECT.scenes[STUDIO.currentScene];
+      if (!scene || !scene.narration || !scene.narration.trim()) return;
+      var words = scene.narration.trim().split(/\s+/).filter(Boolean);
+      if (!words.length) return;
+
+      // Rebuild word spans (needed for word-by-word; auto-scroll uses them for timing)
       if (typeof updateTP === 'function') updateTP();
 
-      // Wait one frame for DOM reflow after updateTP
       requestAnimationFrame(function() {
-        var testSpan = document.getElementById('aab_tw0');
-        if (!testSpan) { return; } // no spans built — nothing to scroll
-
-        var mode = window._tpScrollMode || window._tpMode || 'auto';
-        var wpm = Math.max(20, Math.min(400, STUDIO.tpSpeed || 80));
-        var msPerW = 60000 / wpm;
-        var totalMs = words.length * msPerW;
-        var startTs = null;
-        var lastWi = -1;
-
         var curEl = document.getElementById('tp-cur');
         var inner = document.getElementById('tp-cur-inner');
-        // Reset scroll to top
-        if (inner) { inner.style.transform = ''; inner.style.transition = 'transform 0.25s ease'; }
-        if (curEl) { curEl.style.overflow = 'hidden'; }
+        if (!curEl || !inner) return;
 
-        function frame(ts) {
-          if (!STUDIO_TP.running && !STUDIO.tpAuto) { window._tpAutoTimer = null; return; }
-          if (!startTs) startTs = ts;
-          var elapsed = ts - startTs;
-          var progress = Math.min(elapsed / totalMs, 1);
-          var wi = Math.min(Math.floor(elapsed / msPerW), words.length - 1);
+        // Ensure text wraps properly (not one horizontal line)
+        inner.style.display = 'block';
+        inner.style.whiteSpace = 'normal';
+        inner.style.wordWrap = 'break-word';
+        inner.style.width = '100%';
+        inner.style.willChange = 'transform';
 
-          if (wi !== lastWi) {
-            lastWi = wi;
-            // Highlight all spans
-            for (var k = 0; k < words.length; k++) {
-              var span = document.getElementById('aab_tw' + k);
-              if (!span) continue;
-              if (k < wi) {
-                span.style.color = 'rgba(255,255,255,.2)';
-                span.style.fontWeight = '';
-                span.style.background = '';
-                span.style.padding = '';
-              } else if (k === wi) {
-                span.style.color = '#fff';
-                span.style.fontWeight = '700';
-                span.style.background = 'rgba(0,212,255,.18)';
-                span.style.borderRadius = '3px';
-                span.style.padding = '0 2px';
-                // Scroll to keep current word visible
-                if (mode !== 'manual' && curEl && inner) {
-                  var spanRect = span.getBoundingClientRect();
+        var wpm = Math.max(20, Math.min(400, (STUDIO && STUDIO.tpSpeed) || 80));
+
+        // ════════════════════════════════════════════════════════
+        // MODE: AUTO-SCROLL
+        // Smooth continuous upward scroll — like a real teleprompter
+        // Text rolls upward at a speed matching WPM reading speed
+        // ════════════════════════════════════════════════════════
+        if (mode === 'auto' || mode === 'scroll') {
+          // Reset to top
+          inner.style.transition = 'none';
+          inner.style.transform = 'translateY(0px)';
+
+          // Wait one frame so layout settles after reset
+          requestAnimationFrame(function() {
+            var innerH = inner.scrollHeight;
+            var viewH  = curEl.offsetHeight;
+            var scrollable = Math.max(0, innerH - viewH);
+
+            if (scrollable < 5) {
+              // Text fits without scrolling — nothing to scroll
+              return;
+            }
+
+            // Time to read the whole text at WPM speed
+            var totalMs = (words.length / wpm) * 60000;
+            // Pixels per millisecond
+            var pxPerMs = scrollable / totalMs;
+
+            var startTs = null;
+
+            function scrollFrame(ts) {
+              if (!STUDIO_TP || (!STUDIO_TP.running && !STUDIO.tpAuto)) {
+                window._tpAutoTimer = null;
+                return;
+              }
+              if (!startTs) startTs = ts;
+              var elapsed = ts - startTs;
+              var scrolled = Math.min(elapsed * pxPerMs, scrollable);
+              inner.style.transition = 'none';
+              inner.style.transform = 'translateY(-' + scrolled + 'px)';
+
+              // Progress bar
+              var pf = document.getElementById('scene-prog-fill');
+              if (pf) pf.style.width = Math.min(100, (scrolled / scrollable) * 100) + '%';
+
+              if (scrolled < scrollable) {
+                window._tpAutoTimer = requestAnimationFrame(scrollFrame);
+              } else {
+                // Reached end of this scene
+                window._tpAutoTimer = null;
+                STUDIO_TP.running = false;
+                inner.style.transform = 'translateY(0px)';
+                if (PROJECT.scenes && STUDIO.currentScene < PROJECT.scenes.length - 1) {
+                  STUDIO.currentScene++;
+                  inner.style.transform = '';
+                  if (typeof updateTP === 'function') updateTP();
+                  if (typeof renderStudioQueue === 'function') renderStudioQueue();
+                  if (STUDIO_TP.wasRunning || STUDIO.tpAuto) {
+                    STUDIO_TP.running = true;
+                    setTimeout(function() { startTpAutoTimer(); }, 300);
+                  }
+                } else {
+                  STUDIO_TP.wasRunning = false;
+                  STUDIO.tpAuto = false;
+                  var btn = document.getElementById('btn-tp-start');
+                  if (btn) { btn.textContent = '▶ Practice'; btn.style.cssText = ''; }
+                  if (typeof toast === 'function') toast('✓ All scenes complete', 'ok');
+                }
+              }
+            }
+
+            inner.style.transition = 'none';
+            window._tpAutoTimer = requestAnimationFrame(scrollFrame);
+          });
+          return;
+        }
+
+        // ════════════════════════════════════════════════════════
+        // MODE: WORD-BY-WORD
+        // Highlights each word in sequence at WPM speed
+        // Text does NOT scroll — stays in place
+        // Each word lights up in cyan then dims when passed
+        // ════════════════════════════════════════════════════════
+        if (mode === 'word') {
+          if (!document.getElementById('aab_tw0')) return;
+
+          inner.style.transition = 'none';
+          inner.style.transform = 'translateY(0px)';
+
+          var msPerW = 60000 / wpm;
+          var totalMs2 = words.length * msPerW;
+          var startTs2 = null;
+          var lastWi2 = -1;
+
+          function wordFrame(ts) {
+            if (!STUDIO_TP || (!STUDIO_TP.running && !STUDIO.tpAuto)) {
+              window._tpAutoTimer = null;
+              return;
+            }
+            if (!startTs2) startTs2 = ts;
+            var elapsed2 = ts - startTs2;
+            var progress2 = Math.min(elapsed2 / totalMs2, 1);
+            var wi2 = Math.min(Math.floor(elapsed2 / msPerW), words.length - 1);
+
+            if (wi2 !== lastWi2) {
+              lastWi2 = wi2;
+              for (var k = 0; k < words.length; k++) {
+                var sp = document.getElementById('aab_tw' + k);
+                if (!sp) continue;
+                if (k < wi2) {
+                  // Past — dim
+                  sp.style.color = 'rgba(255,255,255,.25)';
+                  sp.style.fontWeight = '';
+                  sp.style.background = '';
+                  sp.style.padding = '';
+                } else if (k === wi2) {
+                  // Current — highlight bright cyan
+                  sp.style.color = '#00d4ff';
+                  sp.style.fontWeight = '700';
+                  sp.style.background = 'rgba(0,212,255,.15)';
+                  sp.style.borderRadius = '4px';
+                  sp.style.padding = '1px 3px';
+                  // Scroll to keep current word in view
+                  var spanRect = sp.getBoundingClientRect();
                   var innerRect = inner.getBoundingClientRect();
                   var curRect = curEl.getBoundingClientRect();
                   var curT = parseFloat(inner.style.transform.replace('translateY(','').replace('px)','')) || 0;
                   var spanPos = (spanRect.top - innerRect.top) - curT;
-                  var target = Math.max(0, spanPos - curT - curRect.height * 0.28);
+                  var target = Math.max(0, spanPos - curT - curRect.height * 0.30);
+                  inner.style.transition = 'transform 0.2s ease';
                   inner.style.transform = 'translateY(-' + target + 'px)';
+                } else {
+                  // Upcoming — normal
+                  sp.style.color = 'rgba(255,255,255,.6)';
+                  sp.style.fontWeight = '';
+                  sp.style.background = '';
+                  sp.style.padding = '';
+                }
+              }
+              var pf2 = document.getElementById('scene-prog-fill');
+              if (pf2) pf2.style.width = (progress2 * 100) + '%';
+            }
+
+            if (progress2 < 1) {
+              window._tpAutoTimer = requestAnimationFrame(wordFrame);
+            } else {
+              window._tpAutoTimer = null;
+              STUDIO_TP.running = false;
+              inner.style.transform = 'translateY(0px)';
+              var btn2 = document.getElementById('btn-tp-start');
+              if (btn2) { btn2.textContent = '▶ Practice'; btn2.style.cssText = ''; }
+              if (PROJECT.scenes && STUDIO.currentScene < PROJECT.scenes.length - 1) {
+                STUDIO.currentScene++;
+                inner.style.transform = '';
+                if (typeof updateTP === 'function') updateTP();
+                if (typeof renderStudioQueue === 'function') renderStudioQueue();
+                if (STUDIO_TP.wasRunning || STUDIO.tpAuto) {
+                  STUDIO_TP.running = true;
+                  setTimeout(function() { startTpAutoTimer(); }, 200);
                 }
               } else {
-                span.style.color = 'rgba(255,255,255,.55)';
-                span.style.fontWeight = '';
-                span.style.background = '';
-                span.style.padding = '';
+                STUDIO_TP.wasRunning = false;
+                STUDIO.tpAuto = false;
+                if (typeof toast === 'function') toast('\u2713 All scenes complete', 'ok');
               }
             }
-            var pf = document.getElementById('scene-prog-fill');
-            if (pf) pf.style.width = (progress * 100) + '%';
           }
 
-          if (progress < 1) {
-            window._tpAutoTimer = requestAnimationFrame(frame);
-          } else {
-            window._tpAutoTimer = null;
-            STUDIO_TP.running = false;
-            if (inner) inner.style.transform = '';
-            var btn = document.getElementById('btn-tp-start');
-            if (btn) { btn.textContent = '▶ Practice'; btn.style.cssText = ''; }
-            if (STUDIO.currentScene < PROJECT.scenes.length - 1) {
-              STUDIO.currentScene++;
-              if (inner) inner.style.transform = '';
-              if (typeof updateTP === 'function') updateTP();
-              if (STUDIO_TP.wasRunning || STUDIO.tpAuto) {
-                setTimeout(function() { studioTpStart(); }, 200);
-              }
-            } else {
-              STUDIO_TP.wasRunning = false;
-              toast('✓ All scenes complete', 'ok');
-            }
-          }
+          STUDIO_TP.wasRunning = true;
+          STUDIO_TP.running = true;
+          window._tpAutoTimer = requestAnimationFrame(wordFrame);
         }
-
-        STUDIO_TP.wasRunning = true;
-        window._tpAutoTimer = requestAnimationFrame(frame);
-      }); // end requestAnimationFrame wrapper
+      });
     }
 
     // Override studioTpStop to cancel rAF not setInterval
@@ -10521,7 +10733,7 @@
         var noClipsEl = document.getElementById('edit-no-clips');
         if (noClipsEl) noClipsEl.style.display = 'none';
         var editVid = document.getElementById('edit-video');
-        if (editVid && !editVid.src) {
+        if (editVid && (!editVid.src || editVid.src === window.location.href || editVid.src === location.origin + '/')) {
           editVid.src = firstClip.url || firstClip.videoUrl;
           editVid.style.display = 'block';
         }
@@ -15188,7 +15400,7 @@ function _aabTpScrollStart() {
   if (window._studioTpTimer) { clearInterval(window._studioTpTimer); window._studioTpTimer = null; }
   if (window.STUDIO_TP) window.STUDIO_TP.running = false;
   if (_aabTpRaf) { cancelAnimationFrame(_aabTpRaf); _aabTpRaf = null; }
-  window._aabTpActive = true;
+  // window._aabTpActive = true; // disabled — was blocking RAF engine
 
   var slider  = document.getElementById('tp-spd-range');
   var wpm     = parseInt(slider ? slider.value : 120) || 120;
@@ -20704,6 +20916,39 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
       };
     })();
 
+    
+    // Manual teleprompter scrolling with arrow keys
+    (function() {
+      if (window._tpManualKeysWired) return;
+      window._tpManualKeysWired = true;
+      var _manualScrollPos = 0;
+      document.addEventListener('keydown', function(e) {
+        var mode = window._tpScrollMode || window._tpMode || 'auto';
+        if (mode !== 'manual') return;
+        // Only when studio is visible
+        var rec = document.getElementById('record-pg');
+        if (!rec || !rec.classList.contains('on')) return;
+        var inner = document.getElementById('tp-cur-inner');
+        var curEl = document.getElementById('tp-cur');
+        if (!inner || !curEl) return;
+        var scrollStep = 20;
+        if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          _manualScrollPos = Math.min(_manualScrollPos + scrollStep, inner.scrollHeight - curEl.offsetHeight);
+          inner.style.transition = 'transform 0.1s ease';
+          inner.style.transform = 'translateY(-' + Math.max(0, _manualScrollPos) + 'px)';
+        } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+          e.preventDefault();
+          _manualScrollPos = Math.max(0, _manualScrollPos - scrollStep);
+          inner.style.transition = 'transform 0.1s ease';
+          inner.style.transform = 'translateY(-' + _manualScrollPos + 'px)';
+        }
+      });
+      // Reset scroll position when scene changes
+      document.addEventListener('tp-scene-change', function() {
+        _manualScrollPos = 0;
+      });
+    })();
     </script>
 
 </body>
