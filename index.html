@@ -7678,8 +7678,8 @@
           + (clipCount ? ' · <span style="color:var(--green);">' + clipCount + ' recorded</span>' : '')
           + '</div>'
           + '<div style="display:flex;gap:8px;">'
-          + '<button class="btn btn-primary btn-sm" style="flex:1;" onclick="loadProject(' + i + ')">Open →</button>'
-          + '<button class="btn btn-ghost btn-sm" onclick="deleteProject(' + i + ')" style="color:var(--muted);padding:6px 10px;">✕</button>'
+          + '<button class="btn btn-primary btn-sm" style="flex:1;" onclick="openProjectById(\'' + (p.id || i) + '\')">Open →</button>'
+          + '<button class="btn btn-ghost btn-sm" onclick="deleteProjectById(\'' + (p.id || i) + '\')">✕</button>'
           + '</div>';
         inner.appendChild(card);
       });
@@ -21404,6 +21404,57 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
       ].join('\n');
       document.head.appendChild(s);
     })();
+
+    
+    // ── openProjectById — called when user clicks Open on a project card ──
+    window.openProjectById = function(projectId) {
+      // Load from localStorage array
+      var projects = [];
+      try { projects = JSON.parse(localStorage.getItem('aab_projects') || '[]'); } catch(e) {}
+      
+      var proj = null;
+      if (typeof projectId === 'number' || /^\d+$/.test(projectId)) {
+        // Legacy: numeric index
+        proj = projects[parseInt(projectId, 10)];
+      } else {
+        // Find by ID string
+        proj = projects.find(function(p){ return p.id === projectId; });
+      }
+      
+      if (!proj) {
+        if (typeof toast === 'function') toast('Project not found — it may have been deleted', 'error');
+        return;
+      }
+      
+      // Set as active project
+      window.PROJECT = proj;
+      if (window.STUDIO) STUDIO.currentScene = proj.currentScene || 0;
+      
+      // Navigate to script page to continue editing
+      if (typeof nav === 'function') nav('script-pg');
+      if (typeof toast === 'function') toast('Opened: ' + (proj.title || 'Untitled'), 'ok');
+    };
+
+    // ── deleteProjectById — delete a project from localStorage ────────────
+    window.deleteProjectById = function(projectId) {
+      if (!confirm('Delete this project? This cannot be undone.')) return;
+      var projects = [];
+      try { projects = JSON.parse(localStorage.getItem('aab_projects') || '[]'); } catch(e) {}
+      
+      if (typeof projectId === 'number' || /^\d+$/.test(projectId)) {
+        projects.splice(parseInt(projectId, 10), 1);
+      } else {
+        projects = projects.filter(function(p){ return p.id !== projectId; });
+      }
+      
+      try { localStorage.setItem('aab_projects', JSON.stringify(projects)); } catch(e) {}
+      if (typeof loadDashboard === 'function') loadDashboard();
+      if (typeof toast === 'function') toast('Project deleted', 'ok');
+    };
+
+    // Legacy aliases
+    window.openProject = window.openProjectById;
+    window.deleteProject = function(idx) { window.deleteProjectById(idx); };
 
     </script>
 
