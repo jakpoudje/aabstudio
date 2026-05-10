@@ -2313,9 +2313,9 @@
     }
 
     .tp-cur-txt {
-      font-size: clamp(18px, 2.2vw, 26px);
+      font-size: clamp(16px, 1.8vw, 22px);
       font-weight: 600;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: "Sora", "Inter", sans-serif;
       line-height: 1.9;
       padding: 2px 24px;
       overflow: hidden;
@@ -5313,45 +5313,43 @@
 </style>
 
 <style id="tp-controller-css-static">
-/* ═══ TELEPROMPTER — DEFINITIVE LAYOUT FIX ═════════════════
-   Text must stay inside #tp-cur. Never overflow into panels.
-   This overrides all other TP CSS with highest specificity.
-═══════════════════════════════════════════════════════════ */
-
-/* The TP panel contains everything */
+/* ═══ TELEPROMPTER — DEFINITIVE LAYOUT ══════════════════════════
+   Fixes: text overflow, text clipped by side panels, no scroll
+═══════════════════════════════════════════════════════════════ */
 #studio-tp-panel {
   overflow: hidden !important;
   display: flex !important;
   flex-direction: column !important;
+  flex-shrink: 0 !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
 }
-
-/* tp-body fills the panel */
 #tp-body {
   display: flex !important;
   flex-direction: column !important;
-  height: 100% !important;
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
   overflow: hidden !important;
-  padding: 8px 20px 8px !important;
-  gap: 2px !important;
   box-sizing: border-box !important;
+  gap: 2px !important;
+  /* Left padding accounts for scene queue panel (160px) 
+     Right padding accounts for asset panel (180px) + buffer */
+  padding: 6px 16px 8px 16px !important;
 }
-
-/* tp-cur: the main text area — MUST clip its content */
 #tp-cur {
   flex: 1 1 0% !important;
   min-height: 0 !important;
-  overflow: hidden !important;         /* ← CRITICAL: clips inner div */
+  overflow: hidden !important;
   position: relative !important;
+  width: 100% !important;
   max-width: 100% !important;
   box-sizing: border-box !important;
 }
-
-/* tp-cur-inner: scrolls via translateY inside #tp-cur */
 #tp-cur-inner {
   display: block !important;
-  white-space: normal !important;      /* text wraps, no single line */
+  white-space: normal !important;
   word-wrap: break-word !important;
-  word-break: normal !important;
+  word-break: break-word !important;
   overflow-wrap: break-word !important;
   width: 100% !important;
   max-width: 100% !important;
@@ -5359,22 +5357,17 @@
   will-change: transform !important;
   line-height: 1.65 !important;
 }
-
-/* Word spans: inline, normal wrap */
 .tp-word {
   display: inline !important;
   white-space: normal !important;
   margin-right: 0.28em !important;
 }
-
-/* Prev/next scene hints: single line, ellipsis */
 #tp-prev, #tp-next {
   flex-shrink: 0 !important;
   overflow: hidden !important;
   white-space: nowrap !important;
   text-overflow: ellipsis !important;
   max-width: 100% !important;
-  min-height: 0 !important;
 }
 </style>
 </head>
@@ -6251,7 +6244,7 @@
           <!-- teleprompter moved below camera -->
         </div>
         <!-- TP panel sits directly below camera within same column -->
-        <div id="studio-tp-panel" style="flex-shrink:0;background:rgba(0,0,0,.92);border-top:.5px solid rgba(255,255,255,.08);overflow:hidden;max-height:150px;">
+        <div id="studio-tp-panel" style="flex-shrink:0;background:rgba(0,0,0,.92);border-top:.5px solid rgba(255,255,255,.08);overflow:hidden;max-height:160px;">
           <!-- TP Header -->
           <div style="display:flex;align-items:center;gap:6px;padding:5px 12px;height:32px;border-bottom:.5px solid rgba(255,255,255,.06);overflow-x:auto;flex-shrink:0;">
             <span style="font-size:9px;font-weight:700;color:rgba(255,255,255,.3);letter-spacing:.08em;flex-shrink:0;">TELEPROMPTER</span>
@@ -21076,7 +21069,8 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
       var curEl = document.getElementById('tp-cur');
       var inner = document.getElementById('tp-cur-inner');
       var ts    = window.teleprompterState;
-      if (!curEl || !inner) return;
+      if (!curEl || !inner) { console.warn('TP: elements missing'); return; }
+      if (!ts.running) return;
 
       window.fitTeleprompterTextToPreview();
 
@@ -21088,46 +21082,68 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
       var wpm     = Math.max(20, Math.min(400, (STUDIO && STUDIO.tpSpeed) || 80));
       var totalMs = (words.length / wpm) * 60000;
 
-      // Reset to top, measure scrollable height
+      // Reset position
       inner.style.transition = 'none';
       inner.style.transform  = 'translateY(0px)';
 
+      // Use two rAF to ensure layout has settled
       requestAnimationFrame(function() {
-        // Re-measure after layout settles
-          var curH2 = curEl.getBoundingClientRect().height || curEl.offsetHeight;
-          var innerH2 = inner.scrollHeight;
-          var scrollable = Math.max(0, innerH2 - curH2);
-        if (scrollable < 2) scrollable = 0; // nothing to scroll — text fits
+        requestAnimationFrame(function() {
+          var curH = curEl.getBoundingClientRect().height || curEl.offsetHeight;
+          var innerH = inner.scrollHeight;
 
-        var pxPerMs = scrollable > 0 ? scrollable / totalMs : 0;
-        var startTs = null;
+          // If curH is 0, the studio isn't visible yet — retry
+          if (curH < 10) {
+            console.warn('TP: curH=' + curH + ', retrying in 300ms');
+            setTimeout(function() {
+              if (ts.running) window.startAutoScroll();
+            }, 300);
+            return;
+          }
 
-        function scrollFrame(now) {
-          if (!ts.running) return;
-          if (!startTs) startTs = now;
-          var elapsed = now - startTs;
+          var scrollable = Math.max(0, innerH - curH);
+          console.log('TP AUTO-SCROLL: curH=' + Math.round(curH) + ' innerH=' + innerH + ' scrollable=' + Math.round(scrollable) + ' wpm=' + wpm + ' totalMs=' + Math.round(totalMs));
 
-          if (pxPerMs > 0) {
+          if (scrollable < 2) {
+            // Text fits completely — still run the timer for scene advance
+            console.log('TP: text fits, no scroll needed');
+            var startTs0 = null;
+            function noScrollFrame(now) {
+              if (!ts.running) return;
+              if (!startTs0) startTs0 = now;
+              var progress = Math.min((now - startTs0) / totalMs, 1);
+              var pf = document.getElementById('scene-prog-fill');
+              if (pf) pf.style.width = (progress * 100) + '%';
+              if (progress < 1) { ts.rafId = requestAnimationFrame(noScrollFrame); }
+              else { ts.rafId = null; ts.running = false; _tpAdvanceScene(); }
+            }
+            ts.rafId = requestAnimationFrame(noScrollFrame);
+            return;
+          }
+
+          var pxPerMs = scrollable / totalMs;
+          var startTs = null;
+
+          function scrollFrame(now) {
+            if (!ts.running) { ts.rafId = null; return; }
+            if (!startTs) startTs = now;
+            var elapsed = now - startTs;
             var scrolled = Math.min(elapsed * pxPerMs, scrollable);
             inner.style.transition = 'none';
             inner.style.transform  = 'translateY(-' + scrolled + 'px)';
+            var pf = document.getElementById('scene-prog-fill');
+            if (pf) pf.style.width = Math.min(100, (scrolled / scrollable) * 100) + '%';
+            if (elapsed < totalMs) {
+              ts.rafId = requestAnimationFrame(scrollFrame);
+            } else {
+              ts.rafId = null;
+              ts.running = false;
+              inner.style.transform = 'translateY(0px)';
+              _tpAdvanceScene();
+            }
           }
-
-          // Progress bar
-          var progress = Math.min(elapsed / totalMs, 1);
-          var pf = document.getElementById('scene-prog-fill');
-          if (pf) pf.style.width = (progress * 100) + '%';
-
-          if (elapsed < totalMs) {
-            ts.rafId = requestAnimationFrame(scrollFrame);
-          } else {
-            ts.rafId = null;
-            ts.running = false;
-            inner.style.transform = 'translateY(0px)';
-            _tpAdvanceScene();
-          }
-        }
-        ts.rafId = requestAnimationFrame(scrollFrame);
+          ts.rafId = requestAnimationFrame(scrollFrame);
+        });
       });
     };
 
