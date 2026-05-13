@@ -9407,8 +9407,18 @@ window.ap_setTpSettings = function(settings) {
       if (!STUDIO.tpAuto || !STUDIO.recording) { clearInterval(_tpAutoTimer); STUDIO_TP.running = false; }
       toast(STUDIO.tpAuto ? 'Teleprompter syncs with REC' : 'Sync off', 'info');
     } function setTpSpd(v) {
-      STUDIO.tpSpeed = parseInt(v) || 80;
-      var el = document.getElementById('tp-spd-val'); if (el) el.textContent = v + 'wpm';
+      var wpm = Math.max(20, Math.min(400, parseInt(v) || 80));
+      if (window.STUDIO) STUDIO.tpSpeed = wpm;
+      // Sync ALL WPM display elements
+      ['tp-spd-val','tp-spd-val2','s-wpm'].forEach(function(id){
+        var el = document.getElementById(id);
+        if (el) el.textContent = wpm + 'wpm';
+      });
+      // Sync all sliders
+      ['tp-speed-slider','tp-spd-range','tp-spd'].forEach(function(id){
+        var el = document.getElementById(id);
+        if (el && el.value != wpm) el.value = wpm;
+      });
     }
     function toggleAdaptiveTp() {
       STUDIO.adaptive = !STUDIO.adaptive;
@@ -14466,10 +14476,35 @@ window.ap_setTpSettings = function(settings) {
         if (typeof updateTP === 'function') updateTP();
         if (typeof renderStudioQueue === 'function') renderStudioQueue();
         setStudioState('PRACTICE');
-        // Small delay to let DOM reflow after updateTP
-        setTimeout(function() {
-          if (typeof studioTpStart === 'function') studioTpStart();
-        }, 100);
+        // Countdown before practice
+        (function() {
+          var secs = parseInt((document.getElementById('settings-countdown')||{}).value||'3')||3;
+          var canvas = document.getElementById('studio-canvas');
+          if (secs > 0 && canvas) {
+            canvas.style.position = 'relative';
+            var ol = document.createElement('div');
+            ol.id = 'practice-cd-ol';
+            ol.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:50;border-radius:inherit;';
+            ol.innerHTML = '<div id="pcd" style="font-size:5rem;font-weight:700;color:#00d4ff;font-family:Sora,sans-serif;text-shadow:0 0 40px rgba(0,212,255,.5);">' + secs + '</div>';
+            canvas.appendChild(ol);
+            var c = secs;
+            var tick = setInterval(function() {
+              c--;
+              var el = document.getElementById('pcd');
+              if (el) el.textContent = c > 0 ? c : 'GO';
+              if (c <= 0) {
+                clearInterval(tick);
+                var o = document.getElementById('practice-cd-ol');
+                if (o) o.remove();
+                if (typeof studioTpStart === 'function') studioTpStart();
+              }
+            }, 1000);
+          } else {
+            setTimeout(function() {
+              if (typeof studioTpStart === 'function') studioTpStart();
+            }, 100);
+          }
+        })();
         toast('Practice \u2014 teleprompter from Scene 1. Click again to stop.', 'info');
       }
       window.startPracticeMode = startPracticeMode;
@@ -14480,8 +14515,14 @@ window.ap_setTpSettings = function(settings) {
         if (STUDIO_STATE === 'RECORDING') { if (typeof stopRec === 'function') stopRec(); return; }
         if (!STUDIO.stream || !STUDIO.stream.active) { toast('Start camera first \u2014 click \ud83d\udcf7 Cam', 'error'); return; }
         if (STUDIO.currentScene === null || STUDIO.currentScene === undefined) { toast('Select a scene first', 'info'); return; }
-        if (typeof startRec === 'function') startRec();
-        setTimeout(function () { if (typeof studioTpStart === 'function') studioTpStart(); }, 400);
+        if (typeof startRecWithCountdown === 'function') {
+          startRecWithCountdown();
+          var _cdSecs = parseInt((document.getElementById('settings-countdown')||{}).value||'3')||3;
+          setTimeout(function(){ if(typeof studioTpStart==='function') studioTpStart(); }, (_cdSecs*1000)+300);
+        } else {
+          if(typeof startRec==='function') startRec();
+          setTimeout(function(){ if(typeof studioTpStart==='function') studioTpStart(); }, 400);
+        }
         toast('Sync REC \u2014 camera + teleprompter. Click \u25a0 STOP to finish.', 'ok');
       }
       window.startSyncRecord = startSyncRecord;
@@ -21971,12 +22012,15 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
             if (!ts.running) { ts.rafId = null; return; }
             if (!startTs) startTs = now;
             var elapsed = now - startTs;
-            var scrolled = Math.min(elapsed * pxPerMs, scrollable);
+            // Read WPM live every frame — responds to slider changes while scrolling
+            var liveWpm = Math.max(20, Math.min(400, (window.STUDIO && STUDIO.tpSpeed) || 80));
+            var liveTotalMs = (words.length / liveWpm) * 60000;
+            var scrolled = Math.min((elapsed / liveTotalMs) * scrollable, scrollable);
             inner.style.transition = 'none';
             inner.style.transform  = 'translateY(-' + scrolled + 'px)';
             var pf = document.getElementById('scene-prog-fill');
             if (pf) pf.style.width = Math.min(100, (scrolled / scrollable) * 100) + '%';
-            if (elapsed < totalMs) {
+            if (scrolled < scrollable) {
               ts.rafId = requestAnimationFrame(scrollFrame);
             } else {
               ts.rafId = null;
