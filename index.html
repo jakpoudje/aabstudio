@@ -7394,6 +7394,201 @@
 
 
   <script>
+// ═══════════════════════════════════════════════════════════════════════════
+// ACTIVE PROJECT SYSTEM — Central state for the entire AABStudio platform
+// Every page reads from and writes to window.PROJECT via these helpers.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Default project shape ────────────────────────────────────────────────
+function _defaultProject() {
+  return {
+    id: 'proj_' + Date.now(),
+    title: 'My Video',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    // Script & scenes
+    script: '',
+    scenes: [],
+    // Assets (images, videos, audio, logos, backgrounds)
+    assets: [],
+    // Recorded clips keyed by scene ID
+    clips: {},
+    // AI Presenter clips keyed by scene ID
+    aiClips: {},
+    // Timeline state
+    timeline: { tracks: [], duration: 0, zoom: 60 },
+    // Teleprompter settings
+    tpSettings: { mode: 'auto', wpm: 80, fontSize: 18, bg: '#000' },
+    // Session state (non-persistent UI)
+    currentScene: 0,
+    // Export settings
+    exportSettings: { format: 'mp4', resolution: '1080p', aspect: '16:9' },
+    // Exported videos
+    exports: []
+  };
+}
+
+// ── Ensure PROJECT is always the global active project ───────────────────
+if (!window.PROJECT || !window.PROJECT.id) {
+  window.PROJECT = _defaultProject();
+}
+
+// ── ap_save — Save the active project (localStorage immediately, cloud async) ─
+window.ap_save = function(silent) {
+  if (!window.PROJECT) return;
+  PROJECT.updatedAt = new Date().toISOString();
+
+  // Show save indicator
+  if (!silent) {
+    var si = document.getElementById('save-status') || document.getElementById('edit-save-status');
+    if (si) { si.textContent = 'Saving…'; }
+  }
+
+  // 1. Save to localStorage as array (append/update)
+  try {
+    var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+    if (!Array.isArray(projects)) projects = Object.values(projects); // fix old {} format
+    var idx = projects.findIndex(function(p){ return p.id === PROJECT.id; });
+    // Strip blob URLs from clips before saving (they don't survive reload)
+    var light = JSON.parse(JSON.stringify(PROJECT));
+    if (light.clips) {
+      Object.keys(light.clips).forEach(function(k) {
+        var c = light.clips[k];
+        if (c && c.url && c.url.startsWith('blob:')) delete c.url;
+        if (c && c.videoUrl && c.videoUrl.startsWith('blob:')) delete c.videoUrl;
+      });
+    }
+    if (light.aiClips) {
+      Object.keys(light.aiClips).forEach(function(k) {
+        var c = light.aiClips[k];
+        if (c && c.url && c.url.startsWith('blob:')) delete c.url;
+        if (c && c.videoUrl && c.videoUrl.startsWith('blob:')) delete c.videoUrl;
+      });
+    }
+    if (idx > -1) projects[idx] = light; else projects.unshift(light);
+    var json = JSON.stringify(projects.slice(0, 30));
+    localStorage.setItem('aab_projects', json);
+    localStorage.setItem('aab_active_project_id', PROJECT.id);
+  } catch(e) {
+    console.warn('ap_save localStorage error:', e.message);
+  }
+
+  // 2. Show saved status
+  var si2 = document.getElementById('save-status') || document.getElementById('edit-save-status');
+  if (si2) { si2.textContent = 'Saved'; setTimeout(function(){ si2.textContent = ''; }, 2000); }
+
+  // 3. Cloud sync async (non-blocking)
+  if (typeof syncProjectToCloud === 'function') {
+    try { syncProjectToCloud(JSON.parse(JSON.stringify(PROJECT))); } catch(e) {}
+  }
+};
+
+// ── ap_load — Load a project by ID and set as active ─────────────────────
+window.ap_load = function(projectId) {
+  var projects = [];
+  try { 
+    projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+    if (!Array.isArray(projects)) projects = Object.values(projects);
+  } catch(e) {}
+
+  var proj = projectId
+    ? projects.find(function(p){ return p.id === projectId; })
+    : projects[0];
+
+  if (proj) {
+    // Merge into default to ensure all keys exist
+    window.PROJECT = Object.assign(_defaultProject(), proj);
+    // Restore clip metadata (blobs are gone after reload, but metadata survives)
+    if (!PROJECT.clips) PROJECT.clips = {};
+    if (!PROJECT.aiClips) PROJECT.aiClips = {};
+    if (!PROJECT.assets) PROJECT.assets = [];
+    if (!PROJECT.timeline) PROJECT.timeline = { tracks: [], duration: 0, zoom: 60 };
+    localStorage.setItem('aab_active_project_id', PROJECT.id);
+    return PROJECT;
+  }
+  return null;
+};
+
+// ── ap_restore — On page load, restore the last active project ────────────
+window.ap_restore = function() {
+  var lastId = localStorage.getItem('aab_active_project_id');
+  if (lastId) {
+    var restored = ap_load(lastId);
+    if (restored) return restored;
+  }
+  // No saved project — keep default
+  return window.PROJECT;
+};
+
+// ── ap_new — Create a new project and set it as active ───────────────────
+window.ap_new = function(title) {
+  window.PROJECT = _defaultProject();
+  if (title) PROJECT.title = title;
+  ap_save(true);
+  return PROJECT;
+};
+
+// ── ap_open — Open a project by ID (called from dashboard cards) ──────────
+window.ap_open = function(projectId) {
+  var proj = ap_load(projectId);
+  if (!proj) {
+    if (typeof toast === 'function') toast('Project not found', 'error');
+    return;
+  }
+  // Navigate to script page to continue
+  if (typeof nav === 'function') nav('script-pg');
+  if (typeof toast === 'function') toast('Opened: ' + (PROJECT.title || 'My Video'), 'ok');
+};
+
+// Override old function names to use new system
+window.openProjectById = window.ap_open;
+window.openProject = window.ap_open;
+
+// ── ap_addClip — Save a recorded clip to the active project ──────────────
+window.ap_addClip = function(sceneId, clipData) {
+  if (!PROJECT.clips) PROJECT.clips = {};
+  PROJECT.clips[sceneId] = Object.assign({ sceneId: sceneId, source: 'recording' }, clipData);
+  ap_save(true);
+};
+
+// ── ap_addAiClip — Save an AI clip to the active project ─────────────────
+window.ap_addAiClip = function(sceneId, clipData) {
+  if (!PROJECT.aiClips) PROJECT.aiClips = {};
+  PROJECT.aiClips[sceneId] = Object.assign({ sceneId: sceneId, source: 'ai-presenter' }, clipData);
+  // Also update PROJECT.clips for backward compat with edit suite
+  if (!PROJECT.clips) PROJECT.clips = {};
+  PROJECT.clips['aps_' + sceneId] = PROJECT.aiClips[sceneId];
+  ap_save(true);
+};
+
+// ── ap_addAsset — Add an asset to the active project ─────────────────────
+window.ap_addAsset = function(assetData) {
+  if (!PROJECT.assets) PROJECT.assets = [];
+  // Avoid duplicates
+  var exists = PROJECT.assets.find(function(a){ return a.id === assetData.id; });
+  if (!exists) PROJECT.assets.push(assetData);
+  ap_save(true);
+};
+
+// ── ap_setTpSettings — Save teleprompter settings with the project ────────
+window.ap_setTpSettings = function(settings) {
+  PROJECT.tpSettings = Object.assign(PROJECT.tpSettings || {}, settings);
+  ap_save(true);
+};
+
+// ── Wire nav() to auto-save ───────────────────────────────────────────────
+// And wire each page to restore from PROJECT correctly
+(function() {
+  // Auto-save every 30 seconds
+  if (window._apAutoSaveTimer) clearInterval(window._apAutoSaveTimer);
+  window._apAutoSaveTimer = setInterval(function() {
+    if (window.PROJECT && window.PROJECT.id) ap_save(true);
+  }, 30000);
+
+  // Restore project on startup
+  ap_restore();
+})();
+
 
 
     // ══════════════════════════════════════════════════════════════════════════════
@@ -7445,10 +7640,14 @@
         return;
       }
 
-      // Auto-save project before navigating away
-      try { if (typeof saveProject === 'function' && APP.user) saveProject(); } catch(e) {}
+      // Track navigation history for back button
+      if (!window._navStack) window._navStack = [];
+      var _currPg = document.querySelector('.pg.on, .pg-full.on');
+      if (_currPg && _currPg.id && _currPg.id !== pg) window._navStack.push(_currPg.id);
+      if (window._navStack.length > 20) window._navStack.shift();
 
-      try { if (typeof saveProject === 'function' && typeof APP !== 'undefined' && APP.user) saveProject(); } catch(e) {}
+      // Auto-save project before navigating away
+      try { if (typeof ap_save === 'function' && typeof APP !== 'undefined' && APP && APP.user) ap_save(true); } catch(e) {}
       document.querySelectorAll('.pg,.pg-flex,.pg-full').forEach(function (p) { p.classList.remove('on'); });
       var el = document.getElementById(pg);
       if (el) el.classList.add('on');
@@ -7665,7 +7864,8 @@
 
       projects.forEach(function (p, i) {
         var sceneCount = p.scenes ? p.scenes.length : 0;
-        var clipCount = Object.keys(p.clipsMeta || p.clips || {}).length;
+        var clipCount = Object.keys(p.clipsMeta || p.clips || {}).filter(function(k){ return !k.startsWith('aps_'); }).length;
+        var aiCount = Object.keys(p.aiClipsMeta || p.aiClips || {}).length + Object.keys(p.clipsMeta || p.clips || {}).filter(function(k){ return k.startsWith('aps_'); }).length;
         var card = document.createElement('div');
         card.className = 'proj-card';
         card.innerHTML =
@@ -7674,11 +7874,13 @@
           + '</div>'
           + '<div class="proj-title" style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:4px;line-height:1.3;">' + (p.title || 'Untitled') + '</div>'
           + '<div class="proj-meta" style="font-size:12px;color:var(--muted);margin-bottom:10px;">'
-          + sceneCount + ' scenes · ' + (p.date || 'Unknown date')
-          + (clipCount ? ' · <span style="color:var(--green);">' + clipCount + ' recorded</span>' : '')
+          + sceneCount + ' scenes'
+          + (clipCount ? ' · <span style=\"color:#10b981;\">' + clipCount + ' recorded</span>' : '')
+          + (aiCount ? ' · <span style=\"color:#00d4ff;\">' + aiCount + ' AI clips</span>' : '')
+          + ' · ' + (p.updatedAt ? new Date(p.updatedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'}) : p.date || '—')
           + '</div>'
           + '<div style="display:flex;gap:8px;">'
-          + '<button class="btn btn-primary btn-sm" style="flex:1;" onclick="openProjectById(\'' + (p.id || i) + '\')">Open →</button>'
+          + '<button class="btn btn-primary btn-sm" style="flex:1;" onclick="ap_open(\'' + (p.id || i) + '\')">Open →</button>'
           + '<button class="btn btn-ghost btn-sm" onclick="deleteProjectById(\'' + (p.id || i) + '\')">✕</button>'
           + '</div>';
         inner.appendChild(card);
@@ -7757,6 +7959,14 @@
         });
       }
       delete light.clips; // blob URLs can't be serialised
+      // Save aiClips metadata (without blob URLs)
+      if (PROJECT.aiClips) {
+        light.aiClipsMeta = {};
+        Object.keys(PROJECT.aiClips).forEach(function(k) {
+          var c = PROJECT.aiClips[k];
+          if (c) light.aiClipsMeta[k] = { sceneId: c.sceneId, sceneNum: c.sceneNum, sceneName: c.sceneName, duration: c.duration, source: c.source, provider: c.provider, generatedAt: c.generatedAt };
+        });
+      }
 
       try {
         var saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
@@ -7878,21 +8088,15 @@
 
     async function newProject() {
       if (!APP.user) { nav('auth-pg'); return; }
-      // Reset project
-      PROJECT = {
-        id: 'proj_' + Date.now(),
-        title: 'My Video',
-        mode: null,
-        script: '',
-        scenes: [],
-        assets: [],
-        clips: {},
-        wpm: 150,
-        sceneDuration: 8,
-        date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-      };
-      // Show mode picker
-      openModal('mode-picker-modal');
+      ap_new('My Video');
+      PROJECT = window.PROJECT;
+      nav('script-pg');
+      setTimeout(function() {
+        var titleEl = document.getElementById('proj-title');
+        if (titleEl) titleEl.value = PROJECT.title || 'My Video';
+        var taEl = document.getElementById('t-write');
+        if (taEl) taEl.value = PROJECT.script || '';
+      }, 100);
     }
 
     function confirmMode() {
@@ -7921,6 +8125,7 @@
       if (!script || script.length < 20) { toast('Please write or paste your script first.', 'err'); return; }
       PROJECT.id = PROJECT.id || ('p_' + Date.now());
       PROJECT.title = title; PROJECT.script = script;
+      ap_save(true); // save immediately so script persists
       nav('segment-pg');
       // Reset steps
       ['ss1', 'ss2', 'ss3', 'ss4', 'ss5'].forEach(function (id) { var e = document.getElementById(id); if (e) { e.classList.remove('run', 'done'); } });
@@ -8509,6 +8714,7 @@
     }
     function studioNext() {
       if (STUDIO.currentScene < PROJECT.scenes.length - 1) {
+        PROJECT.currentScene = STUDIO.currentScene + 1; // persist position
         var wasRecording = STUDIO.recording;
 
         if (wasRecording && STUDIO.mr && STUDIO.mr.state === 'recording') {
@@ -9766,8 +9972,8 @@
 
     // Call on studio init
     function initStudio() {
-      // Reset recording state
-      STUDIO.currentScene = 0;
+      // Restore scene position from project (don't reset to 0)
+      STUDIO.currentScene = (PROJECT && PROJECT.currentScene) || 0;
       STUDIO.elapsed = 0;
       STUDIO.recording = false;
       STUDIO.tpAuto = false;
@@ -10822,7 +11028,11 @@
     }
 
     function tl_buildTracksFromProject() {
-      var clips = Object.entries(PROJECT.clips || {}).filter(function (e) { return e[1].url; });
+      // Merge recorded clips and AI clips from activeProject
+      var allClipEntries = Object.assign({}, PROJECT.clips || {}, PROJECT.aiClips || {});
+      var clips = Object.entries(allClipEntries).filter(function (e) { 
+        return e[1] && (e[1].url || e[1].videoUrl); 
+      });
       if (!clips.length) { TL.tracks = []; TL.duration = 0; return; }
 
       // Main video track
@@ -21456,6 +21666,47 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
     window.openProject = window.openProjectById;
     window.deleteProject = function(idx) { window.deleteProjectById(idx); };
 
+    
+    // ── aab_sceneDone — called when AI Presenter finishes generating a clip ──
+    window.aab_sceneDone = function(sc, idx, videoUrl) {
+      if (!sc || !videoUrl) return false;
+      sc.status = 'done';
+      sc.videoUrl = videoUrl;
+      if (window.APS) APS.results = APS.results || {};
+      if (window.APS) APS.results[sc.id] = videoUrl;
+
+      // Save via central project system
+      var clipKey = 'aps_' + sc.id;
+      ap_addAiClip(sc.id, {
+        id: clipKey,
+        sceneId: sc.id,
+        sceneNum: sc.num || (idx + 1),
+        sceneName: sc.title || ('Scene ' + (sc.num || (idx + 1))),
+        url: videoUrl,
+        videoUrl: videoUrl,
+        duration: sc.duration || 8,
+        source: 'ai-presenter',
+        provider: window.APS && APS.settings ? APS.settings.provider : 'did',
+        generatedAt: new Date().toISOString()
+      });
+
+      // Update UI
+      try { if (typeof aps_updateSceneRow === 'function') aps_updateSceneRow(sc); } catch(e) {}
+      try { if (typeof aps_addClipToBar === 'function') aps_addClipToBar(sc); } catch(e) {}
+
+      // Update Go to Edit Suite button
+      var n = Object.keys(PROJECT.aiClips || {}).length;
+      var goBtn = document.getElementById('aps-go-edit-btn-top');
+      if (goBtn) {
+        goBtn.style.background = 'rgba(0,212,255,.2)';
+        goBtn.style.borderColor = 'rgba(0,212,255,.5)';
+        goBtn.style.color = '#00d4ff';
+        goBtn.textContent = '✓ ' + n + ' clip' + (n !== 1 ? 's' : '') + ' — Go to Edit Suite';
+      }
+
+      if (typeof toast === 'function') toast('✓ Scene ' + (sc.num || (idx+1)) + ' ready', 'ok');
+      return true;
+    };
     </script>
 
 </body>
