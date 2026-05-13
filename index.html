@@ -6457,6 +6457,12 @@ select {
 
   <!-- ══ SEGMENT ══════════════════════════════════════════════════════════════════ -->
   <div id="segment-pg" class="pg" style="background:var(--navy);color:#fff;">
+    <!-- Back to dashboard button -->
+    <div style="position:absolute;top:16px;left:16px;z-index:10;">
+      <button onclick="nav('dashboard-pg')" style="background:rgba(255,255,255,.08);border:.5px solid rgba(255,255,255,.15);border-radius:8px;color:rgba(255,255,255,.7);font-size:13px;padding:8px 16px;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:6px;">
+        ← Dashboard
+      </button>
+    </div>
     <div class="seg-wrap">
       <div class="seg-anim">
         <div class="seg-ring"></div>
@@ -8036,7 +8042,22 @@ window.ap_new = function(title) {
 
 // ── ap_open — Open a project by ID (called from dashboard cards) ──────────
 window.ap_open = function(projectId) {
-  var proj = ap_load(projectId);
+  // Handle both string IDs and numeric indexes
+  var projects = [];
+  try { projects = JSON.parse(localStorage.getItem('aab_projects') || '[]'); } catch(e) {}
+  if (!Array.isArray(projects)) projects = Object.values(projects);
+  
+  // Find by ID first, then by index
+  var proj = projects.find(function(p){ return p && (p.id === projectId || p.id === String(projectId)); });
+  if (!proj && !isNaN(parseInt(projectId, 10))) {
+    proj = projects[parseInt(projectId, 10)];
+  }
+  
+  if (!proj) {
+    if (typeof toast === 'function') toast('Project not found', 'error');
+    return;
+  }
+  window.PROJECT = proj;
   if (!proj) {
     if (typeof toast === 'function') toast('Project not found', 'error');
     return;
