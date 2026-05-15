@@ -512,6 +512,49 @@ app.get('/api/projects', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── VIDEO CLIP UPLOAD ─────────────────────────────────────────────────────────
+// Fixes: blob: URLs are lost on page refresh. User-recorded clips are uploaded
+// here immediately after recording stops. Returns a permanent Supabase Storage URL.
+// Requires: Supabase Storage bucket "aab-clips" with public access.
+app.post('/api/clip/upload', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No auth token' });
+    const token = authHeader.replace('Bearer ', '');
+    const sb = getSupaAdmin();
+    const { data: { user }, error: authErr } = await sb.auth.getUser(token);
+    if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
+
+    const { clipBase64, mimeType = 'video/webm', projectId, sceneId, sceneNum } = req.body;
+    if (!clipBase64) return res.status(400).json({ error: 'clipBase64 required' });
+
+    const ext      = mimeType.includes('mp4') ? 'mp4' : 'webm';
+    const filename = 'clips/' + user.id + '/' + (projectId || 'proj') + '/' + (sceneId || ('scene-' + sceneNum)) + '-' + Date.now() + '.' + ext;
+    const buffer   = Buffer.from(clipBase64, 'base64');
+
+    const { data, error } = await sb.storage.from('aab-clips').upload(filename, buffer, { contentType: mimeType, upsert: true });
+
+    if (error) {
+      if (error.message?.includes('Bucket not found') || error.statusCode === 400) {
+        return res.status(503).json({
+          error: 'Storage bucket "aab-clips" not found. Create it in Supabase Storage → New Bucket → Name: aab-clips → Public: ON.',
+          setup: true
+        });
+      }
+      throw error;
+    }
+
+    const { data: urlData } = sb.storage.from('aab-clips').getPublicUrl(filename);
+    const publicUrl = urlData?.publicUrl;
+    console.log('Clip uploaded:', filename, '(' + Math.round(buffer.length / 1024) + 'KB)');
+    res.json({ ok: true, url: publicUrl, filename, size: buffer.length });
+  } catch (e) {
+    console.error('clip/upload:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
 // GET /api/projects/:id/scenes — get all scenes for a project
 app.get('/api/projects/:id/scenes', async (req, res) => {
   try {
