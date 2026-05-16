@@ -10629,30 +10629,6 @@ window.ap_setTpSettings = function(settings) {
       }, 400);
     }
 
-    // ── RECORDING STABILITY — REMOVE AUTO-STOP ────────────────────────────────────
-    // Recording ONLY stops when user explicitly clicks STOP
-    // Override toggleRecording to use state machine
-    function toggleRecording() {
-      if (REC_STATE === 'RECORDING') {
-        stopRec();
-        return;
-      }
-      if (!STUDIO.stream || !STUDIO.stream.active) {
-        toast('Starting camera...', 'info');
-        startCamera();
-        setTimeout(function () {
-          if (STUDIO.stream && STUDIO.stream.active) {
-            setRecState('READY');
-            startRecWithCountdown();
-          } else {
-            toast('Camera not ready — click 📷 Cam first', 'error');
-          }
-        }, 1800);
-        return;
-      }
-      startRecWithCountdown();
-    }
-
     // ── WEBSOCKET REMOTE (BroadcastChannel for same-origin, fallback to localStorage) ─
     var _bc = null;
     try { _bc = new BroadcastChannel('aab_remote'); } catch (e) { }
@@ -10890,47 +10866,6 @@ window.ap_setTpSettings = function(settings) {
 
             var startTs = null;
 
-            function scrollFrame(ts) {
-              if (!STUDIO_TP || (!STUDIO_TP.running && !STUDIO.tpAuto)) {
-                window._tpAutoTimer = null;
-                return;
-              }
-              if (!startTs) startTs = ts;
-              var elapsed = ts - startTs;
-              var scrolled = Math.min(elapsed * pxPerMs, scrollable);
-              inner.style.transition = 'none';
-              inner.style.transform = 'translateY(-' + scrolled + 'px)';
-
-              // Progress bar
-              var pf = document.getElementById('scene-prog-fill');
-              if (pf) pf.style.width = Math.min(100, (scrolled / scrollable) * 100) + '%';
-
-              if (scrolled < scrollable) {
-                window._tpAutoTimer = requestAnimationFrame(scrollFrame);
-              } else {
-                // Reached end of this scene
-                window._tpAutoTimer = null;
-                STUDIO_TP.running = false;
-                inner.style.transform = 'translateY(0px)';
-                if (PROJECT.scenes && STUDIO.currentScene < PROJECT.scenes.length - 1) {
-                  STUDIO.currentScene++;
-                  inner.style.transform = '';
-                  if (typeof updateTP === 'function') updateTP();
-                  if (typeof renderStudioQueue === 'function') renderStudioQueue();
-                  if (STUDIO_TP.wasRunning || STUDIO.tpAuto) {
-                    STUDIO_TP.running = true;
-                    setTimeout(function() { startTpAutoTimer(); }, 300);
-                  }
-                } else {
-                  STUDIO_TP.wasRunning = false;
-                  STUDIO.tpAuto = false;
-                  var btn = document.getElementById('btn-tp-start');
-                  if (btn) { btn.textContent = '▶ Practice'; btn.style.cssText = ''; }
-                  if (typeof toast === 'function') toast('✓ All scenes complete', 'ok');
-                }
-              }
-            }
-
             inner.style.transition = 'none';
             window._tpAutoTimer = requestAnimationFrame(scrollFrame);
           });
@@ -10953,80 +10888,6 @@ window.ap_setTpSettings = function(settings) {
           var totalMs2 = words.length * msPerW;
           var startTs2 = null;
           var lastWi2 = -1;
-
-          function wordFrame(ts) {
-            if (!STUDIO_TP || (!STUDIO_TP.running && !STUDIO.tpAuto)) {
-              window._tpAutoTimer = null;
-              return;
-            }
-            if (!startTs2) startTs2 = ts;
-            var elapsed2 = ts - startTs2;
-            var progress2 = Math.min(elapsed2 / totalMs2, 1);
-            var wi2 = Math.min(Math.floor(elapsed2 / msPerW), words.length - 1);
-
-            if (wi2 !== lastWi2) {
-              lastWi2 = wi2;
-              for (var k = 0; k < words.length; k++) {
-                var sp = document.getElementById('aab_tw' + k);
-                if (!sp) continue;
-                if (k < wi2) {
-                  // Past — dim
-                  sp.style.color = 'rgba(255,255,255,.25)';
-                  sp.style.fontWeight = '';
-                  sp.style.background = '';
-                  sp.style.padding = '';
-                } else if (k === wi2) {
-                  // Current — highlight bright cyan
-                  sp.style.color = '#00d4ff';
-                  sp.style.fontWeight = '700';
-                  sp.style.background = 'rgba(0,212,255,.15)';
-                  sp.style.borderRadius = '4px';
-                  sp.style.padding = '1px 3px';
-                  // Scroll to keep current word in view
-                  var spanRect = sp.getBoundingClientRect();
-                  var innerRect = inner.getBoundingClientRect();
-                  var curRect = curEl.getBoundingClientRect();
-                  var curT = parseFloat(inner.style.transform.replace('translateY(','').replace('px)','')) || 0;
-                  var spanPos = (spanRect.top - innerRect.top) - curT;
-                  var target = Math.max(0, spanPos - curT - curRect.height * 0.30);
-                  inner.style.transition = 'transform 0.2s ease';
-                  inner.style.transform = 'translateY(-' + target + 'px)';
-                } else {
-                  // Upcoming — normal
-                  sp.style.color = 'rgba(255,255,255,.6)';
-                  sp.style.fontWeight = '';
-                  sp.style.background = '';
-                  sp.style.padding = '';
-                }
-              }
-              var pf2 = document.getElementById('scene-prog-fill');
-              if (pf2) pf2.style.width = (progress2 * 100) + '%';
-            }
-
-            if (progress2 < 1) {
-              window._tpAutoTimer = requestAnimationFrame(wordFrame);
-            } else {
-              window._tpAutoTimer = null;
-              STUDIO_TP.running = false;
-              inner.style.transform = 'translateY(0px)';
-              var btn2 = document.getElementById('btn-tp-start');
-              if (btn2) { btn2.textContent = '▶ Practice'; btn2.style.cssText = ''; }
-              if (PROJECT.scenes && STUDIO.currentScene < PROJECT.scenes.length - 1) {
-                STUDIO.currentScene++;
-                inner.style.transform = '';
-                if (typeof updateTP === 'function') updateTP();
-                if (typeof renderStudioQueue === 'function') renderStudioQueue();
-                if (STUDIO_TP.wasRunning || STUDIO.tpAuto) {
-                  STUDIO_TP.running = true;
-                  setTimeout(function() { startTpAutoTimer(); }, 200);
-                }
-              } else {
-                STUDIO_TP.wasRunning = false;
-                STUDIO.tpAuto = false;
-                if (typeof toast === 'function') toast('\u2713 All scenes complete', 'ok');
-              }
-            }
-          }
 
           STUDIO_TP.wasRunning = true;
           STUDIO_TP.running = true;
@@ -11603,303 +11464,6 @@ window.ap_setTpSettings = function(settings) {
       raf: null,
     };
 
-    // ── INIT ──────────────────────────────────────────────────────────────────────
-    function renderEditSuite() {
-      var t = document.getElementById('edit-title');
-      if (t) t.textContent = 'Edit — ' + PROJECT.title;
-
-      // Build tracks from project clips
-      tl_buildTracksFromProject();
-      tl_generateSubtitleBlocks();
-      setTimeout(function () {
-        tl_fitToWindow();  // auto-fit after layout
-        renderEditClips();
-      }, 50);
-
-      var clips = Object.values(PROJECT.clips || {}).filter(function (c) { return c.url; });
-      var noClips = document.getElementById('edit-no-clips');
-      var vid = document.getElementById('edit-video');
-      if (noClips) noClips.style.display = clips.length ? 'none' : 'block';
-      if (vid) {
-        if (clips.length) {
-          vid.style.display = 'block';
-        } else {
-          vid.style.display = 'none';
-          vid.removeAttribute('src'); // prevent homepage URL as src
-          vid.load();
-        }
-      }
-
-      if (clips.length) {
-        var firstId = Object.keys(PROJECT.clips).find(function (k) { return PROJECT.clips[k].url; });
-        if (firstId) { var _sc = typeof selectClip==='function' ? selectClip : (typeof edit_selectClip==='function' ? edit_selectClip : null); if(_sc) _sc(firstId); }
-      }
-
-      // Generate subtitles from script
-      tl_generateSubtitleBlocks();
-    }
-
-    function tl_buildTracksFromProject() {
-      if (!window.TL || !window.PROJECT) return;
-
-      // Merge all clip sources
-      var allClips = {};
-      // 1. Recorded clips
-      Object.assign(allClips, PROJECT.clips || {});
-      // 2. AI clips
-      Object.assign(allClips, PROJECT.aiClips || {});
-      // 3. Clip metadata (persisted even without blob URL)
-      Object.assign(allClips, PROJECT.clipsMeta || {});
-      Object.assign(allClips, PROJECT.aiClipsMeta || {});
-
-      var clips = Object.entries(allClips).filter(function(e) {
-        return e[1] && (e[1].url || e[1].videoUrl || e[1].sceneNum || e[1].sceneName);
-      });
-
-      // Sort by scene number
-      clips.sort(function(a, b) {
-        var an = (a[1].sceneNum || a[1].sceneIdx || 999);
-        var bn = (b[1].sceneNum || b[1].sceneIdx || 999);
-        return an - bn;
-      });
-
-      // If no clips but project has scenes, create placeholder clips so timeline isn't empty
-      if (clips.length === 0 && PROJECT.scenes && PROJECT.scenes.length > 0) {
-        clips = PROJECT.scenes.map(function(sc, i) {
-          return ['scene_' + sc.id, {
-            id: 'scene_' + sc.id,
-            sceneNum: sc.num || (i+1),
-            sceneName: sc.title || ('Scene ' + (i+1)),
-            duration: sc.duration || 8,
-            source: 'placeholder',
-            url: null
-          }];
-        });
-      }
-
-      // Get main video track
-      // Use actual track IDs that exist in TL.tracks
-      var videoTrack = TL.tracks.find(function(tr) { return tr.id === 'main-video' || tr.id === 'track_video'; });
-      if (!videoTrack) {
-        videoTrack = { id: 'main-video', name: '\ud83d\udcf9 Main Video', type: 'video', clips: [], muted: false, locked: false };
-        TL.tracks.unshift(videoTrack);
-      }
-
-      // Get AI track
-      var aiTrack = TL.tracks.find(function(tr) { return tr.id === 'ai-presenter' || tr.id === 'track_ai'; });
-      if (!aiTrack) {
-        aiTrack = { id: 'ai-presenter', name: '\ud83e\udd16 AI Presenter', type: 'ai', clips: [], muted: false, locked: false };
-        TL.tracks.splice(1, 0, aiTrack);
-      }
-
-      // Distribute clips to correct tracks
-      videoTrack.clips = [];
-      aiTrack.clips = [];
-      var t = 0;
-      var tAi = 0;
-
-      clips.forEach(function(entry) {
-        var id = entry[0], c = entry[1];
-        var dur = parseFloat(c.duration) || 8;
-        var isAi = c.source === 'ai-presenter' || id.startsWith('aps_') || id.startsWith('ai_');
-        var trackId2 = isAi ? (aiTrack.id) : (videoTrack.id);
-        var clipObj = {
-          id: id,
-          clipId: id,
-          start: isAi ? tAi : t,
-          duration: dur,
-          url: c.url || c.videoUrl || null,
-          label: c.sceneName || c.title || ('Scene ' + (c.sceneNum || '?')),
-          isPlaceholder: !c.url && !c.videoUrl,
-          source: c.source || 'recording'
-        };
-        if (isAi) { aiTrack.clips.push(clipObj); tAi += dur; }
-        else { videoTrack.clips.push(clipObj); t += dur; }
-      });
-
-      TL.duration = Math.max(t, tAi, 30);
-
-      // Update media bin
-      if (typeof renderEditClips === 'function') renderEditClips();
-      if (typeof tl_render === 'function') tl_render();
-    }
-
-    // ── RENDER ─────────────────────────────────────────────────────────────────────
-    function tl_render() {
-      var labelsEl = document.getElementById('tl-labels');
-      var tracksEl = document.getElementById('tl-tracks');
-      var rulerEl = document.getElementById('tl-ruler');
-      if (!labelsEl || !tracksEl || !rulerEl) return;
-
-      var pxPerSec = Math.max(10, TL.zoom);
-      // Don't go wider than 3x the container width to avoid off-screen stretch
-      var containerW = (document.getElementById('tl-scroll-container') || {offsetWidth: 1200}).offsetWidth || 1200;
-      var totalW = Math.min(Math.max(containerW, Math.ceil((TL.duration || 30) * pxPerSec) + 200), containerW * 4);
-      var TRACK_HEIGHTS = { video: 64, audio: 42, subtitle: 30, image: 42 };
-
-      // ── Ruler ────────────────────────────────────────────────────────────────
-      rulerEl.style.width = totalW + 'px';
-      rulerEl.style.minWidth = totalW + 'px';
-      rulerEl.innerHTML = '';
-      var step = pxPerSec >= 60 ? 5 : pxPerSec >= 30 ? 10 : pxPerSec >= 15 ? 20 : 30;
-      for (var ts = 0; ts <= TL.duration + step * 2; ts += step) {
-        var mk = document.createElement('div');
-        mk.style.cssText = 'position:absolute;left:' + Math.round(ts * pxPerSec) + 'px;top:0;bottom:0;'
-          + 'border-left:.5px solid rgba(255,255,255,.1);padding-left:3px;display:flex;flex-direction:column;justify-content:flex-end;';
-        mk.innerHTML = '<span style="font-size:8px;color:rgba(255,255,255,.35);white-space:nowrap;">' + formatDur(ts) + '</span>';
-        rulerEl.appendChild(mk);
-      }
-
-      // ── Labels + Rails ───────────────────────────────────────────────────────
-      labelsEl.innerHTML = '';
-      tracksEl.innerHTML = '';
-      tracksEl.style.width = totalW + 'px';
-      tracksEl.style.minWidth = totalW + 'px';
-      tracksEl.style.position = 'relative';
-
-      // Playhead
-      var ph = document.createElement('div');
-      ph.id = 'tl-playhead';
-      ph.style.cssText = 'position:absolute;top:0;bottom:0;width:2px;background:var(--accent);z-index:20;'
-        + 'pointer-events:none;left:' + Math.round(TL.playhead * pxPerSec) + 'px;';
-      ph.innerHTML = '<div style="position:absolute;top:0;left:-5px;width:0;height:0;'
-        + 'border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid var(--accent);"></div>';
-      tracksEl.appendChild(ph);
-
-      var TRACK_COLORS = { video: '#1e40af', audio: '#065f46', subtitle: '#581c87', image: '#7c2d12' };
-      var TRACK_ICONS = { video: '🎬', audio: '🎵', subtitle: '💬', image: '🖼' };
-
-      TL.tracks.forEach(function (track) {
-        var rowH = TRACK_HEIGHTS[track.type] || 36;
-        var tColor = TRACK_COLORS[track.type] || '#374151';
-
-        // Label
-        var lbl = document.createElement('div');
-        var _lcm = {'main-video':'rgba(29,78,216,0.2)','track_video':'rgba(29,78,216,0.2)','ai-presenter':'rgba(124,58,237,0.2)','track_ai':'rgba(124,58,237,0.2)','broll':'rgba(8,145,178,0.2)','voice':'rgba(5,150,105,0.2)','music':'rgba(217,119,6,0.2)','sfx':'rgba(220,38,38,0.2)','overlays':'rgba(219,39,119,0.2)','subtitles':'rgba(100,116,139,0.15)'}; var lblColor = _lcm[track.id] || 'rgba(255,255,255,0.04)';
-          lbl.style.cssText = 'height:' + rowH + 'px;display:flex;align-items:center;gap:5px;'
-          + 'padding:0 6px;border-bottom:.5px solid rgba(255,255,255,.04);background:' + lblColor + ';flex-shrink:0;'
-          + 'min-height:' + rowH + 'px;max-height:' + rowH + 'px;';
-
-        var muteBtn = document.createElement('button');
-        muteBtn.title = track.muted ? 'Unmute' : 'Mute';
-        muteBtn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:11px;padding:0;'
-          + 'color:' + (track.muted ? '#ef4444' : 'rgba(255,255,255,.4)') + ';flex-shrink:0;';
-        muteBtn.textContent = track.muted ? '🔇' : (TRACK_ICONS[track.type] || '🔊');
-        muteBtn.onclick = (function (tid) { return function () { tl_toggleMute(tid); }; })(track.id);
-
-        var nameSpan = document.createElement('span');
-        nameSpan.style.cssText = 'font-size:9px;font-weight:600;color:rgba(255,255,255,.5);'
-          + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;text-transform:uppercase;letter-spacing:.04em;';
-        nameSpan.textContent = track.name;
-
-        lbl.appendChild(muteBtn);
-        lbl.appendChild(nameSpan);
-
-        // Delete button for user-added tracks
-        var isCore = ['track_video', 'track_music', 'track_sfx', 'track_sub'].indexOf(track.id) !== -1;
-        if (!isCore) {
-          var delBtn = document.createElement('button');
-          delBtn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:11px;color:rgba(255,255,255,.25);padding:0;';
-          delBtn.textContent = '×';
-          delBtn.onclick = (function (tid) { return function () { tl_deleteTrack(tid); }; })(track.id);
-          lbl.appendChild(delBtn);
-        }
-        labelsEl.appendChild(lbl);
-
-        // Rail
-        var rail = document.createElement('div');
-        rail.dataset.trackid = track.id;
-        rail.style.cssText = 'height:' + rowH + 'px;position:relative;border-bottom:.5px solid rgba(255,255,255,.04);'
-          + 'width:' + totalW + 'px;min-width:' + totalW + 'px;background:'
-          + (track.muted ? 'rgba(239,68,68,.04)' : 'rgba(255,255,255,.015)') + ';flex-shrink:0;';
-        rail.onclick = (function (tid) { return function (e) { tl_railClick(e, tid); }; })(track.id);
-        rail.ondragover = function (e) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; };
-        rail.ondrop = (function (tid) { return function (e) { tl_onDrop(e, tid); }; })(track.id);
-
-        // Clips
-        (track.clips || []).forEach(function (clip) {
-          var x = Math.round(clip.start * pxPerSec);
-          var w = Math.max(24, Math.round(clip.duration * pxPerSec));
-          var isSel = TL.selectedClip && TL.selectedClip.clipId === clip.id;
-
-          var clipEl = document.createElement('div');
-          clipEl.dataset.clipid = clip.id;
-          clipEl.dataset.trackid = track.id;
-          clipEl.style.cssText = 'position:absolute;left:' + x + 'px;width:' + w + 'px;'
-            + 'height:calc(100% - 4px);top:2px;border-radius:4px;overflow:hidden;cursor:pointer;'
-            + 'display:flex;align-items:center;padding:0 6px;user-select:none;gap:4px;'
-            + 'background:' + (isSel ? 'rgba(0,212,255,.35)' : tColor) + ';'
-            + 'border:.5px solid ' + (isSel ? 'var(--accent)' : 'rgba(255,255,255,.18)') + ';';
-          clipEl.title = clip.name + ' · ' + formatDur(clip.duration);
-
-          var nameSpanC = document.createElement('span');
-          nameSpanC.style.cssText = 'font-size:9px;color:rgba(255,255,255,.9);overflow:hidden;'
-            + 'text-overflow:ellipsis;white-space:nowrap;flex:1;font-weight:600;';
-          nameSpanC.textContent = clip.name;
-
-          var durSpan = document.createElement('span');
-          durSpan.style.cssText = 'font-size:8px;color:rgba(255,255,255,.5);white-space:nowrap;flex-shrink:0;';
-          durSpan.textContent = formatDur(clip.duration);
-
-          clipEl.appendChild(nameSpanC);
-          if (w > 60) clipEl.appendChild(durSpan);
-
-          clipEl.onclick = (function (tid, cid) { return function (e) { e.stopPropagation(); tl_selectClip(e, tid, cid); }; })(track.id, clip.id);
-          clipEl.ondblclick = (function (tid, cid) { return function (e) { e.stopPropagation(); tl_editClip(e, tid, cid); }; })(track.id, clip.id);
-          clipEl.setAttribute('draggable', 'true');
-          clipEl.ondragstart = (function (cid) { return function (e) { e.dataTransfer.setData('clipId', cid); }; })(clip.id);
-
-          // Trim handles on edges
-          if (TL.tool === 'trim') {
-            var lHandle = document.createElement('div');
-            lHandle.style.cssText = 'position:absolute;left:0;top:0;bottom:0;width:6px;cursor:w-resize;background:rgba(255,255,255,.3);';
-            var rHandle = document.createElement('div');
-            rHandle.style.cssText = 'position:absolute;right:0;top:0;bottom:0;width:6px;cursor:e-resize;background:rgba(255,255,255,.3);';
-            clipEl.appendChild(lHandle);
-            clipEl.appendChild(rHandle);
-          }
-
-          rail.appendChild(clipEl);
-        });
-
-        tracksEl.appendChild(rail);
-      });
-    }
-
-    // ── TOOLS ─────────────────────────────────────────────────────────────────────
-    function tl_setTool(tool) {
-      TL.tool = tool;
-      ['select', 'trim', 'split'].forEach(function (t) {
-        var btn = document.getElementById('tl-tool-' + t);
-        if (btn) {
-          btn.style.background = t === tool ? 'rgba(0,212,255,.15)' : '';
-          btn.style.color = t === tool ? 'var(--accent)' : '';
-          btn.style.borderColor = t === tool ? 'rgba(0,212,255,.3)' : '';
-        }
-      });
-    }
-
-    function tl_setZoom(v) {
-      TL.zoom = Math.max(8, Math.min(300, parseInt(v)));
-      var el = document.getElementById('tl-zoom-label');
-      if (el) el.textContent = TL.zoom + 'px/s';
-      tl_render();
-    }
-
-    function tl_fitToWindow() {
-      var container = document.getElementById('tl-scroll-container');
-      if (!container) return;
-      var dur = TL.duration > 0 ? TL.duration : 30;
-      var w = container.offsetWidth - 20;
-      TL.zoom = Math.max(8, Math.min(200, Math.floor(w / dur)));
-      var zoomEl = document.getElementById('tl-zoom-slider');
-      var zoomVal = document.getElementById('tl-zoom-label');
-      if (zoomEl) zoomEl.value = TL.zoom;
-      if (zoomVal) zoomVal.textContent = TL.zoom + 'px/s';
-      tl_render();
-      toast('Timeline fit to window (' + TL.zoom + 'px/s)', 'info');
-    }
-
     function tl_railClick(event, trackId) {
       if (TL.tool === 'split' && TL.selectedClip) {
         tl_splitAtPlayhead(trackId);
@@ -11963,42 +11527,6 @@ window.ap_setTpSettings = function(settings) {
       }
     }
 
-    function tl_splitAtPlayhead(trackId) {
-      var track = TL.tracks.find(function (tr) { return tr.id === trackId; });
-      if (!track || !TL.selectedClip) return;
-      var clip = (track.clips || []).find(function (c) { return c.id === TL.selectedClip.clipId; });
-      if (!clip) return;
-      var splitAt = TL.playhead - clip.start;
-      if (splitAt <= 0 || splitAt >= clip.duration) {
-        toast('Move playhead inside the clip to split', 'info'); return;
-      }
-      var newClip = Object.assign({}, clip, {
-        id: 'clip_' + Date.now(),
-        start: clip.start + splitAt,
-        duration: clip.duration - splitAt,
-        trimIn: 0,
-        trimOut: clip.duration - splitAt,
-        name: clip.name + 'b'
-      });
-      clip.duration = splitAt;
-      clip.trimOut = splitAt;
-      var idx = track.clips.findIndex(function (c) { return c.id === clip.id; });
-      track.clips.splice(idx + 1, 0, newClip);
-      tl_render();
-      toast('Split at ' + formatDur(TL.playhead) + ' ✓', 'ok');
-    }
-
-    function tl_deleteSelected() {
-      if (!TL.selectedClip) { toast('Select a clip first', 'info'); return; }
-      var track = TL.tracks.find(function (tr) { return tr.id === TL.selectedClip.trackId; });
-      if (!track) return;
-      if (track.id === 'track_video') { toast('Delete clips from the Clips panel on the left', 'info'); return; }
-      track.clips = track.clips.filter(function (c) { return c.id !== TL.selectedClip.clipId; });
-      TL.selectedClip = null;
-      tl_render();
-      toast('Clip removed', 'ok');
-    }
-
     function tl_toggleMute(trackId) {
       var track = TL.tracks.find(function (tr) { return tr.id === trackId; });
       if (track) track.muted = !track.muted;
@@ -12009,21 +11537,6 @@ window.ap_setTpSettings = function(settings) {
     function tl_deleteTrack(trackId) {
       TL.tracks = TL.tracks.filter(function (tr) { return tr.id !== trackId; });
       tl_render();
-    }
-
-    function tl_addTrack() {
-      var typeEl = document.getElementById('tl-add-track-type');
-      var type = typeEl ? typeEl.value : 'video';
-      var typeLabels = { video: 'Video overlay', audio: 'Audio', image: 'Image', subtitle: 'Subtitles' };
-      var count = TL.tracks.filter(function (tr) { return tr.type === type; }).length;
-      TL.tracks.push({
-        id: 'track_' + type + '_' + Date.now(),
-        type: type,
-        name: typeLabels[type] + (count > 0 ? ' ' + (count + 1) : ''),
-        muted: false, locked: false, clips: []
-      });
-      tl_render();
-      toast('Track added ✓', 'ok');
     }
 
     // ── IMPORT MEDIA INTO TIMELINE ─────────────────────────────────────────────────
@@ -12112,20 +11625,6 @@ window.ap_setTpSettings = function(settings) {
       tl_render();
     }
 
-    function tl_toggleSubtitles() {
-      TL.subtitlesOn = !TL.subtitlesOn;
-      var btn = document.getElementById('tl-sub-btn');
-      var overlay = document.getElementById('edit-subtitle-overlay');
-      if (btn) btn.textContent = '💬 Subtitles: ' + (TL.subtitlesOn ? 'ON' : 'OFF');
-      if (overlay) overlay.style.display = TL.subtitlesOn ? 'block' : 'none';
-      if (TL.subtitlesOn) {
-        startSubtitleSync();
-        toast('Subtitles ON — watch them sync with video', 'ok');
-      } else {
-        toast('Subtitles OFF', 'info');
-      }
-    }
-
     var _subSyncTimer = null;
     function startSubtitleSync() {
       clearInterval(_subSyncTimer);
@@ -12194,62 +11693,6 @@ window.ap_setTpSettings = function(settings) {
       if (v && v.src) { v.currentTime = time; }
     }
 
-    function startEditTimecode() {
-      var v = document.getElementById('edit-video');
-      if (!v) return;
-      v.ontimeupdate = function () {
-        TL.playhead = v.currentTime;
-        var tc = document.getElementById('edit-time-display');
-        if (tc) tc.textContent = formatDur(v.currentTime) + ' / ' + formatDur(v.duration || 0);
-        var ph = document.getElementById('tl-playhead');
-        if (ph) ph.style.left = Math.round(TL.playhead * TL.zoom) + 'px';
-        // Scroll playhead into view
-        var scroll = document.getElementById('tl-scroll-container');
-        if (scroll) {
-          var phX = TL.playhead * TL.zoom;
-          if (phX < scroll.scrollLeft || phX > scroll.scrollLeft + scroll.offsetWidth - 50) {
-            scroll.scrollLeft = phX - 100;
-          }
-        }
-      };
-      v.onended = function () {
-        var btn = document.getElementById('edit-play-btn');
-        if (btn) btn.textContent = '▶';
-        TL.playing = false;
-      };
-    }
-    function editSeek(s) {
-      var v = document.getElementById('edit-video');
-      if (v) { v.currentTime = Math.max(0, (v.currentTime || 0) + s); }
-    }
-
-    // ── CLIPS PANEL ───────────────────────────────────────────────────────────────
-    function renderEditClips() {
-      var el = document.getElementById('edit-bin-clips'); if (!el) return;
-      var clips = Object.entries(PROJECT.clips || {}).filter(function (e) { return e[1].url; });
-      if (!clips.length) {
-        el.innerHTML = '<div style="font-size:11px;color:rgba(255,255,255,.2);padding:10px;text-align:center;">No clips yet</div>';
-        return;
-      }
-      el.innerHTML = '';
-      clips.forEach(function (entry) {
-        var id = entry[0], c = entry[1];
-        var isSelected = TL.selectedClip && TL.selectedClip.clipId === id;
-        var d = document.createElement('div');
-        d.style.cssText = 'display:flex;gap:6px;align-items:center;padding:6px 8px;border-bottom:.5px solid rgba(255,255,255,.04);cursor:pointer;' + (isSelected ? 'background:rgba(0,212,255,.06);' : '');
-        d.innerHTML = '<div style="width:44px;height:30px;border-radius:3px;background:#111;overflow:hidden;flex-shrink:0;"><video src="' + c.url + '" style="width:100%;height:100%;object-fit:cover;" onloadeddata="this.currentTime=0.1"></video></div>'
-          + '<div style="flex:1;min-width:0;">'
-          + '<div style="font-size:10px;font-weight:500;color:rgba(255,255,255,.7);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">S' + ((c.sceneNum || c.sceneIdx || 0)) + ' · ' + (c.sceneName || c.title || 'CLIP') + '</div>'
-          + '<div style="font-size:9px;color:rgba(255,255,255,.3);">' + formatDur(c.duration || 0) + '</div>'
-          + '</div>'
-          + '<button data-cid="' + id + '" onclick="deleteClip(this.dataset.cid);event.stopPropagation();" style="background:transparent;border:none;color:rgba(255,255,255,.2);cursor:pointer;font-size:12px;padding:2px 4px;">×</button>';
-        d.onclick = function () { selectClip(id); };
-        d.setAttribute('draggable', 'true');
-        d.ondragstart = function (e) { e.dataTransfer.setData('clipId', id); };
-        el.appendChild(d);
-      });
-    }
-
     function selectClip(id) {
       var clip = PROJECT.clips && PROJECT.clips[id]; if (!clip || !clip.url) return;
       TL.selectedClip = { trackId: 'track_video', clipId: id };
@@ -12257,15 +11700,6 @@ window.ap_setTpSettings = function(settings) {
       var v = document.getElementById('edit-video'), e = document.getElementById('edit-no-clips');
       if (v) { v.src = clip.url; v.load(); v.style.display = 'block'; v.onloadeddata = function () { v.currentTime = 0.1; startEditTimecode(); }; }
       if (e) e.style.display = 'none';
-    }
-
-    function deleteClip(id) {
-      if (!confirm('Delete this clip?')) return;
-      delete PROJECT.clips[id];
-      if (TL.selectedClip && TL.selectedClip.clipId === id) TL.selectedClip = null;
-      tl_buildTracksFromProject();
-      saveProject(); renderEditSuite();
-      toast('Clip deleted', 'ok');
     }
     function mergeAllClips() { toast('Export clips then merge in DaVinci Resolve, CapCut or Premiere', 'info'); }
 
@@ -13480,7 +12914,7 @@ window.ap_setTpSettings = function(settings) {
       <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">9. Data Retention</h2>
       <p>Your account data is retained while your account is active. Payment records are retained as required by law. You may request full deletion at any time.</p>
       <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">10. Contact</h2>
-      <p>For privacy questions: <a href="mailto:privacy@aabstudio.ai" style="color:var(--accent);">privacy@aabstudio.ai</a></p>
+      <p>For privacy questions: <a href="/cdn-cgi/l/email-protection#4434362d3225273d04252526373031202d2b6a252d" style="color:var(--accent);"><span class="__cf_email__" data-cfemail="ee9e9c87988f8d97ae8f8f8c9d9a9b8a8781c08f87">[email&#160;protected]</span></a></p>
     </div>
   </div>
 
@@ -13513,7 +12947,7 @@ window.ap_setTpSettings = function(settings) {
       <p>The Platform is provided "as is". To the maximum extent permitted by law, AABStudio shall not be liable for indirect, incidental, or consequential damages arising from use of the Platform.</p>
       <h2 style="font-size:18px;font-weight:600;margin:24px 0 10px;">10. Governing Law</h2>
       <p>These Terms are governed by the laws of England and Wales. Disputes are subject to the exclusive jurisdiction of the courts of England and Wales.</p>
-      <p style="margin-top:24px;">Contact: <a href="mailto:legal@aabstudio.ai" style="color:var(--accent);">legal@aabstudio.ai</a></p>
+      <p style="margin-top:24px;">Contact: <a href="/cdn-cgi/l/email-protection#274b4240464b67464645545352434e4809464e" style="color:var(--accent);"><span class="__cf_email__" data-cfemail="ef838a888e83af8e8e8d9c9b9a8b8680c18e86">[email&#160;protected]</span></a></p>
     </div>
   </div>
 
@@ -14087,7 +13521,7 @@ window.ap_setTpSettings = function(settings) {
 
 
 <!-- ADDITIVE SCRIPTS -->
-    <script id="aab-aps-fallback">
+    <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script id="aab-aps-fallback">
       /* APS Fallback — injects AI Presenter Studio functions if not in scope */
       (function () {
         if (typeof window.openAIPresenterStudio === 'function') return; // already loaded correctly
@@ -14787,14 +14221,6 @@ window.ap_setTpSettings = function(settings) {
         }
         var ov = document.getElementById('edit-subtitle-overlay'); if (ov) ov.style.display = TL.subtitlesOn ? 'block' : 'none';
       } window.tl_toggleSubtitles = tl_toggleSubtitles;
-      function editPlayPause() {
-        var vid = document.getElementById('edit-video'), btn = document.getElementById('edit-play-btn');
-        if (TL.playing) { TL.playing = false; if (vid) vid.pause(); if (btn) btn.textContent = '\u25b6'; cancelAnimationFrame(TL._raf); }
-        else {
-          TL.playing = true; if (vid && vid.src) { vid.currentTime = TL.playhead; vid.play().catch(function () { }); } if (btn) btn.textContent = '\u23f8';
-          var step = function () { if (!TL.playing) return; TL.playhead = Math.min(TL.duration, TL.playhead + .05); tl_updatePlayhead(); if (TL.playhead >= TL.duration) { TL.playing = false; if (btn) btn.textContent = '\u25b6'; return; } TL._raf = requestAnimationFrame(step); }; TL._raf = requestAnimationFrame(step);
-        }
-      } window.editPlayPause = editPlayPause;
       function editSeek(secs) { TL.playhead = Math.max(0, Math.min(TL.duration, TL.playhead + secs)); var vid = document.getElementById('edit-video'); if (vid && vid.src) vid.currentTime = TL.playhead; tl_updatePlayhead(); } window.editSeek = editSeek;
       function renderEditSuite() { var t = document.getElementById('edit-title'); if (t) t.textContent = 'Edit \u2014 ' + (PROJECT.title || 'My Video'); if (!TL.tracks || !TL.tracks.length) tl_initTracks(); tl_buildTracksFromProject(); renderEditClips(); setTimeout(tl_fitToWindow, 80); } window.renderEditSuite = renderEditSuite;
       function renderEditClips() {
@@ -22578,6 +22004,493 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
     window.edit_uploadMusic = function() { window.edit_uploadAudio('music'); };
     window.edit_uploadVoice = function() { window.edit_uploadAudio('voice'); };
     </script>
+
+<script id="aab-v6-fixes">
+// ═══════════════════════════════════════════════════════════════
+// AABStudio v6 — Professional Fixes Patch
+// Adds all missing functions, fixes unwired buttons,
+// adds professional features for launch readiness
+// ═══════════════════════════════════════════════════════════════
+
+// ── 1. aps_stopAll — Stop all AI generation (was undefined) ─────
+window.aps_stopAll = function() {
+  if (typeof APS !== 'undefined') {
+    APS.stopRequested = true;
+    APS.running = false;
+  }
+  // Stop all pending fetches via AbortController if available
+  document.querySelectorAll('[data-generating="true"]').forEach(function(el) {
+    el.dataset.generating = 'false';
+    el.textContent = 'Failed';
+    el.style.color = '#ef4444';
+  });
+  if (typeof toast === 'function') toast('Generation stopped', 'warn');
+  if (typeof aps_updateAllRows === 'function') aps_updateAllRows();
+};
+
+// ── 2. initCamera — alias for startCamera (was undefined) ───────
+window.initCamera = window.startCamera || function() {
+  if (typeof openRecordingStudio === 'function') openRecordingStudio();
+};
+
+// ── 3. renderExportPage — proper export page renderer ───────────
+window.renderExportPage = function() {
+  var pg = document.getElementById('export-pg');
+  if (!pg) return;
+  var clips = Object.values(PROJECT.clips || {}).filter(function(c) { return c && (c.url || c.videoUrl); });
+  var clipCount = clips.length;
+  var totalDuration = clips.reduce(function(t, c) { return t + (c.duration || 0); }, 0);
+  var mins = Math.floor(totalDuration / 60), secs = totalDuration % 60;
+  
+  // Update stats if elements exist
+  var statsEl = document.getElementById('export-stats');
+  if (statsEl) statsEl.innerHTML = clipCount + ' clips · ' + mins + ':' + (secs<10?'0':'') + secs + ' total';
+  
+  var thumbEl = document.getElementById('export-thumbnails');
+  if (thumbEl) {
+    thumbEl.innerHTML = clips.slice(0,6).map(function(c, i) {
+      return '<div style="width:120px;height:68px;background:#1e293b;border-radius:6px;border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;font-size:11px;color:#94a3b8;position:relative;">'
+        + '<span style="position:absolute;top:4px;left:6px;font-size:10px;font-weight:700;color:#00d4ff;">S'+(c.sceneNum||i+1)+'</span>'
+        + '<span style="font-size:20px;">🎬</span>'
+        + '<span style="position:absolute;bottom:4px;right:6px;font-size:9px;color:#64748b;">'+(c.duration||0)+'s</span></div>';
+    }).join('');
+  }
+};
+
+// ── 4. doExportCreatomate — professional video export via Creatomate ──
+window.doExportCreatomate = async function(format, resolution) {
+  format = format || 'mp4';
+  resolution = resolution || '1080p';
+  var clips = Object.values(PROJECT.clips || {}).filter(function(c) { return c && (c.url || c.videoUrl); });
+  if (!clips.length) { toast('No clips to export', 'error'); return; }
+  clips.sort(function(a, b) { return (a.sceneNum||0) - (b.sceneNum||0); });
+  
+  var btn = document.getElementById('export-btn-creatomate');
+  if (btn) { btn.disabled = true; btn.textContent = 'Exporting…'; }
+  
+  try {
+    var r = await fetch(API + '/api/creatomate/stitch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clips: clips.map(function(c) { return { url: c.url || c.videoUrl, duration: c.duration || 8 }; }),
+        outputFormat: format,
+        resolution: resolution,
+        title: PROJECT.title || 'My Video'
+      })
+    });
+    var d = await r.json();
+    if (d.error) throw new Error(d.error);
+    
+    // Poll for completion
+    var taskId = d.taskId;
+    toast('Export started — rendering on Creatomate…', 'info');
+    
+    var pollInterval = setInterval(async function() {
+      try {
+        var sr = await fetch(API + '/api/creatomate/status/' + taskId);
+        var sd = await sr.json();
+        var progressEl = document.getElementById('export-progress-bar');
+        if (progressEl) progressEl.style.width = (sd.progress || 0) + '%';
+        
+        if (sd.status === 'succeeded' || sd.outputUrl) {
+          clearInterval(pollInterval);
+          var a = document.createElement('a');
+          a.href = sd.outputUrl;
+          a.download = (PROJECT.title || 'video').replace(/[^a-z0-9]/gi, '-') + '.' + format;
+          a.click();
+          toast('✅ Export complete — downloading ' + format.toUpperCase(), 'ok');
+          if (btn) { btn.disabled = false; btn.textContent = '✅ Download'; }
+        } else if (sd.status === 'failed') {
+          clearInterval(pollInterval);
+          throw new Error('Render failed');
+        }
+      } catch(e) { clearInterval(pollInterval); }
+    }, 5000);
+    
+  } catch(e) {
+    toast('Export failed: ' + e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Export →'; }
+    // Fallback to blob concat
+    window.doExport && window.doExport();
+  }
+};
+
+// ── 5. Inspector panel — populate when clip is selected ──────────
+var _origTlRender = window.tl_render;
+window.tl_render = function() {
+  if (typeof _origTlRender === 'function') _origTlRender.apply(this, arguments);
+};
+
+window.showInspector = function(clip) {
+  var panel = document.getElementById('inspector-panel') || document.querySelector('.inspector');
+  if (!panel) return;
+  if (!clip) { panel.innerHTML = '<div style="padding:20px;color:rgba(255,255,255,.3);font-size:12px;text-align:center;"><div style="font-size:32px;margin-bottom:8px;">🗒</div>Select a clip<br>to inspect</div>'; return; }
+  panel.innerHTML = '<div style="padding:16px;">'
+    + '<div style="font-size:11px;font-weight:700;color:#00d4ff;text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px;">CLIP PROPERTIES</div>'
+    + '<div style="font-size:11px;color:rgba(255,255,255,.5);margin-bottom:4px;">Name</div>'
+    + '<div style="font-size:13px;color:#e2e8f0;margin-bottom:12px;">' + (clip.label || 'Untitled Clip') + '</div>'
+    + '<div style="font-size:11px;color:rgba(255,255,255,.5);margin-bottom:4px;">Duration</div>'
+    + '<div style="font-size:13px;color:#e2e8f0;margin-bottom:12px;">' + (clip.duration || 0).toFixed(1) + 's</div>'
+    + '<div style="font-size:11px;color:rgba(255,255,255,.5);margin-bottom:4px;">Start time</div>'
+    + '<input type="number" value="' + (clip.start||0).toFixed(2) + '" step="0.1" min="0" oninput="if(TL.selectedClipObj){TL.selectedClipObj.start=parseFloat(this.value)||0;tl_render();}" style="width:100%;padding:6px 8px;background:#1e293b;border:1px solid rgba(255,255,255,.1);border-radius:4px;color:#e2e8f0;font-size:12px;margin-bottom:12px;">'
+    + '<div style="font-size:11px;color:rgba(255,255,255,.5);margin-bottom:4px;">Trim in</div>'
+    + '<input type="number" value="' + (clip.trimIn||0).toFixed(2) + '" step="0.1" min="0" oninput="if(TL.selectedClipObj){TL.selectedClipObj.trimIn=parseFloat(this.value)||0;tl_render();}" style="width:100%;padding:6px 8px;background:#1e293b;border:1px solid rgba(255,255,255,.1);border-radius:4px;color:#e2e8f0;font-size:12px;margin-bottom:12px;">'
+    + '<div style="font-size:11px;color:rgba(255,255,255,.5);margin-bottom:4px;">Trim out</div>'
+    + '<input type="number" value="' + (clip.trimOut||0).toFixed(2) + '" step="0.1" min="0" oninput="if(TL.selectedClipObj){TL.selectedClipObj.trimOut=parseFloat(this.value)||0;tl_render();}" style="width:100%;padding:6px 8px;background:#1e293b;border:1px solid rgba(255,255,255,.1);border-radius:4px;color:#e2e8f0;font-size:12px;margin-bottom:12px;">'
+    + '<div style="font-size:11px;color:rgba(255,255,255,.5);margin-bottom:4px;">Source</div>'
+    + '<div style="font-size:12px;color:#94a3b8;margin-bottom:16px;">' + (clip.source || 'recording') + '</div>'
+    + '<button onclick="tl_deleteSelected()" style="width:100%;padding:8px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#ef4444;font-size:12px;cursor:pointer;">🗑 Delete clip</button>'
+    + '</div>';
+};
+
+// ── 6. Global keyboard shortcuts ─────────────────────────────────
+(function() {
+  var alreadySet = window._aabShortcutsInstalled;
+  if (alreadySet) return;
+  window._aabShortcutsInstalled = true;
+  
+  document.addEventListener('keydown', function(e) {
+    // Ignore if typing in input/textarea
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+    
+    var key = e.key.toLowerCase();
+    var ctrl = e.ctrlKey || e.metaKey;
+    
+    // Edit suite shortcuts
+    if (ctrl && key === 'z') { if (typeof editUndo === 'function') editUndo(); e.preventDefault(); }
+    if (ctrl && key === 's') { if (typeof saveProject === 'function') { saveProject(); if(typeof showSaveStatus==='function') showSaveStatus('✓ Saved','ok'); } e.preventDefault(); }
+    if (key === ' ' && document.getElementById('edit-pg') && !document.getElementById('edit-pg').hidden) { if (typeof editPlayPause === 'function') editPlayPause(); e.preventDefault(); }
+    if (key === 'j') { if (typeof editSeek === 'function') editSeek(-5); }
+    if (key === 'l') { if (typeof editSeek === 'function') editSeek(5); }
+    if (key === 'k') { if (typeof editPlayPause === 'function') editPlayPause(); }
+    if (key === 'delete' || key === 'backspace') { if (typeof tl_deleteSelected === 'function' && TL && TL.selectedClip) tl_deleteSelected(); }
+    if (ctrl && key === 'b') { if (typeof tl_splitAtPlayhead === 'function') tl_splitAtPlayhead(); e.preventDefault(); }
+    
+    // Teleprompter shortcuts
+    if (key === 'arrowup') { if (typeof tpSetSpd === 'function') tpSetSpd(1); }
+    if (key === 'arrowdown') { if (typeof tpSetSpd === 'function') tpSetSpd(-1); }
+    if (key === 'f' && !ctrl) { if (typeof tpFullscreen === 'function') tpFullscreen(); }
+    if (key === 'm' && !ctrl) { if (typeof tpMirror === 'function') tpMirror(); }
+    
+    // Shortcuts help
+    if (key === '?') { window.showKeyboardShortcuts && window.showKeyboardShortcuts(); }
+    
+    // ESC to close modals
+    if (key === 'escape') {
+      document.querySelectorAll('[id$="-modal"]').forEach(function(m) { if (m.style.display !== 'none') m.style.display = 'none'; });
+      if (window._shortcutsModalOpen) { var sm = document.getElementById('shortcuts-modal'); if(sm) sm.style.display='none'; window._shortcutsModalOpen=false; }
+    }
+  });
+})();
+
+// ── 7. Keyboard shortcuts help overlay ───────────────────────────
+window.showKeyboardShortcuts = function() {
+  var existing = document.getElementById('shortcuts-modal');
+  if (existing) { existing.style.display = existing.style.display === 'none' ? 'flex' : 'none'; window._shortcutsModalOpen = existing.style.display !== 'none'; return; }
+  
+  var modal = document.createElement('div');
+  modal.id = 'shortcuts-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
+  modal.onclick = function(e) { if(e.target===modal){modal.style.display='none';window._shortcutsModalOpen=false;} };
+  modal.innerHTML = '<div style="background:#0f172a;border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:28px;width:480px;max-height:80vh;overflow-y:auto;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;"><h2 style="color:#fff;font-size:16px;font-weight:700;">Keyboard Shortcuts</h2><button onclick="document.getElementById('shortcuts-modal').style.display='none'" style="background:none;border:none;color:#94a3b8;font-size:20px;cursor:pointer;">×</button></div>'
+    + '<div style="display:grid;gap:6px;">'
+    + [['Space / K','Play / Pause'],['J','Rewind 5s'],['L','Forward 5s'],['Ctrl+B','Split clip at playhead'],['Delete','Delete selected clip'],['Ctrl+Z','Undo'],['Ctrl+S','Save project'],['F','Fullscreen teleprompter'],['M','Mirror teleprompter'],['↑ / ↓','Teleprompter speed'],['Esc','Close modal / Stop'],['?','Show this help']].map(function(s) {
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:rgba(255,255,255,.04);border-radius:6px;">'
+          + '<span style="color:#94a3b8;font-size:12px;">'+s[0]+'</span>'
+          + '<kbd style="background:#1e293b;border:1px solid rgba(255,255,255,.15);border-radius:4px;padding:2px 8px;font-size:11px;color:#e2e8f0;">'+s[1]+'</kbd></div>';
+      }).join('')
+    + '</div></div>';
+  document.body.appendChild(modal);
+  window._shortcutsModalOpen = true;
+};
+
+// ── 8. Project thumbnail from first frame of clip ────────────────
+window.generateProjectThumbnail = function(projectId, clipUrl) {
+  if (!clipUrl || clipUrl.startsWith('blob:')) return;
+  try {
+    var video = document.createElement('video');
+    video.crossOrigin = 'anonymous';
+    video.src = clipUrl;
+    video.currentTime = 1;
+    video.addEventListener('seeked', function() {
+      try {
+        var canvas = document.createElement('canvas');
+        canvas.width = 320; canvas.height = 180;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, 320, 180);
+        var thumb = canvas.toDataURL('image/jpeg', 0.7);
+        // Store in localStorage for this project
+        try { localStorage.setItem('aab_thumb_' + projectId, thumb); } catch(e) {}
+        // Update all thumbnail images for this project
+        document.querySelectorAll('[data-project-thumb="' + projectId + '"]').forEach(function(img) {
+          img.src = thumb;
+          img.style.objectFit = 'cover';
+        });
+      } catch(e) {}
+    }, { once: true });
+  } catch(e) {}
+};
+
+// ── 9. Load thumbnails when dashboard renders ─────────────────────
+var _origRenderProjectGrid = window.renderProjectGrid;
+window.renderProjectGrid = function(projects) {
+  if (typeof _origRenderProjectGrid === 'function') _origRenderProjectGrid.apply(this, arguments);
+  // After grid renders, apply saved thumbnails
+  setTimeout(function() {
+    (projects || []).forEach(function(p) {
+      if (!p || !p.id) return;
+      var thumb = localStorage.getItem('aab_thumb_' + p.id);
+      document.querySelectorAll('[data-project-thumb="' + p.id + '"]').forEach(function(img) {
+        if (thumb) { img.src = thumb; img.style.objectFit = 'cover'; }
+      });
+    });
+  }, 100);
+};
+
+// ── 10. Scene type badge editing (click to cycle) ────────────────
+window.cycleSceneType = function(sceneId) {
+  var types = ['INTRO','MAIN','TRANSITION','CONCLUSION'];
+  var sc = PROJECT.scenes && PROJECT.scenes.find(function(s) { return s.id === sceneId; });
+  if (!sc) return;
+  var currentIdx = types.indexOf(sc.type || 'MAIN');
+  sc.type = types[(currentIdx + 1) % types.length];
+  if (typeof saveProject === 'function') saveProject();
+  if (typeof renderSceneBoard === 'function') renderSceneBoard();
+};
+
+// ── 11. Camera facing mode fix (portrait/landscape) ──────────────
+var _origStartCamera = window.startCamera;
+window.startCamera = async function() {
+  // Apply proper constraints including facing mode
+  if (typeof STUDIO !== 'undefined' && !STUDIO.stream) {
+    try {
+      var constraints = {
+        video: {
+          facingMode: 'user',
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          aspectRatio: { ideal: 16/9 }
+        },
+        audio: true
+      };
+      var stream = await navigator.mediaDevices.getUserMedia(constraints);
+      STUDIO.stream = stream;
+      var videoEl = document.getElementById('studio-video') || document.querySelector('.studio-canvas video');
+      if (videoEl) {
+        videoEl.srcObject = stream;
+        videoEl.style.transform = ''; // Remove any flip that causes sideways rendering
+      }
+      return stream;
+    } catch(e) {
+      console.warn('startCamera with constraints failed, falling back:', e.message);
+    }
+  }
+  if (typeof _origStartCamera === 'function') return _origStartCamera.apply(this, arguments);
+};
+
+// ── 12. Export page format selector ──────────────────────────────
+window.renderExportOptions = function() {
+  var container = document.getElementById('export-format-options');
+  if (!container) return;
+  
+  var formats = [
+    { id: 'mp4-1080', label: '1080p MP4', format: 'mp4', resolution: '1080p', desc: 'YouTube, LinkedIn, general use', icon: '🎬' },
+    { id: 'mp4-720', label: '720p MP4', format: 'mp4', resolution: '720p', desc: 'Faster export, smaller file', icon: '📱' },
+    { id: 'mp4-4k', label: '4K MP4', format: 'mp4', resolution: '4k', desc: 'Maximum quality', icon: '⭐' },
+    { id: 'webm-1080', label: '1080p WebM', format: 'webm', resolution: '1080p', desc: 'Web optimised, smaller size', icon: '🌐' },
+  ];
+  
+  var selected = window._selectedExportFormat || 'mp4-1080';
+  
+  container.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'
+    + formats.map(function(f) {
+        var isSelected = selected === f.id;
+        return '<div onclick="window._selectedExportFormat='' + f.id + '';renderExportOptions()" style="padding:14px;background:' + (isSelected?'rgba(0,212,255,.1)':'rgba(255,255,255,.03)') + ';border:1px solid ' + (isSelected?'#00d4ff':'rgba(255,255,255,.08)') + ';border-radius:8px;cursor:pointer;transition:all .2s;">'
+          + '<div style="font-size:20px;margin-bottom:6px;">' + f.icon + '</div>'
+          + '<div style="font-size:13px;font-weight:700;color:' + (isSelected?'#00d4ff':'#e2e8f0') + ';margin-bottom:3px;">' + f.label + '</div>'
+          + '<div style="font-size:11px;color:#64748b;">' + f.desc + '</div>'
+          + '</div>';
+      }).join('')
+    + '</div>'
+    + '<button onclick="var sel=(window._selectedExportFormat||'mp4-1080').split('-');doExportCreatomate(sel[0],sel[1]+'p')" style="width:100%;margin-top:16px;padding:14px;background:linear-gradient(135deg,#00d4ff,#0070f3);border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;">⬇ Export '+(window._selectedExportFormat||'1080p MP4').replace('-',' ').toUpperCase()+'</button>'
+    + '<button onclick="doExport()" style="width:100%;margin-top:8px;padding:10px;background:transparent;border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#94a3b8;font-size:12px;cursor:pointer;">⇩ Quick download (WebM clips)</button>';
+};
+
+// Auto-render export options when export page opens
+var _origNav = window.nav;
+window.nav = function(page) {
+  if (typeof _origNav === 'function') _origNav.apply(this, arguments);
+  if (page === 'export-pg') {
+    setTimeout(function() {
+      if (typeof renderExportPage === 'function') renderExportPage();
+      if (typeof renderExportOptions === 'function') renderExportOptions();
+    }, 100);
+  }
+  if (page === 'record-pg') {
+    setTimeout(function() {
+      if (typeof wireStudioButtons === 'function') wireStudioButtons();
+    }, 200);
+  }
+};
+
+// ── 13. Adaptive teleprompter button state fix ───────────────────
+var _origTpToggleAdaptive = window.tpToggleAdaptive;
+window.tpToggleAdaptive = function() {
+  if (typeof _origTpToggleAdaptive === 'function') _origTpToggleAdaptive.apply(this, arguments);
+  var btn = document.querySelector('[onclick*="tpToggleAdaptive"]');
+  if (btn && typeof TP_ADAPTIVE !== 'undefined') {
+    btn.textContent = TP_ADAPTIVE ? '✏ Adaptive: on' : '✏ Adaptive: off';
+    btn.style.color = TP_ADAPTIVE ? '#00d4ff' : '';
+    btn.style.borderColor = TP_ADAPTIVE ? '#00d4ff' : '';
+  }
+};
+
+// ── 14. My Videos and My Assets pages ────────────────────────────
+window.renderMyVideos = function() {
+  var pg = document.getElementById('my-videos-pg');
+  if (!pg) return;
+  var allClips = [];
+  var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+  projects.forEach(function(p) {
+    Object.values(p.clips || {}).forEach(function(c) {
+      if (c && (c.url || c.videoUrl) && !(c.url || c.videoUrl).startsWith('blob:')) {
+        allClips.push({ ...c, projectTitle: p.title });
+      }
+    });
+  });
+  
+  var grid = pg.querySelector('.videos-grid') || pg;
+  if (!allClips.length) {
+    grid.innerHTML = '<div style="text-align:center;padding:60px 20px;color:rgba(255,255,255,.3)"><div style="font-size:48px;margin-bottom:12px;">🎬</div><div>No saved videos yet.<br>Record scenes to build your library.</div></div>';
+    return;
+  }
+  grid.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;padding:20px;">'
+    + allClips.map(function(c) {
+        var url = c.url || c.videoUrl;
+        return '<div style="background:#1e293b;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.06);">'
+          + '<video src="' + url + '" style="width:100%;height:120px;object-fit:cover;" preload="metadata"></video>'
+          + '<div style="padding:10px;">'
+          + '<div style="font-size:12px;font-weight:600;color:#e2e8f0;margin-bottom:2px;">Scene '+(c.sceneNum||'?')+'</div>'
+          + '<div style="font-size:11px;color:#64748b;margin-bottom:8px;">'+(c.projectTitle||'')+'</div>'
+          + '<a href="' + url + '" download="scene-'+(c.sceneNum||'1')+'.webm" style="font-size:11px;color:#00d4ff;">↓ Download</a>'
+          + '</div></div>';
+      }).join('')
+    + '</div>';
+};
+
+// ── 15. Fix edit_setTool to sync with tl_setTool ─────────────────
+window.edit_setTool = function(tool) {
+  if (typeof tl_setTool === 'function') tl_setTool(tool);
+  // Update toolbar active state
+  document.querySelectorAll('[data-tool]').forEach(function(btn) {
+    btn.classList.toggle('active', btn.dataset.tool === tool);
+    btn.style.background = btn.dataset.tool === tool ? 'rgba(0,212,255,.2)' : '';
+    btn.style.color = btn.dataset.tool === tool ? '#00d4ff' : '';
+  });
+  if (typeof TL !== 'undefined') TL.tool = tool;
+};
+
+// ── 16. Inspector auto-update when clip clicked ───────────────────
+var _origTlRenderForInspector = window.tl_render;
+if (_origTlRenderForInspector) {
+  // Patch clip click to show inspector
+  var _patchClipClick = function() {
+    if (typeof TL === 'undefined' || !TL.selectedClip) return;
+    var clip = null;
+    TL.tracks && TL.tracks.forEach(function(t) {
+      t.clips && t.clips.forEach(function(c) { if(c.id === TL.selectedClip) clip = c; });
+    });
+    TL.selectedClipObj = clip;
+    if (clip && typeof showInspector === 'function') showInspector(clip);
+  };
+  
+  var _checkInspector = function() {
+    if (TL && TL.selectedClip && TL.selectedClipObj?.id !== TL.selectedClip) _patchClipClick();
+  };
+  setInterval(_checkInspector, 500);
+}
+
+// ── 17. Save status bar (always available) ────────────────────────
+if (typeof showSaveStatus !== 'function') {
+  window.showSaveStatus = function(msg, type) {
+    var el = document.getElementById('aab-save-bar');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'aab-save-bar';
+      el.style.cssText = 'position:fixed;bottom:14px;right:18px;z-index:9999;font-size:11px;padding:6px 14px;border-radius:20px;font-family:Sora,sans-serif;transition:opacity .5s;opacity:0;pointer-events:none;box-shadow:0 2px 12px rgba(0,0,0,.4);';
+      document.body.appendChild(el);
+    }
+    var c = {ok:'#10b981',info:'rgba(15,23,42,.95)',warn:'#f59e0b',error:'#ef4444'};
+    el.style.background = c[type] || c.info;
+    el.style.color = type==='warn'?'#000':'#fff';
+    el.textContent = msg;
+    el.style.opacity = '1';
+    clearTimeout(el._t);
+    el._t = setTimeout(function(){ el.style.opacity='0'; }, 3000);
+  };
+}
+
+// ── 18. Mobile studio nav fix ─────────────────────────────────────
+// On mobile, nav to record-pg should work properly
+var _origNavForMobile = window.nav;
+if (typeof window._mobileNavPatched === 'undefined') {
+  window._mobileNavPatched = true;
+  var __nav = window.nav;
+  window.nav = function(page) {
+    // Call the underlying nav
+    if (typeof __nav === 'function') __nav.apply(this, arguments);
+    // On mobile ensure studio page is visible
+    if (page === 'record-pg') {
+      var pg = document.getElementById('record-pg');
+      if (pg) {
+        pg.style.display = 'flex';
+        pg.removeAttribute('hidden');
+        // Ensure controls are visible on mobile
+        document.querySelectorAll('.studio-ctrl, .studio-panel, .studio-q').forEach(function(el) {
+          el.style.display = '';
+        });
+      }
+    }
+  };
+}
+
+// ── 19. Background button active state fix ────────────────────────
+window.setStudioBackground = function(type) {
+  // Deactivate all background buttons
+  document.querySelectorAll('[data-bg]').forEach(function(btn) {
+    btn.style.background = '';
+    btn.style.color = '';
+    btn.style.borderColor = '';
+  });
+  // Activate selected
+  var activeBtn = document.querySelector('[data-bg="' + type + '"]');
+  if (activeBtn) {
+    activeBtn.style.background = 'rgba(0,212,255,.2)';
+    activeBtn.style.color = '#00d4ff';
+    activeBtn.style.borderColor = '#00d4ff';
+  }
+  // Apply background effect
+  if (typeof applyStudioBackground === 'function') applyStudioBackground(type);
+  if (typeof STUDIO !== 'undefined') STUDIO.currentBg = type;
+};
+
+// ── 20. Scene recorded progress indicator ────────────────────────
+window.updateRecordingProgress = function() {
+  if (typeof PROJECT === 'undefined' || typeof STUDIO === 'undefined') return;
+  var total = PROJECT.scenes ? PROJECT.scenes.length : 0;
+  var recorded = PROJECT.scenes ? PROJECT.scenes.filter(function(s) { return s.status === 'recorded'; }).length : 0;
+  var progressEl = document.getElementById('studio-scene-progress');
+  if (progressEl && total > 0) {
+    progressEl.textContent = recorded + ' / ' + total + ' scenes recorded';
+    progressEl.style.color = recorded === total ? '#10b981' : '#94a3b8';
+  }
+};
+setInterval(window.updateRecordingProgress, 2000);
+
+console.log('AABStudio v6 Professional Fixes ✓ — 20 fixes applied');
+</script>
 
 </body>
 </html>
