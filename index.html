@@ -22396,56 +22396,8 @@ if(typeof _origSaveProject==='function'&&!window._saveProjectPatched){
 /* ════════════════════════════════════════════════════════════
    2. LOCAL SCENE SPLIT — no AI credits needed
    ════════════════════════════════════════════════════════════ */
-// Override startSegmentation to do local split first, AI only if user confirms
-var _origStartSeg=window.startSegmentation;
-window.startSegmentation=function(){
-  var textEl=document.getElementById('t-write')||document.getElementById('t-paste')||document.querySelector('textarea.textarea:not([style*="display:none"])');
-  var text=textEl?textEl.value.trim():'';
-  if(!text){if(typeof toast==='function')toast('Please enter a script first','warn');return;}
 
-  // LOCAL SPLIT — free, instant, no credits
-  // Split on [SCENE BREAK], double newline, or paragraphs
-var rawParts = (function() {
-    var a = text.split("[SCENE BREAK]");
-    var b = [];
-    a.forEach(function(p) {
-      var sub = p.split(/\n\s*\n/);
-      sub.forEach(function(s) {
-        if (s.trim().length > 10) b.push(s.trim());
-      });
-    });
-    return b;
-  })();
-  if (!rawParts.length) rawParts = [text];
-
-  // Detect a "use AI credits" intent — if user explicitly set pace/duration
-  var useAI=false; // default to local
-  if(useAI&&typeof _origStartSeg==='function'){_origStartSeg();return;}
-
-  // Build scenes locally
-  if(typeof PROJECT==='undefined')return;
-  var pace=typeof PACE!=='undefined'?PACE:150;
-  var dur=typeof SCENE_DUR!=='undefined'?SCENE_DUR:8;
-  var types=['INTRO','MAIN','MAIN','MAIN','MAIN','MAIN','CONCLUSION'];
-  PROJECT.scenes=rawParts.map(function(text2,i){
-    var wordCount=text2.split(/\s+/).length;
-    var sceneDur=Math.max(3,Math.round((wordCount/pace)*60));
-    return {
-      id:'s_'+Date.now()+'_'+i,
-      num:i+1,
-      text:text2,
-      type:i===0?'INTRO':(i===rawParts.length-1?'CONCLUSION':'MAIN'),
-      duration:dur||sceneDur,
-      assets:[],
-      notes:'',
-      status:'ready'
-    };
-  });
-  if(typeof saveProject==='function')saveProject();
-  if(typeof renderSceneBoard==='function')renderSceneBoard();
-  if(typeof nav==='function')nav('scenes-pg');
-  if(typeof toast==='function')toast(PROJECT.scenes.length+' scenes created (local split — free)','ok');
-};
+/* startSegmentation — using original app logic with built-in local fallback */
 
 /* ════════════════════════════════════════════════════════════
    3. RECORDING — correct aliases for missing functions
@@ -22825,6 +22777,54 @@ if(typeof showSaveStatus!=='function'){window.showSaveStatus=function(msg,type){
 /* ════════════════════════════════════════════════════════════
    12. CSS — timeline alignment, mobile, studio layout
    ════════════════════════════════════════════════════════════ */
+
+/* ── setBgCanvas alias ── */
+window.setBgCanvas = window.setBg || function(btn) {
+  var type = btn ? (btn.dataset.bg || btn.getAttribute('data-bg')) : 'live';
+  if (typeof applyStudioBackground === 'function') applyStudioBackground(type);
+};
+
+/* ── doExportCreatomate ── */
+window.doExportCreatomate = async function(fmt, res) {
+  fmt = fmt || 'mp4'; res = res || '1080';
+  var clips = Object.values(PROJECT.clips || {}).filter(function(c) { return c && (c.url || c.videoUrl); });
+  if (!clips.length) { if (typeof toast === 'function') toast('No recorded clips to export', 'error'); return; }
+  clips.sort(function(a, b) { return (a.sceneNum || 0) - (b.sceneNum || 0); });
+  if (typeof toast === 'function') toast('Starting export...', 'info');
+  try {
+    var r = await fetch(API + '/api/creatomate/stitch', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        clips: clips.map(function(c) { return {url: c.url || c.videoUrl, duration: c.duration || 8}; }),
+        outputFormat: fmt, resolution: res + 'p', title: PROJECT.title || 'My Video'
+      })
+    });
+    var dd = await r.json();
+    if (dd.error) throw new Error(dd.error);
+    if (typeof toast === 'function') toast('Rendering... 1-2 minutes', 'info');
+    var poll = setInterval(async function() {
+      try {
+        var sr = await fetch(API + '/api/creatomate/status/' + dd.taskId);
+        var sd = await sr.json();
+        if (sd.outputUrl || sd.status === 'succeeded') {
+          clearInterval(poll);
+          var a = document.createElement('a');
+          a.href = sd.outputUrl;
+          a.download = (PROJECT.title || 'video').replace(/[^a-z0-9]/gi, '-') + '.' + fmt;
+          a.click();
+          if (typeof toast === 'function') toast('\u2705 Export complete!', 'ok');
+        } else if (sd.status === 'failed') {
+          clearInterval(poll);
+          if (typeof toast === 'function') toast('Export render failed', 'error');
+        }
+      } catch(e2) { clearInterval(poll); }
+    }, 5000);
+  } catch(e) {
+    if (typeof toast === 'function') toast('Export: ' + e.message + ' — downloading clips individually', 'warn');
+    if (typeof doExport === 'function') doExport();
+  }
+};
+
 (function(){
   var existing=document.getElementById('aab-v7-css');if(existing)existing.remove();
   var style=document.createElement('style');style.id='aab-v7-css';
