@@ -22874,13 +22874,342 @@ window.doExportCreatomate = async function(fmt, res) {
 console.log('AABStudio v7.2 loaded \u2713 — persistence, local split, all controls fixed');
 
 
-/* ── Mobile CSS Fix v8 ── */
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CLOUD SAVE FIX — Ensure projects save to cloud correctly
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Override syncProjectToCloud — fix the "project.id required" 400 error */
+var _origSyncToCloud = window.syncProjectToCloud;
+window.syncProjectToCloud = async function(projectData) {
+  try {
+    // Get session from supabase
+    var sbKey = Object.keys(localStorage).find(function(k){ return k.includes('phjlx') && k.includes('auth'); });
+    var sbData = sbKey ? JSON.parse(localStorage.getItem(sbKey)||'null') : null;
+    var token = sbData?.access_token;
+    if (!token) return;
+    
+    // Ensure project.id is present (this was the 400 bug)
+    var proj = projectData || window.PROJECT;
+    if (!proj) return;
+    if (!proj.id) proj.id = 'proj_' + Date.now();
+    
+    // Strip blob URLs before saving (they don't survive across sessions)
+    var light = JSON.parse(JSON.stringify(proj));
+    if (light.clips) {
+      Object.keys(light.clips).forEach(function(k){
+        var c = light.clips[k];
+        if (c && c.url && c.url.startsWith('blob:')) { c.blobUrl = c.url; delete c.url; }
+      });
+    }
+    if (light.recordings) {
+      Object.keys(light.recordings).forEach(function(k){
+        var c = light.recordings[k];
+        if (c && c.url && c.url.startsWith('blob:')) { c.blobUrl = c.url; delete c.url; }
+      });
+    }
+    // Add user ID to project
+    if (!light.userId && window.APP && window.APP.user) light.userId = window.APP.user.id;
+    light.updatedAt = new Date().toISOString();
+    
+    var r = await fetch(window.API + '/api/project/save', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','Authorization':'Bearer ' + token},
+      body: JSON.stringify({project: light})
+    });
+    
+    if (r.ok) {
+      // Update save indicator
+      var ind = document.getElementById('save-indicator') || document.querySelector('[class*="save-ind"]');
+      if (ind) { ind.textContent = '✓ Saved'; ind.style.color = '#10b981'; }
+    } else {
+      var errText = await r.text();
+      console.warn('Cloud save failed ' + r.status + ':', errText.slice(0,100));
+    }
+  } catch(e) {
+    console.warn('Cloud save error:', e.message);
+  }
+};
+
+/* Override syncAndLoadProjects — merge cloud projects into local on login */
+var _origSyncAndLoad = window.syncAndLoadProjects;
+window.syncAndLoadProjects = async function() {
+  var local = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+  
+  try {
+    var sbKey = Object.keys(localStorage).find(function(k){ return k.includes('phjlx') && k.includes('auth'); });
+    var sbData = sbKey ? JSON.parse(localStorage.getItem(sbKey)||'null') : null;
+    var token = sbData?.access_token;
+    if (!token) return local;
+    
+    var r = await fetch(window.API + '/api/project/list', {
+      headers: {'Authorization':'Bearer ' + token}
+    });
+    if (!r.ok) return local;
+    
+    var d = await r.json();
+    var cloudProjects = d.projects || [];
+    
+    if (cloudProjects.length > 0) {
+      // Merge: cloud wins for newer updatedAt, local wins if no cloud version
+      var localById = {};
+      local.forEach(function(p){ if(p.id) localById[p.id] = p; });
+      
+      cloudProjects.forEach(function(cp) {
+        if (!cp.id) return;
+        var existing = localById[cp.id];
+        // Keep whichever is newer
+        if (!existing || (cp.updatedAt && cp.updatedAt > (existing.updatedAt||''))) {
+          localById[cp.id] = cp;
+        }
+      });
+      
+      // Rebuild array sorted by updatedAt desc
+      var merged = Object.values(localById);
+      merged.sort(function(a,b){ return (b.updatedAt||b.date||'') > (a.updatedAt||a.date||'') ? 1 : -1; });
+      local = merged.slice(0, 50);
+      localStorage.setItem('aab_projects', JSON.stringify(local));
+    }
+  } catch(e) {
+    console.warn('Cloud load failed:', e.message);
+  }
+  
+  return local;
+};
+
+/* Auto-sync on page load if user is logged in */
 (function(){
-  var ex=document.getElementById('aab-mobile-fix');if(ex)ex.remove();
-  var s=document.createElement('style');s.id='aab-mobile-fix';
-  s.textContent="\n\n/* ═══════════════════════════════════════════════════════════════\n   AABStudio Mobile CSS Fix — All pages usable on 390px screens\n   ═══════════════════════════════════════════════════════════════ */\n\n/* Fix 1: Studio bottom control bar — make horizontally scrollable */\n@media(max-width:900px){\n  /* The parent container must NOT have overflow:hidden — it blocks scroll */\n  .studio-ctrl-v2{\n    overflow-x:auto!important;\n    overflow-y:visible!important;\n    -webkit-overflow-scrolling:touch;\n    max-height:none!important;\n    min-height:0!important;\n    height:auto!important;\n  }\n  .studio-ctrl-row{\n    overflow-x:auto!important;\n    overflow-y:visible!important;\n    -webkit-overflow-scrolling:touch;\n    max-height:none!important;\n    min-height:60px;\n    flex-shrink:0;\n    /* Scroll snap for easier touch navigation */\n    scroll-snap-type:x mandatory;\n    scroll-padding:0 8px;\n  }\n  .panel-group{\n    scroll-snap-align:start;\n    flex-shrink:0;\n    min-width:fit-content;\n  }\n  /* Make panel buttons easier to tap on touch screens */\n  .panel-group-body button,\n  .panel-group-body .btn-sm{\n    min-height:38px;\n    min-width:44px;\n    padding:6px 10px!important;\n    font-size:13px!important;\n  }\n  /* Scrollbar hint — thin but visible */\n  .studio-ctrl-row::-webkit-scrollbar{height:3px;}\n  .studio-ctrl-row::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:2px;}\n\n  /* Fix 2: Studio top bar — prevent overflow */\n  .studio-bar{\n    flex-wrap:nowrap;\n    overflow-x:auto!important;\n    -webkit-overflow-scrolling:touch;\n    gap:6px!important;\n    padding:0 10px!important;\n    -webkit-scrollbar-width:none;\n    scrollbar-width:none;\n  }\n  .studio-bar::-webkit-scrollbar{display:none;}\n  /* Hide less important top bar items on very small screens */\n  .studio-bar .btn-icon:not(.btn-rec):not(.btn-scenes):not(.btn-back){\n    font-size:14px!important;\n  }\n\n  /* Fix 3: Teleprompter bar — scrollable */\n  .studio-tp, .tp-bar, [class*=\"tp-ctrl\"]{\n    overflow-x:auto!important;\n    -webkit-overflow-scrolling:touch;\n    flex-wrap:nowrap!important;\n    gap:6px!important;\n    padding:6px 10px!important;\n  }\n  .studio-tp::-webkit-scrollbar{height:0;}\n\n  /* Fix 4: Scenes page — stack asset panel below scene list on mobile */\n  .scenes-layout{\n    flex-direction:column!important;\n  }\n  .scenes-list, .scene-list-wrap{\n    flex:none!important;\n    min-height:50vh;\n  }\n  .scenes-aside, .asset-library, .scene-assets{\n    flex:none!important;\n    width:100%!important;\n    max-width:100%!important;\n    border-top:1px solid rgba(0,0,0,.1)!important;\n    border-left:none!important;\n    max-height:240px;\n    overflow-y:auto;\n  }\n  /* Scenes top bar — scrollable actions */\n  .scenes-topbar{\n    overflow-x:auto!important;\n    flex-wrap:nowrap!important;\n    gap:6px!important;\n    -webkit-overflow-scrolling:touch;\n    padding:8px 14px!important;\n  }\n  .scenes-topbar::-webkit-scrollbar{display:none;}\n  /* Scene cards — full width on mobile */\n  .scene-card{\n    width:100%!important;\n    margin-bottom:8px;\n  }\n\n  /* Fix 5: Script page — collapse sidebar below content */\n  .script-layout{\n    grid-template-columns:1fr!important;\n    display:flex!important;\n    flex-direction:column!important;\n  }\n  .script-aside, .script-sidebar, [class*=\"script-panel\"]{\n    border-left:none!important;\n    border-top:1px solid var(--bdr,#e2e8f0)!important;\n    max-height:200px;\n    overflow-y:auto;\n  }\n\n  /* Fix 6: Edit page — hide panels by default, show with toggle */\n  #edit-pg .edit-left-panel,\n  #edit-pg [style*=\"width:220px\"]{\n    display:none!important;\n  }\n  #edit-pg[data-aab-built=\"v8\"] [style*=\"width:220px\"]{\n    display:none!important;\n  }\n  #edit-pg[data-aab-built=\"v8\"] [style*=\"width:240px\"]{\n    display:none!important;\n  }\n  /* Edit top bar — scrollable */\n  .edit-bar, #edit-topbar{\n    overflow-x:auto!important;\n    -webkit-overflow-scrolling:touch;\n    gap:4px!important;\n    flex-wrap:nowrap!important;\n  }\n  .edit-bar::-webkit-scrollbar{display:none;}\n\n  /* Fix 7: Timeline — usable on mobile */\n  #timeline-panel, [id*=\"timeline\"]{\n    min-height:120px!important;\n    overflow-x:auto!important;\n    -webkit-overflow-scrolling:touch;\n  }\n  #aab-tl-labels{\n    width:80px!important;\n    font-size:9px!important;\n  }\n  #aab-tl-scroll{\n    overflow-x:auto!important;\n    -webkit-overflow-scrolling:touch;\n  }\n\n  /* Fix 8: General touch improvements */\n  button, .btn, [onclick]{\n    -webkit-tap-highlight-color:rgba(0,0,0,.1);\n    touch-action:manipulation;\n  }\n  /* Prevent double-tap zoom on buttons */\n  button, .btn{\n    touch-action:manipulation;\n  }\n  /* Make modals full screen on mobile */\n  .modal-box, [class*=\"modal-wrap\"]{\n    width:100vw!important;\n    max-width:100vw!important;\n    border-radius:12px 12px 0 0!important;\n    position:fixed!important;\n    bottom:0!important;\n    left:0!important;\n    right:0!important;\n    margin:0!important;\n  }\n}\n\n/* Extra small phones */\n@media(max-width:430px){\n  .studio-bar .btn-label,\n  .panel-group-label span:not(:first-child){\n    display:none!important;\n  }\n  .studio-bar{\n    gap:4px!important;\n  }\n}\n";
-  document.head.appendChild(s);
+  try {
+    var sbKey = Object.keys(localStorage).find(function(k){ return k.includes('phjlx') && k.includes('auth'); });
+    var sbData = sbKey ? JSON.parse(localStorage.getItem(sbKey)||'null') : null;
+    if (sbData?.access_token) {
+      syncAndLoadProjects().then(function(projects) {
+        if (projects && projects.length > 0 && typeof loadDashboard === 'function') {
+          // Refresh dashboard if it's showing
+          var dash = document.getElementById('dashboard-pg');
+          if (dash && window.getComputedStyle(dash).display !== 'none') {
+            loadDashboard();
+          }
+        }
+      }).catch(function(){});
+    }
+  } catch(e) {}
 })();
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MOBILE CSS FIX — All pages usable on 390px, all browsers
+   Uses both !important and inline style injection for max compatibility
+   ═══════════════════════════════════════════════════════════════════════ */
+
+(function applyMobileCSS(){
+  var existing = document.getElementById('aab-mobile-fix');
+  if (existing) existing.remove();
+  
+  var css = `
+/* AABStudio Mobile Fix — cross-browser, all pages */
+@media screen and (max-width: 900px) {
+
+  /* ═══ STUDIO BOTTOM BAR — FIX ═══
+     The bar has 9 panel groups = ~2700px wide.
+     studio-ctrl-v2 must scroll horizontally.
+     Override existing overflow:hidden with !important */
+  .studio-ctrl-v2 {
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+    -webkit-overflow-scrolling: touch !important;
+    max-height: none !important;
+    min-height: 0 !important;
+  }
+  .studio-ctrl-v2::-webkit-scrollbar { height: 4px !important; }
+  .studio-ctrl-v2::-webkit-scrollbar-thumb { 
+    background: rgba(255,255,255,.3) !important; 
+    border-radius: 2px !important; 
+  }
+  .studio-ctrl-row {
+    overflow: visible !important;
+    max-height: none !important;
+    min-height: 56px !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  .panel-group {
+    flex-shrink: 0 !important;
+    min-width: max-content !important;
+  }
+
+  /* ═══ STUDIO TOP BAR ═══ */
+  .studio-bar {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    gap: 5px !important;
+    padding: 0 8px !important;
+    scrollbar-width: none !important;
+  }
+  .studio-bar::-webkit-scrollbar { display: none !important; }
+
+  /* ═══ TELEPROMPTER BAR ═══ */
+  .studio-tp, .tp-bar {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    flex-wrap: nowrap !important;
+    gap: 8px !important;
+    scrollbar-width: none !important;
+  }
+  .studio-tp::-webkit-scrollbar,
+  .tp-bar::-webkit-scrollbar { display: none !important; }
+
+  /* ═══ SCENES PAGE ═══ */
+  .scenes-layout {
+    flex-direction: column !important;
+  }
+  .scenes-aside,
+  .asset-library,
+  [class*="asset-lib"],
+  [class*="scene-aside"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-left: none !important;
+    border-top: 1px solid rgba(0,0,0,.1) !important;
+    max-height: 280px !important;
+    overflow-y: auto !important;
+    flex-shrink: 0 !important;
+  }
+  .scenes-topbar,
+  .scenes-actions {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+    padding: 8px 12px !important;
+    scrollbar-width: none !important;
+  }
+  .scenes-topbar::-webkit-scrollbar { display: none !important; }
+  .scene-card { width: 100% !important; }
+
+  /* ═══ SCRIPT PAGE ═══ */
+  .script-layout {
+    display: flex !important;
+    flex-direction: column !important;
+    grid-template-columns: unset !important;
+  }
+  .script-main {
+    border-right: none !important;
+    border-bottom: 1px solid var(--bdr, #e2e8f0) !important;
+    padding: 16px !important;
+  }
+  .script-aside, .script-sidebar, .script-panel {
+    border-left: none !important;
+    padding: 16px !important;
+    max-height: 220px !important;
+    overflow-y: auto !important;
+  }
+
+  /* ═══ SEGMENT PAGE (AI loading page) ═══ */
+  .segment-wrap, [id="segment-pg"] {
+    padding: 20px 16px !important;
+  }
+
+  /* ═══ EDIT PAGE ═══ */
+  .edit-bar, #edit-topbar {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    flex-wrap: nowrap !important;
+    gap: 4px !important;
+    scrollbar-width: none !important;
+  }
+  .edit-bar::-webkit-scrollbar,
+  #edit-topbar::-webkit-scrollbar { display: none !important; }
+  #timeline-panel,
+  [id*="timeline"],
+  .edit-timeline {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    min-height: 130px !important;
+  }
+
+  /* ═══ DASHBOARD ═══ */
+  .projects-grid,
+  .dashboard-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ═══ GLOBAL TOUCH UX ═══ */
+  button, .btn, [onclick] {
+    -webkit-tap-highlight-color: rgba(0,0,0,.06) !important;
+    touch-action: manipulation !important;
+  }
+  
+  /* Bigger tap targets */
+  .panel-group-body .btn,
+  .panel-group-body button {
+    min-height: 36px !important;
+    min-width: 40px !important;
+    padding: 5px 8px !important;
+    font-size: 12px !important;
+  }
+
+  /* Modals — bottom sheet style */
+  .modal, .modal-box, [class*="modal-content"] {
+    max-width: 100vw !important;
+    width: 100% !important;
+    border-radius: 16px 16px 0 0 !important;
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    margin: 0 !important;
+    max-height: 85vh !important;
+    overflow-y: auto !important;
+  }
+}
+
+/* Very small screens */
+@media screen and (max-width: 400px) {
+  .studio-bar .btn-label { display: none !important; }
+  .panel-group-label { font-size: 9px !important; }
+  #topnav .nav-logo { font-size: .85rem !important; }
+}
+`;
+
+  var style = document.createElement('style');
+  style.id = 'aab-mobile-fix';
+  style.setAttribute('data-version', '3');
+  document.head.appendChild(style);
+  style.textContent = css;
+  
+  // ALSO apply inline fix directly to problem elements
+  // This handles Safari/Firefox where !important sometimes loses to inline styles
+  function fixStudioBar() {
+    var v2 = document.querySelector('.studio-ctrl-v2');
+    if (v2) {
+      v2.style.setProperty('overflow-x', 'auto', 'important');
+      v2.style.setProperty('overflow-y', 'visible', 'important');
+      v2.style.setProperty('-webkit-overflow-scrolling', 'touch', 'important');
+      v2.style.setProperty('max-height', 'none', 'important');
+    }
+    var row = document.querySelector('.studio-ctrl-row');
+    if (row) {
+      row.style.setProperty('overflow', 'visible', 'important');
+      row.style.setProperty('max-height', 'none', 'important');
+    }
+  }
+  
+  // Apply on load and on nav changes
+  fixStudioBar();
+  
+  // Re-apply when pages change (nav might recreate elements)
+  var _navOrig = window.nav;
+  if (typeof _navOrig === 'function' && !window._mobileNavPatched) {
+    window._mobileNavPatched = true;
+    window.nav = function(page) {
+      _navOrig.apply(this, arguments);
+      setTimeout(fixStudioBar, 200);
+    };
+  }
+  
+})();
+
 
 </script>
 
