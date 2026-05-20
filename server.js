@@ -462,6 +462,28 @@ app.get('/api/credits-status', (req, res) => {
   });
 });
 
+// ── User credits endpoint ──
+app.get('/api/user/credits', async (req, res) => {
+  try {
+    const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+    if (!token) return res.status(401).json({ error: 'No auth token' });
+    let user;
+    try { const { data } = await sb.auth.getUser(token); user = data?.user; } catch(e) { return res.status(401).json({ error: 'Auth failed' }); }
+    if (!user) return res.status(401).json({ error: 'Invalid token' });
+    const meta = user.user_metadata || {};
+    const appMeta = user.app_metadata || {};
+    const plan = meta.plan || appMeta.plan || 'free';
+    const planCredits = {free:10, creator:200, studio:1000, pro:1000};
+    const credits = meta.credits ?? planCredits[plan] ?? 10;
+    const creditsUsed = meta.credits_used ?? 0;
+    res.json({ credits, creditsUsed, plan, userId: user.id });
+  } catch(e) {
+    console.error('/api/user/credits:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
 app.get('/health', (req, res) => res.json({
   status: 'ok', version: '3.9',
   anthropic: !!process.env.ANTHROPIC_API_KEY,
