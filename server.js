@@ -500,7 +500,8 @@ function getMinPlanForFeature(feature) {
 
 async function getUserPlan(token) {
   try {
-    const { data } = await sb.auth.getUser(token);
+    const sbAdmin = getSupaAdmin();
+    const { data } = await sbAdmin.auth.getUser(token);
     const user = data?.user;
     if (!user) return null;
     const rawPlan = user.user_metadata?.plan || user.app_metadata?.plan || 'free';
