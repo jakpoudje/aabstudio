@@ -22570,6 +22570,68 @@ setTimeout(function(){
     };
   }
 },3500);
+
+/* AABStudio Conflict Fixes */
+(function(){
+if(window._conflictFixes)return; window._conflictFixes=true;
+setTimeout(function(){
+  var _origSeg=window.startSegmentation;
+  if(typeof _origSeg==="function"&&!window._segP){window._segP=true;
+    window.startSegmentation=async function(){window._segmentingActive=true;
+      try{await _origSeg.apply(this,arguments);}catch(e){if(typeof toast==="function")toast("Segmentation failed: "+e.message,"error");}
+      finally{window._segmentingActive=false;}
+    };
+  }
+  var _prevNavP=window.nav;
+  if(typeof _prevNavP==="function"&&!window._navSegGuard){window._navSegGuard=true;
+    var __origNav=_prevNavP;
+    window.nav=function(pg){
+      if(window._segmentingActive&&pg==="scenes-pg"){return __origNav.apply(this,arguments);}
+      return __origNav.apply(this,arguments);
+    };
+  }
+},3800);
+})();
+
+
+/* AABStudio PLAN SYSTEM - v4.0 Frontend */
+(function(){
+if(window._planSys)return; window._planSys=true;
+window.PLAN_FEATURES={free:{teleprompter:true,basicRecording:true,practiceMode:true,sceneSegmentation:true,quickEditor:true,autoSubtitles:true,basicMusicTrack:true,recordingStudio:false,aiPresenter:false,fullEditSuite:false,overlays:false,brollTracks:false,advancedTransitions:false,export4k:false,export1080p:false,teamCollaboration:false,assetLibrary:false,advancedTimeline:false},creator:{teleprompter:true,basicRecording:true,practiceMode:true,sceneSegmentation:true,quickEditor:true,autoSubtitles:true,basicMusicTrack:true,recordingStudio:true,sceneRetakes:true,basicEditSuite:true,subtitleEditing:true,basicTimeline:true,multipleAudioTracks:true,basicOverlays:true,basicTransitions:true,export1080p:true,aiPresenter:false,fullEditSuite:false,advancedOverlays:false,export4k:false,teamCollaboration:false,advancedTimeline:false,chromaKey:false,brollTracks:false},pro_studio:{teleprompter:true,basicRecording:true,practiceMode:true,sceneSegmentation:true,quickEditor:true,autoSubtitles:true,basicMusicTrack:true,recordingStudio:true,sceneRetakes:true,basicEditSuite:true,subtitleEditing:true,basicTimeline:true,multipleAudioTracks:true,basicOverlays:true,basicTransitions:true,export1080p:true,aiPresenter:true,fullEditSuite:true,advancedOverlays:true,advancedTransitions:true,export4k:true,advancedTimeline:true,waveformEditor:true,chromaKey:true,keyframes:true,customBranding:true,brollTracks:true,assetLibrary:true,advancedSubtitles:true,audioNormalization:true,motionGraphics:true,audioDucking:true,exportPresets:true,aiVoices:true,advancedBackgrounds:true,sceneAssetAssignment:true,prioritySupport:true,teamCollaboration:false},team:{teleprompter:true,basicRecording:true,practiceMode:true,sceneSegmentation:true,quickEditor:true,autoSubtitles:true,basicMusicTrack:true,recordingStudio:true,sceneRetakes:true,basicEditSuite:true,subtitleEditing:true,basicTimeline:true,multipleAudioTracks:true,basicOverlays:true,basicTransitions:true,export1080p:true,aiPresenter:true,fullEditSuite:true,advancedOverlays:true,advancedTransitions:true,export4k:true,advancedTimeline:true,waveformEditor:true,chromaKey:true,keyframes:true,customBranding:true,brollTracks:true,assetLibrary:true,advancedSubtitles:true,audioNormalization:true,motionGraphics:true,audioDucking:true,exportPresets:true,aiVoices:true,advancedBackgrounds:true,sceneAssetAssignment:true,teamCollaboration:true,sharedProjects:true,multipleEditors:true,comments:true,approvalWorkflow:true,rolesPermissions:true,cloudRenderQueue:true,priorityRendering:true,workspaceAnalytics:true,prioritySupport:true}};
+window.PLAN_LABELS={free:"Free",creator:"✦ Creator",pro_studio:"★ Pro Studio",team:"👥 Team"};
+window.hasFeature=function(feature){var plan=APP&&APP.plan||"free";if(APP&&APP.planFeatures)return !!APP.planFeatures[feature];return !!(PLAN_FEATURES[plan]&&PLAN_FEATURES[plan][feature]);};
+window.requireFeature=function(feature,cb){if(hasFeature(feature)){if(typeof cb==="function")cb();return true;}window._showUpgradeModal(feature);return false;};
+window._showUpgradeModal=function(feature,reqPlan){
+  var ex=document.getElementById("aab-upgrade-modal");if(ex)ex.remove();
+  var pln=APP&&APP.plan||"free";
+  var needed=reqPlan||(pln==="free"?"creator":pln==="creator"?"pro_studio":"team");
+  var fnames={aiPresenter:"AI Presenter",fullEditSuite:"Full Edit Suite",recordingStudio:"Recording Studio",advancedTimeline:"Advanced Timeline",export4k:"4K Export",teamCollaboration:"Team Collaboration",chromaKey:"Chroma Key",waveformEditor:"Waveform Editor",brollTracks:"B-Roll Tracks"};
+  var fname=fnames[feature]||feature;
+  var pids={creator:"price_1THCSlBJVJa9ylUXwAYC4LpR",pro_studio:"price_1TNRx6BJVJa9ylUXwLr11VPm"};
+  var ov=document.createElement("div");ov.id="aab-upgrade-modal";
+  ov.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99999;display:flex;align-items:center;justify-content:center;";
+  ov.innerHTML='<div style="background:linear-gradient(135deg,#1e293b,#0f172a);border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:32px;max-width:440px;width:90%;text-align:center;">'
+    +'<div style="font-size:48px;margin-bottom:16px;">🚀</div>'
+    +'<h2 style="color:#fff;font-size:20px;margin:0 0 8px;font-weight:800;">'+fname+' — Upgrade Required</h2>'
+    +'<p style="color:#94a3b8;font-size:13px;margin:0 0 20px;">This feature requires a higher plan.</p>'
+    +'<button onclick="if(window.aab_buyCredits)aab_buyCredits(\''+( pids[needed]||pids.pro_studio)+'\')" style="display:block;width:100%;padding:14px;background:linear-gradient(135deg,#0070f3,#7c3aed);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:10px;">🚀 Upgrade Now</button>'
+    +'<button onclick="document.getElementById(\'aab-upgrade-modal\').remove()" style="display:block;width:100%;padding:10px;background:transparent;color:#64748b;border:none;font-size:13px;cursor:pointer;">Maybe later</button>'
+    +'</div>';
+  document.body.appendChild(ov);
+  ov.addEventListener("click",function(e){if(e.target===ov)ov.remove();});
+};
+window._updPlan=function(){var pl=document.getElementById("d-plan");if(!pl)return;var p=APP&&APP.plan||"free";var lb={free:"Free",creator:"✦ Creator",creator_plus:"✦ Creator+",pro:"\u2605 Pro Studio",pro_studio:"★ Pro Studio",studio:"★ Pro Studio",team:"👥 Team"};pl.textContent=lb[p]||p;var cs={free:"background:#f1f5f9;color:#64748b",creator:"background:#fef3c7;color:#d97706",pro:"background:linear-gradient(135deg,#7c3aed,#db2777);color:#fff",pro_studio:"background:linear-gradient(135deg,#7c3aed,#db2777);color:#fff",studio:"background:#ede9fe;color:#7c3aed",team:"background:linear-gradient(135deg,#0070f3,#00d4ff);color:#fff"};pl.style.cssText=(cs[p]||"background:#f1f5f9;color:#64748b")+";padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;display:inline-block;";var cr=document.getElementById("cr-rem");if(cr)cr.textContent=(APP&&APP.credits)||0;};
+window._fetchPlan=async function(){try{var k=Object.keys(localStorage).find(function(x){return x.includes("phjlx")&&x.includes("auth");});var d=k?JSON.parse(localStorage.getItem(k)||"null"):null;var t=d&&d.access_token;if(!t)return;var r=await fetch(window.API+"/api/user/plan",{headers:{"Authorization":"Bearer "+t}});if(!r.ok)return;var info=await r.json();if(!APP)window.APP={};APP.plan=info.plan;APP.credits=info.credits;APP.planFeatures=info.features;APP.planLimits=info.limits;window._updPlan();}catch(e){}};
+window._applyPlanUI=function(plan){var features=PLAN_FEATURES[plan]||PLAN_FEATURES.free;
+  [...document.querySelectorAll("[onclick*=openAIPresenter]")].forEach(function(btn){if(!features.aiPresenter){btn.title="AI Presenter requires Pro Studio";var _orig=btn.getAttribute("onclick");btn.removeAttribute("onclick");btn.onclick=function(){requireFeature("aiPresenter",function(){if(_orig)eval(_orig);});};}});
+  window._updPlan&&window._updPlan();
+};
+setTimeout(function(){
+  window._fetchPlan&&window._fetchPlan();
+  if(APP&&APP.plan)window._applyPlanUI(APP.plan);
+},2000);
+})();
+
 </script>
 
 </body>
