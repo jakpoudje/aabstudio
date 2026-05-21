@@ -462,32 +462,98 @@ app.get('/api/credits-status', (req, res) => {
   });
 });
 
-// ── User credits endpoint ──
-app.get('/api/user/credits', async (req, res) => {
-  try {
-    const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
-    if (!token) return res.status(401).json({ error: 'No auth token' });
-    let user;
-    try { const { data } = await sb.auth.getUser(token); user = data?.user; } catch(e) { return res.status(401).json({ error: 'Auth failed' }); }
-    if (!user) return res.status(401).json({ error: 'Invalid token' });
-    const meta = user.user_metadata || {};
-    const appMeta = user.app_metadata || {};
-    const plan = meta.plan || appMeta.plan || 'free';
-    const planCredits = {free:10, creator:200, studio:1000, pro:1000};
-    const credits = meta.credits ?? planCredits[plan] ?? 10;
-    const creditsUsed = meta.credits_used ?? 0;
-    res.json({ credits, creditsUsed, plan, userId: user.id });
-  } catch(e) {
-    console.error('/api/user/credits:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
 
 app.get('/health', (req, res) => res.json({
   status: 'ok', version: '3.9',
   anthropic: !!process.env.ANTHROPIC_API_KEY,
   elevenlabs: !!ELEVENLABS_KEY,
+
+
+// ══════════════════════════════════════════════════════
+// PLAN SYSTEM — AABStudio v4.0
+// ══════════════════════════════════════════════════════
+
+const PLAN_LIMITS = {
+  free: { name:'Free', projects:3, scenesPerProject:10, recordingMinutes:2, storage_gb:0.5, export_quality:'720p', watermark:true, credits:10, features:{ teleprompter:true,basicRecording:true,practiceMode:true,sceneSegmentation:true,quickEditor:true,autoSubtitles:true,basicMusicTrack:true,recordingStudio:false,aiPresenter:false,fullEditSuite:false,overlays:false,brollTracks:false,advancedTransitions:false,export4k:false,export1080p:false,teamCollaboration:false,assetLibrary:false,advancedTimeline:false,waveformEditor:false,chromaKey:false,customBranding:false,prioritySupport:false } },
+  creator: { name:'Creator', price_gbp:14, projects:20, scenesPerProject:100, recordingMinutes:60, storage_gb:10, export_quality:'1080p', watermark:false, credits:200, features:{ teleprompter:true,basicRecording:true,practiceMode:true,sceneSegmentation:true,quickEditor:true,autoSubtitles:true,basicMusicTrack:true,recordingStudio:true,sceneRetakes:true,basicEditSuite:true,subtitleEditing:true,basicTimeline:true,multipleAudioTracks:true,basicOverlays:true,basicTransitions:true,export1080p:true,aiPresenter:false,fullEditSuite:false,advancedOverlays:false,export4k:false,teamCollaboration:false,advancedTimeline:false,waveformEditor:false,chromaKey:false,keyframes:false,customBranding:false,brollTracks:false } },
+  pro_studio: { name:'Pro Studio', price_gbp:34, projects:-1, scenesPerProject:-1, recordingMinutes:-1, storage_gb:100, export_quality:'4k', watermark:false, credits:1000, features:{ teleprompter:true,basicRecording:true,practiceMode:true,sceneSegmentation:true,quickEditor:true,autoSubtitles:true,basicMusicTrack:true,recordingStudio:true,sceneRetakes:true,basicEditSuite:true,subtitleEditing:true,basicTimeline:true,multipleAudioTracks:true,basicOverlays:true,basicTransitions:true,export1080p:true,aiPresenter:true,fullEditSuite:true,advancedOverlays:true,advancedTransitions:true,export4k:true,advancedTimeline:true,waveformEditor:true,chromaKey:true,keyframes:true,customBranding:true,brollTracks:true,assetLibrary:true,advancedSubtitles:true,audioNormalization:true,motionGraphics:true,audioDucking:true,exportPresets:true,aiVoices:true,advancedBackgrounds:true,sceneAssetAssignment:true,prioritySupport:true,teamCollaboration:false } },
+  team: { name:'Team', price_gbp:89, projects:-1, scenesPerProject:-1, recordingMinutes:-1, storage_gb:500, export_quality:'4k', watermark:false, credits:5000, features:{ teleprompter:true,basicRecording:true,practiceMode:true,sceneSegmentation:true,quickEditor:true,autoSubtitles:true,basicMusicTrack:true,recordingStudio:true,sceneRetakes:true,basicEditSuite:true,subtitleEditing:true,basicTimeline:true,multipleAudioTracks:true,basicOverlays:true,basicTransitions:true,export1080p:true,aiPresenter:true,fullEditSuite:true,advancedOverlays:true,advancedTransitions:true,export4k:true,advancedTimeline:true,waveformEditor:true,chromaKey:true,keyframes:true,customBranding:true,brollTracks:true,assetLibrary:true,advancedSubtitles:true,audioNormalization:true,motionGraphics:true,audioDucking:true,exportPresets:true,aiVoices:true,advancedBackgrounds:true,sceneAssetAssignment:true,teamCollaboration:true,sharedProjects:true,multipleEditors:true,comments:true,approvalWorkflow:true,sharedAssetLibrary:true,workspaceFolders:true,rolesPermissions:true,cloudRenderQueue:true,priorityRendering:true,workspaceAnalytics:true,prioritySupport:true } }
+};
+
+function getMinPlanForFeature(feature) {
+  for (const plan of ['free','creator','pro_studio','team']) {
+    if (PLAN_LIMITS[plan]?.features?.[feature]) return plan;
+  }
+  return 'pro_studio';
+}
+
+async function getUserPlan(token) {
+  try {
+    const { data } = await sb.auth.getUser(token);
+    const user = data?.user;
+    if (!user) return null;
+    const rawPlan = user.user_metadata?.plan || user.app_metadata?.plan || 'free';
+    const plan = PLAN_LIMITS[rawPlan] ? rawPlan : 'free';
+    const limits = PLAN_LIMITS[plan];
+    const creditsUsed = user.user_metadata?.credits_used ?? 0;
+    const creditsRemaining = user.user_metadata?.credits ?? limits.credits;
+    return { user, plan, limits, creditsUsed, creditsRemaining };
+  } catch(e) { return null; }
+}
+
+app.get('/api/user/credits', async (req, res) => {
+  try {
+    const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+    if (!token) return res.status(401).json({ error: 'No token' });
+    const info = await getUserPlan(token);
+    if (!info) return res.status(401).json({ error: 'Invalid token' });
+    res.json({ credits: info.creditsRemaining, creditsUsed: info.creditsUsed, plan: info.plan, limits: info.limits, features: info.limits.features, userId: info.user.id });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/user/plan', async (req, res) => {
+  try {
+    const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+    if (!token) return res.status(401).json({ error: 'No token' });
+    const info = await getUserPlan(token);
+    if (!info) return res.status(401).json({ error: 'Invalid token' });
+    res.json({ plan: info.plan, planName: info.limits.name, credits: info.creditsRemaining, creditsUsed: info.creditsUsed, limits: info.limits, features: info.limits.features, userId: info.user.id, email: info.user.email });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/admin/upgrade', async (req, res) => {
+  try {
+    const { adminKey, email, plan } = req.body;
+    if (adminKey !== (process.env.ADMIN_KEY || 'aabstudio_admin_2026')) return res.status(403).json({ error: 'Unauthorized' });
+    if (!PLAN_LIMITS[plan]) return res.status(400).json({ error: 'Invalid plan' });
+    const sbAdmin = getSupaAdmin();
+    if (!sbAdmin) return res.status(500).json({ error: 'No admin client' });
+    const { data: { users } } = await sbAdmin.auth.admin.listUsers();
+    const user = users?.find(u => u.email === email);
+    if (!user) return res.status(404).json({ error: 'User not found: ' + email });
+    const { error } = await sbAdmin.auth.admin.updateUserById(user.id, {
+      user_metadata: { ...user.user_metadata, plan, credits: PLAN_LIMITS[plan].credits, credits_used: 0, upgraded_at: new Date().toISOString() },
+      app_metadata: { ...user.app_metadata, plan }
+    });
+    if (error) return res.status(500).json({ error: error.message });
+    console.log('Admin upgraded', email, 'to', plan);
+    res.json({ success: true, email, plan, credits: PLAN_LIMITS[plan].credits, features: PLAN_LIMITS[plan].features });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/feature-check', async (req, res) => {
+  try {
+    const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+    const { feature, creditCost = 0 } = req.body;
+    if (!token) return res.json({ allowed: false, reason: 'Not logged in' });
+    const info = await getUserPlan(token);
+    if (!info) return res.json({ allowed: false, reason: 'Invalid session' });
+    if (!info.limits.features[feature]) return res.json({ allowed: false, reason: 'Upgrade required', requiredPlan: getMinPlanForFeature(feature), feature, currentPlan: info.plan });
+    if (creditCost > 0 && info.creditsRemaining < creditCost) return res.json({ allowed: false, reason: 'Insufficient credits', credits: info.creditsRemaining, required: creditCost });
+    res.json({ allowed: true, plan: info.plan, credits: info.creditsRemaining });
+  } catch(e) { res.status(500).json({ allowed: false, reason: e.message }); }
+});
+
   heygen: !!HEYGEN_KEY,
   did: !!DID_API_KEY,
   kling_piapi: !!PIAPI_KEY,
