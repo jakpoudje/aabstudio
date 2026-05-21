@@ -565,16 +565,6 @@ app.post('/api/feature-check', async (req, res) => {
   } catch(e) { res.status(500).json({ allowed: false, reason: e.message }); }
 });
 
-  heygen: !!HEYGEN_KEY,
-  did: !!DID_API_KEY,
-  kling_piapi: !!PIAPI_KEY,
-  kling_direct: !!(KLING_AK && KLING_SK),
-  runway: !!RUNWAY_KEY,
-  creatomate: !!CREATOMATE_KEY,
-  stripe: !!STRIPE_KEY,
-  imgur: !!IMGUR_CLIENT_ID
-}));
-
 // ── Project CRUD ──────────────────────────────────────────────────────────────
 function stripProject(project) {
   const p = JSON.parse(JSON.stringify(project));
