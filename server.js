@@ -467,6 +467,17 @@ app.get('/health', (req, res) => res.json({
   status: 'ok', version: '3.9',
   anthropic: !!process.env.ANTHROPIC_API_KEY,
   elevenlabs: !!ELEVENLABS_KEY,
+  heygen: !!process.env.HEYGEN_API_KEY,
+  did: !!process.env.DID_API_KEY,
+  runway: !!process.env.RUNWAY_API_KEY,
+  kling_piapi: !!process.env.PIAPI_KEY,
+  kling_direct: !!process.env.KLING_API_KEY,
+  creatomate: !!process.env.CREATOMATE_API_KEY,
+  stripe: !!process.env.STRIPE_SECRET_KEY,
+  imgur: !!process.env.IMGUR_CLIENT_ID
+}));
+
+
 
 
 // ══════════════════════════════════════════════════════
