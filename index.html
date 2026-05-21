@@ -11604,7 +11604,27 @@ window.ap_setTpSettings = function(settings) {
       raf: null,
     };
 
-    // ── INIT ──────────────────────────────────────────────────────────────────────
+    
+// ── RE-APPLY NAV (safety net if overwritten) ──
+window._reapplyNav=function(){
+  if(window.nav&&window.nav.toString().includes('wireSceneUpload'))return; // already correct
+  var _cur=window.nav;
+  if(typeof _cur!=='function')return;
+  window.nav=function(page){
+    var r=_cur.apply(this,arguments);
+    setTimeout(function(){
+      try{
+        if(page==='scenes-pg'){window._addDashboardBackBtn&&window._addDashboardBackBtn();setTimeout(function(){window._wireDraggableScenes&&window._wireDraggableScenes();window.wireSceneUpload&&window.wireSceneUpload();window.refreshAssetLibrary&&window.refreshAssetLibrary();},400);}
+        if(page==='edit-pg'){window.wireEditBtns&&window.wireEditBtns();window._fixTimeline&&window._fixTimeline();setTimeout(function(){window._wirePlayhead&&window._wirePlayhead();},400);}
+        if(page==='script-pg'){var s2=document.getElementById('t-write');if(s2&&!s2.value&&PROJECT){if(PROJECT.script)s2.value=PROJECT.script;else if(PROJECT.scenes&&PROJECT.scenes.length>0)s2.value=PROJECT.scenes.map(function(s){return s.narration||s.text||'';}).join('\n\n');}}
+        if(page==='dashboard-pg'){setTimeout(window._updPlan,100);}
+      }catch(e){}
+    },200);
+    return r;
+  };
+};
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
     function renderEditSuite() {
       var t = document.getElementById('edit-title');
       if (t) t.textContent = 'Edit — ' + PROJECT.title;
@@ -22410,22 +22430,32 @@ setTimeout(function(){
   };
 },2500);
 window.wireSceneUpload=function(){
-  var pg=document.getElementById('scenes-pg');if(!pg)return;
-  function _doWire(){
-    var inputs=[...pg.querySelectorAll('input[type=file]')];
-    inputs.forEach(function(inp){
-      if(inp._sceneWired)return;inp._sceneWired=true;
-      inp.addEventListener('change',function(e){
-        if((typeof SELECTED_SCENE==='undefined'||SELECTED_SCENE===null)&&PROJECT&&PROJECT.scenes&&PROJECT.scenes.length>0){window.SELECTED_SCENE=0;}
-        if(inp.onchange)inp.onchange.call(inp,e);
-        else if(typeof uploadSceneAsset==='function')uploadSceneAsset(inp);
-      });
+  var pg=document.getElementById("scenes-pg");if(!pg)return;
+  var inputs=[...pg.querySelectorAll("input[type=file]")];
+  inputs.forEach(function(inp){
+    if(inp._sceneWired)return;
+    inp._sceneWired=true;
+    var origOnchange=inp.onchange;
+    inp.addEventListener("change",function(e){
+      if(typeof SELECTED_SCENE==="undefined"||SELECTED_SCENE===null){
+        if(PROJECT&&PROJECT.scenes&&PROJECT.scenes.length>0){
+          if(typeof window!=="undefined")window.SELECTED_SCENE=0;
+        }
+      }
+      if(origOnchange)origOnchange.call(this,e);
+      else if(typeof uploadSceneAsset==="function")uploadSceneAsset(this);
     });
-    var fA=document.getElementById('f-assets');
-    if(fA&&!fA._sceneWired){fA._sceneWired=true;fA.addEventListener('change',function(e){if(fA.onchange)fA.onchange.call(fA,e);else if(typeof uploadAssets==='function')uploadAssets(fA);});}
+  });
+  // Also wire the f-assets input
+  var fAssets=document.getElementById("f-assets");
+  if(fAssets&&!fAssets._sceneWired){
+    fAssets._sceneWired=true;
+    var origFC=fAssets.onchange;
+    fAssets.addEventListener("change",function(e){
+      if(origFC)origFC.call(this,e);
+      else if(typeof uploadAssets==="function")uploadAssets(this);
+    });
   }
-  _doWire();
-  if(!pg._wireObs){pg._wireObs=new MutationObserver(function(){_doWire();});pg._wireObs.observe(pg,{childList:true,subtree:true});}
 };
 window.refreshAssetLibrary=function(){
   if(typeof renderAssetLibrary==="function")renderAssetLibrary();
@@ -22564,25 +22594,16 @@ setTimeout(function(){
 /* AABStudio Conflict Fixes */
 (function(){
 if(window._conflictFixes)return; window._conflictFixes=true;
+// Patch startSegmentation to prevent double-save race condition
 setTimeout(function(){
-  var _origSeg=window.startSegmentation;
-  if(typeof _origSeg==="function"&&!window._segP){window._segP=true;
-    window.startSegmentation=async function(){window._segmentingActive=true;
-      try{await _origSeg.apply(this,arguments);}catch(e){if(typeof toast==="function")toast("Segmentation failed: "+e.message,"error");}
-      finally{window._segmentingActive=false;}
-    };
+  var _s=window.startSegmentation;
+  if(typeof _s==='function'&&!window._segP){window._segP=true;
+    window.startSegmentation=async function(){window._segmentingActive=true;try{await _s.apply(this,arguments);}catch(e){if(typeof toast==='function')toast('Segmentation failed: '+e.message,'error');}finally{window._segmentingActive=false;}};
   }
-  var _prevNavP=window.nav;
-  if(typeof _prevNavP==="function"&&!window._navSegGuard){window._navSegGuard=true;
-    var __origNav=_prevNavP;
-    window.nav=function(pg){
-      if(window._segmentingActive&&pg==="scenes-pg"){return __origNav.apply(this,arguments);}
-      return __origNav.apply(this,arguments);
-    };
-  }
-},3800);
+  // Re-apply nav override in case it was overwritten by async scripts
+  if(typeof window._reapplyNav==='function')window._reapplyNav();
+},4000);
 })();
-
 
 /* AABStudio PLAN SYSTEM - v4.0 Frontend */
 (function(){
