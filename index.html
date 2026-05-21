@@ -22550,6 +22550,160 @@ setTimeout(function(){
   }catch(e){console.warn("v9h init:",e.message);}
 },1500);
 })();
+
+/* AABStudio PLAN SYSTEM - v4.0 Frontend */
+(function(){
+if(window._planSys)return; window._planSys=true;
+window.PLAN_FEATURES={
+  free:{teleprompter:true,basicRecording:true,practiceMode:true,sceneSegmentation:true,quickEditor:true,autoSubtitles:true,basicMusicTrack:true,recordingStudio:false,aiPresenter:false,fullEditSuite:false,overlays:false,brollTracks:false,advancedTransitions:false,export4k:false,export1080p:false,teamCollaboration:false,assetLibrary:false,advancedTimeline:false},
+  creator:{teleprompter:true,basicRecording:true,practiceMode:true,sceneSegmentation:true,quickEditor:true,autoSubtitles:true,basicMusicTrack:true,recordingStudio:true,sceneRetakes:true,basicEditSuite:true,subtitleEditing:true,basicTimeline:true,multipleAudioTracks:true,basicOverlays:true,basicTransitions:true,export1080p:true,aiPresenter:false,fullEditSuite:false,advancedOverlays:false,export4k:false,teamCollaboration:false,advancedTimeline:false,chromaKey:false,keyframes:false,customBranding:false,brollTracks:false},
+  pro_studio:{teleprompter:true,basicRecording:true,practiceMode:true,sceneSegmentation:true,quickEditor:true,autoSubtitles:true,basicMusicTrack:true,recordingStudio:true,sceneRetakes:true,basicEditSuite:true,subtitleEditing:true,basicTimeline:true,multipleAudioTracks:true,basicOverlays:true,basicTransitions:true,export1080p:true,aiPresenter:true,fullEditSuite:true,advancedOverlays:true,advancedTransitions:true,export4k:true,advancedTimeline:true,waveformEditor:true,chromaKey:true,keyframes:true,customBranding:true,brollTracks:true,assetLibrary:true,advancedSubtitles:true,audioNormalization:true,motionGraphics:true,audioDucking:true,exportPresets:true,aiVoices:true,advancedBackgrounds:true,sceneAssetAssignment:true,prioritySupport:true,teamCollaboration:false},
+  team:{teleprompter:true,basicRecording:true,practiceMode:true,sceneSegmentation:true,quickEditor:true,autoSubtitles:true,basicMusicTrack:true,recordingStudio:true,sceneRetakes:true,basicEditSuite:true,subtitleEditing:true,basicTimeline:true,multipleAudioTracks:true,basicOverlays:true,basicTransitions:true,export1080p:true,aiPresenter:true,fullEditSuite:true,advancedOverlays:true,advancedTransitions:true,export4k:true,advancedTimeline:true,waveformEditor:true,chromaKey:true,keyframes:true,customBranding:true,brollTracks:true,assetLibrary:true,advancedSubtitles:true,audioNormalization:true,motionGraphics:true,audioDucking:true,exportPresets:true,aiVoices:true,advancedBackgrounds:true,sceneAssetAssignment:true,teamCollaboration:true,sharedProjects:true,multipleEditors:true,comments:true,approvalWorkflow:true,sharedAssetLibrary:true,rolesPermissions:true,cloudRenderQueue:true,priorityRendering:true,workspaceAnalytics:true,prioritySupport:true}
+};
+window.PLAN_LABELS={free:"Free",creator:"✦ Creator",pro_studio:"★ Pro Studio",team:"👥 Team"};
+window.PLAN_UPGRADE_REQUIRED={
+  free:"Upgrade to Creator (£14/mo) to unlock this feature.",
+  creator:"Upgrade to Pro Studio (£34/mo) to unlock this feature.",
+  pro_studio:"This feature requires the Team plan (£89/mo).",
+  team:"Contact support."
+};
+window._fetchPlan=async function(){
+  try{
+    var k=Object.keys(localStorage).find(function(x){return x.includes("phjlx")&&x.includes("auth");});
+    var d=k?JSON.parse(localStorage.getItem(k)||"null"):null;
+    var t=d&&d.access_token;
+    if(!t)return;
+    var r=await fetch(window.API+"/api/user/plan",{headers:{"Authorization":"Bearer "+t}});
+    if(!r.ok)return;
+    var info=await r.json();
+    if(!APP)window.APP={};
+    APP.plan=info.plan;
+    APP.credits=info.credits;
+    APP.planFeatures=info.features;
+    APP.planLimits=info.limits;
+    APP.planName=info.planName;
+    window._applyPlanUI(info.plan);
+    window._updPlan&&window._updPlan();
+    // Cache plan info for offline use
+    localStorage.setItem("aab_plan_cache",JSON.stringify({plan:info.plan,features:info.features,ts:Date.now()}));
+  }catch(e){
+    // Fall back to cached plan
+    var cached=localStorage.getItem("aab_plan_cache");
+    if(cached){try{var c=JSON.parse(cached);APP.plan=c.plan;APP.planFeatures=c.features;}catch(e2){}}
+  }
+};
+window.hasFeature=function(feature){
+  var plan=APP&&APP.plan||"free";
+  // Use backend-fetched features if available
+  if(APP&&APP.planFeatures)return !!APP.planFeatures[feature];
+  // Fall back to local definition
+  return !!(PLAN_FEATURES[plan]&&PLAN_FEATURES[plan][feature]);
+};
+window.requireFeature=function(feature,cb){
+  if(hasFeature(feature)){if(typeof cb==="function")cb();return true;}
+  var plan=APP&&APP.plan||"free";
+  var msg=PLAN_UPGRADE_REQUIRED[plan]||"Upgrade required.";
+  var planMap={free:"creator",creator:"pro_studio",pro_studio:"team",team:"team"};
+  var upgradeTo=planMap[plan];
+  // Show upgrade modal instead of confirm dialog
+  window._showUpgradeModal(feature,upgradeTo);
+  return false;
+};
+window._showUpgradeModal=function(feature,requiredPlan){
+  var existing=document.getElementById("aab-upgrade-modal");if(existing)existing.remove();
+  var planNames={free:"Free",creator:"Creator (£14/mo)",pro_studio:"Pro Studio (£34/mo)",team:"Team (£89/mo)"};
+  var priceIds={creator:"price_1THCSlBJVJa9ylUXwAYC4LpR",pro_studio:"price_1TNRx6BJVJa9ylUXwLr11VPm",team:"price_1TNS0BBJVJa9ylUXABCDEFGH"};
+  var featureNames={aiPresenter:"AI Presenter",fullEditSuite:"Full Edit Suite",recordingStudio:"Recording Studio",advancedTimeline:"Advanced Timeline",export4k:"4K Export",teamCollaboration:"Team Collaboration",chromaKey:"Chroma Key",waveformEditor:"Waveform Editor"};
+  var featName=featureNames[feature]||feature;
+  var overlay=document.createElement("div");overlay.id="aab-upgrade-modal";
+  overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99999;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.2s;";
+  overlay.innerHTML='<div style="background:linear-gradient(135deg,#1e293b,#0f172a);border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:32px;max-width:440px;width:90%;text-align:center;box-shadow:0 24px 48px rgba(0,0,0,0.5);">'
+    +'<div style="font-size:48px;margin-bottom:16px;">🚀</div>'
+    +'<h2 style="color:#fff;font-size:22px;margin:0 0 8px;font-weight:800;">'+featName+' requires '+planNames[requiredPlan||"pro_studio"]+'</h2>'
+    +'<p style="color:#94a3b8;font-size:14px;margin:0 0 24px;">Unlock the full production suite and take your videos to the next level.</p>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:24px;">'
+    +'<div style="background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.2);border-radius:8px;padding:12px;"><div style="font-size:11px;color:#00d4ff;font-weight:700;text-transform:uppercase;">Creator</div><div style="color:#fff;font-weight:800;font-size:18px;margin:4px 0;">£14<span style="font-size:11px;font-weight:400;color:#94a3b8;">/mo</span></div><div style="font-size:11px;color:#94a3b8;">Full Studio + 1080p</div></div>'
+    +'<div style="background:rgba(139,92,246,0.12);border:1px solid rgba(139,92,246,0.3);border-radius:8px;padding:12px;"><div style="font-size:11px;color:#a78bfa;font-weight:700;text-transform:uppercase;">Pro Studio</div><div style="color:#fff;font-weight:800;font-size:18px;margin:4px 0;">£34<span style="font-size:11px;font-weight:400;color:#94a3b8;">/mo</span></div><div style="font-size:11px;color:#94a3b8;">AI Presenter + 4K</div></div>'
+    +'</div>'
+    +'<button onclick="if(typeof aab_buyCredits!==\'undefined\')aab_buyCredits(\''+( priceIds[requiredPlan]||priceIds.pro_studio)+'\')" style="display:block;width:100%;padding:14px;background:linear-gradient(135deg,#0070f3,#7c3aed);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:10px;">🚀 Upgrade Now</button>'
+    +'<button onclick="document.getElementById(\'aab-upgrade-modal\').remove()" style="display:block;width:100%;padding:10px;background:transparent;color:#64748b;border:none;font-size:13px;cursor:pointer;">Maybe later</button>'
+    +'</div>';
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click",function(e){if(e.target===overlay)overlay.remove();});
+};
+window._applyPlanUI=function(plan){
+  var features=PLAN_FEATURES[plan]||PLAN_FEATURES.free;
+  // 1. AI Presenter button visibility
+  var apsBtn=document.querySelector("[onclick*=openAIPresenter],[onclick*=aps_],[class*=ai-presenter-btn]");
+  if(apsBtn){
+    if(!features.aiPresenter){
+      apsBtn.style.opacity="0.5";
+      apsBtn.title="AI Presenter requires Pro Studio";
+      apsBtn.onclick=function(){requireFeature("aiPresenter");};
+    }
+  }
+  // 2. Full Edit Suite vs Quick Editor
+  var editBtn=document.querySelector("[onclick*=edit-pg],[class*=edit-suite-btn]");
+  if(editBtn&&!features.basicEditSuite){
+    editBtn.style.opacity="0.5";
+    editBtn.title="Edit Suite requires Creator plan";
+    editBtn.onclick=function(){requireFeature("basicEditSuite");};
+  }
+  // 3. Recording Studio
+  if(!features.recordingStudio){
+    var recBtn=document.querySelector("[onclick*=record-pg],[onclick*=openRecordingStudio]");
+    if(recBtn){recBtn.style.opacity="0.5";recBtn.title="Recording Studio requires Creator plan";recBtn.onclick=function(){requireFeature("recordingStudio");};}
+  }
+  // 4. Dashboard: show plan-adaptive message
+  var dashPlanBanner=document.getElementById("dash-plan-banner");
+  if(!dashPlanBanner){
+    var dashMain=document.getElementById("dashboard-pg");
+    if(dashMain){
+      var banner=document.createElement("div");
+      banner.id="dash-plan-banner";
+      banner.style.cssText="margin:0 0 20px;padding:12px 16px;border-radius:10px;background:rgba(0,112,243,0.05);border:1px solid rgba(0,112,243,0.15);display:flex;align-items:center;justify-content:space-between;";
+      var planLabel={free:"Free — upgrade for studio features",creator:"Creator — unlock AI Presenter with Pro Studio",pro_studio:"Pro Studio — full production suite active ✓",team:"Team — collaborative workspace ✓"};
+      banner.innerHTML='<span style="font-size:13px;color:#64748b;">'+( planLabel[plan]||"")+'</span>'
+        +(plan!=="pro_studio"&&plan!=="team"?'<button onclick="nav(\'pricing-pg\')" style="padding:5px 14px;background:#0070f3;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Upgrade ↑</button>':"");
+      var firstProject=dashMain.querySelector(".projects-grid,.dash-section");
+      if(firstProject)firstProject.insertBefore(banner,firstProject.firstChild);
+    }
+  }
+  // 5. Project limits warning
+  if(plan==="free"){
+    var projs=JSON.parse(localStorage.getItem("aab_projects")||"[]");
+    if(projs.length>=3){
+      var newProjBtn=document.querySelector("[onclick*=newProject],[id*=new-proj]");
+      if(newProjBtn){newProjBtn.title="Free plan: 3 project limit reached. Upgrade to Creator.";newProjBtn.onclick=function(){requireFeature("recordingStudio");};}
+    }
+  }
+};
+setTimeout(function(){
+  var origOpenAPS=window.openAIPresenterStudio||window.openAPS;
+  if(typeof origOpenAPS==="function"&&!window._apsGated){
+    window._apsGated=true;
+    var gatedFn=function(){requireFeature("aiPresenter",origOpenAPS);};
+    if(window.openAIPresenterStudio)window.openAIPresenterStudio=gatedFn;
+    if(window.openAPS)window.openAPS=gatedFn;
+  }
+  // Gate startSegmentation to check credit balance
+  var origSeg=window.startSegmentation;
+  if(typeof origSeg==="function"&&!window._segGated){
+    window._segGated=true;
+    window.startSegmentation=function(){
+      var have=APP&&APP.credits||0;
+      if(have<1&&APP&&APP.plan!=="pro_studio"&&APP&&APP.plan!=="team"){
+        if(!confirm("Scene segmentation costs 1 credit. You have "+have+". Buy credits?"))return;
+        nav("pricing-pg");return;
+      }
+      origSeg.apply(this,arguments);
+    };
+  }
+},3000);
+setTimeout(function(){
+  window._fetchPlan&&window._fetchPlan();
+},2000);
+})();
 </script>
 
 </body>
