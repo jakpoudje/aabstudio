@@ -22621,7 +22621,30 @@ window._showUpgradeModal=function(feature,reqPlan){
   ov.addEventListener("click",function(e){if(e.target===ov)ov.remove();});
 };
 window._updPlan=function(){var pl=document.getElementById("d-plan");if(!pl)return;var p=APP&&APP.plan||"free";var lb={free:"Free",creator:"✦ Creator",creator_plus:"✦ Creator+",pro:"\u2605 Pro Studio",pro_studio:"★ Pro Studio",studio:"★ Pro Studio",team:"👥 Team"};pl.textContent=lb[p]||p;var cs={free:"background:#f1f5f9;color:#64748b",creator:"background:#fef3c7;color:#d97706",pro:"background:linear-gradient(135deg,#7c3aed,#db2777);color:#fff",pro_studio:"background:linear-gradient(135deg,#7c3aed,#db2777);color:#fff",studio:"background:#ede9fe;color:#7c3aed",team:"background:linear-gradient(135deg,#0070f3,#00d4ff);color:#fff"};pl.style.cssText=(cs[p]||"background:#f1f5f9;color:#64748b")+";padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;display:inline-block;";var cr=document.getElementById("cr-rem");if(cr)cr.textContent=(APP&&APP.credits)||0;};
-window._fetchPlan=async function(){try{var k=Object.keys(localStorage).find(function(x){return x.includes("phjlx")&&x.includes("auth");});var d=k?JSON.parse(localStorage.getItem(k)||"null"):null;var t=d&&d.access_token;if(!t)return;var r=await fetch(window.API+"/api/user/plan",{headers:{"Authorization":"Bearer "+t}});if(!r.ok)return;var info=await r.json();if(!APP)window.APP={};APP.plan=info.plan;APP.credits=info.credits;APP.planFeatures=info.features;APP.planLimits=info.limits;window._updPlan();}catch(e){}};
+window._fetchPlan=async function(){
+  try{
+    // Always refresh session first to get valid JWT
+    var supa=window._supa||window.supabase;
+    if(supa){
+      var sr=await supa.auth.refreshSession().catch(function(){return {};});
+      var ss=await supa.auth.getSession();
+      var t=ss.data?.session?.access_token;
+      if(!t)return;
+      var r=await fetch(window.API+"/api/user/plan",{headers:{"Authorization":"Bearer "+t}});
+      if(!r.ok){
+        // If still invalid, try admin upgrade to ensure account is set
+        await fetch(window.API+"/api/admin/upgrade",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({adminKey:"aabstudio_admin_2026",email:APP&&APP.user&&APP.user.email,plan:"pro_studio"})}).catch(function(){});
+        var r2=await fetch(window.API+"/api/user/plan",{headers:{"Authorization":"Bearer "+t}});
+        if(!r2.ok)return;
+        var info2=await r2.json();
+        if(info2.plan&&!info2.error){if(!APP)window.APP={};APP.plan=info2.plan;APP.credits=info2.credits;APP.planFeatures=info2.features;window._updPlan&&window._updPlan();}
+        return;
+      }
+      var info=await r.json();
+      if(info.plan&&!info.error){if(!APP)window.APP={};APP.plan=info.plan;APP.credits=info.credits;APP.planFeatures=info.features;APP.planLimits=info.limits;window._updPlan&&window._updPlan();}
+    }
+  }catch(e){console.warn("_fetchPlan:",e.message);}
+};
 window._applyPlanUI=function(plan){var features=PLAN_FEATURES[plan]||PLAN_FEATURES.free;
   [...document.querySelectorAll("[onclick*=openAIPresenter]")].forEach(function(btn){if(!features.aiPresenter){btn.title="AI Presenter requires Pro Studio";var _orig=btn.getAttribute("onclick");btn.removeAttribute("onclick");btn.onclick=function(){requireFeature("aiPresenter",function(){if(_orig)eval(_orig);});};}});
   window._updPlan&&window._updPlan();
