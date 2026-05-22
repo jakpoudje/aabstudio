@@ -22837,6 +22837,171 @@ if(!window._navPFHooked){window._navPFHooked=true;
 
 })();
 
+
+
+
+/* AABStudio Fixes v2.0 - Scene queue, TP mode, Contrast, Recording */
+(function(){
+if(window._fixes2)return; window._fixes2=true;
+
+// ── FIX 1: renderStudioQueue duplicate prevention ──────────────────────────
+// Called 4x per page load because of multiple script executions
+setTimeout(function(){
+  var _origRSQ=window.renderStudioQueue;
+  if(typeof _origRSQ==='function'&&!window._rsqP){
+    window._rsqP=true;
+    window.renderStudioQueue=function(){
+      var container=document.getElementById('studio-queue')||document.querySelector('.studio-queue,.sq-list');
+      if(container){
+        // Only clear and re-render if content is duplicated
+        var items=[...container.children].filter(function(c){return c.classList.contains('sq-item')||c.querySelector('.sq-num');});
+        var expected=PROJECT&&PROJECT.scenes?PROJECT.scenes.length:0;
+        if(items.length>expected&&items.length>0){container.innerHTML='';}
+      }
+      _origRSQ.apply(this,arguments);
+    };
+  }
+},3000);
+
+// ── FIX 2: Teleprompter mode properly applied ───────────────────────────────
+// The TP mode select (tp-scroll-mode) is wired to setTpScrollMode()
+// but startTeleprompter() may not read the mode correctly
+// Fix: ensure mode is applied when TP starts
+setTimeout(function(){
+  var _origST=window.startTeleprompter;
+  if(typeof _origST==='function'&&!window._stP){
+    window._stP=true;
+    window.startTeleprompter=function(){
+      // Read the current mode from the select
+      var modeSelect=document.getElementById('tp-scroll-mode')||document.getElementById('tp-mode-sel');
+      var currentMode=modeSelect?modeSelect.value:'auto';
+      
+      // Apply mode via setTpScrollMode before starting
+      if(typeof window.setTpScrollMode==='function'&&currentMode){
+        window.setTpScrollMode(currentMode);
+      }
+      
+      return _origST.apply(this,arguments);
+    };
+  }
+  
+  // Also ensure the TP mode buttons in the bottom bar work correctly
+  // Wire the tp-scroll-mode select to immediately restart TP when changed
+  var tpSel=document.getElementById('tp-scroll-mode');
+  if(tpSel&&!tpSel._modeWired){
+    tpSel._modeWired=true;
+    var origOnChange=tpSel.onchange;
+    tpSel.addEventListener('change',function(){
+      var mode=this.value;
+      if(typeof window.setTpScrollMode==='function')window.setTpScrollMode(mode);
+      // Visual feedback
+      if(typeof toast==='function'){
+        var modeLabels={auto:'Auto-scroll',word:'Word-by-word',manual:'Manual'};
+        toast('TP Mode: '+(modeLabels[mode]||mode),'info');
+      }
+    });
+  }
+},3200);
+
+// ── FIX 3: Recording studio scene display ──────────────────────────────────
+// Fix the scene counter to show correct total and ensure camera starts
+window._fixRecordingStudio=function(){
+  if(typeof STUDIO==='undefined'||!PROJECT)return;
+  
+  // Ensure scenes are loaded
+  if(!PROJECT.scenes||PROJECT.scenes.length===0){
+    var p=JSON.parse(localStorage.getItem('aab_projects')||'[]').find(function(x){return x.id===PROJECT.id;});
+    if(p&&p.scenes)PROJECT.scenes=p.scenes;
+  }
+  
+  var total=PROJECT.scenes?PROJECT.scenes.length:0;
+  
+  // Update scene counter "1/N" display
+  ['studio-scene-counter','scene-counter','sq-counter'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(el)el.textContent=(STUDIO.currentScene+1)+'/'+total;
+  });
+  
+  // Re-render queue cleanly
+  var container=document.getElementById('studio-queue')||document.querySelector('.studio-queue,.sq-list');
+  if(container)container.innerHTML='';
+  if(typeof renderStudioQueue==='function')renderStudioQueue();
+};
+
+// ── FIX 4: Enhanced contrast for recording studio ───────────────────────────
+// The grey text on dark background in the studio bottom bar
+(function(){
+  var extraCSS=
+    // Studio bottom bar labels
+    '.panel-group-label{color:#e2e8f0!important;font-size:9px!important;font-weight:700!important;text-transform:uppercase!important;letter-spacing:0.08em!important;}'+
+    // Scene queue items
+    '.sq-num{color:#60a5fa!important;font-size:10px!important;font-weight:700!important;}'+
+    '.sq-text{color:#cbd5e1!important;font-size:11px!important;}'+
+    '.sq-item{border-bottom:1px solid rgba(255,255,255,0.05)!important;padding:6px 8px!important;}'+
+    '.sq-item.active,.sq-item.current{background:rgba(0,212,255,0.1)!important;border-left:3px solid #00d4ff!important;}'+
+    '.sq-item.recorded{opacity:0.6!important;}'+
+    // Studio info labels
+    '.s-btn{color:#e2e8f0!important;font-size:11px!important;}'+
+    '.studio-info-val,.studio-stat{color:#f1f5f9!important;font-weight:700!important;}'+
+    '.studio-info-label,.studio-stat-label{color:#94a3b8!important;font-size:10px!important;}'+
+    // Teleprompter text (critical - must be readable)
+    '#studio-tp-text,#tp-overlay-text,.tp-display-text{'+
+    '  color:#f8fafc!important;font-size:26px!important;font-weight:600!important;'+
+    '  line-height:1.55!important;text-shadow:0 2px 4px rgba(0,0,0,0.5)!important;}'+
+    // Word-by-word active word highlight
+    '.tp-word.active,.tp-current-word{color:#00d4ff!important;text-decoration:underline!important;}'+
+    // TP bar labels  
+    '.tp-bar-label{color:#cbd5e1!important;font-size:10px!important;}'+
+    '.tp-bar-val{color:#f1f5f9!important;font-weight:700!important;}'+
+    // Scenes page - narration text
+    '.scene-row-text,.scene-narr{color:#1e293b!important;}'+
+    '.scene-row-meta,.scene-dur{color:#64748b!important;font-size:11px!important;}'+
+    // Dashboard project cards
+    '.dash-proj-title{color:#1e293b!important;font-weight:700!important;font-size:15px!important;}'+
+    '.dash-proj-meta{color:#475569!important;font-size:12px!important;}'+
+    // Edit suite "No clips yet"
+    '#edit-pg .empty-state p,#edit-pg .no-clips,.edit-empty-msg{color:#64748b!important;font-size:13px!important;}'+
+    // Recording studio scene number
+    '#studio-scene-num,.scene-num-display{color:#f1f5f9!important;font-size:24px!important;font-weight:800!important;}'+
+    // Recording studio elapsed timer
+    '#studio-timer,.elapsed-time,.rec-timer{color:#ef4444!important;font-weight:700!important;font-family:monospace!important;}'+
+    // Input range sliders
+    'input[type=range]{accent-color:#0070f3!important;}'+
+    // Select dropdowns in dark context
+    '#record-pg select,#ai-presenter-studio select{color:#e2e8f0!important;background:#1e293b!important;border:1px solid #334155!important;border-radius:4px!important;}'+
+    // Files gallery panel
+    '.edit-gallery-panel{background:#0f172a!important;}'+
+    '.edit-gallery-panel .edit-bin-header{color:#475569!important;}'+
+    // TIMELINE PREVIEW label  
+    '.edit-composite-preview .edit-preview-label{color:#1e293b!important;}'+
+    // Inspector "Select a clip to inspect"
+    '#edit-inspector .inspector-hint,.inspector-empty{color:#475569!important;font-size:12px!important;}';
+  
+  var ex=document.getElementById('aab-contrast2-css');if(ex)ex.remove();
+  var s=document.createElement('style');s.id='aab-contrast2-css';s.textContent=extraCSS;
+  document.head.appendChild(s);
+})();
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+setTimeout(function(){
+  // Apply to current page
+  var rp=document.getElementById('record-pg');
+  if(rp&&getComputedStyle(rp).display!=='none')window._fixRecordingStudio();
+},1500);
+
+// Hook to record page nav
+var _prevNav2=window.nav;
+if(typeof _prevNav2==='function'&&!window._nav2Hooked){
+  window._nav2Hooked=true;
+  window.nav=function(pg){
+    var r=_prevNav2.apply(this,arguments);
+    if(pg==='record-pg')setTimeout(window._fixRecordingStudio,600);
+    return r;
+  };
+}
+
+})();
+
 </script>
 
 </body>
