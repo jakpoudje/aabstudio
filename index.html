@@ -22766,6 +22766,41 @@ setTimeout(function(){var ep=document.getElementById('edit-pg');if(ep&&getComput
 if(!window._es4NavH){window._es4NavH=true;var _on=window.nav;if(typeof _on==='function'){window.nav=function(pg){var r=_on.apply(this,arguments);if(pg==='edit-pg'){var ep=document.getElementById('edit-pg');if(ep)ep._es4b=false;setTimeout(function(){window._es4Build&&window._es4Build();setTimeout(function(){window._es4LoadProjectClips&&window._es4LoadProjectClips();window._es4AddPlayhead&&window._es4AddPlayhead();window._es4GalRefresh&&window._es4GalRefresh();},300);},300);}return r;};}}
 })();
 
+
+
+
+/* ES4 Self-Heal: rebuild panels if removed */
+(function(){
+if(window._es4Heal)return;window._es4Heal=true;
+
+// Responsive CSS override - always fits viewport
+var _rhc=document.getElementById('_es4heal_css');if(_rhc)_rhc.remove();
+var _rhs=document.createElement('style');_rhs.id='_es4heal_css';
+_rhs.textContent='html,body{overflow:hidden!important;max-width:100vw!important;}#edit-pg.pg-full.on{width:100vw!important;max-width:100vw!important;overflow:hidden!important;}.es4-body{width:100%!important;max-width:100vw!important;overflow:hidden!important;}@media(max-width:1400px){.es4-bin{flex:0 0 140px!important}.es4-gallery{flex:0 0 170px!important}.es4-insp{flex:0 0 170px!important}}@media(max-width:1200px){.es4-bin{flex:0 0 120px!important}.es4-gallery{flex:0 0 150px!important}.es4-insp{flex:0 0 150px!important}}';
+document.head.appendChild(_rhs);
+
+// Self-healing: check every time edit-pg becomes visible
+function _checkAndHeal(){
+  var ep=document.getElementById('edit-pg');
+  if(!ep||getComputedStyle(ep).display==='none')return;
+  var binOk=!!document.getElementById('edit-media-bin')||!!document.querySelector('.es4-bin');
+  var prevOk=!!document.getElementById('es4prev')||!!document.getElementById('es4-src');
+  var inspOk=!!document.getElementById('edit-inspector')||!!document.getElementById('es4insp');
+  if(!binOk||!prevOk||!inspOk){
+    ep._es4b=false;
+    window._es4Build&&window._es4Build();
+  }
+}
+
+// Hook onto nav to heal on every edit-pg visit
+var _prevNavH=window.nav;
+if(typeof _prevNavH==='function'&&!window._healNavH){window._healNavH=true;
+  window.nav=function(pg){var r=_prevNavH.apply(this,arguments);if(pg==='edit-pg')setTimeout(_checkAndHeal,600);return r;};}
+
+// Also heal on DOMContentLoaded equivalent
+setTimeout(function(){var ep=document.getElementById('edit-pg');if(ep&&getComputedStyle(ep).display!=='none')_checkAndHeal();},1000);
+})();
+
 </script>
 
 </body>
