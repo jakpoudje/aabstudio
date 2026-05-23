@@ -22668,10 +22668,8 @@ setTimeout(function(){
 
 (
 
-
-/* apsVideos -> PROJECT.clips sync — makes native timeline render HeyGen clips */
 (function(){
-if(window._aabDataSync)return; window._aabDataSync=true;
+if(window._aabDataSync)return;window._aabDataSync=true;
 
 function syncApsToClips(){
   if(typeof PROJECT==="undefined"||!PROJECT||!PROJECT.apsVideos)return;
@@ -22680,45 +22678,30 @@ function syncApsToClips(){
   if(!PROJECT.clips)PROJECT.clips={};
   aps.forEach(function(a){
     var cid="aps_"+a.sceneNum;
-    PROJECT.clips[cid]={
-      id:cid,
-      sceneIdx:a.sceneIdx||(a.sceneNum-1),
-      sceneNum:a.sceneNum,
-      duration:a.duration,
-      url:a.url,
-      name:"AI Scene "+a.sceneNum,
-      sceneName:a.narration?(a.narration.slice(0,40)+"..."):"AI Scene "+a.sceneNum,
-      sceneType:"AI_PRESENTER",
-      source:"heygen",
-      provider:"heygen",
-      recorded:true,
-      isAI:true
-    };
+    PROJECT.clips[cid]={id:cid,sceneIdx:a.sceneIdx||(a.sceneNum-1),sceneNum:a.sceneNum,duration:a.duration,url:a.url,name:"AI Scene "+a.sceneNum,sceneName:(a.narration||"").slice(0,40),sceneType:"AI_PRESENTER",source:"heygen",provider:"heygen",recorded:true,isAI:true};
   });
-  // Also fix tlClips that have canvas placeholder URLs
+  // Fix tlClips that have canvas placeholder URLs
   if(PROJECT.tlClips){
     Object.values(PROJECT.tlClips).forEach(function(clip){
-      if(!clip.url||!clip.url.startsWith("data:image"))return;
-      var m=clip.name&&clip.name.match(/(?:AI Scene|Scene)\s*(\d+)/i);
-      if(!m)return;
-      var sn=parseInt(m[1]);
-      var a=aps.find(function(x){return x.sceneNum===sn;});
-      if(a&&a.url){clip.url=a.url;clip.type="video";}
+      if(!clip.url||clip.url.indexOf("data:image")!==0)return;
+      // Match by iterating apsVideos and checking if name contains the scene number
+      aps.forEach(function(a){
+        var sn=String(a.sceneNum);
+        if(clip.name&&(clip.name.indexOf(" "+sn+" ")>-1||clip.name.indexOf(" "+sn)===clip.name.length-sn.length-1||clip.name===("AI Scene "+sn))){
+          if(a.url){clip.url=a.url;clip.type="video";}
+        }
+      });
     });
   }
 }
 
-// Run on page load, and hook into ap_open and nav
 syncApsToClips();
 
 var _oapOpen=window.ap_open;
 if(typeof _oapOpen==="function"&&!window._apOpenV4){window._apOpenV4=true;
   window.ap_open=function(){
     var r=_oapOpen.apply(this,arguments);
-    setTimeout(function(){
-      syncApsToClips();
-      if(typeof tl_render==="function"){try{tl_render();}catch(e){}}
-    },600);
+    setTimeout(function(){syncApsToClips();if(typeof tl_render==="function"){try{tl_render();}catch(e){}}},600);
     return r;
   };
 }
@@ -22726,7 +22709,8 @@ if(typeof _oapOpen==="function"&&!window._apOpenV4){window._apOpenV4=true;
 var _oNavDS=window.nav;
 if(typeof _oNavDS==="function"&&!window._navDS){window._navDS=true;
   window.nav=function(pg){
-    var r;try{r=_oNavDS.apply(this,arguments);}catch(e){
+    var r;
+    try{r=_oNavDS.apply(this,arguments);}catch(e){
       document.querySelectorAll(".pg.on").forEach(function(el){el.classList.remove("on");});
       var t=document.getElementById(pg);if(t)t.classList.add("on");
     }
@@ -22741,7 +22725,6 @@ if(typeof _oNavDS==="function"&&!window._navDS){window._navDS=true;
   };
 }
 })();
-
 
 (function(){
 if(window._aabV4)return;window._aabV4=true;
@@ -23022,6 +23005,7 @@ setTimeout(function(){addFooters();var ep=document.getElementById("edit-pg");if(
 
 console.log("AABStudio v4 loaded OK");
 })();
+
 
 </script>
 
