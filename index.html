@@ -22696,6 +22696,19 @@ function syncApsToClips(){
 window.syncApsToClips=syncApsToClips;
 
 syncApsToClips();
+// Populate TL tracks from apsVideos
+if(typeof TL!=="undefined"&&TL&&TL.tracks&&typeof PROJECT!=="undefined"&&PROJECT){
+  var _aps=Object.values(PROJECT.apsVideos||{}).sort(function(a,b){return a.sceneNum-b.sceneNum;});
+  if(_aps.length){
+    var _mvt=TL.tracks.find(function(t){return t.id==="main-video"||t.main;});
+    if(_mvt&&(!_mvt.clips||!_mvt.clips.length)){
+      var _pos=0;
+      _mvt.clips=_aps.map(function(a){var c={id:"aps_"+a.sceneNum,trackId:"main-video",start:_pos,duration:a.duration,url:a.url,src:a.url,name:"AI Scene "+a.sceneNum,type:"video",isAI:true};_pos+=a.duration;return c;});
+      TL.duration=_pos;
+    }
+  }
+  if(typeof tl_render==="function"){try{tl_render();}catch(e){}}
+}
 
 var _oapOpen=window.ap_open;
 if(typeof _oapOpen==="function"&&!window._apOpenV4){window._apOpenV4=true;
