@@ -22997,9 +22997,38 @@ if(typeof _oNavV4==="function"&&!window._navV4){window._navV4=true;
   };
 }
 
-// 12. Studio next fix
-setTimeout(function(){var _oSN=window.studioNext;if(typeof _oSN==="function"&&!window._snV4){window._snV4=true;window.studioNext=function(){var sc=typeof PROJECT!=="undefined"&&PROJECT&&PROJECT.scenes?PROJECT.scenes:[];if(typeof STUDIO!=="undefined"&&STUDIO.currentScene<sc.length-1){return _oSN.apply(this,arguments);}else{if(typeof toast==="function")toast("Last scene "+sc.length+"/"+sc.length,"info");}};}},3000);
-
+// 12. Studio scene counter + next/prev fix
+setTimeout(function(){
+  function _updStudioCnt(){
+    var n=(STUDIO&&typeof STUDIO.currentScene==="number"?STUDIO.currentScene:0)+1;
+    var tot=PROJECT&&PROJECT.scenes?PROJECT.scenes.length:0;
+    var c1=document.getElementById("studio-scene-counter");
+    var c2=document.getElementById("st-scene-cnt");
+    if(c1)c1.textContent=n+"/"+tot;
+    if(c2)c2.textContent=n+"/"+tot;
+  }
+  var _oSN=window.studioNext;
+  if(typeof _oSN==="function"&&!window._snV4){window._snV4=true;
+    window.studioNext=function(){
+      var sc=typeof PROJECT!=="undefined"&&PROJECT&&PROJECT.scenes?PROJECT.scenes:[];
+      if(typeof STUDIO!=="undefined"&&STUDIO.currentScene<sc.length-1){
+        var r=_oSN.apply(this,arguments);
+        setTimeout(_updStudioCnt,100);
+        return r;
+      }else{if(typeof toast==="function")toast("Last scene "+sc.length+"/"+sc.length,"info");}
+    };
+  }
+  var _oSP=window.studioPrev;
+  if(typeof _oSP==="function"&&!window._spV4){window._spV4=true;
+    window.studioPrev=function(){
+      if(typeof STUDIO!=="undefined"&&STUDIO.currentScene>0){
+        var r=_oSP.apply(this,arguments);
+        setTimeout(_updStudioCnt,100);
+        return r;
+      }else{if(typeof toast==="function")toast("Already at first scene","info");}
+    };
+  }
+},3000);
 // Init
 setTimeout(function(){addFooters();window.syncApsToClips&&window.syncApsToClips();document.querySelectorAll(".es4v4-body").forEach(function(e){e.remove();});if(typeof renderEditSuite==="function"&&document.getElementById("edit-pg")&&getComputedStyle(document.getElementById("edit-pg")).display!=="none"){try{renderEditSuite();}catch(e){}}},600);
 
