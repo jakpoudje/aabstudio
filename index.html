@@ -7436,7 +7436,7 @@ select {
           <div style="font-size:11px;color:var(--muted);margin-top:3px;">Download clips, assemble in editor</div>
           <div style="font-size:10px;color:var(--green);margin-top:4px;">Free · Instant</div>
         </div>
-        <div class="fmt-opt" data-method="creatomate" onclick="pickExportMethod(this)" style="position:relative;">
+        <div style="display:none" class="fmt-opt" data-method="creatomate" onclick="pickExportMethod(this)" style="position:relative;">
           <div style="font-size:18px;margin-bottom:4px;">🎬</div>
           <div style="font-size:13px;font-weight:600;color:var(--ink);">Creatomate</div>
           <div style="font-size:11px;color:var(--muted);margin-top:3px;">Auto-stitch all scenes into one video</div>
@@ -22696,19 +22696,34 @@ function syncApsToClips(){
 window.syncApsToClips=syncApsToClips;
 
 syncApsToClips();
-// Populate TL tracks from apsVideos
-if(typeof TL!=="undefined"&&TL&&TL.tracks&&typeof PROJECT!=="undefined"&&PROJECT){
-  var _aps=Object.values(PROJECT.apsVideos||{}).sort(function(a,b){return a.sceneNum-b.sceneNum;});
-  if(_aps.length){
-    var _mvt=TL.tracks.find(function(t){return t.id==="main-video"||t.main;});
-    if(_mvt&&(!_mvt.clips||!_mvt.clips.length)){
-      var _pos=0;
-      _mvt.clips=_aps.map(function(a){var c={id:"aps_"+a.sceneNum,trackId:"main-video",start:_pos,duration:a.duration,url:a.url,src:a.url,name:"AI Scene "+a.sceneNum,type:"video",isAI:true};_pos+=a.duration;return c;});
-      TL.duration=_pos;
-    }
+// Populate TL timeline properly from apsVideos → main-video track
+(function(){
+  function _loadApsIntoTL(){
+    if(typeof TL==="undefined"||!TL||!PROJECT||!PROJECT.apsVideos)return;
+    var aps=Object.values(PROJECT.apsVideos).sort(function(a,b){return a.sceneNum-b.sceneNum;});
+    if(!aps.length)return;
+    // Find or ensure main-video track exists
+    var mainTrack=TL.tracks.find(function(t){return t.id==="main-video"||t.main;});
+    if(!mainTrack){mainTrack={id:"main-video",name:"\uD83D\uDCF9 Main Video",type:"video",clips:[],muted:false,locked:false,volume:1,main:true};TL.tracks.unshift(mainTrack);}
+    // Only load if track is empty
+    if(mainTrack.clips&&mainTrack.clips.length>0)return;
+    var pos=0;
+    mainTrack.clips=aps.map(function(a){
+      var dur=a.duration||8;
+      var c={id:"aps_"+a.sceneNum,clipId:"aps_"+a.sceneNum,start:pos,duration:dur,url:a.url,
+        label:"Scene "+a.sceneNum+(a.narration?" \u2014 "+a.narration.slice(0,20):""),
+        isPlaceholder:!a.url,source:"heygen",color:"#1e40af",trimIn:0,trimOut:dur};
+      pos+=dur;return c;
+    });
+    TL.duration=pos;
+    if(typeof tl_render==="function"){try{tl_render();}catch(e){}}
+    if(typeof tl_fitToWindow==="function"){try{tl_fitToWindow();}catch(e){}}
   }
-  if(typeof tl_render==="function"){try{tl_render();}catch(e){}}
-}
+  // Run after a short delay to let the page render
+  setTimeout(_loadApsIntoTL,800);
+  // Also expose so nav can call it
+  window._loadApsIntoTL=_loadApsIntoTL;
+})();
 
 var _oapOpen=window.ap_open;
 if(typeof _oapOpen==="function"&&!window._apOpenV4){window._apOpenV4=true;
@@ -23046,6 +23061,62 @@ setTimeout(function(){
 setTimeout(function(){addFooters();window.syncApsToClips&&window.syncApsToClips();document.querySelectorAll(".es4v4-body").forEach(function(e){e.remove();});if(typeof renderEditSuite==="function"&&document.getElementById("edit-pg")&&getComputedStyle(document.getElementById("edit-pg")).display!=="none"){try{renderEditSuite();}catch(e){}}},600);
 
 setInterval(function(){document.querySelectorAll(".es4v4-body").forEach(function(e){e.remove();});},400);
+// Export: override aab_openExport to hide Creatomate, show direct download
+(function(){
+var _origOpenExport=window.aab_openExport;
+window.aab_openExport=function(){
+  if(typeof _origOpenExport==="function")_origOpenExport();
+  // Hide Creatomate option
+  setTimeout(function(){
+    document.querySelectorAll("[data-method=\"creatomate\"],[data-method=\"heygen\"]").forEach(function(el){el.style.display="none";});
+    // Select browser method by default
+    var browserBtn=document.querySelector("[data-method=\"browser\"]");
+    if(browserBtn&&typeof pickExportMethod==="function")pickExportMethod(browserBtn);
+    // Update export button label
+    var exportBtn=document.getElementById("do-export-btn")||document.querySelector("[onclick*=doExport]");
+    if(exportBtn)exportBtn.textContent="\u2193 Export & Download Video";
+    // Add TL clips to export if only PROJECT.clips has aps clips
+    if(typeof PROJECT!=="undefined"&&PROJECT){
+      var aps=Object.values(PROJECT.apsVideos||{}).sort(function(a,b){return a.sceneNum-b.sceneNum;});
+      aps.forEach(function(a){
+        var id="aps_"+a.sceneNum;
+        if(!PROJECT.clips)PROJECT.clips={};
+        PROJECT.clips[id]={id:id,sceneNum:a.sceneNum,sceneName:(a.narration||"").slice(0,40),url:a.url,videoUrl:a.url,duration:a.duration,source:"heygen",recorded:true};
+      });
+    }
+  },200);
+};
+// Also auto-select browser on page load for the export page
+setTimeout(function(){
+  var browserBtn=document.querySelector("[data-method=\"browser\"]");
+  if(browserBtn&&typeof pickExportMethod==="function")pickExportMethod(browserBtn);
+},3500);
+})();
+// Text overlay + transition helpers exposed for Text button
+window._aab_addTextOverlay=function(opts){
+  if(typeof TL==="undefined")return;
+  var track=TL.tracks.find(function(t){return t.id==="overlays"||t.id==="subtitles";});
+  if(!track){track={id:"overlays",name:"\uD83D\uDDBC Overlays",type:"overlay",clips:[],muted:false,locked:false,volume:1};TL.tracks.push(track);}
+  var pos=TL.playhead||0;
+  track.clips.push({id:"ovl_"+Date.now(),clipId:"ovl_"+Date.now(),start:pos,duration:opts.dur||5,
+    url:"",label:opts.text||"Text overlay",color:opts.color||"#7c3aed",
+    textStyle:{text:opts.text||"",fontSize:opts.fontSize||36,fontFamily:opts.fontFamily||"Arial",
+    fontWeight:opts.fontWeight||"700",color:opts.textColor||"#ffffff",
+    bgColor:opts.bgColor||"#000000",bgOpacity:opts.bgOpacity||0.7,
+    position:opts.position||"bottom",align:opts.align||"center"},
+    trimIn:0,trimOut:opts.dur||5});
+  if(typeof tl_render==="function")tl_render();
+  if(typeof toast==="function")toast("Text overlay added to timeline","ok");
+};
+window._aab_addTransition=function(clipId,type){
+  if(typeof TL==="undefined")return;
+  var clip=null;
+  TL.tracks.forEach(function(t){var c=t.clips&&t.clips.find(function(c){return c.id===clipId;});if(c)clip=c;});
+  if(!clip)return;
+  clip.transitionIn=type||"fade";
+  if(typeof tl_render==="function")tl_render();
+  if(typeof toast==="function")toast("Transition added: "+type,"ok");
+};
 console.log("AABStudio v4 loaded OK");
 })();
 
