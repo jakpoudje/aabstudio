@@ -6769,6 +6769,117 @@ setTimeout(function(){
 
 })();
 
+
+
+// ── AABStudio Page & Dashboard Polyfills ─────────────────────────────────────
+(function() {
+  function _sbTok(){try{return JSON.parse(localStorage.getItem('sb-phjlxkyloafogznhyyig-auth-token')||'{}');}catch(e){return {};}}
+  
+  // ── loadDashboard: render project cards
+  window.loadDashboard = window.renderDashboard = function() {
+    var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+    var dp = document.getElementById('dashboard-pg');
+    if (!dp) return;
+    var c = dp.querySelector('.dash-sec.on') || dp.querySelector('[class*=project]') || dp;
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;padding:16px;';
+    projects.forEach(function(p) {
+      var sc = Object.keys(p.apsVideos||{}).length;
+      var dt = p.updatedAt ? new Date(p.updatedAt).toLocaleDateString() : '';
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;cursor:pointer;transition:border-color .2s;';
+      card.onmouseover = function(){this.style.borderColor='#60a5fa';};
+      card.onmouseout = function(){this.style.borderColor='#334155';};
+      card.onclick = (function(proj){return function(){window.loadProject(proj.id);};})(p);
+      var title = document.createElement('div');
+      title.style.cssText = 'font-weight:700;color:#e2e8f0;margin-bottom:8px;font-size:14px;';
+      title.textContent = p.title || p.scriptTitle || 'Untitled';
+      var meta = document.createElement('div');
+      meta.style.cssText = 'color:#64748b;font-size:12px;';
+      meta.textContent = (sc > 0 ? sc + ' AI scenes · ' : '') + (dt || '');
+      card.appendChild(title); card.appendChild(meta);
+      wrap.appendChild(card);
+    });
+    c.innerHTML = '';
+    c.appendChild(wrap);
+  };
+
+  // ── loadProject: open a project by ID
+  window.loadProject = window.openProject = window._openProj = function(id) {
+    var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+    var proj = projects.find(function(p){return p.id === id;});
+    if (!proj) return;
+    window.PROJECT = proj;
+    localStorage.setItem('aab_active_project_id', id);
+    nav('script-pg');
+  };
+
+  // ── renderScenes / loadScenes: show AI scenes on scenes page
+  window.renderScenes = window.loadScenes = window.initScenes = function() {
+    if (!window.PROJECT) return;
+    var av = Object.values(window.PROJECT.apsVideos || {}).sort(function(a,b){return a.sceneNum - b.sceneNum;});
+    var c = document.querySelector('#scenes-pg .scenes-layout');
+    if (!c) return;
+    c.innerHTML = '';
+    av.forEach(function(s) {
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;margin-bottom:12px;cursor:pointer;';
+      var vid = document.createElement('video');
+      vid.src = s.url; vid.style.cssText = 'width:100%;height:160px;object-fit:cover;'; vid.preload = 'metadata'; vid.muted = true;
+      var info = document.createElement('div');
+      info.style.cssText = 'padding:12px;';
+      var title = document.createElement('b');
+      title.textContent = 'Scene ' + s.sceneNum;
+      var narr = document.createElement('div');
+      narr.style.cssText = 'color:#64748b;font-size:11px;margin-top:4px;';
+      narr.textContent = (s.narration || '').slice(0, 80) + '...';
+      var dur = document.createElement('div');
+      dur.style.cssText = 'color:#94a3b8;font-size:11px;margin-top:4px;';
+      dur.textContent = s.duration + 's · AI Presenter';
+      info.appendChild(title); info.appendChild(narr); info.appendChild(dur);
+      card.appendChild(vid); card.appendChild(info);
+      c.appendChild(card);
+    });
+  };
+
+  // ── initApp: auto-init on load
+  window.initApp = function() {
+    var tok = _sbTok();
+    if (tok.access_token && tok.expires_at > Math.floor(Date.now()/1000)) {
+      window.USER_ID = tok.user && tok.user.id;
+      window.USER_EMAIL = tok.user && tok.user.email;
+      var active = localStorage.getItem('aab_active_project_id');
+      if (active) {
+        var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+        var proj = projects.find(function(p){return p.id === active;});
+        if (proj) window.PROJECT = proj;
+      }
+      setTimeout(function(){
+        var pg = document.querySelector('.pg.on');
+        if (!pg || pg.id === 'home' || pg.id === 'auth-pg') {
+          window.loadDashboard();
+          window.nav('dashboard-pg');
+        }
+      }, 800);
+    }
+  };
+
+  // ── Hook into nav to trigger page-specific init
+  var _navBase = window.nav;
+  window.nav = function(pg) {
+    _navBase(pg);
+    if (pg === 'dashboard-pg') setTimeout(window.loadDashboard, 100);
+    if (pg === 'scenes-pg') setTimeout(window.renderScenes, 100);
+  };
+
+  // Auto-run initApp
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', window.initApp);
+  } else {
+    setTimeout(window.initApp, 500);
+  }
+})();
+
 </script>
 </head>
 
