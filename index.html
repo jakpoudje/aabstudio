@@ -6787,16 +6787,33 @@ setTimeout(function(){
       var sc = Object.keys(p.apsVideos||{}).length;
       var dt = p.updatedAt ? new Date(p.updatedAt).toLocaleDateString() : '';
       var card = document.createElement('div');
-      card.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;cursor:pointer;transition:border-color .2s;';
+      card.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;cursor:pointer;transition:border-color .2s;position:relative;';
       card.onmouseover = function(){this.style.borderColor='#60a5fa';};
       card.onmouseout = function(){this.style.borderColor='#334155';};
-      card.onclick = (function(proj){return function(){window.loadProject(proj.id);};})(p);
+      var delBtn = document.createElement('button');
+      delBtn.textContent = String.fromCharCode(215); // ×
+      delBtn.title = 'Delete project';
+      delBtn.style.cssText = 'position:absolute;top:8px;right:10px;background:none;border:none;color:#475569;font-size:18px;cursor:pointer;line-height:1;padding:2px 5px;border-radius:4px;';
+      delBtn.onmouseover = function(e){e.stopPropagation();this.style.color='#ef4444';this.style.background='rgba(239,68,68,.1)';};
+      delBtn.onmouseout = function(){this.style.color='#475569';this.style.background='none';};
+      delBtn.onclick = (function(pid,pname){return function(e){
+        e.stopPropagation();
+        if(!confirm('Delete project? This cannot be undone.')) return;
+        if(typeof deleteProjectById==='function') { deleteProjectById(pid); }
+        else {
+          var all=JSON.parse(localStorage.getItem('aab_projects')||'[]');
+          localStorage.setItem('aab_projects',JSON.stringify(all.filter(function(x){return x.id!==pid;})));
+        }
+        window.loadDashboard();
+      };})(p.id, p.title||p.scriptTitle||'project');
+      card.appendChild(delBtn);
       var title = document.createElement('div');
-      title.style.cssText = 'font-weight:700;color:#e2e8f0;margin-bottom:8px;font-size:14px;';
+      title.style.cssText = 'font-weight:700;color:#e2e8f0;margin-bottom:8px;font-size:14px;padding-right:24px;';
       title.textContent = p.title || p.scriptTitle || 'Untitled';
       var meta = document.createElement('div');
       meta.style.cssText = 'color:#64748b;font-size:12px;';
-      meta.textContent = (sc > 0 ? sc + ' AI scenes · ' : '') + (dt || '');
+      meta.textContent = (sc > 0 ? sc + ' AI scenes' : 'No scenes') + (dt ? ' ' + dt : '');
+      card.onclick = (function(proj){return function(e){if(e.target.tagName==='BUTTON')return;window.loadProject(proj.id);};})(p);
       card.appendChild(title); card.appendChild(meta);
       wrap.appendChild(card);
     });
@@ -6878,6 +6895,83 @@ setTimeout(function(){
   } else {
     setTimeout(window.initApp, 500);
   }
+
+  // ── startSegmentation polyfill ────────────────────────────────────────────
+  if (typeof startSegmentation !== 'function') {
+    window.startSegmentation = function() {
+      if (!window.PROJECT) { alert('No project loaded.'); return; }
+      var scriptEl = document.querySelector('#script-pg textarea, #script-pg [contenteditable]');
+      var scriptText = scriptEl ? scriptEl.value || scriptEl.innerText : (window.PROJECT.script || '');
+      if (!scriptText || scriptText.trim().length < 10) {
+        alert('Please write or paste a script first, then click Split into scenes.');
+        return;
+      }
+      // Split by paragraphs (double newline) or sentence groups
+      var rawParagraphs = scriptText.split('\n\n').filter(function(p){return p.trim().length > 10;});
+      if (rawParagraphs.length === 0) {
+        rawParagraphs = scriptText.split(/(?<=[.!?])s+/).filter(function(s){return s.trim().length>5;});
+      }
+      // Group into ~4 scenes
+      var targetScenes = Math.min(Math.max(rawParagraphs.length, 2), 8);
+      var groupSize = Math.ceil(rawParagraphs.length / targetScenes);
+      var segments = [];
+      for (var i = 0; i < rawParagraphs.length; i += groupSize) {
+        segments.push({ text: rawParagraphs.slice(i, i+groupSize).join(' ').trim(), idx: segments.length });
+      }
+      window.PROJECT.segments = segments;
+      window.PROJECT.updatedAt = new Date().toISOString();
+      if (typeof saveProject === 'function') saveProject();
+      // Store segments
+      localStorage.setItem('aab_ps_segment_' + window.PROJECT.id, JSON.stringify(segments));
+      // Navigate to scenes
+      alert('Split into ' + segments.length + ' scenes! Navigating to Scenes page...');
+      window.nav('scenes-pg');
+    };
+  }
+
+  // ── Hook saveProject to also update project in aab_projects list ──────────
+  var _origSave = window.saveProject;
+  if (typeof _origSave === 'function' && !window._saveHooked) {
+    window._saveHooked = true;
+    window.saveProject = function() {
+      // Call original first
+      try { _origSave.apply(this, arguments); } catch(e) {}
+      // Also ensure PROJECT is in aab_projects with latest data
+      if (window.PROJECT && window.PROJECT.id) {
+        try {
+          var all = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+          var idx = all.findIndex(function(p){return p.id === window.PROJECT.id;});
+          window.PROJECT.updatedAt = new Date().toISOString();
+          if (idx >= 0) all[idx] = window.PROJECT;
+          else all.unshift(window.PROJECT);
+          localStorage.setItem('aab_projects', JSON.stringify(all));
+        } catch(e) {}
+      }
+    };
+  }
+
+  // ── Fix initApp timing - use 1.5s delay on home page ──────────────────────
+  window.initApp = function() {
+    var tok = _sbTok();
+    if (tok.access_token && tok.expires_at > Math.floor(Date.now()/1000)) {
+      window.USER_ID = tok.user && tok.user.id;
+      window.USER_EMAIL = tok.user && tok.user.email;
+      var activeId = localStorage.getItem('aab_active_project_id');
+      if (activeId) {
+        var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+        var proj = projects.find(function(p){return p.id === activeId;});
+        if (proj) window.PROJECT = proj;
+      }
+      setTimeout(function(){
+        var pg = document.querySelector('.pg.on');
+        if (!pg || pg.id === 'home' || pg.id === 'auth-pg') {
+          window.loadDashboard();
+          window.nav('dashboard-pg');
+        }
+      }, 1500);
+    }
+  };
+
 })();
 
 </script>
