@@ -6680,6 +6680,83 @@ setTimeout(function(){
   if(typeof toast==="function")setTimeout(function(){toast("🎬 Edit Engine v1.0 ready","ok");},2000);
 },900);
 
+
+// ── AABStudio Polyfills: fix broken app functions ──────────────────────────
+(function() {
+  var SURL='https://phjlxkyloafogznhyyig.supabase.co';
+  var SKEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBoamx4a3lsb2Fmb2d6bmh5eWlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNTcxNDgsImV4cCI6MjA5MDYzMzE0OH0.wI9E9CIHwwFN6d_lgJXwO0_G7J3aq4zesp7eU6TCDiI';
+  
+  function _sbToken(){try{return JSON.parse(localStorage.getItem('sb-phjlxkyloafogznhyyig-auth-token')||'{}');}catch(e){return {};}}
+  function _validToken(){var t=_sbToken();return t.access_token&&t.expires_at>Math.floor(Date.now()/1000);}
+  
+  // Nav polyfill — only patch if broken
+  if(typeof nav!=='function'||!nav.toString().includes('classList')){
+    window.nav=function(pg){
+      console.log('[polyfill] nav:',pg);
+      document.querySelectorAll('.pg.on').forEach(function(p){p.classList.remove('on');});
+      var t=document.getElementById(pg);
+      if(t){t.classList.add('on');if(getComputedStyle(t).display==='none')t.style.display='';}
+      if(pg==='edit-pg'){setTimeout(function(){if(typeof E_build==='function')E_build();},300);}
+      if(pg==='dashboard-pg'){setTimeout(function(){if(typeof loadDashboard==='function')loadDashboard();},100);}
+    };
+  }
+  
+  // navBack polyfill
+  if(typeof navBack!=='function'){
+    window.navBack=function(){nav('dashboard-pg');};
+  }
+  
+  // doSignIn polyfill
+  if(typeof doSignIn!=='function'){
+    window.doSignIn=async function(){
+      var email=document.getElementById('si-email')?.value?.trim();
+      var pass=document.getElementById('si-pass')?.value;
+      var errEl=document.getElementById('err-in');
+      function showErr(msg){if(errEl){errEl.textContent=msg;errEl.style.display='block';}else alert(msg);}
+      if(!email||!pass){showErr('Please fill in all fields.');return;}
+      try{
+        var r=await fetch(SURL+'/auth/v1/token?grant_type=password',{
+          method:'POST',headers:{'Content-Type':'application/json','apikey':SKEY,'Authorization':'Bearer '+SKEY},
+          body:JSON.stringify({email:email,password:pass})
+        }).then(function(x){return x.json();});
+        if(r.access_token){
+          localStorage.setItem('sb-phjlxkyloafogznhyyig-auth-token',JSON.stringify({
+            access_token:r.access_token,refresh_token:r.refresh_token,
+            expires_at:Math.floor(Date.now()/1000)+r.expires_in,expires_in:r.expires_in,user:r.user
+          }));
+          window.USER_ID=r.user?.id;window.USER_EMAIL=r.user?.email;
+          if(typeof loadDashboard==='function'){loadDashboard();nav('dashboard-pg');}
+          else{nav('dashboard-pg');}
+        } else {showErr(r.error_description||r.error||'Sign in failed.');}
+      }catch(e){showErr(e.message);}
+    };
+  }
+  
+  // doSignOut polyfill  
+  if(typeof doSignOut!=='function'){
+    window.doSignOut=function(){
+      localStorage.removeItem('sb-phjlxkyloafogznhyyig-auth-token');
+      nav('home');
+      window.location.reload();
+    };
+  }
+
+  // Check session on load and auto-navigate
+  setTimeout(function(){
+    if(_validToken()){
+      var tok=_sbToken();
+      window.USER_ID=tok.user?.id;
+      window.USER_EMAIL=tok.user?.email;
+      // If on home/auth page, navigate to dashboard
+      var active=document.querySelector('.pg.on');
+      if(active&&(active.id==='home'||active.id==='auth-pg')){
+        if(typeof loadDashboard==='function')loadDashboard();
+        nav('dashboard-pg');
+      }
+    }
+  },1200);
+})();
+
 })();
 </script>
 </head>
