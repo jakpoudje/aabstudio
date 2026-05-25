@@ -6690,17 +6690,27 @@ setTimeout(function(){
   function _validToken(){var t=_sbToken();return t.access_token&&t.expires_at>Math.floor(Date.now()/1000);}
   
   // Nav polyfill — only patch if broken
-  if(typeof nav!=='function'||!nav.toString().includes('classList')){
-    window.nav=function(pg){
-      console.log('[polyfill] nav:',pg);
-      document.querySelectorAll('.pg.on').forEach(function(p){p.classList.remove('on');});
-      var t=document.getElementById(pg);
-      if(t){t.classList.add('on');if(getComputedStyle(t).display==='none')t.style.display='';}
-      if(pg==='edit-pg'){setTimeout(function(){if(typeof E_build==='function')E_build();},300);}
-      if(pg==='dashboard-pg'){setTimeout(function(){if(typeof loadDashboard==='function')loadDashboard();},100);}
-    };
-  }
-  
+    // Always patch nav with the full working version
+  window.nav=function(pg){
+    console.log('[aab-nav] ->',pg);
+    // Handle edit-pg specially (it uses pg-full not pg class)
+    var ep=document.getElementById('edit-pg');
+    if(ep){
+      if(pg==='edit-pg'){ep.classList.add('on');}
+      else{ep.classList.remove('on');}
+    }
+    // Handle normal .pg pages
+    document.querySelectorAll('.pg.on').forEach(function(p){p.classList.remove('on');});
+    var target=document.getElementById(pg);
+    if(target){
+      target.classList.add('on');
+      var d=getComputedStyle(target).display;
+      if(d==='none'||d==='')target.style.display='';
+    }
+    // Post-nav hooks
+    if(pg==='edit-pg'){setTimeout(function(){if(typeof E_build==='function')E_build();},300);}
+    if(pg==='dashboard-pg'){setTimeout(function(){if(typeof loadDashboard==='function')loadDashboard();},100);}
+  };
   // navBack polyfill
   if(typeof navBack!=='function'){
     window.navBack=function(){nav('dashboard-pg');};
@@ -6758,6 +6768,7 @@ setTimeout(function(){
 })();
 
 })();
+
 </script>
 </head>
 
