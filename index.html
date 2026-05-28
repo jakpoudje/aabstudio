@@ -6774,646 +6774,1276 @@ setTimeout(function(){
 
 
 
-// ── AABStudio Fix Layer — fills genuine gaps only, never overwrites working originals ──
-(function() {
-  'use strict';
 
-  // ── 1. AUTH / NAV — only patch if original broken (now they work, just extend) ──
-  // Hook nav to also call page-specific inits
-  var _origNav = window.nav;
-  if (_origNav && !window._navHooked) {
-    window._navHooked = true;
-    window.nav = function(pg) {
-      _origNav.call(window, pg);
-      // Page-specific hooks
-      if (pg === 'edit-pg') {
-        setTimeout(function() {
-          if (typeof edit_buildPlaylist === 'function') edit_buildPlaylist();
-          if (typeof tl_initTracks === 'function' && (!TL || !TL.tracks || !TL.tracks.length)) tl_initTracks();
-          edit_refreshBin();
-        }, 300);
+<script id="aab-engine-v3">
+
+// ════════════════════════════════════════════════════════════════════
+// AABStudio Edit Engine v3 — complete professional editor
+// ════════════════════════════════════════════════════════════════════
+(function(){
+'use strict';
+
+// ── CSS CLASSES ──────────────────────────────────────────────────────
+var style = document.createElement('style');
+style.textContent = `
+.enb{background:none;border:.5px solid rgba(255,255,255,.08);border-radius:4px;color:rgba(255,255,255,.4);font-size:9px;cursor:pointer;padding:2px 6px;font-family:inherit;}
+.enb:hover{background:rgba(255,255,255,.06);color:rgba(255,255,255,.7);}
+.etl{background:none;border:.5px solid rgba(255,255,255,.08);border-radius:4px;color:rgba(255,255,255,.35);font-size:11px;cursor:pointer;padding:0;width:22px;height:20px;display:flex;align-items:center;justify-content:center;}
+.etl:hover,.etl.on{background:rgba(0,212,255,.1);border-color:rgba(0,212,255,.25);color:#00d4ff;}
+.emenu-wrap{position:relative;height:100%;display:flex;align-items:center;}
+.emenu-btn{background:none;border:none;color:rgba(255,255,255,.45);font-size:10px;cursor:pointer;padding:0 10px;height:100%;font-family:inherit;white-space:nowrap;}
+.emenu-btn:hover{background:rgba(255,255,255,.04);color:rgba(255,255,255,.75);}
+.emenu-panel{display:none;position:absolute;top:calc(100% + 1px);left:0;background:#10131e;border:.5px solid rgba(255,255,255,.12);border-radius:8px;min-width:200px;z-index:999;box-shadow:0 16px 48px rgba(0,0,0,.8);padding:4px 0;}
+.emenu-sec{font-size:7px;color:rgba(255,255,255,.25);letter-spacing:.08em;padding:8px 12px 3px;text-transform:uppercase;}
+.emenu-item{display:flex;align-items:center;gap:8px;width:100%;padding:7px 14px;font-size:11px;color:rgba(255,255,255,.6);background:none;border:none;cursor:pointer;text-align:left;font-family:inherit;}
+.emenu-item:hover{background:rgba(255,255,255,.06);color:#fff;}
+.emenu-sep{height:.5px;background:rgba(255,255,255,.06);margin:3px 0;}
+.eadd-btn{background:rgba(255,255,255,.03);border:.5px solid rgba(255,255,255,.1);border-radius:4px;color:rgba(255,255,255,.4);font-size:9px;cursor:pointer;padding:2px 7px;font-family:inherit;}
+.eadd-btn:hover{background:rgba(255,255,255,.07);color:rgba(255,255,255,.7);}
+.ebin-tab{flex:1;padding:3px 0;font-size:8px;background:none;border:none;color:rgba(255,255,255,.3);cursor:pointer;border-bottom:1.5px solid transparent;font-family:inherit;}
+.ebin-tab.on{background:rgba(0,212,255,.05);border-bottom-color:#00d4ff;color:#00d4ff;}
+.efx-chip{background:rgba(255,255,255,.03);border:.5px solid rgba(255,255,255,.08);border-radius:4px;color:rgba(255,255,255,.4);font-size:9px;cursor:pointer;padding:3px 5px;font-family:inherit;}
+.efx-chip:hover{background:rgba(255,255,255,.07);}
+.etrans-btn{background:none;border:.5px solid rgba(255,255,255,.1);border-radius:4px;color:rgba(255,255,255,.4);font-size:11px;cursor:pointer;padding:0 7px;height:22px;display:flex;align-items:center;}
+.etrans-btn:hover{background:rgba(255,255,255,.06);color:rgba(255,255,255,.7);}
+.etrans-btn.play{background:rgba(0,212,255,.1);border-color:rgba(0,212,255,.25);color:#00d4ff;}
+.etrans-btn.play:hover{background:rgba(0,212,255,.18);}
+.tl-tool{background:none;border:.5px solid rgba(255,255,255,.08);border-radius:4px;color:rgba(255,255,255,.35);font-size:11px;cursor:pointer;padding:0 5px;height:20px;}
+.tl-tool:hover,.tl-tool.on{background:rgba(0,212,255,.1);border-color:rgba(0,212,255,.25);color:#00d4ff;}
+.tl-zoom-btn{background:none;border:.5px solid rgba(255,255,255,.07);border-radius:4px;color:rgba(255,255,255,.3);font-size:10px;cursor:pointer;padding:0 5px;height:20px;}
+.tl-zoom-btn:hover{background:rgba(255,255,255,.05);}
+kbd{font-size:7px;background:rgba(255,255,255,.08);border-radius:3px;padding:0 3px;color:rgba(255,255,255,.3);}
+/* Track label */
+.e-track-lbl{display:flex;align-items:center;border-bottom:.5px solid rgba(255,255,255,.04);padding:0 6px;gap:4px;flex-shrink:0;overflow:hidden;cursor:pointer;}
+.e-track-lbl:hover{background:rgba(255,255,255,.03);}
+/* Track rail */
+.e-track-rail{position:relative;border-bottom:.5px solid rgba(255,255,255,.04);flex-shrink:0;overflow:hidden;}
+/* Clip block */
+.e-clip{position:absolute;top:2px;bottom:2px;border-radius:4px;overflow:hidden;cursor:pointer;display:flex;align-items:stretch;user-select:none;transition:outline .1s;}
+.e-clip:hover{outline:1.5px solid rgba(255,255,255,.4);}
+.e-clip.selected{outline:2px solid #00d4ff;}
+.e-clip-thumb{width:44px;flex-shrink:0;object-fit:cover;background:#000;}
+.e-clip-info{flex:1;padding:2px 5px;min-width:0;display:flex;flex-direction:column;justify-content:center;}
+.e-clip-name{font-size:8px;font-weight:600;color:rgba(255,255,255,.9);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.e-clip-dur{font-size:7px;color:rgba(255,255,255,.45);}
+.e-clip-wave{position:absolute;inset:0;opacity:.35;pointer-events:none;}
+/* Trim handles */
+.e-trim-l,.e-trim-r{position:absolute;top:0;bottom:0;width:6px;cursor:ew-resize;background:rgba(255,255,255,.0);z-index:5;}
+.e-trim-l:hover,.e-trim-r:hover{background:rgba(0,212,255,.35);}
+.e-trim-l{left:0;}
+.e-trim-r{right:0;}
+/* Bin clip item */
+.e-bin-item{display:flex;align-items:center;gap:6px;padding:4px 5px;border-radius:5px;cursor:pointer;border:.5px solid rgba(255,255,255,.05);background:rgba(255,255,255,.02);}
+.e-bin-item:hover{background:rgba(255,255,255,.05);}
+.e-bin-item.active{background:rgba(0,212,255,.08);border-color:rgba(0,212,255,.2);}
+/* Timeline panel forced visible */
+#e-timeline{display:flex!important;}
+/* Scrollbar style */
+#e-tl-scroll::-webkit-scrollbar{height:6px;width:6px;}
+#e-tl-scroll::-webkit-scrollbar-track{background:rgba(255,255,255,.02);}
+#e-tl-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:3px;}
+/* Fix old edit-pg topbar lockout */
+#edit-topbar{flex:0 0 auto!important;height:auto!important;max-height:none!important;overflow:visible!important;}
+`;
+document.head.appendChild(style);
+
+// ── STATE ─────────────────────────────────────────────────────────────
+window.E = {
+  // Timeline state
+  zoom: 6,           // px per second
+  playhead: 0,       // seconds
+  duration: 180,     // 3 minutes default
+  playing: false,
+  loop: false,
+  subsOn: false,
+  snap: true,
+  tool: 'select',
+  selectedClip: null,
+  tracks: [],
+  history: [],
+  future: [],
+  masterVol: 1,
+
+  // Track type definitions — enforced
+  TRACK_TYPES: {
+    'main-video': {label:'Main Video', icon:'🎬', type:'video', color:'#1e40af', h:64, accepts:['video']},
+    'broll':      {label:'B-Roll',     icon:'🎥', type:'video', color:'#1d4ed8', h:56, accepts:['video']},
+    'overlay':    {label:'Overlay',    icon:'🖼', type:'image', color:'#7c3aed', h:48, accepts:['image','video']},
+    'text':       {label:'Text',       icon:'📝', type:'text',  color:'#0f766e', h:36, accepts:['text']},
+    'subtitle':   {label:'Subtitle',   icon:'💬', type:'text',  color:'#0e7490', h:30, accepts:['text']},
+    'voice':      {label:'Voice',      icon:'🎤', type:'audio', color:'#065f46', h:42, accepts:['audio']},
+    'music':      {label:'Music',      icon:'🎵', type:'audio', color:'#064e3b', h:42, accepts:['audio']},
+    'sfx':        {label:'SFX',        icon:'🔊', type:'audio', color:'#1c1917', h:36, accepts:['audio']},
+    'transition': {label:'Transition', icon:'⟿', type:'fx',    color:'#78350f', h:30, accepts:['fx']},
+    'fx':         {label:'FX',         icon:'✨', type:'fx',    color:'#713f12', h:36, accepts:['fx','video']},
+    'image':      {label:'Image',      icon:'🖼', type:'image', color:'#831843', h:48, accepts:['image']},
+    'background': {label:'Background', icon:'🌅', type:'image', color:'#1e3a5f', h:48, accepts:['image','video']},
+  },
+
+  // ── INIT ────────────────────────────────────────────────────────────
+  init: function() {
+    var self = this;
+    if (!window.PROJECT) return setTimeout(function(){self.init();}, 300);
+    if (self._inited) { self.refresh(); return; }
+    self._inited = true;
+
+    // Build track list
+    self.tracks = Object.keys(self.TRACK_TYPES).map(function(id) {
+      return { id:id, clips:[], muted:false, locked:false, collapsed:false, volume:1, color:null };
+    });
+
+    // Populate from project
+    self.populateFromProject();
+
+    // Wire keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+      if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
+      if(e.key==='v'||e.key==='V') self.setTool('select');
+      if(e.key==='r'||e.key==='R') self.setTool('razor');
+      if(e.key==='t'||e.key==='T') self.setTool('trim');
+      if(e.key==='h'||e.key==='H') self.setTool('hand');
+      if(e.key==='s'||e.key==='S') self.split();
+      if(e.key==='m'||e.key==='M') self.saveMarker();
+      if(e.key==='g'||e.key==='G') self.toggleSnap();
+      if(e.key==='d'||e.key==='D') self.duplicate();
+      if(e.key==='Delete'||e.key==='Backspace') self.rippleDel();
+      if(e.key===' ') { e.preventDefault(); self.progToggle(); }
+      if(e.ctrlKey||e.metaKey) {
+        if(e.key==='z') { e.preventDefault(); self.undo(); }
+        if(e.key==='y') { e.preventDefault(); self.redo(); }
       }
-      if (pg === 'record-pg' && typeof initStudio === 'function') {
-        setTimeout(initStudio, 100);
+    });
+
+    // Close dropdowns on outside click
+    document.addEventListener('click', function(e) {
+      if(!e.target.closest('.emenu-wrap')) {
+        document.querySelectorAll('.emenu-panel').forEach(function(p){p.style.display='none';});
       }
-    };
-  }
+    });
 
-  // ── 0. DUAL MONITORS + TIMELINE LAYOUT ─────────────────────────────────────
-  window._showTimeline = function _showTimeline() {
-    var tl = document.getElementById('timeline-panel');
-    var rh = document.getElementById('tl-resize-handle');
-    if (tl) { tl.style.setProperty('display','flex','important'); tl.style.height = '220px'; }
-    if (rh) { rh.style.setProperty('display','block','important'); }
-    if (typeof tl_render === 'function') { try { tl_render(); } catch(e) {} }
-    if (typeof tl_initTracks === 'function' && (!window.TL || !window.TL.tracks || !window.TL.tracks.length)) tl_initTracks();
-  }
+    // Wire timeline resize
+    var resizeEl = document.getElementById('e-resize');
+    if(resizeEl) {
+      resizeEl.addEventListener('mousedown', function(ev) { self.resizeStart(ev); });
+    }
 
-  window._initDualMonitors = function _initDualMonitors() {
-    var pp = document.getElementById('edit-preview-pane');
-    if (!pp || document.getElementById('aab-prog-mon-wrap')) return; // already done
-
-    // Make preview pane horizontal
-    pp.style.flexDirection = 'row';
-
-    // Rename/rebrand the existing viewport as SOURCE MONITOR
-    var vp = document.getElementById('edit-viewport');
-    var vpParent = vp && vp.parentElement;
-    if (!vp || !vpParent) return;
-
-    // Wrap viewport in source monitor container
-    var srcWrap = document.createElement('div');
-    srcWrap.id = 'aab-src-mon-wrap';
-    srcWrap.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;background:#06080e;border-right:.5px solid rgba(0,212,255,.12);';
-    
-    // Source label bar
-    var srcBar = document.createElement('div');
-    srcBar.style.cssText = 'flex-shrink:0;padding:3px 10px;background:rgba(0,212,255,.05);border-bottom:.5px solid rgba(0,212,255,.1);display:flex;align-items:center;justify-content:space-between;';
-    srcBar.innerHTML = '<span style="font-size:8px;font-weight:700;color:#00d4ff;letter-spacing:.08em;">SOURCE MONITOR</span><span id="aab-src-label" style="font-size:8px;color:rgba(255,255,255,.25);">Click clip to preview</span>';
-    
-    // Source controls
-    var srcCtrl = document.createElement('div');
-    srcCtrl.style.cssText = 'flex-shrink:0;height:30px;display:flex;align-items:center;gap:6px;padding:0 8px;background:rgba(0,0,0,.5);border-top:.5px solid rgba(255,255,255,.05);';
-    srcCtrl.innerHTML = '<button id="aab-src-play" onclick="var v=document.getElementById('edit-video');if(v){v.paused?v.play():v.pause();this.textContent=v.paused?'▶':'⏸';}" style="background:rgba(0,212,255,.1);border:.5px solid rgba(0,212,255,.25);border-radius:4px;color:#00d4ff;padding:1px 10px;font-size:11px;cursor:pointer;">▶</button>'
-      + '<input type="range" id="aab-src-seek" min="0" max="100" value="0" style="flex:1;accent-color:#00d4ff;height:2px;" oninput="var v=document.getElementById('edit-video');if(v&&v.duration)v.currentTime=v.duration*(this.value/100);">'
-      + '<span id="aab-src-tc" style="font-size:8px;color:rgba(255,255,255,.3);font-family:monospace;min-width:55px;">0:00/0:00</span>'
-      + '<button onclick="if(window.E&&E.sourceClip&&typeof E_addClip==='function')E_addClip(E.sourceClip,'main');" title="Add to timeline" style="background:rgba(255,255,255,.05);border:.5px solid rgba(255,255,255,.1);border-radius:4px;color:rgba(255,255,255,.4);padding:1px 7px;font-size:9px;cursor:pointer;">→TL</button>';
-
-    // Move vp into srcWrap
-    pp.insertBefore(srcWrap, vp);
-    srcWrap.appendChild(srcBar);
-    srcWrap.appendChild(vp);
-    vp.style.flex = '1';
-    srcWrap.appendChild(srcCtrl);
-
-    // Hook source monitor timecode
-    var editVid = document.getElementById('edit-video');
-    if (editVid && !editVid._srcHooked) {
-      editVid._srcHooked = true;
-      editVid.addEventListener('timeupdate', function() {
-        var tc = document.getElementById('aab-src-tc');
-        var seek = document.getElementById('aab-src-seek');
-        if (tc) tc.textContent = _fmtTime(editVid.currentTime)+'/'+_fmtTime(editVid.duration||0);
-        if (seek && editVid.duration) seek.value = (editVid.currentTime/editVid.duration*100).toFixed(1);
-        var pb = document.getElementById('aab-src-play');
-        if (pb) pb.textContent = editVid.paused ? '▶' : '⏸';
+    // Wire source video events
+    var sv = document.getElementById('e-src-vid');
+    if(sv) {
+      sv.addEventListener('timeupdate', function() { self._srcTimeUpdate(); });
+      sv.addEventListener('ended', function() {
+        var b = document.getElementById('e-src-play');
+        if(b) b.textContent = '▶';
       });
     }
 
-    // Build PROGRAM MONITOR
-    var progWrap = document.createElement('div');
-    progWrap.id = 'aab-prog-mon-wrap';
-    progWrap.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;background:#04060e;';
-
-    var progBar = document.createElement('div');
-    progBar.style.cssText = 'flex-shrink:0;padding:3px 10px;background:rgba(139,92,246,.05);border-bottom:.5px solid rgba(139,92,246,.12);display:flex;align-items:center;justify-content:space-between;';
-    progBar.innerHTML = '<span style="font-size:8px;font-weight:700;color:#a78bfa;letter-spacing:.08em;">PROGRAM MONITOR</span><span id="aab-prog-tc" style="font-size:8px;color:rgba(255,255,255,.25);font-family:monospace;">0:00 / 0:00</span>';
-
-    var progView = document.createElement('div');
-    progView.id = 'aab-prog-view';
-    progView.style.cssText = 'flex:1;position:relative;display:flex;align-items:center;justify-content:center;background:#06080e;overflow:hidden;';
-    progView.innerHTML = '<div id="aab-prog-empty" style="text-align:center;color:rgba(255,255,255,.12);"><div style="font-size:28px;margin-bottom:8px;">🎬</div><div style="font-size:10px;">Timeline output</div><div style="font-size:9px;margin-top:4px;color:rgba(255,255,255,.08);">Press play on timeline</div></div>'
-      + '<video id="aab-prog-video" style="display:none;max-width:100%;max-height:100%;object-fit:contain;" playsinline></video>'
-      + '<div id="aab-prog-subs" style="position:absolute;bottom:16px;left:8%;right:8%;text-align:center;font-size:15px;font-weight:700;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.9);pointer-events:none;display:none;"></div>';
-
-    var progCtrl = document.createElement('div');
-    progCtrl.style.cssText = 'flex-shrink:0;height:30px;display:flex;align-items:center;gap:6px;padding:0 8px;background:rgba(0,0,0,.5);border-top:.5px solid rgba(255,255,255,.05);';
-    progCtrl.innerHTML = '<button id="aab-prog-play" onclick="_progPlay()" style="background:rgba(139,92,246,.1);border:.5px solid rgba(139,92,246,.25);border-radius:4px;color:#a78bfa;padding:1px 10px;font-size:11px;cursor:pointer;">▶</button>'
-      + '<input type="range" id="aab-prog-seek" min="0" max="100" value="0" style="flex:1;accent-color:#a78bfa;height:2px;" oninput="_progSeek(this.value)">'
-      + '<button onclick="if(typeof edit_autoCaption==='function')edit_autoCaption();" title="Auto captions" style="background:rgba(255,255,255,.04);border:.5px solid rgba(255,255,255,.08);border-radius:4px;color:rgba(255,255,255,.35);padding:1px 6px;font-size:9px;cursor:pointer;">CC</button>';
-
-    progWrap.appendChild(progBar);
-    progWrap.appendChild(progView);
-    progWrap.appendChild(progCtrl);
-    pp.appendChild(progWrap);
-  }
-
-  window._fmtTime = function _fmtTime(s) {
-    if (!s || isNaN(s)) return '0:00';
-    return Math.floor(s/60)+':'+(Math.floor(s%60)<10?'0':'')+Math.floor(s%60);
-  }
-
-  // Program monitor playback — plays clips sequentially from timeline
-  window._progPlay = function() {
-    var btn = document.getElementById('aab-prog-play');
-    var pv = document.getElementById('aab-prog-video');
-    var pe = document.getElementById('aab-prog-empty');
-    if (!pv) return;
-    if (!pv.paused) { pv.pause(); if(btn) btn.textContent='▶'; return; }
-    // Build playlist from TL tracks
-    var clips = [];
-    if (window.TL && TL.tracks) {
-      var main = TL.tracks.find(function(t){return t.id==='main-video'||t.id==='main'||t.id==='track_video';});
-      if (main) clips = (main.clips||[]).filter(function(c){return c.url;}).sort(function(a,b){return a.start-b.start;});
+    // Wire prog video events
+    var pv = document.getElementById('e-prog-vid');
+    if(pv) {
+      pv.addEventListener('ended', function() { self._progNext(); });
     }
-    // Fallback: use project clips
-    if (!clips.length && window.PROJECT) {
-      var all = Object.values(PROJECT.apsVideos||{}).concat(Object.values(PROJECT.clips||{}));
-      all.sort(function(a,b){return (a.sceneNum||0)-(b.sceneNum||0);});
-      clips = all.filter(function(c){return c.url||c.videoUrl;}).map(function(c,i){return {url:c.url||c.videoUrl,start:i*10,duration:c.duration||10};});
-    }
-    if (!clips.length) { if(typeof toast==='function') toast('No clips on timeline','info'); return; }
-    if(pe) pe.style.display='none';
-    pv.style.display='';
-    var idx=0;
-    function playNext() {
-      if(idx>=clips.length){if(btn)btn.textContent='▶';pv.pause();return;}
-      pv.src=clips[idx++].url;
-      pv.play().catch(function(){playNext();});
-      pv.onended=playNext;
-      if(btn) btn.textContent='⏸';
-    }
-    playNext();
-    // Update prog timecode
-    pv.addEventListener('timeupdate', function(){
-      var tc=document.getElementById('aab-prog-tc');
-      var sk=document.getElementById('aab-prog-seek');
-      if(tc) tc.textContent=_fmtTime(pv.currentTime)+' / '+_fmtTime(pv.duration||0);
-      if(sk&&pv.duration) sk.value=(pv.currentTime/pv.duration*100).toFixed(1);
-    }, {once:false});
-  };
-  window._progSeek = function(v) {
-    var pv=document.getElementById('aab-prog-video');
-    if(pv&&pv.duration) pv.currentTime=pv.duration*(v/100);
-  };
 
+    // Render
+    self.render();
+    self.refreshBin();
 
-  // ── 2. SEGMENTATION — skip if already done ──────────────────────────────────
-  var _origSeg = window.startSegmentation;
-  if (_origSeg && !window._segHooked) {
-    window._segHooked = true;
-    window.startSegmentation = function() {
-      // If project already has scenes, ask before re-segmenting
-      if (window.PROJECT && window.PROJECT.scenes && window.PROJECT.scenes.length > 0) {
-        if (!confirm('This project already has ' + window.PROJECT.scenes.length + ' scenes. Re-segment and replace them?')) return;
-      }
-      _origSeg.call(window);
-    };
-  }
+    // Set title
+    var titleEl = document.getElementById('edit-title');
+    if(titleEl && window.PROJECT) titleEl.textContent = '✂️ ' + (PROJECT.title||'Edit Suite');
+  },
 
-  // ── 3. MISSING EDIT FUNCTIONS — implement all buttons that currently do nothing ──
+  refresh: function() {
+    this.populateFromProject();
+    this.render();
+    this.refreshBin();
+    var titleEl = document.getElementById('edit-title');
+    if(titleEl && window.PROJECT) titleEl.textContent = '✂️ ' + (PROJECT.title||'Edit Suite');
+  },
 
-  // Tool switcher
-  window.edit_setTool = function(tool) {
-    window._editTool = tool;
-    document.querySelectorAll('.edit-tool-btn').forEach(function(b) { b.classList.remove('active'); });
-    var btn = document.getElementById('tl-btn-' + tool);
-    if (btn) btn.classList.add('active');
-    // Map to tl_ equivalents
-    if (typeof tl_setTool === 'function') tl_setTool(tool);
-    if (typeof toast === 'function') toast('Tool: ' + tool, 'info');
-  };
+  // ── POPULATE FROM PROJECT ─────────────────────────────────────────
+  populateFromProject: function() {
+    var self = this;
+    if(!window.PROJECT) return;
+    var mainTrack = self.tracks.find(function(t){return t.id==='main-video';});
+    var voiceTrack = self.tracks.find(function(t){return t.id==='voice';});
+    var subsTrack = self.tracks.find(function(t){return t.id==='subtitle';});
+    if(!mainTrack) return;
 
-  // Dropdown toggle
-  window.edit_toggleDD = function(id) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    var isOpen = el.style.display !== 'none';
-    // Close all
-    document.querySelectorAll('.edit-dd-panel').forEach(function(p) { p.style.display = 'none'; });
-    if (!isOpen) el.style.display = 'block';
-  };
-  // Close dropdowns on outside click
-  document.addEventListener('click', function(e) {
-    if (!e.target.closest('.edit-dd-wrap')) {
-      document.querySelectorAll('.edit-dd-panel').forEach(function(p) { p.style.display = 'none'; });
-    }
-  });
+    // Only auto-populate if main track is empty
+    if(mainTrack.clips.length > 0) return;
 
-  // Filter application — marks selected clip with filter metadata
-  window.edit_applyFilter = function(filterName) {
-    document.querySelectorAll('.edit-dd-panel').forEach(function(p) { p.style.display = 'none'; });
-    if (!TL || !TL.selectedClip) { if (typeof toast==='function') toast('Select a clip first', 'info'); return; }
-    var track = TL.tracks && TL.tracks.find(function(t) { return t.id === TL.selectedClip.trackId; });
-    var clip = track && track.clips.find(function(c) { return c.id === TL.selectedClip.clipId; });
-    if (!clip) { if (typeof toast==='function') toast('Select a clip first', 'info'); return; }
-    clip.filter = filterName;
-    // Apply CSS filter to the video preview
-    var filters = {
-      cinematic: 'contrast(1.1) saturate(0.85) sepia(0.15)',
-      warm: 'sepia(0.3) saturate(1.2) hue-rotate(-10deg)',
-      cool: 'saturate(0.9) hue-rotate(20deg) brightness(1.05)',
-      bw: 'grayscale(1)',
-      vignette: 'brightness(0.92)',
-      grain: 'contrast(1.05)'
-    };
-    var vid = document.getElementById('edit-video');
-    if (vid) vid.style.filter = filters[filterName] || '';
-    if (typeof toast==='function') toast('Filter: ' + filterName + ' applied', 'ok');
-    if (typeof tl_render==='function') tl_render();
-  };
+    var t = 0;
+    var scenes = (PROJECT.scenes||[]);
+    var wpm = PROJECT.wpm || 150;
 
-  // Audio tools
-  window.edit_audioTool = function(tool) {
-    document.querySelectorAll('.edit-dd-panel').forEach(function(p) { p.style.display = 'none'; });
-    if (!TL || !TL.selectedClip) { if (typeof toast==='function') toast('Select a clip first', 'info'); return; }
-    var track = TL.tracks && TL.tracks.find(function(t) { return t.id === TL.selectedClip.trackId; });
-    var clip = track && track.clips.find(function(c) { return c.id === TL.selectedClip.clipId; });
-    if (!clip) { if (typeof toast==='function') toast('Select a clip first', 'info'); return; }
-    clip['audio_' + tool] = true;
-    if (typeof toast==='function') toast(tool + ' applied', 'ok');
-  };
-
-  // Tool operations
-  window.edit_doTool = function(action) {
-    document.querySelectorAll('.edit-dd-panel').forEach(function(p) { p.style.display = 'none'; });
-    if (action === 'ripple-delete') {
-      if (typeof tl_deleteSelected==='function') tl_deleteSelected();
-    } else if (action === 'freeze') {
-      if (typeof toast==='function') toast('Freeze frame: select clip + split at playhead first', 'info');
-    } else {
-      if (typeof toast==='function') toast(action, 'info');
-    }
-  };
-
-  // Speed dialog
-  window.edit_showSpeedDialog = function() {
-    document.querySelectorAll('.edit-dd-panel').forEach(function(p) { p.style.display = 'none'; });
-    var spd = prompt('Speed multiplier (0.25 - 4.0):', '1.0');
-    if (!spd) return;
-    var val = parseFloat(spd);
-    if (isNaN(val) || val < 0.1 || val > 4) { if (typeof toast==='function') toast('Invalid speed', 'error'); return; }
-    if (!TL || !TL.selectedClip) { if (typeof toast==='function') toast('Select a clip first', 'info'); return; }
-    var track = TL.tracks && TL.tracks.find(function(t){ return t.id===TL.selectedClip.trackId; });
-    var clip = track && track.clips.find(function(c){ return c.id===TL.selectedClip.clipId; });
-    if (clip) { clip.speed = val; clip.duration = (clip.duration || 10) / val; }
-    if (typeof tl_render==='function') tl_render();
-    if (typeof toast==='function') toast('Speed: ' + val + 'x', 'ok');
-  };
-
-  // Transitions
-  window.edit_addTransition = function(type) {
-    document.querySelectorAll('.edit-dd-panel').forEach(function(p) { p.style.display = 'none'; });
-    if (!TL || !TL.selectedClip) { if (typeof toast==='function') toast('Select a clip to add transition before it', 'info'); return; }
-    var track = TL.tracks && TL.tracks.find(function(t){ return t.id===TL.selectedClip.trackId; });
-    var clip = track && track.clips.find(function(c){ return c.id===TL.selectedClip.clipId; });
-    if (clip) { clip.transitionBefore = type; clip.transitionDuration = 0.5; }
-    if (typeof tl_render==='function') tl_render();
-    if (typeof toast==='function') toast('Transition: ' + type, 'ok');
-  };
-  window.edit_addTransitionAll = function() {
-    document.querySelectorAll('.edit-dd-panel').forEach(function(p) { p.style.display = 'none'; });
-    if (!TL) return;
-    TL.tracks.forEach(function(t) {
-      if (t.type === 'video') t.clips.forEach(function(c, i) { if (i > 0) { c.transitionBefore = 'dissolve'; c.transitionDuration = 0.5; } });
-    });
-    if (typeof tl_render==='function') tl_render();
-    if (typeof toast==='function') toast('Dissolve applied to all cuts', 'ok');
-  };
-
-  // Timeline split
-  window.tl_split = function() {
-    if (!TL || !TL.selectedClip) { if (typeof toast==='function') toast('Select a clip to split', 'info'); return; }
-    if (typeof tl_splitAtPlayhead==='function') tl_splitAtPlayhead(TL.selectedClip.trackId);
-    else if (typeof toast==='function') toast('Split applied', 'ok');
-  };
-
-  // Undo/Redo (simple history)
-  window._editHistory = window._editHistory || [];
-  window._editFuture = window._editFuture || [];
-  window.edit_undo = function() {
-    if (!window._editHistory.length) { if (typeof toast==='function') toast('Nothing to undo', 'info'); return; }
-    window._editFuture.push(JSON.stringify(TL));
-    var prev = window._editHistory.pop();
-    try { Object.assign(TL, JSON.parse(prev)); if (typeof tl_render==='function') tl_render(); } catch(e){}
-    if (typeof toast==='function') toast('Undo', 'info');
-  };
-  window.edit_redo = function() {
-    if (!window._editFuture.length) { if (typeof toast==='function') toast('Nothing to redo', 'info'); return; }
-    window._editHistory.push(JSON.stringify(TL));
-    var next = window._editFuture.pop();
-    try { Object.assign(TL, JSON.parse(next)); if (typeof tl_render==='function') tl_render(); } catch(e){}
-    if (typeof toast==='function') toast('Redo', 'info');
-  };
-  // Save state before destructive ops
-  function _editSaveState() {
-    if (!window.TL) return;
-    window._editHistory = window._editHistory || [];
-    window._editHistory.push(JSON.stringify(TL));
-    if (window._editHistory.length > 30) window._editHistory.shift();
-    window._editFuture = [];
-  }
-  document.addEventListener('aab_tl_change', _editSaveState);
-
-  // Volume controls
-  window.edit_setMasterVolume = function(v) {
-    window._masterVolume = parseFloat(v);
-    var vid = document.getElementById('edit-video');
-    if (vid) vid.volume = Math.min(1, parseFloat(v));
-  };
-  window.edit_setTrackVolume = function(trackId, v) {
-    if (!TL) return;
-    var t = TL.tracks.find(function(tr){ return tr.id===trackId; });
-    if (t) { t.volume = parseFloat(v); }
-  };
-
-  // Bin tabs
-  window.edit_binTab = function(tab) {
-    ['clips','assets','effects'].forEach(function(t) {
-      var panel = document.getElementById('edit-bin-' + t);
-      var btn = document.getElementById('bin-tab-' + t);
-      var active = t === tab;
-      if (panel) panel.style.display = active ? 'flex' : 'none';
-      if (btn) {
-        btn.style.borderBottom = active ? '1.5px solid #00d4ff' : '1.5px solid transparent';
-        btn.style.color = active ? '#00d4ff' : 'rgba(255,255,255,.3)';
-        btn.style.background = active ? 'rgba(0,212,255,.06)' : 'none';
-      }
-    });
-  };
-
-  // Import media into bin
-  window.importMedia = function(type) {
-    var inp = document.createElement('input');
-    inp.type = 'file';
-    inp.accept = type === 'video' ? 'video/*' : type === 'audio' ? 'audio/*' : 'image/*';
-    inp.onchange = function() {
-      var file = inp.files[0];
-      if (!file) return;
-      var url = URL.createObjectURL(file);
-      if (!TL.importedMedia) TL.importedMedia = {};
-      var id = 'imp_' + Date.now();
-      // Get duration for video/audio
-      if (file.type.startsWith('video') || file.type.startsWith('audio')) {
-        var media = document.createElement(file.type.startsWith('video') ? 'video' : 'audio');
-        media.src = url;
-        media.onloadedmetadata = function() {
-          TL.importedMedia[id] = { id:id, url:url, name:file.name, type:type, duration:media.duration || 10, file:file };
-          edit_refreshBin();
-        };
-      } else {
-        TL.importedMedia[id] = { id:id, url:url, name:file.name, type:'image', duration:5, file:file };
-        edit_refreshBin();
-      }
-      if (typeof toast==='function') toast('Imported: ' + file.name, 'ok');
-    };
-    inp.click();
-  };
-  window.edit_uploadAudio = function(trackId) { window.importMedia('audio'); };
-  window.edit_uploadImage = function() { window.importMedia('image'); };
-
-  // Waveform upload  
-  window.edit_uploadWaveform = function(trackId) {
-    var inp = document.createElement('input');
-    inp.type = 'file'; inp.accept = 'audio/*';
-    inp.onchange = function() {
-      var file = inp.files[0]; if (!file) return;
-      var url = URL.createObjectURL(file);
-      var audio = document.createElement('audio');
-      audio.src = url;
-      audio.onloadedmetadata = function() {
-        var track = TL && TL.tracks && TL.tracks.find(function(t){ return t.id===(trackId||'voice'); });
-        if (!track) return;
-        var waveId = 'wave_'+Date.now();
-        var waveW = Math.round(audio.duration * (TL.zoom||40));
-        track.clips.push({
-          id: waveId, url: url, name: file.name.slice(0,20),
-          start: TL.playhead || 0, duration: audio.duration,
-          waveform: typeof tl_makeWave==='function' ? tl_makeWave(waveW, 36, '#10b981') : '',
-          color: '#065f46', type: 'audio'
-        });
-        if (typeof tl_render==='function') tl_render();
-        if (typeof toast==='function') toast('Audio added: ' + file.name, 'ok');
-      };
-    };
-    inp.click();
-  };
-
-  // Text tracks
-  window.edit_addTextTrack = function(style) {
-    document.querySelectorAll('.edit-dd-panel').forEach(function(p) { p.style.display = 'none'; });
-    var subsTrack = TL && TL.tracks && TL.tracks.find(function(t){ return t.id==='subtitles'; });
-    if (!subsTrack) { if (typeof toast==='function') toast('No subtitle track', 'info'); return; }
-    var textStyles = {
-      'title': { fontSize: 32, color: '#fff', bg: 'rgba(0,0,0,.7)', position: 'center' },
-      'lower-third': { fontSize: 20, color: '#fff', bg: 'rgba(0,0,0,.8)', position: 'bottom' },
-      'caption': { fontSize: 16, color: '#fff', bg: 'rgba(0,0,0,.6)', position: 'bottom' },
-      'callout': { fontSize: 14, color: '#fff', bg: 'rgba(59,130,246,.8)', position: 'top' }
-    };
-    var ts = textStyles[style] || textStyles['caption'];
-    subsTrack.clips.push({
-      id: 'text_' + Date.now(), text: 'Click to edit', label: 'Click to edit',
-      start: TL.playhead || 0, duration: 5, type: 'subtitle',
-      textStyle: Object.assign({ text: 'Click to edit' }, ts)
-    });
-    if (typeof tl_render==='function') tl_render();
-    if (typeof toast==='function') toast(style + ' added to timeline', 'ok');
-  };
-
-  // Auto-captions from scene narration
-  window.edit_autoCaption = function() {
-    document.querySelectorAll('.edit-dd-panel').forEach(function(p) { p.style.display = 'none'; });
-    if (!window.PROJECT || !window.PROJECT.scenes || !window.PROJECT.scenes.length) {
-      if (typeof toast==='function') toast('No scenes — add script first', 'info'); return;
-    }
-    if (typeof tl_generateSubtitleBlocks==='function') {
-      tl_generateSubtitleBlocks();
-      // Add generated blocks to subtitle track
-      var subsTrack = TL && TL.tracks && TL.tracks.find(function(t){ return t.id==='subtitles'; });
-      if (subsTrack && TL.subtitleBlocks) {
-        subsTrack.clips = TL.subtitleBlocks.map(function(b) {
-          return { id: 'sub_'+b.id||Date.now(), text: b.text, label: b.text,
-            start: b.start, duration: (b.end - b.start), type: 'subtitle',
-            textStyle: { text: b.text, fontSize: 16, color: '#fff', bg: 'rgba(0,0,0,.6)', position: 'bottom' }
-          };
-        });
-      }
-      if (typeof tl_render==='function') tl_render();
-      if (typeof toast==='function') toast('Captions generated from scene scripts', 'ok');
-    }
-  };
-
-  // Refresh media bin with clips from PROJECT
-  window.edit_refreshBin = function() {
-    var binEl = document.getElementById('edit-bin-clips');
-    if (!binEl) return;
-    var clips = [];
     // AI presenter clips
-    Object.entries(window.PROJECT && window.PROJECT.apsVideos || {}).forEach(function(e) {
-      clips.push(Object.assign({ _src: 'ai' }, e[1]));
-    });
-    // Recorded clips
-    Object.entries(window.PROJECT && window.PROJECT.clips || {}).forEach(function(e) {
-      clips.push(Object.assign({ _src: 'rec' }, e[1]));
-    });
-    // Imported media from TL
-    Object.values((TL && TL.importedMedia) || {}).forEach(function(m) {
-      clips.push(Object.assign({ _src: 'import' }, m));
+    var apsEntries = Object.entries(PROJECT.apsVideos||{});
+    apsEntries.sort(function(a,b){return (a[1].sceneNum||0)-(b[1].sceneNum||0);});
+    apsEntries.forEach(function(entry) {
+      var id = entry[0], clip = entry[1];
+      if(!clip.url && !clip.videoUrl) return;
+      var dur = clip.duration || 10;
+      mainTrack.clips.push({
+        id: 'aps_'+id, url: clip.url||clip.videoUrl,
+        name: 'Scene '+(clip.sceneNum||'?')+' — '+(clip.narration||clip.sceneName||'').slice(0,25),
+        start: t, duration: dur, trimIn: 0, trimOut: dur,
+        mediaType: 'video', source: 'heygen',
+        sceneNum: clip.sceneNum, narration: clip.narration||''
+      });
+      t += dur;
     });
 
-    if (!clips.length) {
-      binEl.innerHTML = '<div style="font-size:10px;color:rgba(255,255,255,.15);text-align:center;padding:20px 0;">No clips yet</div>';
-      var cc = document.getElementById('edit-clip-count'); if (cc) cc.textContent = '';
+    // Recorded clips (to broll if AI exists, else main)
+    var recEntries = Object.entries(PROJECT.clips||{});
+    recEntries.sort(function(a,b){return (a[1].sceneNum||0)-(b[1].sceneNum||0);});
+    var recTrack = apsEntries.length > 0 ?
+      self.tracks.find(function(t){return t.id==='broll';}) : mainTrack;
+    var t2 = 0;
+    recEntries.forEach(function(entry) {
+      var id = entry[0], clip = entry[1];
+      if(!clip.url) return;
+      var dur = clip.duration || 10;
+      recTrack.clips.push({
+        id: 'rec_'+id, url: clip.url,
+        name: 'Rec '+(clip.sceneNum||'?')+' — '+(clip.sceneName||'').slice(0,25),
+        start: t2, duration: dur, trimIn: 0, trimOut: dur,
+        mediaType: 'video', source: 'recording',
+        sceneNum: clip.sceneNum
+      });
+      t2 += dur;
+    });
+
+    // Auto-generate subtitle blocks from scene narrations
+    if(subsTrack && scenes.length) {
+      var st = 0;
+      scenes.forEach(function(scene) {
+        var narration = (scene.narration||'').trim();
+        if(!narration) { st += (scene.duration||8); return; }
+        var words = narration.split(/s+/).filter(Boolean);
+        var dur = scene.duration || Math.max(4, (words.length / wpm) * 60);
+        // Split into chunks of ~8 words
+        var chunkSize = 8;
+        for(var i=0; i<words.length; i+=chunkSize) {
+          var chunk = words.slice(i, i+chunkSize).join(' ');
+          var chunkDur = (chunk.split(/s+/).length / (wpm/60));
+          var chunkStart = st + (i/words.length)*dur;
+          subsTrack.clips.push({
+            id: 'sub_'+scene.id+'_'+i,
+            text: chunk, name: chunk.slice(0,20),
+            start: chunkStart, duration: Math.min(chunkDur, 6),
+            mediaType: 'text', source: 'auto'
+          });
+        }
+        st += dur;
+      });
+    }
+
+    // Set timeline duration to match content
+    var maxEnd = 0;
+    self.tracks.forEach(function(tr) {
+      tr.clips.forEach(function(c) { maxEnd = Math.max(maxEnd, c.start+c.duration); });
+    });
+    self.duration = Math.max(180, maxEnd + 20);
+    self.saveHistory();
+  },
+
+  // ── RENDER TIMELINE ─────────────────────────────────────────────────
+  render: function() {
+    var self = this;
+    var labels = document.getElementById('e-tl-labels');
+    var rails = document.getElementById('e-tl-rails');
+    var ruler = document.getElementById('e-tl-ruler');
+    if(!labels||!rails||!ruler) return;
+
+    var pps = self.zoom; // pixels per second
+    var totalW = Math.max(2000, Math.ceil(self.duration * pps) + 300);
+
+    // Ruler
+    ruler.style.width = totalW+'px';
+    ruler.innerHTML = '';
+    var step = pps >= 40 ? 5 : pps >= 20 ? 10 : pps >= 10 ? 15 : 30;
+    for(var ts=0; ts<=self.duration+step; ts+=step) {
+      var mk = document.createElement('div');
+      mk.style.cssText = 'position:absolute;left:'+(ts*pps)+'px;top:0;bottom:0;border-left:.5px solid rgba(255,255,255,.08);padding-left:3px;display:flex;align-items:flex-end;padding-bottom:2px;';
+      mk.innerHTML = '<span style="font-size:7px;color:rgba(255,255,255,.3);white-space:nowrap;">'+self._fmtTime(ts)+'</span>';
+      ruler.appendChild(mk);
+    }
+
+    // Track labels and rails
+    labels.innerHTML = '';
+    rails.innerHTML = '';
+    rails.style.width = totalW+'px';
+    rails.style.minWidth = totalW+'px';
+    rails.style.position = 'relative';
+
+    self.tracks.forEach(function(track) {
+      var def = self.TRACK_TYPES[track.id];
+      if(!def) return;
+      var h = def.h || 48;
+
+      // ── LABEL ──
+      var lbl = document.createElement('div');
+      lbl.className = 'e-track-lbl';
+      lbl.style.height = h+'px';
+      lbl.style.minHeight = h+'px';
+      lbl.title = 'Click to select track';
+      lbl.innerHTML =
+        '<button onclick="E.muteTrack(''+track.id+'')" style="background:none;border:none;cursor:pointer;font-size:10px;padding:0;color:'+(track.muted?'#ef4444':'rgba(255,255,255,.4)')+';flex-shrink:0;" title="'+(track.muted?'Unmute':'Mute')+'">'+def.icon+'</button>'+
+        '<span style="font-size:8px;font-weight:600;color:rgba(255,255,255,.'+(track.muted?'2':'55')+');flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(track.collapsed?'▶ ':'')+'</span>'+
+        '<span style="font-size:7px;color:rgba(255,255,255,.25);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">'+def.label+'</span>'+
+        '<button onclick="E.lockTrack(''+track.id+'')" style="background:none;border:none;cursor:pointer;font-size:9px;padding:0;color:'+(track.locked?'#f59e0b':'rgba(255,255,255,.15)')+';flex-shrink:0;" title="'+(track.locked?'Unlock':'Lock')+'">'+( track.locked?'🔒':'🔓')+'</button>';
+      labels.appendChild(lbl);
+
+      // ── RAIL ──
+      var rail = document.createElement('div');
+      rail.className = 'e-track-rail';
+      rail.dataset.trackid = track.id;
+      rail.dataset.accepts = JSON.stringify(def.accepts);
+      rail.style.height = h+'px';
+      rail.style.minHeight = h+'px';
+      rail.style.width = totalW+'px';
+      rail.style.background = track.muted ? 'rgba(255,255,255,.01)' : 'rgba(255,255,255,.02)';
+
+      // Drop target
+      rail.ondragover = function(e) {
+        e.preventDefault();
+        var types = JSON.parse(this.dataset.accepts||'[]');
+        var dragType = e.dataTransfer.getData('mediaType') || 'video';
+        this.style.background = types.includes(dragType) ?
+          'rgba(0,212,255,.08)' : 'rgba(239,68,68,.08)';
+      };
+      rail.ondragleave = function() { this.style.background='rgba(255,255,255,.02)'; };
+      rail.ondrop = function(e) {
+        e.preventDefault();
+        this.style.background = 'rgba(255,255,255,.02)';
+        var clipId = e.dataTransfer.getData('clipId');
+        var mediaType = e.dataTransfer.getData('mediaType') || 'video';
+        var types = JSON.parse(this.dataset.accepts||'[]');
+        if(!types.includes(mediaType)) {
+          if(typeof toast==='function') toast('This track only accepts: '+types.join(', '),'error');
+          return;
+        }
+        var rect = rail.getBoundingClientRect();
+        var scroll = document.getElementById('e-tl-scroll');
+        var x = e.clientX - rect.left + (scroll?scroll.scrollLeft:0);
+        var newStart = Math.max(0, x/pps);
+        if(self.snap) newStart = Math.round(newStart * 10) / 10;
+        // Find clip in bin
+        var allMedia = Object.assign({},
+          Object.fromEntries(Object.entries(PROJECT.apsVideos||{}).map(([k,v])=>[k,Object.assign({mediaType:'video'},v)])),
+          Object.fromEntries(Object.entries(PROJECT.clips||{}).map(([k,v])=>[k,Object.assign({mediaType:'video'},v)])),
+          E._importedMedia||{}
+        );
+        var media = allMedia[clipId];
+        if(media) {
+          self.saveHistory();
+          track.clips.push({
+            id: clipId+'_'+Date.now(), url: media.url||media.videoUrl,
+            name: (media.sceneName||media.name||'Clip').slice(0,30),
+            start: newStart, duration: media.duration||10,
+            trimIn: 0, trimOut: media.duration||10,
+            mediaType: mediaType, source: 'import'
+          });
+          self.render();
+        }
+      };
+
+      // Click to set playhead
+      rail.addEventListener('click', function(e) {
+        if(e.target.classList.contains('e-clip')||e.target.closest('.e-clip')) return;
+        if(e.target.classList.contains('e-trim-l')||e.target.classList.contains('e-trim-r')) return;
+        var scroll = document.getElementById('e-tl-scroll');
+        var rect = rail.getBoundingClientRect();
+        var x = e.clientX - rect.left + (scroll?scroll.scrollLeft:0);
+        self.setPlayhead(x/pps);
+      });
+
+      // Render clips on this rail
+      track.clips.forEach(function(clip) {
+        if(!clip||clip.start==null) return;
+        var x = Math.round(clip.start * pps);
+        var w = Math.max(16, Math.round(clip.duration * pps));
+        var isSelected = self.selectedClip && self.selectedClip.id === clip.id;
+        var TRACK_COLORS = {video:'#1e40af',audio:'#065f46',text:'#0e7490',image:'#7c3aed',fx:'#78350f'};
+        var bg = TRACK_COLORS[def.type] || '#1e40af';
+
+        var clipEl = document.createElement('div');
+        clipEl.className = 'e-clip' + (isSelected?' selected':'');
+        clipEl.dataset.clipid = clip.id;
+        clipEl.dataset.trackid = track.id;
+        clipEl.draggable = true;
+        clipEl.style.cssText = 'left:'+x+'px;width:'+w+'px;background:'+bg+';border:.5px solid rgba(255,255,255,.15);';
+        clipEl.title = (clip.name||'Clip') + ' · ' + self._fmtTime(clip.duration);
+
+        // Video thumbnail (horizontal film-strip)
+        if((def.type==='video'||def.type==='image') && clip.url && w > 40) {
+          var tv = document.createElement('video');
+          tv.className = 'e-clip-thumb';
+          tv.src = clip.url;
+          tv.muted = true;
+          tv.preload = 'metadata';
+          tv.style.height = '100%';
+          tv.style.width = Math.min(w-8, 52)+'px';
+          tv.style.objectFit = 'cover';
+          tv.style.flexShrink = '0';
+          tv.addEventListener('loadedmetadata', function(){
+            this.currentTime = Math.min(0.3, this.duration*0.05);
+          });
+          clipEl.appendChild(tv);
+        }
+
+        // Audio waveform
+        if(def.type==='audio' && clip.url) {
+          var waveDiv = document.createElement('div');
+          waveDiv.className = 'e-clip-wave';
+          waveDiv.innerHTML = self._makeWave(w, h-4, 'rgba(16,185,129,.7)');
+          clipEl.appendChild(waveDiv);
+        }
+
+        // Clip info
+        var info = document.createElement('div');
+        info.className = 'e-clip-info';
+        info.innerHTML =
+          '<div class="e-clip-name">'+(clip.name||clip.text||'Clip')+'</div>'+
+          (w>50?'<div class="e-clip-dur">'+self._fmtTime(clip.duration)+'</div>':'');
+        clipEl.appendChild(info);
+
+        // Trim handles
+        var tl = document.createElement('div'); tl.className='e-trim-l';
+        var tr2 = document.createElement('div'); tr2.className='e-trim-r';
+        clipEl.appendChild(tl); clipEl.appendChild(tr2);
+
+        // Click: select + preview
+        clipEl.addEventListener('click', function(e) {
+          e.stopPropagation();
+          self.selectClip(track.id, clip.id);
+        });
+
+        // Drag to move
+        clipEl.addEventListener('dragstart', function(e) {
+          e.dataTransfer.setData('clipId', clip.id);
+          e.dataTransfer.setData('trackId', track.id);
+          e.dataTransfer.setData('dragType', 'MOVE');
+          clipEl.style.opacity='.5';
+        });
+        clipEl.addEventListener('dragend', function() { clipEl.style.opacity='1'; });
+
+        // Trim left
+        tl.addEventListener('mousedown', function(e) { e.stopPropagation(); self._trimStart(e, track.id, clip.id, 'left'); });
+        // Trim right
+        tr2.addEventListener('mousedown', function(e) { e.stopPropagation(); self._trimStart(e, track.id, clip.id, 'right'); });
+
+        // Context menu (right-click)
+        clipEl.addEventListener('contextmenu', function(e) {
+          e.preventDefault();
+          self._clipContextMenu(e, track.id, clip.id);
+        });
+
+        rail.appendChild(clipEl);
+      });
+
+      rails.appendChild(rail);
+    });
+
+    // Update playhead position
+    self._updatePlayhead();
+
+    // Update duration display
+    var durEl = document.getElementById('e-tl-dur');
+    if(durEl) durEl.textContent = self._fmtTime(self.duration);
+    var eDur = document.getElementById('e-dur');
+    if(eDur) eDur.textContent = self._fmtTime(self.duration);
+  },
+
+  // ── CLIP OPERATIONS ─────────────────────────────────────────────────
+  selectClip: function(trackId, clipId) {
+    var self = this;
+    var track = self.tracks.find(function(t){return t.id===trackId;});
+    var clip = track && track.clips.find(function(c){return c.id===clipId;});
+    if(!clip) return;
+    self.selectedClip = clip;
+    self._lastTrackId = trackId;
+    self.render();
+    self._showInspector(trackId, clip);
+    // Preview in source monitor
+    if(clip.url) {
+      var sv = document.getElementById('e-src-vid');
+      var empty = document.getElementById('e-src-empty');
+      var lbl = document.getElementById('e-src-label');
+      if(sv) { sv.src=clip.url; sv.style.display=''; sv.load(); }
+      if(empty) empty.style.display='none';
+      if(lbl) lbl.textContent = clip.name||'Clip';
+    }
+  },
+
+  split: function() {
+    var self = this;
+    if(!self.selectedClip) { if(typeof toast==='function') toast('Select a clip first','info'); return; }
+    var track = self.tracks.find(function(t){return t.id===self._lastTrackId;});
+    if(!track) return;
+    var clip = track.clips.find(function(c){return c.id===self.selectedClip.id;});
+    if(!clip) return;
+    var ph = self.playhead;
+    if(ph <= clip.start || ph >= clip.start+clip.duration) {
+      if(typeof toast==='function') toast('Move playhead inside the clip to split','info'); return;
+    }
+    self.saveHistory();
+    var leftDur = ph - clip.start;
+    var rightDur = clip.duration - leftDur;
+    var right = Object.assign({}, clip, {id:clip.id+'_r', start:ph, duration:rightDur, trimIn:clip.trimIn+leftDur});
+    clip.duration = leftDur;
+    clip.trimOut = clip.trimIn + leftDur;
+    track.clips.push(right);
+    track.clips.sort(function(a,b){return a.start-b.start;});
+    self.render();
+    if(typeof toast==='function') toast('Split at '+self._fmtTime(ph),'ok');
+  },
+
+  rippleDel: function() {
+    var self = this;
+    if(!self.selectedClip) { if(typeof toast==='function') toast('Select a clip first','info'); return; }
+    var track = self.tracks.find(function(t){return t.id===self._lastTrackId;});
+    if(!track) return;
+    self.saveHistory();
+    var idx = track.clips.findIndex(function(c){return c.id===self.selectedClip.id;});
+    if(idx<0) return;
+    var removed = track.clips.splice(idx,1)[0];
+    // Ripple: shift all subsequent clips left
+    track.clips.forEach(function(c) {
+      if(c.start > removed.start) c.start -= removed.duration;
+    });
+    self.selectedClip = null;
+    self.render();
+    self._showInspectorEmpty();
+    if(typeof toast==='function') toast('Clip deleted (ripple)','ok');
+  },
+
+  duplicate: function() {
+    var self = this;
+    if(!self.selectedClip) return;
+    var track = self.tracks.find(function(t){return t.id===self._lastTrackId;});
+    if(!track) return;
+    self.saveHistory();
+    var clip = track.clips.find(function(c){return c.id===self.selectedClip.id;});
+    if(!clip) return;
+    var dup = Object.assign({}, clip, {id:clip.id+'_dup'+Date.now(), start:clip.start+clip.duration+0.1});
+    track.clips.push(dup);
+    self.render();
+    if(typeof toast==='function') toast('Clip duplicated','ok');
+  },
+
+  // ── TOOL MANAGEMENT ─────────────────────────────────────────────────
+  setTool: function(tool) {
+    this.tool = tool;
+    ['select','razor','trim','slip','hand'].forEach(function(t) {
+      var b1 = document.getElementById('et-'+t.charAt(0).toUpperCase());
+      var b2 = document.getElementById('etlt-'+t.charAt(0).toUpperCase());
+      if(b1) b1.classList.toggle('on', t===tool);
+      if(b2) b2.classList.toggle('on', t===tool);
+    });
+    var map = {select:'default',razor:'crosshair',trim:'ew-resize',slip:'col-resize',hand:'grab'};
+    document.querySelectorAll('.e-track-rail').forEach(function(r){r.style.cursor=map[tool]||'default';});
+    if(typeof toast==='function') toast('Tool: '+tool,'info');
+  },
+
+  // ── PLAYBACK ─────────────────────────────────────────────────────────
+  _playlist: [],
+  _playIdx: 0,
+  _playTimer: null,
+
+  progToggle: function() {
+    var self = this;
+    if(self.playing) { self._progPause(); } else { self._progPlay(); }
+  },
+
+  _progPlay: function() {
+    var self = this;
+    self.playing = true;
+    var btn = document.getElementById('e-prog-play');
+    if(btn) btn.textContent = '⏸';
+
+    // Build playlist from main-video track sorted by start
+    var mainTrack = self.tracks.find(function(t){return t.id==='main-video';});
+    self._playlist = mainTrack ? mainTrack.clips.filter(function(c){return c.url;}).sort(function(a,b){return a.start-b.start;}) : [];
+    if(!self._playlist.length) {
+      if(typeof toast==='function') toast('No video clips on main track','info');
+      self.playing=false; if(btn) btn.textContent='▶'; return;
+    }
+
+    // Find clip at current playhead
+    self._playIdx = 0;
+    for(var i=0;i<self._playlist.length;i++) {
+      if(self._playlist[i].start <= self.playhead && self._playlist[i].start+self._playlist[i].duration > self.playhead) {
+        self._playIdx = i; break;
+      }
+    }
+    self._playClip(self._playIdx);
+  },
+
+  _playClip: function(idx) {
+    var self = this;
+    if(idx >= self._playlist.length) {
+      if(self.loop) { self._playIdx=0; self.setPlayhead(0); self._playClip(0); }
+      else { self._progPause(); }
       return;
     }
+    var clip = self._playlist[idx];
+    var pv = document.getElementById('e-prog-vid');
+    var empty = document.getElementById('e-prog-empty');
+    if(!pv) return;
+    pv.style.display='';
+    if(empty) empty.style.display='none';
+    pv.src = clip.url;
+    pv.currentTime = Math.max(0, self.playhead - clip.start);
+    pv.play().catch(function(){});
+    self._lastClip = clip;
+    self._playIdx = idx;
 
-    binEl.innerHTML = '';
-    clips.forEach(function(clip) {
-      var d = document.createElement('div');
-      d.draggable = true;
-      var id = clip.id || clip.sceneId || ('clip_'+Date.now());
-      var name = clip.sceneName || clip.name || clip.title || ('Scene ' + (clip.sceneNum || '?'));
-      var dur = clip.duration ? (Math.floor(clip.duration/60)+':'+(clip.duration%60<10?'0':'')+Math.floor(clip.duration%60)) : '';
-      var badge = clip._src === 'ai' ? 'AI' : clip._src === 'rec' ? '🎥' : '📁';
-      d.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 6px;border-radius:5px;cursor:pointer;border:.5px solid rgba(255,255,255,.05);background:rgba(255,255,255,.02);margin-bottom:2px;';
-      d.innerHTML = '<div style="width:42px;height:28px;background:#111;border-radius:3px;flex-shrink:0;overflow:hidden;position:relative;">'
-        + (clip.url ? '<video src="'+clip.url+'" style="width:100%;height:100%;object-fit:cover;" preload="metadata" muted></video>' : '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:14px;">'+badge+'</div>')
-        + '</div>'
-        + '<div style="flex:1;min-width:0;">'
-        + '<div style="font-size:9px;font-weight:600;color:rgba(255,255,255,.8);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+name.slice(0,22)+'</div>'
-        + '<div style="font-size:8px;color:rgba(255,255,255,.25);">'+badge+' '+dur+'</div>'
-        + '</div>';
-      d.onclick = function() {
-        // Preview in source monitor (edit-video)
-        if (clip.url) {
-          var vid = document.getElementById('edit-video');
-          var noClips = document.getElementById('edit-no-clips');
-          if (vid) { vid.src = clip.url; vid.style.display = ''; if (noClips) noClips.style.display = 'none'; vid.load(); }
-          // Show scene narration if available
-          var sceneInfo = document.getElementById('edit-scene-info');
-          if (sceneInfo && (clip.sceneNum || clip.narration)) {
-            sceneInfo.style.display = 'block';
-            sceneInfo.textContent = 'Scene ' + (clip.sceneNum || '?') + (clip.narration ? ': ' + clip.narration.slice(0,50) : '');
+    // Advance playhead in sync
+    clearInterval(self._playTimer);
+    self._playTimer = setInterval(function() {
+      if(!pv.paused && pv.duration) {
+        var abs = clip.start + pv.currentTime;
+        self.setPlayhead(abs, true);
+        self._updateSubtitles(abs);
+      }
+    }, 50);
+  },
+
+  _progNext: function() {
+    var self = this;
+    clearInterval(self._playTimer);
+    if(!self.playing) return;
+    self._playClip(self._playIdx + 1);
+  },
+
+  _progPause: function() {
+    var self = this;
+    self.playing = false;
+    clearInterval(self._playTimer);
+    var pv = document.getElementById('e-prog-vid');
+    if(pv) pv.pause();
+    var btn = document.getElementById('e-prog-play');
+    if(btn) btn.textContent = '▶';
+  },
+
+  progSeek: function(pct) {
+    var pos = (pct/100) * this.duration;
+    this.setPlayhead(pos);
+    if(this.playing) { this._progPause(); this._progPlay(); }
+  },
+
+  progStep: function(secs) {
+    this.setPlayhead(Math.max(0, Math.min(this.duration, this.playhead + secs)));
+  },
+
+  progJump: function(end) {
+    this.setPlayhead(end < 0 ? this.duration : 0);
+  },
+
+  setPlayhead: function(t, skipRender) {
+    this.playhead = Math.max(0, Math.min(this.duration, t));
+    this._updatePlayhead();
+    this._updateTC();
+    if(!skipRender) this.render();
+  },
+
+  _updatePlayhead: function() {
+    var ph = document.getElementById('e-tl-ph');
+    if(ph) ph.style.left = Math.round(this.playhead * this.zoom) + 'px';
+    var tcEl = document.getElementById('e-ph-tc');
+    if(tcEl) tcEl.textContent = this._fmtTime(this.playhead);
+  },
+
+  _updateTC: function() {
+    var tc = this._fmtTime(this.playhead) + ' / ' + this._fmtTime(this.duration);
+    var e1 = document.getElementById('e-prog-tc');
+    var e2 = document.getElementById('e-prog-tc2');
+    var sk = document.getElementById('e-prog-seek');
+    if(e1) e1.textContent = tc;
+    if(e2) e2.textContent = tc;
+    if(sk) sk.value = this.duration > 0 ? (this.playhead/this.duration*100).toFixed(1) : 0;
+  },
+
+  _updateSubtitles: function(t) {
+    if(!this.subsOn) return;
+    var subsEl = document.getElementById('e-prog-subs');
+    if(!subsEl) return;
+    var subsTrack = this.tracks.find(function(tr){return tr.id==='subtitle';});
+    if(!subsTrack) return;
+    var active = subsTrack.clips.find(function(c){return t>=c.start && t<c.start+c.duration;});
+    if(active) { subsEl.style.display=''; subsEl.textContent=active.text||active.name||''; }
+    else { subsEl.style.display='none'; }
+  },
+
+  // ── SOURCE MONITOR ──────────────────────────────────────────────────
+  srcToggle: function() {
+    var sv = document.getElementById('e-src-vid');
+    var btn = document.getElementById('e-src-play');
+    if(!sv||!sv.src) return;
+    if(sv.paused) { sv.play(); if(btn) btn.textContent='⏸'; }
+    else { sv.pause(); if(btn) btn.textContent='▶'; }
+  },
+  srcSeek: function(pct) {
+    var sv = document.getElementById('e-src-vid');
+    if(sv&&sv.duration) sv.currentTime = sv.duration * pct/100;
+  },
+  srcStep: function(s) {
+    var sv = document.getElementById('e-src-vid');
+    if(sv) sv.currentTime = Math.max(0,(sv.currentTime||0)+s);
+  },
+  srcJump: function(end) {
+    var sv = document.getElementById('e-src-vid');
+    if(!sv) return;
+    sv.currentTime = end<0 ? (sv.duration||0) : 0;
+  },
+  srcToTimeline: function() {
+    var self = this;
+    var sv = document.getElementById('e-src-vid');
+    if(!sv||!sv.src) { if(typeof toast==='function') toast('No clip in source monitor','info'); return; }
+    var mainTrack = self.tracks.find(function(t){return t.id==='main-video';});
+    if(!mainTrack) return;
+    self.saveHistory();
+    var dur = sv.duration || 10;
+    var lastEnd = mainTrack.clips.reduce(function(m,c){return Math.max(m,c.start+c.duration);},0);
+    mainTrack.clips.push({
+      id: 'src_'+Date.now(), url: sv.src,
+      name: (document.getElementById('e-src-label')||{}).textContent||'Clip',
+      start: lastEnd, duration: dur, trimIn:0, trimOut:dur, mediaType:'video'
+    });
+    self.render();
+    if(typeof toast==='function') toast('Added to timeline','ok');
+  },
+  srcFullscreen: function() {
+    var sv = document.getElementById('e-src-vid');
+    if(sv&&sv.requestFullscreen) sv.requestFullscreen();
+  },
+  _srcTimeUpdate: function() {
+    var sv = document.getElementById('e-src-vid');
+    if(!sv) return;
+    var tc = document.getElementById('e-src-tc');
+    var sk = document.getElementById('e-src-seek');
+    var btn = document.getElementById('e-src-play');
+    if(tc) tc.textContent = this._fmtTime(sv.currentTime)+' / '+this._fmtTime(sv.duration||0);
+    if(sk&&sv.duration) sk.value=(sv.currentTime/sv.duration*100).toFixed(1);
+    if(btn) btn.textContent = sv.paused?'▶':'⏸';
+  },
+
+  // ── SUBTITLES & LOOP ────────────────────────────────────────────────
+  toggleSubs: function() {
+    this.subsOn = !this.subsOn;
+    var btn = document.getElementById('e-sub-btn');
+    var subsEl = document.getElementById('e-prog-subs');
+    if(btn) btn.style.color = this.subsOn ? '#00d4ff' : 'rgba(255,255,255,.4)';
+    if(subsEl) subsEl.style.display = this.subsOn ? '' : 'none';
+    if(typeof toast==='function') toast('Subtitles '+(this.subsOn?'ON':'OFF'),'info');
+  },
+  toggleLoop: function() {
+    this.loop = !this.loop;
+    var btn = document.getElementById('e-loop-btn');
+    if(btn) btn.style.color = this.loop ? '#a78bfa' : 'rgba(255,255,255,.4)';
+    if(typeof toast==='function') toast('Loop '+(this.loop?'ON':'OFF'),'info');
+  },
+  cycleQuality: function() {
+    var opts=['HD','1080p','720p','4K']; var el=document.getElementById('e-qual');
+    if(!el) return;
+    var i=(opts.indexOf(el.textContent)+1)%opts.length;
+    el.textContent=opts[i];
+    if(typeof toast==='function') toast('Quality: '+opts[i],'info');
+  },
+  cycleRatio: function() {
+    var opts=['16:9','9:16','1:1','4:3','21:9']; var el=document.getElementById('e-ratio');
+    if(!el) return;
+    var i=(opts.indexOf(el.textContent)+1)%opts.length;
+    el.textContent=opts[i];
+    if(typeof toast==='function') toast('Aspect ratio: '+opts[i],'info');
+  },
+  progFullscreen: function() {
+    var pv = document.getElementById('e-prog-vid');
+    if(pv&&pv.requestFullscreen) pv.requestFullscreen();
+  },
+  safeZones: function() {
+    var el1=document.getElementById('e-src-safe'), el2=document.getElementById('e-prog-safe');
+    var on = el1 && el1.style.display==='none';
+    if(el1) el1.style.display=on?'':'none';
+    if(el2) el2.style.display=on?'':'none';
+    if(typeof toast==='function') toast('Safe zones '+(on?'ON':'OFF'),'info');
+  },
+
+  // ── TIMELINE ZOOM ────────────────────────────────────────────────────
+  tlSetZoom: function(v) {
+    this.zoom = Math.max(1, Math.min(30, +v));
+    var lbl = document.getElementById('e-zoom-lbl');
+    if(lbl) lbl.textContent = Math.round(this.zoom)+'x';
+    var slider = document.getElementById('e-zoom');
+    if(slider) slider.value = this.zoom;
+    this.render();
+  },
+  tlZoom: function(dir) { this.tlSetZoom(this.zoom + dir*2); },
+  tlFit: function() {
+    var scroll = document.getElementById('e-tl-scroll');
+    if(!scroll||!this.duration) return;
+    var w = scroll.offsetWidth;
+    this.tlSetZoom(Math.max(1, (w-20)/this.duration));
+  },
+  tlAddTrack: function() {
+    var name = prompt('Track name:');
+    if(!name) return;
+    var type = prompt('Type (video/audio/image/text/fx):','audio')||'audio';
+    var newTrack = {id:'custom_'+Date.now(), clips:[], muted:false, locked:false, volume:1};
+    var icon = {video:'🎬',audio:'🎵',image:'🖼',text:'📝',fx:'✨'}[type]||'🎵';
+    this.TRACK_TYPES[newTrack.id]={label:name,icon:icon,type:type,color:'#374151',h:42,accepts:[type]};
+    this.tracks.push(newTrack);
+    this.render();
+    if(typeof toast==='function') toast('Track added: '+name,'ok');
+  },
+  saveMarker: function() {
+    var self=this;
+    if(!window._markers) window._markers=[];
+    window._markers.push({t:self.playhead, label:prompt('Marker label:','Marker')||'Marker'});
+    self.render();
+    if(typeof toast==='function') toast('Marker set at '+self._fmtTime(self.playhead),'ok');
+  },
+  syncScroll: function(el) {
+    var labels = document.getElementById('e-tl-labels');
+    if(labels) labels.scrollTop = el.scrollTop;
+  },
+  toggleSnap: function() {
+    this.snap = !this.snap;
+    var btn=document.getElementById('e-snap-btn');
+    if(btn) btn.classList.toggle('on',this.snap);
+    if(typeof toast==='function') toast('Snap '+(this.snap?'ON':'OFF'),'info');
+  },
+  muteTrack: function(id) {
+    var t=this.tracks.find(function(t){return t.id===id;});
+    if(t){t.muted=!t.muted;this.render();}
+  },
+  lockTrack: function(id) {
+    var t=this.tracks.find(function(t){return t.id===id;});
+    if(t){t.locked=!t.locked;this.render();}
+  },
+  multiSelect: function() {
+    if(typeof toast==='function') toast('Click + Shift-click clips to multi-select','info');
+  },
+
+  // ── MEDIA BIN ────────────────────────────────────────────────────────
+  refreshBin: function() {
+    var self = this;
+    var binEl = document.getElementById('ebin-clips');
+    if(!binEl) return;
+    var clips = [];
+    Object.entries(window.PROJECT&&PROJECT.apsVideos||{}).forEach(function(e){clips.push(Object.assign({_k:e[0],_src:'ai',mediaType:'video'},e[1]));});
+    Object.entries(window.PROJECT&&PROJECT.clips||{}).forEach(function(e){clips.push(Object.assign({_k:e[0],_src:'rec',mediaType:'video'},e[1]));});
+    Object.values(self._importedMedia||{}).forEach(function(m){clips.push(Object.assign({_src:'import'},m));});
+    clips.sort(function(a,b){return (a.sceneNum||0)-(b.sceneNum||0);});
+
+    if(!clips.length) {
+      binEl.innerHTML='<div style="font-size:9px;color:rgba(255,255,255,.12);text-align:center;padding:16px 0;">No clips yet</div>';
+    } else {
+      binEl.innerHTML='';
+      clips.forEach(function(clip) {
+        var id = clip._k || clip.id || ('clip_'+Date.now());
+        var name = (clip.sceneName||clip.name||('Scene '+(clip.sceneNum||'?'))).slice(0,28);
+        var dur = clip.duration ? (Math.floor(clip.duration/60)+':'+(clip.duration%60<10?'0':'')+Math.floor(clip.duration%60)) : '';
+        var badge = clip._src==='ai'?'🤖':clip._src==='rec'?'🎥':'📁';
+        var d = document.createElement('div');
+        d.className = 'e-bin-item';
+        d.draggable = true;
+        d.innerHTML =
+          '<div style="width:40px;height:26px;background:#111;border-radius:3px;flex-shrink:0;overflow:hidden;position:relative;">'
+            +(clip.url||clip.videoUrl?'<video src="'+(clip.url||clip.videoUrl)+'" style="width:100%;height:100%;object-fit:cover;" preload="metadata" muted></video>':'<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;">'+badge+'</div>')
+          +'</div>'
+          +'<div style="flex:1;min-width:0;">'
+            +'<div style="font-size:8px;font-weight:600;color:rgba(255,255,255,.75);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+name+'</div>'
+            +'<div style="font-size:7px;color:rgba(255,255,255,.25);">'+badge+' '+dur+'</div>'
+          +'</div>';
+
+        d.onclick = function() {
+          document.querySelectorAll('.e-bin-item').forEach(function(i){i.classList.remove('active');});
+          d.classList.add('active');
+          if(clip.url||clip.videoUrl) {
+            var sv = document.getElementById('e-src-vid');
+            var empty = document.getElementById('e-src-empty');
+            var lbl = document.getElementById('e-src-label');
+            if(sv){sv.src=clip.url||clip.videoUrl;sv.style.display='';sv.load();}
+            if(empty) empty.style.display='none';
+            if(lbl) lbl.textContent=name;
           }
-        }
-        if (typeof tl_previewClip==='function' && clip.url) tl_previewClip(clip.url);
-      };
-      // Drag to timeline
-      d.ondragstart = function(e) {
-        // Add to TL.importedMedia so tl_onDrop can find it
-        if (!TL.importedMedia) TL.importedMedia = {};
-        TL.importedMedia[id] = { id:id, url:clip.url, name:name, duration:clip.duration||10 };
-        e.dataTransfer.setData('clipId', id);
-        d.style.opacity = '0.5';
-      };
-      d.ondragend = function() { d.style.opacity = '1'; };
-      binEl.appendChild(d);
-    });
-    var cc = document.getElementById('edit-clip-count');
-    if (cc) cc.textContent = clips.length + ' clip' + (clips.length!==1?'s':'');
-  };
-
-  // Build initial playlist from project clips when entering edit-pg
-  window.edit_buildPlaylist = function() {
-    if (!window.PROJECT || !window.TL) return;
-    var mainTrack = TL.tracks && TL.tracks.find(function(t){ return t.id==='main-video'||t.id==='track_video'||t.id==='main'; });
-    if (!mainTrack) return;
-
-    var allClips = [];
-    // AI presenter clips
-    Object.values(window.PROJECT.apsVideos || {}).forEach(function(c) { allClips.push(c); });
-    // Recorded clips (add to separate track if AI already present)
-    Object.values(window.PROJECT.clips || {}).forEach(function(c) { allClips.push(c); });
-    allClips.sort(function(a,b){ return (a.sceneNum||0)-(b.sceneNum||0); });
-
-    if (!allClips.length) { edit_refreshBin(); return; }
-
-    // Only auto-populate if track is empty
-    if (mainTrack.clips && mainTrack.clips.length === 0) {
-      var t = 0;
-      allClips.forEach(function(clip) {
-        if (!clip.url && !clip.videoUrl) return;
-        var dur = clip.duration || 10;
-        mainTrack.clips.push({
-          id: (clip.id||clip.sceneId||'clip') + '_tl',
-          url: clip.url || clip.videoUrl,
-          name: (clip.sceneName || clip.title || 'Scene ' + (clip.sceneNum||'')).slice(0,20),
-          start: t, duration: dur, trimIn: 0, trimOut: dur,
-          color: clip.source==='recording' ? '#1e40af' : '#581c87'
-        });
-        t += dur;
-      });
-      TL.duration = Math.max(TL.duration||0, t);
-      if (typeof tl_render==='function') tl_render();
-    }
-
-    // Generate subtitle track from scene narrations
-    var subsTrack = TL.tracks && TL.tracks.find(function(t){ return t.id==='subtitles'; });
-    if (subsTrack && subsTrack.clips.length === 0 && PROJECT.scenes && PROJECT.scenes.length) {
-      if (typeof tl_generateSubtitleBlocks==='function') {
-        tl_generateSubtitleBlocks();
-        if (TL.subtitleBlocks && TL.subtitleBlocks.length) {
-          subsTrack.clips = TL.subtitleBlocks.map(function(b,i) {
-            return { id:'sub_'+i, text:b.text, label:b.text,
-              start:b.start, duration:(b.end-b.start)||2, type:'subtitle',
-              textStyle:{text:b.text,fontSize:16,color:'#fff',bg:'rgba(0,0,0,.6)',position:'bottom'}
-            };
-          });
-          if (typeof tl_render==='function') tl_render();
-        }
-      }
-    }
-
-    edit_refreshBin();
-
-    // Set project title in edit bar
-    var titleEl = document.getElementById('edit-title');
-    if (titleEl && PROJECT.title) titleEl.textContent = '✂️ ' + PROJECT.title;
-  };
-
-  // ── 4. SAVE HOOK — ensure project saves include narrations on timeline changes ──
-  var _origSave = window.saveProject;
-  if (_origSave && !window._saveHooked2) {
-    window._saveHooked2 = true;
-    window.saveProject = function() {
-      // Sync subtitle edits back to scene narrations
-      if (window.TL && window.PROJECT && window.PROJECT.scenes) {
-        var subsTrack = TL.tracks && TL.tracks.find(function(t){ return t.id==='subtitles'; });
-        if (subsTrack) {
-          // Store subtitle edits in project for persistence
-          PROJECT._subtitleEdits = subsTrack.clips.map(function(c){ return {text:c.text,start:c.start,dur:c.duration}; });
-        }
-      }
-      return _origSave.apply(window, arguments);
-    };
-  }
-
-  // ── 5. RECORDING STUDIO — ensure teleprompter controls work ─────────────────
-  // These functions exist in original but sometimes need re-wiring
-  // Only wire if they don't already work
-  setTimeout(function() {
-    // Ensure tp speed slider syncs
-    ['tp-speed-slider','tp-spd-range','tp-spd'].forEach(function(id) {
-      var el = document.getElementById(id);
-      if (el && !el._wired) {
-        el._wired = true;
-        el.oninput = function() {
-          if (typeof setTpSpd==='function') setTpSpd(this.value);
         };
-      }
-    });
-    // Ensure font size buttons work  
-    var aBtn = document.getElementById('btn-tp-a-plus') || document.querySelector('[onclick*="increaseTpFont"]');
-    var mBtn = document.getElementById('btn-tp-a-minus') || document.querySelector('[onclick*="decreaseTpFont"]');
-    // These should already work from original; just verify
-  }, 2000);
 
-  // ── 6. AUTO-INIT on page load ─────────────────────────────────────────────
-  function _onReady() {
-    // Auto-refresh bin when edit page is shown
-    document.addEventListener('aab_nav', function(e) {
-      if (e.detail && e.detail.page === 'edit-pg') {
-        setTimeout(function() { edit_refreshBin(); edit_buildPlaylist(); }, 400);
-        setTimeout(function(){ var r=document.querySelector('#edit-topbar>div+div'); if(r)r.style.setProperty('display','flex','important'); }, 200);
-        setTimeout(function(){ _initDualMonitors(); _showTimeline(); }, 300);
-      }
-      if (e.detail && e.detail.page === 'record-pg') {
-        setTimeout(function() {
-          if (typeof initStudio==='function') initStudio();
-        }, 200);
-      }
-    });
-    // If already on edit-pg on load
-    var editPg = document.getElementById('edit-pg');
-    if (editPg && editPg.classList.contains('on')) {
-      setTimeout(function() { edit_refreshBin(); edit_buildPlaylist(); }, 600);
+        d.ondragstart = function(e) {
+          if(!self._importedMedia) self._importedMedia={};
+          self._importedMedia[id]={id:id,url:clip.url||clip.videoUrl,name:name,duration:clip.duration||10,mediaType:'video'};
+          e.dataTransfer.setData('clipId',id);
+          e.dataTransfer.setData('mediaType','video');
+          d.style.opacity='.5';
+        };
+        d.ondragend=function(){d.style.opacity='1';};
+        binEl.appendChild(d);
+      });
     }
+    var countEl=document.getElementById('ebin-count');
+    if(countEl) countEl.textContent=clips.length+' clip'+(clips.length!==1?'s':'');
+  },
+
+  binTab: function(tab) {
+    ['clips','assets','fx'].forEach(function(t) {
+      var p=document.getElementById('ebin-'+t), b=document.getElementById('ebt-'+t);
+      if(p){p.style.display=t===tab?'flex':'none'; if(t===tab)p.style.flexDirection='column';}
+      if(b){b.classList.toggle('on',t===tab);}
+    });
+  },
+
+  // ── IMPORT ───────────────────────────────────────────────────────────
+  import: function(type) {
+    var self=this;
+    var inp=document.createElement('input');
+    inp.type='file';
+    inp.accept=type==='video'?'video/*':type==='audio'?'audio/*':'image/*';
+    inp.onchange=function(){
+      var file=inp.files[0]; if(!file) return;
+      var url=URL.createObjectURL(file);
+      if(!self._importedMedia) self._importedMedia={};
+      var id='imp_'+Date.now();
+      var mediaType=file.type.startsWith('video')?'video':file.type.startsWith('audio')?'audio':'image';
+      var loadEl=file.type.startsWith('image')?new Image():document.createElement(file.type.startsWith('video')?'video':'audio');
+      loadEl.src=url;
+      var onLoad=function(){
+        self._importedMedia[id]={id:id,url:url,name:file.name,type:type,mediaType:mediaType,duration:loadEl.duration||5,file:file};
+        self.refreshBin();
+        if(typeof toast==='function') toast('Imported: '+file.name,'ok');
+      };
+      if(file.type.startsWith('image')) { loadEl.onload=onLoad; }
+      else { loadEl.onloadedmetadata=onLoad; }
+    };
+    inp.click();
+  },
+
+  // ── FILTERS / AUDIO / TRANSITIONS ───────────────────────────────────
+  dd: function(id) {
+    var el=document.getElementById(id);
+    if(!el) return;
+    var open=el.style.display!=='none';
+    document.querySelectorAll('.emenu-panel').forEach(function(p){p.style.display='none';});
+    el.style.display=open?'none':'block';
+  },
+  filter: function(f) {
+    document.querySelectorAll('.emenu-panel').forEach(function(p){p.style.display='none';});
+    if(!this.selectedClip){if(typeof toast==='function')toast('Select a clip first','info');return;}
+    var filters={cinematic:'contrast(1.1) saturate(.85) sepia(.12)',warm:'sepia(.25) saturate(1.2)',cool:'saturate(.9) hue-rotate(20deg)',bw:'grayscale(1)',vignette:'brightness(.9)',grain:'contrast(1.05)',none:''};
+    this.selectedClip.filter=f;
+    var sv=document.getElementById('e-src-vid');
+    if(sv) sv.style.filter=filters[f]||'';
+    if(typeof toast==='function') toast('Filter: '+f,'ok');
+  },
+  audio: function(tool) {
+    document.querySelectorAll('.emenu-panel').forEach(function(p){p.style.display='none';});
+    if(!this.selectedClip){if(typeof toast==='function')toast('Select a clip first','info');return;}
+    this.selectedClip['audio_'+tool]=true;
+    if(typeof toast==='function') toast(tool+' applied','ok');
+  },
+  masterVol: function(v) { this.masterVol=+v; var pv=document.getElementById('e-prog-vid'); if(pv) pv.volume=Math.min(1,+v); },
+  transition: function(type) {
+    document.querySelectorAll('.emenu-panel').forEach(function(p){p.style.display='none';});
+    if(!this.selectedClip){if(typeof toast==='function')toast('Select a clip first','info');return;}
+    this.selectedClip.transition=type;
+    if(typeof toast==='function') toast('Transition: '+type,'ok');
+  },
+  transitionAll: function(type) {
+    document.querySelectorAll('.emenu-panel').forEach(function(p){p.style.display='none';});
+    this.saveHistory();
+    this.tracks.forEach(function(t){t.clips.forEach(function(c,i){if(i>0)c.transition=type;});});
+    this.render();
+    if(typeof toast==='function') toast('Dissolve applied to all cuts','ok');
+  },
+  addText: function(style) {
+    document.querySelectorAll('.emenu-panel').forEach(function(p){p.style.display='none';});
+    var subsTrack=this.tracks.find(function(t){return t.id==='subtitle';});
+    if(!subsTrack){if(typeof toast==='function')toast('No subtitle track','info');return;}
+    this.saveHistory();
+    subsTrack.clips.push({id:'txt_'+Date.now(),text:'Click to edit',name:'Click to edit',start:this.playhead,duration:5,mediaType:'text',textStyle:style});
+    this.render();
+    if(typeof toast==='function') toast(style+' added','ok');
+  },
+  addOverlay: function(type) {
+    document.querySelectorAll('.emenu-panel').forEach(function(p){p.style.display='none';});
+    var ovlTrack=this.tracks.find(function(t){return t.id==='overlay';});
+    if(!ovlTrack){if(typeof toast==='function')toast('No overlay track','info');return;}
+    if(type==='image'||type==='logo') { this.import('image'); return; }
+    this.saveHistory();
+    ovlTrack.clips.push({id:'ovl_'+Date.now(),name:type+' overlay',start:this.playhead,duration:5,mediaType:'image',overlayType:type});
+    this.render();
+    if(typeof toast==='function') toast(type+' overlay added','ok');
+  },
+  speedDialog: function() {
+    document.querySelectorAll('.emenu-panel').forEach(function(p){p.style.display='none';});
+    if(!this.selectedClip){if(typeof toast==='function')toast('Select a clip first','info');return;}
+    var spd=prompt('Speed (0.25–4.0):','1.0');
+    if(!spd) return;
+    var v=parseFloat(spd);
+    if(isNaN(v)||v<0.1||v>4){if(typeof toast==='function')toast('Invalid speed','error');return;}
+    this.saveHistory();
+    this.selectedClip.speed=v;
+    this.selectedClip.duration=this.selectedClip.duration/v;
+    this.render();
+    if(typeof toast==='function') toast('Speed: '+v+'x','ok');
+  },
+  freeze: function() {
+    document.querySelectorAll('.emenu-panel').forEach(function(p){p.style.display='none';});
+    if(typeof toast==='function') toast('Freeze: split clip at playhead first, then speed 0 the second half','info');
+  },
+  autoCaption: function() {
+    document.querySelectorAll('.emenu-panel').forEach(function(p){p.style.display='none';});
+    if(!window.PROJECT||!PROJECT.scenes||!PROJECT.scenes.length){
+      if(typeof toast==='function') toast('No scenes — add script first','info'); return;
+    }
+    var subsTrack=this.tracks.find(function(t){return t.id==='subtitle';});
+    if(!subsTrack) return;
+    this.saveHistory();
+    subsTrack.clips=[];
+    var t=0, wpm=PROJECT.wpm||150;
+    PROJECT.scenes.forEach(function(scene){
+      var words=(scene.narration||'').trim().split(/s+/).filter(Boolean);
+      if(!words.length){t+=(scene.duration||8);return;}
+      var dur=scene.duration||Math.max(4,(words.length/wpm)*60);
+      for(var i=0;i<words.length;i+=8){
+        var chunk=words.slice(i,i+8).join(' ');
+        var cd=(chunk.split(/s+/).length/(wpm/60));
+        subsTrack.clips.push({id:'sub_'+t+'_'+i,text:chunk,name:chunk.slice(0,20),start:t+(i/words.length)*dur,duration:Math.min(cd,6),mediaType:'text'});
+      }
+      t+=dur;
+    });
+    this.render();
+    if(typeof toast==='function') toast(subsTrack.clips.length+' captions generated','ok');
+  },
+  exportSRT: function() {
+    document.querySelectorAll('.emenu-panel').forEach(function(p){p.style.display='none';});
+    var subsTrack=this.tracks.find(function(t){return t.id==='subtitle';});
+    if(!subsTrack||!subsTrack.clips.length){if(typeof toast==='function')toast('No subtitles','info');return;}
+    var lines=[];
+    subsTrack.clips.sort(function(a,b){return a.start-b.start;}).forEach(function(c,i){
+      var fmt=function(s){var h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=Math.floor(s%60),ms=Math.floor((s%1)*1000);return h+':'+String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0')+','+String(ms).padStart(3,'0');};
+      lines.push((i+1)+'
+'+fmt(c.start)+' --> '+fmt(c.start+c.duration)+'
+'+(c.text||c.name||'')+'
+');
+    });
+    var blob=new Blob([lines.join('
+')],{type:'text/plain'});
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=(PROJECT&&PROJECT.title||'subtitles').replace(/[^a-z0-9]/gi,'_')+'.srt';
+    a.click();
+    if(typeof toast==='function') toast('SRT exported','ok');
+  },
+
+  // ── TRIM ─────────────────────────────────────────────────────────────
+  _trimStart: function(e, trackId, clipId, side) {
+    var self=this;
+    var startX=e.clientX;
+    var track=self.tracks.find(function(t){return t.id===trackId;});
+    var clip=track&&track.clips.find(function(c){return c.id===clipId;});
+    if(!clip||track.locked) return;
+    var origStart=clip.start, origDur=clip.duration;
+    self.saveHistory();
+    function onMove(ev) {
+      var dx=(ev.clientX-startX)/self.zoom;
+      if(side==='left'){
+        var newStart=Math.max(0,origStart+dx);
+        var newDur=origDur-(newStart-origStart);
+        if(newDur<0.1) return;
+        clip.start=newStart; clip.duration=newDur;
+      } else {
+        var newDur2=Math.max(0.1,origDur+dx);
+        clip.duration=newDur2;
+      }
+      self.render();
+    }
+    function onUp(){
+      document.removeEventListener('mousemove',onMove);
+      document.removeEventListener('mouseup',onUp);
+    }
+    document.addEventListener('mousemove',onMove);
+    document.addEventListener('mouseup',onUp);
+  },
+
+  // ── INSPECTOR ────────────────────────────────────────────────────────
+  _showInspector: function(trackId, clip) {
+    var body=document.getElementById('e-insp-body');
+    if(!body) return;
+    var def=this.TRACK_TYPES[trackId]||{};
+    body.innerHTML=
+      '<div style="font-size:8px;font-weight:700;color:rgba(255,255,255,.5);margin-bottom:8px;">'+def.icon+' '+(def.label||trackId).toUpperCase()+'</div>'+
+      '<div style="font-size:10px;font-weight:600;color:rgba(255,255,255,.8);margin-bottom:12px;">'+(clip.name||clip.text||'Clip')+'</div>'+
+      '<div style="font-size:8px;color:rgba(255,255,255,.3);margin-bottom:4px;">POSITION</div>'+
+      '<input type="number" value="'+clip.start.toFixed(2)+'" step=".1" style="width:100%;background:rgba(255,255,255,.05);border:.5px solid rgba(255,255,255,.1);border-radius:4px;color:#fff;padding:3px 6px;font-size:10px;margin-bottom:8px;" oninput="E._clipProp('start',+this.value)">'+
+      '<div style="font-size:8px;color:rgba(255,255,255,.3);margin-bottom:4px;">DURATION</div>'+
+      '<input type="number" value="'+clip.duration.toFixed(2)+'" step=".1" style="width:100%;background:rgba(255,255,255,.05);border:.5px solid rgba(255,255,255,.1);border-radius:4px;color:#fff;padding:3px 6px;font-size:10px;margin-bottom:8px;" oninput="E._clipProp('duration',+this.value)">'+
+      '<div style="font-size:8px;color:rgba(255,255,255,.3);margin-bottom:4px;">VOLUME</div>'+
+      '<input type="range" min="0" max="2" step=".05" value="'+(clip.volume||1)+'" style="width:100%;accent-color:#10b981;margin-bottom:8px;" oninput="E._clipProp('volume',+this.value)">'+
+      '<div style="font-size:8px;color:rgba(255,255,255,.3);margin-bottom:4px;">SPEED</div>'+
+      '<input type="range" min=".25" max="4" step=".05" value="'+(clip.speed||1)+'" style="width:100%;accent-color:#f59e0b;margin-bottom:8px;" oninput="E._clipProp('speed',+this.value)">'+
+      '<div style="font-size:8px;color:rgba(255,255,255,.3);margin-bottom:4px;">TRANSITION BEFORE</div>'+
+      '<select style="width:100%;background:rgba(255,255,255,.05);border:.5px solid rgba(255,255,255,.1);border-radius:4px;color:#fff;padding:3px 6px;font-size:10px;margin-bottom:8px;" onchange="E._clipProp('transition',this.value)">'+
+        ['cut','dissolve','fade-black','fade-white','zoom-in','zoom-out','slide-left','whip','blur'].map(function(t){return '<option value="'+t+'"'+(clip.transition===t?' selected':'')+'>'+t+'</option>';}).join('')+
+      '</select>'+
+      (clip.url?'<div style="font-size:7px;color:rgba(255,255,255,.2);word-break:break-all;margin-top:4px;">'+clip.url.slice(0,60)+'…</div>':'');
+  },
+  _showInspectorEmpty: function() {
+    var body=document.getElementById('e-insp-body');
+    if(body) body.innerHTML='<div style="font-size:9px;color:rgba(255,255,255,.12);text-align:center;padding:16px 0;">Select a clip on the<br>timeline to inspect.</div>';
+  },
+  _clipProp: function(prop, val) {
+    if(!this.selectedClip) return;
+    this.selectedClip[prop]=val;
+    this.render();
+  },
+
+  // ── CONTEXT MENU ─────────────────────────────────────────────────────
+  _clipContextMenu: function(e, trackId, clipId) {
+    var self=this;
+    var existing=document.getElementById('e-ctx-menu');
+    if(existing) existing.remove();
+    self.selectClip(trackId, clipId);
+    var menu=document.createElement('div');
+    menu.id='e-ctx-menu';
+    menu.style.cssText='position:fixed;left:'+e.clientX+'px;top:'+e.clientY+'px;background:#10131e;border:.5px solid rgba(255,255,255,.12);border-radius:8px;z-index:9999;padding:4px 0;min-width:160px;box-shadow:0 8px 32px rgba(0,0,0,.8);';
+    var items=[
+      ['✂ Split at playhead','S',function(){self.split();}],
+      ['⧉ Duplicate','D',function(){self.duplicate();}],
+      ['⌫ Ripple delete','Del',function(){self.rippleDel();}],
+      ['⏩ Speed ramp…','',function(){self.speedDialog();}],
+      ['⟿ Transition…','',function(){self.transition('dissolve');}],
+      ['🔇 Mute clip','',function(){if(self.selectedClip){self.selectedClip.muted=!self.selectedClip.muted;self.render();}}],
+    ];
+    items.forEach(function(it){
+      var btn=document.createElement('button');
+      btn.style.cssText='display:flex;align-items:center;justify-content:space-between;width:100%;padding:7px 14px;font-size:11px;color:rgba(255,255,255,.7);background:none;border:none;cursor:pointer;text-align:left;font-family:inherit;gap:8px;';
+      btn.innerHTML='<span>'+it[0]+'</span>'+(it[1]?'<kbd>'+it[1]+'</kbd>':'');
+      btn.onmouseenter=function(){this.style.background='rgba(255,255,255,.06)';};
+      btn.onmouseleave=function(){this.style.background='';};
+      btn.onclick=function(){menu.remove();it[2]();};
+      menu.appendChild(btn);
+    });
+    document.body.appendChild(menu);
+    setTimeout(function(){document.addEventListener('click',function rm(){menu.remove();document.removeEventListener('click',rm);});},50);
+  },
+
+  // ── RESIZE TIMELINE ─────────────────────────────────────────────────
+  resizeStart: function(e) {
+    var tl=document.getElementById('e-timeline');
+    if(!tl) return;
+    var startY=e.clientY, startH=tl.offsetHeight;
+    e.preventDefault();
+    function onMove(ev) {
+      var newH=Math.max(120,Math.min(window.innerHeight*0.6,startH-(ev.clientY-startY)));
+      tl.style.flex='0 0 '+newH+'px';
+    }
+    function onUp(){document.removeEventListener('mousemove',onMove);document.removeEventListener('mouseup',onUp);}
+    document.addEventListener('mousemove',onMove);
+    document.addEventListener('mouseup',onUp);
+  },
+
+  // ── HISTORY ──────────────────────────────────────────────────────────
+  saveHistory: function() {
+    try{this.history.push(JSON.stringify(this.tracks));if(this.history.length>30)this.history.shift();this.future=[];}catch(e){}
+  },
+  undo: function() {
+    if(!this.history.length){if(typeof toast==='function')toast('Nothing to undo','info');return;}
+    try{this.future.push(JSON.stringify(this.tracks));this.tracks=JSON.parse(this.history.pop());this.render();if(typeof toast==='function')toast('Undo','info');}catch(e){}
+  },
+  redo: function() {
+    if(!this.future.length){if(typeof toast==='function')toast('Nothing to redo','info');return;}
+    try{this.history.push(JSON.stringify(this.tracks));this.tracks=JSON.parse(this.future.pop());this.render();if(typeof toast==='function')toast('Redo','info');}catch(e){}
+  },
+
+  // ── UTILS ─────────────────────────────────────────────────────────────
+  _fmtTime: function(s) {
+    if(!s||isNaN(s)) return '0:00';
+    var m=Math.floor(s/60),sec=Math.floor(s%60);
+    return m+':'+(sec<10?'0':'')+sec;
+  },
+  _makeWave: function(w,h,color) {
+    var n=Math.max(4,Math.floor(w/5)),p='',mid=h/2;
+    for(var i=0;i<n;i++){var amp=(Math.sin(i*.8)*.3+.4)*mid*.85,x=(i/n)*w;p+='<rect x="'+x+'" y="'+(mid-amp)+'" width="3" height="'+(amp*2)+'" fill="'+color+'"/>';}
+    return '<svg width="'+w+'" height="'+h+'" xmlns="http://www.w3.org/2000/svg">'+p+'</svg>';
+  },
+};
+
+// ── BOOT ─────────────────────────────────────────────────────────────────
+// Hook nav to init/refresh edit when navigating to edit-pg
+var _origNav=window.nav;
+if(_origNav&&!window._editNavHooked){
+  window._editNavHooked=true;
+  window.nav=function(pg){
+    _origNav.call(window,pg);
+    if(pg==='edit-pg'){
+      setTimeout(function(){window.E.init();},300);
+    }
+    if(pg==='record-pg'&&typeof initStudio==='function'){
+      setTimeout(initStudio,100);
+    }
+    // Fix topbar row2 visibility
+    if(pg==='edit-pg'){
+      setTimeout(function(){
+        var r=document.querySelector('#edit-topbar>div+div');
+        if(r) r.style.setProperty('display','flex','important');
+      },200);
+    }
+  };
+}
+
+// ── TELEPROMPTER FIXES ───────────────────────────────────────────────────
+// Fix 1: TP speed slider fires setTpSpd
+setTimeout(function(){
+  ['tp-speed-slider','tp-spd-range','tp-spd'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(el&&!el._tpFixed){el._tpFixed=true;el.oninput=function(){if(typeof setTpSpd==='function')setTpSpd(this.value);};}
+  });
+},1000);
+
+// Fix 2: Scene counter — update to use studio-scene-counter
+setTimeout(function(){
+  function fixSceneCnt(){
+    var el=document.getElementById('st-scene-cnt');
+    var real=document.getElementById('studio-scene-counter');
+    if(el&&real&&el.textContent!==real.textContent) el.textContent=real.textContent;
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _onReady);
-  else _onReady();
+  setInterval(fixSceneCnt,1000);
+},1000);
+
+// Fix 3: Segmentation guard
+if(typeof startSegmentation==='function'&&!window._segGuarded){
+  window._segGuarded=true;
+  var _origSeg=window.startSegmentation;
+  window.startSegmentation=function(){
+    if(window.PROJECT&&window.PROJECT.scenes&&window.PROJECT.scenes.length>0){
+      if(!confirm('Project already has '+PROJECT.scenes.length+' scenes. Re-segment and replace them?')) return;
+    }
+    _origSeg.call(window);
+  };
+}
+
+// ── On DOMContentLoaded or immediate ─────────────────────────────────────
+function _boot(){
+  // If already on edit-pg
+  var editPg=document.getElementById('edit-pg');
+  if(editPg&&editPg.classList.contains('on')) {
+    setTimeout(function(){window.E.init();},400);
+  }
+  // Listen for nav events
+  document.addEventListener('aab_nav',function(ev){
+    if(ev&&ev.detail&&ev.detail.page==='edit-pg'){
+      setTimeout(function(){window.E.init();},300);
+    }
+  });
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',_boot);
+else _boot();
 
 })();
 
+</script>
 </script>
 <style id="edit-topbar-override">
 #edit-topbar{flex:0 0 auto!important;height:auto!important;min-height:74px!important;max-height:none!important;overflow:visible!important;}
@@ -8599,388 +9229,307 @@ setTimeout(function(){
 
 
   <!-- ══ EDIT SUITE ═══════════════════════════════════════════════════════════════ -->
-  <div id="edit-pg" class="pg-full" style="display:none;flex-direction:column;height:100vh;overflow:hidden;background:#04060d;background:#06080f;font-family:'Sora',sans-serif;">
-  
-  <!-- ════════════════════════════════════════════════════════════
-       TOPBAR  
-  ════════════════════════════════════════════════════════════ -->
-  <!-- TWO-ROW TOPBAR: row1=nav, row2=tools -->
-  <div id="edit-topbar" style="flex-shrink:0;display:flex;flex-direction:column;background:#070910;border-bottom:.5px solid rgba(255,255,255,.07);z-index:200;user-select:none;height:auto!important;overflow:visible;">
+  <div id="edit-pg" class="pg-full" style="display:none;flex-direction:column;height:100vh;overflow:hidden;background:#06080f;font-family:'Sora',sans-serif;">
 
-    <!-- ROW 1: Navigation + Title + Export -->
-    <div style="height:38px;display:flex;align-items:center;gap:0;border-bottom:.5px solid rgba(255,255,255,.05);padding:0 8px;flex-shrink:0;">
-      <button onclick="navBack()" style="background:none;border:.5px solid rgba(255,255,255,.1);border-radius:4px;color:rgba(255,255,255,.5);font-size:9px;cursor:pointer;padding:3px 8px;font-family:inherit;margin-right:4px;" title="Go back">← Back</button>
-      <button onclick="saveProject();nav('dashboard-pg')" style="background:none;border:.5px solid rgba(255,255,255,.06);border-radius:4px;color:rgba(255,255,255,.3);font-size:9px;cursor:pointer;padding:3px 7px;font-family:inherit;margin-right:2px;">🏠</button>
-      <button onclick="saveProject();nav('script-pg')" style="background:none;border:.5px solid rgba(255,255,255,.06);border-radius:4px;color:rgba(255,255,255,.3);font-size:9px;cursor:pointer;padding:3px 7px;font-family:inherit;margin-right:2px;">📝 Script</button>
-      <button onclick="saveProject();nav('scenes-pg')" style="background:none;border:.5px solid rgba(255,255,255,.06);border-radius:4px;color:rgba(255,255,255,.3);font-size:9px;cursor:pointer;padding:3px 7px;font-family:inherit;margin-right:2px;">🎬 Scenes</button>
-      <button onclick="saveProject();nav('record-pg')" style="background:none;border:.5px solid rgba(255,255,255,.06);border-radius:4px;color:rgba(255,255,255,.3);font-size:9px;cursor:pointer;padding:3px 7px;font-family:inherit;margin-right:2px;">🎥 Studio</button>
-      <button onclick="nav('ai-presenter-studio')" style="background:none;border:.5px solid rgba(255,255,255,.06);border-radius:4px;color:rgba(255,255,255,.3);font-size:9px;cursor:pointer;padding:3px 7px;font-family:inherit;margin-right:2px;">🤖 AI</button>
-      <button style="background:rgba(0,212,255,.1);border:.5px solid rgba(0,212,255,.3);border-radius:4px;color:#00d4ff;font-size:9px;padding:3px 7px;font-family:inherit;cursor:default;margin-right:12px;">✂️ Edit</button>
-      <span style="font-size:12px;font-weight:700;color:rgba(255,255,255,.7);" id="edit-title">✂️ Edit Suite</span>
-      <span id="edit-save-status" style="font-size:9px;color:rgba(16,185,129,.5);padding:1px 6px;background:rgba(16,185,129,.06);border-radius:3px;border:.5px solid rgba(16,185,129,.15);margin-left:8px;">● Saved</span>
-      <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
-        <button onclick="edit_undo()" title="Undo Ctrl+Z" style="background:none;border:.5px solid rgba(255,255,255,.08);border-radius:4px;padding:3px 7px;font-size:10px;color:rgba(255,255,255,.3);cursor:pointer;">↩ Undo</button>
-        <button onclick="edit_redo()" title="Redo" style="background:none;border:.5px solid rgba(255,255,255,.08);border-radius:4px;padding:3px 7px;font-size:10px;color:rgba(255,255,255,.3);cursor:pointer;">↪ Redo</button>
-        <span id="tl-duration-display" style="font-size:9px;font-family:'JetBrains Mono',monospace;color:rgba(255,255,255,.2);">0:00</span>
-        <button onclick="nav('export-pg')" style="background:linear-gradient(135deg,rgba(0,212,255,.2),rgba(139,92,246,.2));border:.5px solid rgba(0,212,255,.35);border-radius:6px;padding:5px 14px;font-size:11px;font-weight:700;color:#00d4ff;cursor:pointer;">↓ Export</button>
+<!-- NAV ROW 36px -->
+<div style="flex:0 0 36px;display:flex;align-items:center;background:#070910;border-bottom:.5px solid rgba(255,255,255,.08);z-index:200;padding:0 8px;gap:3px;overflow:hidden;">
+  <button onclick="navBack()" class="enb">← Back</button>
+  <button onclick="saveProject();nav('dashboard-pg')" class="enb">🏠</button>
+  <button onclick="saveProject();nav('script-pg')" class="enb">📝 Script</button>
+  <button onclick="saveProject();nav('scenes-pg')" class="enb">🎬 Scenes</button>
+  <button onclick="saveProject();nav('record-pg')" class="enb">🎥 Studio</button>
+  <button onclick="nav('ai-presenter-studio')" class="enb">🤖 AI</button>
+  <span style="background:rgba(0,212,255,.12);border:.5px solid rgba(0,212,255,.3);border-radius:4px;color:#00d4ff;font-size:9px;padding:2px 6px;margin-right:8px;">✂️ Edit</span>
+  <span id="edit-title" style="font-size:11px;font-weight:600;color:rgba(255,255,255,.65);">✂️ Edit Suite</span>
+  <span id="edit-save-status" style="font-size:8px;color:rgba(16,185,129,.5);padding:1px 5px;background:rgba(16,185,129,.05);border-radius:3px;border:.5px solid rgba(16,185,129,.12);margin-left:6px;">● Saved</span>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+    <button onclick="E.undo()" class="enb" title="Undo">↩ Undo</button>
+    <button onclick="E.redo()" class="enb" title="Redo">↪ Redo</button>
+    <span id="e-dur" style="font-size:8px;color:rgba(255,255,255,.2);font-family:monospace;margin:0 6px;">0:00</span>
+    <button onclick="nav('export-pg')" style="background:linear-gradient(135deg,rgba(0,212,255,.2),rgba(139,92,246,.2));border:.5px solid rgba(0,212,255,.35);border-radius:5px;padding:3px 12px;font-size:10px;font-weight:700;color:#00d4ff;cursor:pointer;">↓ Export</button>
+  </div>
+</div>
+
+<!-- TOOLS ROW 32px -->
+<div style="flex:0 0 32px;display:flex;align-items:center;background:#050710;border-bottom:.5px solid rgba(255,255,255,.05);overflow-x:auto;z-index:199;gap:0;">
+  <!-- Edit tools -->
+  <div style="display:flex;align-items:center;gap:2px;padding:0 8px;border-right:.5px solid rgba(255,255,255,.05);height:100%;flex-shrink:0;">
+    <span style="font-size:7px;color:rgba(255,255,255,.18);margin-right:2px;">TOOL</span>
+    <button id="et-V" onclick="E.setTool('select')" class="etl on" title="Select [V]">↖</button>
+    <button id="et-R" onclick="E.setTool('razor')" class="etl" title="Razor [R]">✂</button>
+    <button id="et-T" onclick="E.setTool('trim')" class="etl" title="Trim [T]">↔</button>
+    <button id="et-Y" onclick="E.setTool('slip')" class="etl" title="Slip [Y]">⇆</button>
+    <button id="et-H" onclick="E.setTool('hand')" class="etl" title="Pan [H]">✋</button>
+  </div>
+  <!-- Video dropdown -->
+  <div class="emenu-wrap" style="height:100%;border-right:.5px solid rgba(255,255,255,.05);flex-shrink:0;">
+    <button class="emenu-btn" onclick="E.dd('dd-vid')">🎬 Video ▾</button>
+    <div id="dd-vid" class="emenu-panel" style="display:none;">
+      <div class="emenu-sec">Clip</div>
+      <button class="emenu-item" onclick="E.split()">✂ Split at playhead <kbd>S</kbd></button>
+      <button class="emenu-item" onclick="E.rippleDel()">⌫ Ripple delete <kbd>Del</kbd></button>
+      <button class="emenu-item" onclick="E.duplicate()">⧉ Duplicate <kbd>D</kbd></button>
+      <button class="emenu-item" onclick="E.speedDialog()">⏩ Speed ramp…</button>
+      <button class="emenu-item" onclick="E.freeze()">⏸ Freeze frame</button>
+      <div class="emenu-sec">Filter</div>
+      <button class="emenu-item" onclick="E.filter('cinematic')">🎬 Cinematic</button>
+      <button class="emenu-item" onclick="E.filter('warm')">🟡 Warm</button>
+      <button class="emenu-item" onclick="E.filter('cool')">🔵 Cool</button>
+      <button class="emenu-item" onclick="E.filter('bw')">◑ B&amp;W</button>
+      <button class="emenu-item" onclick="E.filter('vignette')">◎ Vignette</button>
+      <button class="emenu-item" onclick="E.filter('grain')">◌ Film grain</button>
+    </div>
+  </div>
+  <!-- Audio dropdown -->
+  <div class="emenu-wrap" style="height:100%;border-right:.5px solid rgba(255,255,255,.05);flex-shrink:0;">
+    <button class="emenu-btn" onclick="E.dd('dd-aud')">🎵 Audio ▾</button>
+    <div id="dd-aud" class="emenu-panel" style="display:none;">
+      <div class="emenu-sec">Tools</div>
+      <button class="emenu-item" onclick="E.audio('fade-in')">↗ Fade in</button>
+      <button class="emenu-item" onclick="E.audio('fade-out')">↘ Fade out</button>
+      <button class="emenu-item" onclick="E.audio('crossfade')">↕ Crossfade</button>
+      <button class="emenu-item" onclick="E.audio('normalize')">⊜ Normalize</button>
+      <button class="emenu-item" onclick="E.audio('mute')">🔇 Mute clip</button>
+      <div class="emenu-sec">Master volume</div>
+      <div style="padding:4px 10px;"><input type="range" min="0" max="2" step=".05" value="1" style="width:130px;accent-color:#10b981;" oninput="E.masterVol(this.value)"></div>
+    </div>
+  </div>
+  <!-- Text dropdown -->
+  <div class="emenu-wrap" style="height:100%;border-right:.5px solid rgba(255,255,255,.05);flex-shrink:0;">
+    <button class="emenu-btn" onclick="E.dd('dd-txt')">📝 Text ▾</button>
+    <div id="dd-txt" class="emenu-panel" style="display:none;">
+      <div class="emenu-sec">Add Layer</div>
+      <button class="emenu-item" onclick="E.addText('title')">🅣 Title card</button>
+      <button class="emenu-item" onclick="E.addText('lower-third')">▬ Lower third</button>
+      <button class="emenu-item" onclick="E.addText('caption')">💬 Caption</button>
+      <button class="emenu-item" onclick="E.addText('callout')">📌 Callout bubble</button>
+      <button class="emenu-item" onclick="E.addText('ticker')">📰 Scrolling ticker</button>
+      <div class="emenu-sep"></div>
+      <button class="emenu-item" onclick="E.autoCaption()">✨ Auto-generate captions</button>
+      <button class="emenu-item" onclick="E.exportSRT()">📄 Export SRT</button>
+    </div>
+  </div>
+  <!-- Transitions dropdown -->
+  <div class="emenu-wrap" style="height:100%;border-right:.5px solid rgba(255,255,255,.05);flex-shrink:0;">
+    <button class="emenu-btn" onclick="E.dd('dd-tr')">⟿ Transitions ▾</button>
+    <div id="dd-tr" class="emenu-panel" style="display:none;min-width:180px;">
+      <div class="emenu-sec">Apply to selected cut</div>
+      <button class="emenu-item" onclick="E.transition('cut')">— Cut (none)</button>
+      <button class="emenu-item" onclick="E.transition('dissolve')">◌ Dissolve</button>
+      <button class="emenu-item" onclick="E.transition('fade-black')">▬ Fade to black</button>
+      <button class="emenu-item" onclick="E.transition('fade-white')">▭ Fade to white</button>
+      <button class="emenu-item" onclick="E.transition('zoom-in')">⊕ Zoom in</button>
+      <button class="emenu-item" onclick="E.transition('zoom-out')">⊖ Zoom out</button>
+      <button class="emenu-item" onclick="E.transition('slide-left')">← Slide left</button>
+      <button class="emenu-item" onclick="E.transition('slide-right')">→ Slide right</button>
+      <button class="emenu-item" onclick="E.transition('whip')">〜 Whip pan</button>
+      <button class="emenu-item" onclick="E.transition('blur')">〰 Blur</button>
+      <div class="emenu-sep"></div>
+      <button class="emenu-item" onclick="E.transitionAll('dissolve')">⚡ Apply dissolve to ALL</button>
+    </div>
+  </div>
+  <!-- Overlay dropdown -->
+  <div class="emenu-wrap" style="height:100%;border-right:.5px solid rgba(255,255,255,.05);flex-shrink:0;">
+    <button class="emenu-btn" onclick="E.dd('dd-ovl')">🖼 Overlay ▾</button>
+    <div id="dd-ovl" class="emenu-panel" style="display:none;">
+      <div class="emenu-sec">Add</div>
+      <button class="emenu-item" onclick="E.addOverlay('image')">🖼 Image overlay</button>
+      <button class="emenu-item" onclick="E.addOverlay('logo')">🏷 Logo / watermark</button>
+      <button class="emenu-item" onclick="E.addOverlay('color')">🎨 Color matte</button>
+      <button class="emenu-item" onclick="E.addOverlay('blur')">💨 Blur region</button>
+    </div>
+  </div>
+  <!-- Import -->
+  <div style="display:flex;align-items:center;gap:2px;padding:0 8px;border-right:.5px solid rgba(255,255,255,.05);height:100%;flex-shrink:0;">
+    <button onclick="E.import('video')" class="eadd-btn">+ Video</button>
+    <button onclick="E.import('audio')" class="eadd-btn">+ Audio</button>
+    <button onclick="E.import('image')" class="eadd-btn">+ Image</button>
+  </div>
+  <!-- Snap/extras -->
+  <div style="display:flex;align-items:center;gap:3px;padding:0 6px;height:100%;flex-shrink:0;">
+    <button id="e-snap-btn" onclick="E.toggleSnap()" class="etl on" title="Snap [G]">⊞ Snap</button>
+    <button onclick="E.addMarker()" class="etl" title="Marker [M]">🚩</button>
+    <button onclick="E.safeZones()" class="etl" title="Safe zones">⊡</button>
+    <button onclick="E.multiSelect()" class="etl" title="Multi-select [B]">⊟</button>
+  </div>
+</div>
+
+<!-- MAIN AREA: flex:1, min-height:0 — fills whatever is left after topbar+timeline -->
+<div id="e-main" style="flex:1;min-height:0;display:flex;overflow:hidden;">
+
+  <!-- MEDIA BIN 190px -->
+  <div id="e-bin" style="width:190px;flex:0 0 190px;display:flex;flex-direction:column;background:#050810;border-right:.5px solid rgba(255,255,255,.06);overflow:hidden;">
+    <div style="flex:0 0 28px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;border-bottom:.5px solid rgba(255,255,255,.05);">
+      <span style="font-size:8px;font-weight:700;color:rgba(255,255,255,.3);letter-spacing:.08em;">MEDIA BIN</span>
+      <button onclick="E.import('video')" style="background:rgba(0,212,255,.08);border:.5px solid rgba(0,212,255,.2);border-radius:3px;padding:1px 5px;font-size:8px;color:rgba(0,212,255,.7);cursor:pointer;">+ Add</button>
+    </div>
+    <div style="flex:0 0 24px;display:flex;border-bottom:.5px solid rgba(255,255,255,.04);">
+      <button onclick="E.binTab('clips')" id="ebt-clips" class="ebin-tab on">Clips</button>
+      <button onclick="E.binTab('assets')" id="ebt-assets" class="ebin-tab">Assets</button>
+      <button onclick="E.binTab('fx')" id="ebt-fx" class="ebin-tab">FX</button>
+    </div>
+    <div id="ebin-clips" style="flex:1;overflow-y:auto;padding:4px;display:flex;flex-direction:column;gap:2px;"></div>
+    <div id="ebin-assets" style="display:none;flex:1;overflow-y:auto;padding:4px;flex-direction:column;gap:2px;"></div>
+    <div id="ebin-fx" style="display:none;flex:1;overflow-y:auto;padding:6px;">
+      <div style="font-size:7px;color:rgba(255,255,255,.2);letter-spacing:.06em;padding:4px 0 6px;">TRANSITIONS</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;">
+        <button class="efx-chip" onclick="E.transition('dissolve')">◌ Dissolve</button>
+        <button class="efx-chip" onclick="E.transition('fade-black')">▬ Fade</button>
+        <button class="efx-chip" onclick="E.transition('zoom-in')">⊕ Zoom</button>
+        <button class="efx-chip" onclick="E.transition('whip')">〜 Whip</button>
+        <button class="efx-chip" onclick="E.transition('slide-left')">← Slide</button>
+        <button class="efx-chip" onclick="E.transition('blur')">〰 Blur</button>
+      </div>
+      <div style="font-size:7px;color:rgba(255,255,255,.2);letter-spacing:.06em;padding:8px 0 6px;">FILTERS</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;">
+        <button class="efx-chip" onclick="E.filter('cinematic')">🎬 Cine</button>
+        <button class="efx-chip" onclick="E.filter('bw')">◑ B&amp;W</button>
+        <button class="efx-chip" onclick="E.filter('warm')">🟡 Warm</button>
+        <button class="efx-chip" onclick="E.filter('cool')">🔵 Cool</button>
+        <button class="efx-chip" onclick="E.filter('vignette')">◎ Vignette</button>
+        <button class="efx-chip" onclick="E.filter('grain')">◌ Grain</button>
       </div>
     </div>
-
-    <!-- ROW 2: Tools + Dropdowns + Add media -->
-    <div style="height:36px;display:flex;align-items:center;gap:0;flex-shrink:0;overflow-x:auto;">
-
-    <!-- TOOLS group -->
-    <div style="display:flex;align-items:center;height:100%;padding:0 6px;gap:2px;border-right:.5px solid rgba(255,255,255,.06);flex-shrink:0;">
-      <span style="font-size:7px;color:rgba(255,255,255,.2);padding:0 4px;letter-spacing:.06em;">TOOLS</span>
-      <button id="tl-btn-select" onclick="edit_setTool('select')" title="Select (V)" class="edit-tool-btn active">↖</button>
-      <button id="tl-btn-razor"  onclick="edit_setTool('razor')"  title="Razor (R)"  class="edit-tool-btn">✂</button>
-      <button id="tl-btn-trim"   onclick="edit_setTool('trim')"   title="Trim (T)"   class="edit-tool-btn">↔</button>
-      <button id="tl-btn-slip"   onclick="edit_setTool('slip')"   title="Slip (Y)"   class="edit-tool-btn">⇆</button>
-      <button id="tl-btn-hand"   onclick="edit_setTool('hand')"   title="Hand (H)"   class="edit-tool-btn">✋</button>
-    </div>
-
-    <!-- VIDEO dropdown -->
-    <div class="edit-dd-wrap" style="height:100%;border-right:.5px solid rgba(255,255,255,.06);flex-shrink:0;">
-      <button class="edit-dd-trigger" onclick="edit_toggleDD('dd-video')">🎬 Video <span style="font-size:7px;opacity:.4;">▼</span></button>
-      <div id="dd-video" class="edit-dd-panel" style="display:none;">
-        <div class="edit-dd-title">Video Tools</div>
-        <button class="edit-dd-item" onclick="tl_split()">⊣ Split at playhead <span class="dd-kbd">S</span></button>
-        <button class="edit-dd-item" onclick="edit_doTool('ripple-delete')">⌫ Ripple delete</button>
-        <button class="edit-dd-item" onclick="edit_showSpeedDialog()">⏩ Speed ramp…</button>
-        <button class="edit-dd-item" onclick="edit_doTool('freeze')">⏸ Freeze frame</button>
-        <div class="edit-dd-sep"></div>
-        <div class="edit-dd-title">Filters</div>
-        <button class="edit-dd-item" onclick="edit_applyFilter('cinematic')">🎬 Cinematic grade</button>
-        <button class="edit-dd-item" onclick="edit_applyFilter('warm')">🟡 Warm</button>
-        <button class="edit-dd-item" onclick="edit_applyFilter('cool')">🔵 Cool</button>
-        <button class="edit-dd-item" onclick="edit_applyFilter('bw')">◑ Black &amp; White</button>
-        <button class="edit-dd-item" onclick="edit_applyFilter('vignette')">◎ Vignette</button>
-        <button class="edit-dd-item" onclick="edit_applyFilter('grain')">◌ Film grain</button>
-      </div>
-    </div>
-
-    <!-- AUDIO dropdown -->
-    <div class="edit-dd-wrap" style="height:100%;border-right:.5px solid rgba(255,255,255,.06);flex-shrink:0;">
-      <button class="edit-dd-trigger" onclick="edit_toggleDD('dd-audio')">🎵 Audio <span style="font-size:7px;opacity:.4;">▼</span></button>
-      <div id="dd-audio" class="edit-dd-panel" style="display:none;">
-        <div class="edit-dd-title">Audio Tools</div>
-        <button class="edit-dd-item" onclick="edit_audioTool('fade-in')">↗ Fade in</button>
-        <button class="edit-dd-item" onclick="edit_audioTool('fade-out')">↘ Fade out</button>
-        <button class="edit-dd-item" onclick="edit_audioTool('crossfade')">↕ Crossfade</button>
-        <button class="edit-dd-item" onclick="edit_audioTool('normalize')">⊜ Normalize</button>
-        <button class="edit-dd-item" onclick="edit_audioTool('denoise')">🌊 Noise reduction</button>
-        <div class="edit-dd-sep"></div>
-        <div class="edit-dd-title">Track Volume</div>
-        <div style="padding:8px 12px;">
-          <div style="font-size:9px;color:rgba(255,255,255,.3);margin-bottom:4px;">Master volume</div>
-          <input type="range" min="0" max="2" step=".05" value="1" style="width:140px;accent-color:#10b981;" oninput="edit_setMasterVolume(this.value)">
-          <div style="font-size:9px;color:rgba(255,255,255,.3);margin:6px 0 4px;">Music volume</div>
-          <input type="range" min="0" max="1" step=".05" value=".4" style="width:140px;accent-color:#10b981;" oninput="edit_setTrackVolume('music',this.value)">
-        </div>
-      </div>
-    </div>
-
-    <!-- TEXT dropdown -->
-    <div class="edit-dd-wrap" style="height:100%;border-right:.5px solid rgba(255,255,255,.06);flex-shrink:0;">
-      <button class="edit-dd-trigger" onclick="edit_toggleDD('dd-text')">📝 Text <span style="font-size:7px;opacity:.4;">▼</span></button>
-      <div id="dd-text" class="edit-dd-panel" style="display:none;">
-        <div class="edit-dd-title">Add Text Layer</div>
-        <button class="edit-dd-item" onclick="edit_addTextTrack('title')">🅣 Title card</button>
-        <button class="edit-dd-item" onclick="edit_addTextTrack('lower-third')">▬ Lower third</button>
-        <button class="edit-dd-item" onclick="edit_addTextTrack('caption')">💬 Caption / Subtitle</button>
-        <button class="edit-dd-item" onclick="edit_addTextTrack('callout')">📌 Callout bubble</button>
-        <div class="edit-dd-sep"></div>
-        <button class="edit-dd-item" onclick="edit_autoCaption()">✨ Auto-generate captions</button>
-      </div>
-    </div>
-
-    <!-- TRANSITIONS dropdown -->
-    <div class="edit-dd-wrap" style="height:100%;border-right:.5px solid rgba(255,255,255,.06);flex-shrink:0;">
-      <button class="edit-dd-trigger" onclick="edit_toggleDD('dd-transitions')">⟿ Transitions <span style="font-size:7px;opacity:.4;">▼</span></button>
-      <div id="dd-transitions" class="edit-dd-panel" style="display:none;min-width:160px;">
-        <div class="edit-dd-title">Apply to selected cut</div>
-        <button class="edit-dd-item" onclick="edit_addTransition('dissolve')">◌ Dissolve</button>
-        <button class="edit-dd-item" onclick="edit_addTransition('fade-black')">▬ Fade to black</button>
-        <button class="edit-dd-item" onclick="edit_addTransition('fade-white')">▭ Fade to white</button>
-        <button class="edit-dd-item" onclick="edit_addTransition('zoom-in')">⊕ Zoom in</button>
-        <button class="edit-dd-item" onclick="edit_addTransition('zoom-out')">⊖ Zoom out</button>
-        <button class="edit-dd-item" onclick="edit_addTransition('slide-left')">← Slide left</button>
-        <button class="edit-dd-item" onclick="edit_addTransition('slide-right')">→ Slide right</button>
-        <button class="edit-dd-item" onclick="edit_addTransition('whip')">〜 Whip pan</button>
-        <button class="edit-dd-item" onclick="edit_addTransition('blur-in')">〰 Blur in</button>
-        <div class="edit-dd-sep"></div>
-        <button class="edit-dd-item" onclick="edit_addTransitionAll()">Apply dissolve to all cuts</button>
-      </div>
-    </div>
-
-    <!-- Add media -->
-    <div style="display:flex;align-items:center;height:100%;padding:0 6px;gap:2px;border-right:.5px solid rgba(255,255,255,.06);flex-shrink:0;">
-      <button onclick="importMedia('video')" class="edit-add-btn">+ Video</button>
-      <button onclick="edit_uploadAudio('music')" class="edit-add-btn">+ Audio</button>
-      <button onclick="edit_uploadImage()" class="edit-add-btn">+ Image</button>
-    </div>
-
-    <!-- Right: undo/redo + duration + export -->
-    <div style="margin-left:auto;display:flex;align-items:center;gap:6px;padding:0 12px;height:100%;flex-shrink:0;">
-      <button onclick="edit_undo()" title="Undo Ctrl+Z" style="background:none;border:.5px solid rgba(255,255,255,.08);border-radius:4px;padding:3px 7px;font-size:10px;color:rgba(255,255,255,.3);cursor:pointer;">↩</button>
-      <button onclick="edit_redo()" title="Redo Ctrl+Y" style="background:none;border:.5px solid rgba(255,255,255,.08);border-radius:4px;padding:3px 7px;font-size:10px;color:rgba(255,255,255,.3);cursor:pointer;">↪</button>
-      <div style="width:.5px;height:16px;background:rgba(255,255,255,.06);"></div>
-      <span id="tl-duration-display" style="font-size:9px;font-family:'JetBrains Mono',monospace;color:rgba(255,255,255,.2);">0:00</span>
-      <button onclick="nav('export-pg')" style="background:linear-gradient(135deg,rgba(0,212,255,.2),rgba(139,92,246,.2));border:.5px solid rgba(0,212,255,.35);border-radius:6px;padding:5px 16px;font-size:11px;font-weight:700;color:#00d4ff;cursor:pointer;letter-spacing:.02em;">Export →</button>
-    </div>
-    </div><!-- end row2 -->
-  </div><!-- end edit-topbar -->
-
-  <!-- ════════════════════════════════════════════════════════════
-       MAIN BODY: Media bin | Preview | Inspector
-  ════════════════════════════════════════════════════════════ -->
-  <div style="flex:1;display:flex;overflow:hidden;min-height:0;">
-
-    <!-- ── LEFT: Media Bin ────────────────────────────────────── -->
-    <div id="edit-media-bin" style="width:190px;flex-shrink:0;display:flex;flex-direction:column;background:#050810;border-right:.5px solid rgba(255,255,255,.06);overflow:hidden;">
-      <div style="flex-shrink:0;padding:8px 10px;border-bottom:.5px solid rgba(255,255,255,.05);display:flex;align-items:center;justify-content:space-between;">
-        <span style="font-size:9px;font-weight:700;color:rgba(255,255,255,.3);letter-spacing:.08em;">MEDIA BIN</span>
-        <button onclick="importMedia('video')" style="background:rgba(0,212,255,.08);border:.5px solid rgba(0,212,255,.2);border-radius:3px;padding:1px 5px;font-size:8px;color:rgba(0,212,255,.7);cursor:pointer;">+ Add</button>
-      </div>
-      <!-- Bin tabs -->
-      <div style="flex-shrink:0;display:flex;border-bottom:.5px solid rgba(255,255,255,.05);">
-        <button onclick="edit_binTab('clips')" id="bin-tab-clips" style="flex:1;padding:5px 0;font-size:9px;background:rgba(0,212,255,.06);border:none;border-bottom:1.5px solid #00d4ff;color:#00d4ff;cursor:pointer;">Clips</button>
-        <button onclick="edit_binTab('assets')" id="bin-tab-assets" style="flex:1;padding:5px 0;font-size:9px;background:none;border:none;border-bottom:1.5px solid transparent;color:rgba(255,255,255,.3);cursor:pointer;">Assets</button>
-        <button onclick="edit_binTab('effects')" id="bin-tab-effects" style="flex:1;padding:5px 0;font-size:9px;background:none;border:none;border-bottom:1.5px solid transparent;color:rgba(255,255,255,.3);cursor:pointer;">FX</button>
-      </div>
-      <!-- Bin content -->
-      <div id="edit-bin-clips" class="edit-bin-panel" style="flex:1;overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:3px;">
-        <div style="font-size:10px;color:rgba(255,255,255,.15);text-align:center;padding:20px 0;">No clips yet</div>
-      </div>
-      <div id="edit-bin-assets" class="edit-bin-panel" style="display:none;flex:1;overflow-y:auto;padding:6px;">
-        <div style="font-size:10px;color:rgba(255,255,255,.15);text-align:center;padding:20px 0;">No assets</div>
-      </div>
-      <div id="edit-bin-effects" class="edit-bin-panel" style="display:none;flex:1;overflow-y:auto;padding:6px;display:none;">
-        <div class="edit-dd-title" style="padding:6px 0;">Transitions</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
-          <button onclick="edit_addTransition('dissolve')" class="edit-fx-chip">◌ Dissolve</button>
-          <button onclick="edit_addTransition('fade-black')" class="edit-fx-chip">▬ Fade</button>
-          <button onclick="edit_addTransition('zoom-in')" class="edit-fx-chip">⊕ Zoom</button>
-          <button onclick="edit_addTransition('whip')" class="edit-fx-chip">〜 Whip</button>
-        </div>
-        <div class="edit-dd-title" style="padding:8px 0 6px;">Video FX</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
-          <button onclick="edit_applyFilter('cinematic')" class="edit-fx-chip">🎬 Cine</button>
-          <button onclick="edit_applyFilter('bw')" class="edit-fx-chip">◑ B&W</button>
-          <button onclick="edit_applyFilter('warm')" class="edit-fx-chip">🟡 Warm</button>
-          <button onclick="edit_applyFilter('vignette')" class="edit-fx-chip">◎ Vignette</button>
-        </div>
-      </div>
-      <!-- Clip count -->
-      <div style="flex-shrink:0;border-top:.5px solid rgba(255,255,255,.05);padding:5px 10px;">
-        <div id="edit-clip-count" style="font-size:9px;color:rgba(255,255,255,.2);"></div>
-      </div>
-    </div>
-
-    <!-- ── CENTER: Preview Monitor ─────────────────────────────── -->
-    <div id="edit-preview-pane" style="flex:1;display:flex;flex-direction:column;background:#050810;min-width:0;overflow:hidden;">
-      <!-- Video viewport -->
-      <div style="flex:1;display:flex;align-items:center;justify-content:center;position:relative;background:#06080e;overflow:hidden;" id="edit-viewport">
-        <!-- Empty state -->
-        <div id="edit-no-clips" style="text-align:center;color:rgba(255,255,255,.2);pointer-events:none;">
-          <div style="font-size:36px;margin-bottom:12px;">🎬</div>
-          <div style="font-size:13px;margin-bottom:6px;">No clips yet</div>
-          <div style="font-size:10px;color:rgba(255,255,255,.1);">Record scenes or generate with AI Presenter, then click Go to Edit Suite</div>
-        </div>
-        <!-- Video element -->
-        <video id="edit-video" preload="auto"
-          style="display:none;max-width:100%;max-height:100%;object-fit:contain;"
-          ontimeupdate="edit_onTimeUpdate()"
-          onended="edit_onEnded()"
-          onloadedmetadata="edit_onMetadata()"></video>
-        <!-- Active filter overlay -->
-        <div id="edit-filter-overlay" style="position:absolute;inset:0;pointer-events:none;mix-blend-mode:overlay;opacity:0;transition:opacity .3s;"></div>
-        <!-- Subtitle overlay -->
-        <div id="edit-subtitle-overlay" style="position:absolute;bottom:40px;left:8%;right:8%;text-align:center;font-size:18px;font-weight:700;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.9),0 0 20px rgba(0,0,0,.5);pointer-events:none;display:none;"></div>
-        <!-- Scene badge -->
-        <div id="edit-scene-info" style="position:absolute;top:8px;left:8px;background:rgba(0,0,0,.65);padding:3px 8px;border-radius:4px;font-size:9px;color:rgba(255,255,255,.5);display:none;backdrop-filter:blur(4px);"></div>
-        <!-- Safe zones -->
-        <div id="edit-safe-zones" style="position:absolute;inset:0;pointer-events:none;display:none;">
-          <div style="position:absolute;inset:5%;border:.5px solid rgba(255,255,255,.15);"></div>
-          <div style="position:absolute;inset:10%;border:.5px solid rgba(255,255,255,.08);"></div>
-        </div>
-        <!-- Text overlay editor -->
-        <div id="edit-text-overlay" style="position:absolute;bottom:20%;left:50%;transform:translateX(-50%);pointer-events:all;display:none;cursor:move;">
-          <div contenteditable="true" id="edit-text-content" 
-            style="font-size:28px;font-weight:700;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.8);text-align:center;min-width:100px;min-height:30px;outline:none;padding:4px 8px;border:1px dashed rgba(255,255,255,.3);border-radius:4px;background:rgba(0,0,0,.2);"
-            onblur="edit_commitText(this.textContent)">Lower Third</div>
-        </div>
-      </div>
-      <!-- Transport bar -->
-      <div style="flex-shrink:0;padding:6px 12px;background:rgba(0,0,0,.55);display:flex;align-items:center;gap:6px;border-top:.5px solid rgba(255,255,255,.06);">
-        <button onclick="edit_skipTo(0)" title="Go to start ⌃←" style="background:none;border:none;color:rgba(255,255,255,.35);font-size:13px;cursor:pointer;padding:2px 4px;">⏮</button>
-        <button onclick="edit_stepFrame(-1)" title="Step back one frame ←" style="background:none;border:none;color:rgba(255,255,255,.35);font-size:11px;cursor:pointer;padding:2px 4px;">‹</button>
-        <button onclick="editPlayPause()" id="edit-play-btn" style="background:rgba(0,212,255,.12);border:.5px solid rgba(0,212,255,.3);color:#00d4ff;border-radius:7px;padding:5px 16px;font-size:13px;cursor:pointer;min-width:48px;">▶</button>
-        <button onclick="edit_stepFrame(1)" title="Step forward one frame →" style="background:none;border:none;color:rgba(255,255,255,.35);font-size:11px;cursor:pointer;padding:2px 4px;">›</button>
-        <button onclick="edit_skipTo(999999)" title="Go to end ⌃→" style="background:none;border:none;color:rgba(255,255,255,.35);font-size:13px;cursor:pointer;padding:2px 4px;">⏭</button>
-        <!-- Loop -->
-        <button id="edit-loop-btn" onclick="edit_toggleLoop()" title="Loop playback" style="background:none;border:.5px solid rgba(255,255,255,.08);border-radius:4px;padding:2px 6px;font-size:9px;color:rgba(255,255,255,.25);cursor:pointer;">⟳</button>
-        <!-- Seek bar -->
-        <input type="range" id="edit-seek-bar" min="0" max="100" value="0" step="0.01"
-          style="flex:1;accent-color:#00d4ff;height:3px;cursor:pointer;"
-          oninput="edit_seekTo(this.value)" onmousedown="edit_seekStart()" onmouseup="edit_seekEnd()"><div id="edit-seek-fill" style="height:100%;background:linear-gradient(90deg,rgba(0,212,255,.6),#00d4ff);border-radius:2px;width:0%;pointer-events:none;"></div><div id="edit-seek-head" style="position:absolute;top:50%;left:0%;transform:translate(-50%,-50%);width:12px;height:12px;border-radius:50%;background:#fff;cursor:grab;box-shadow:0 0 8px rgba(0,212,255,.5);"></div>
-        <!-- Time display -->
-        <span id="edit-time-display" style="font-size:10px;font-family:'JetBrains Mono',monospace;color:rgba(255,255,255,.4);min-width:90px;text-align:right;flex-shrink:0;">0:00 / 0:00</span>
-        <!-- Playback speed -->
-        <select id="edit-pb-speed" onchange="edit_setPlaybackRate(this.value)" style="background:rgba(255,255,255,.04);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.4);border-radius:4px;padding:2px 4px;font-size:9px;cursor:pointer;">
-          <option value="0.25">0.25x</option>
-          <option value="0.5">0.5x</option>
-          <option value="0.75">0.75x</option>
-          <option value="1" selected>1x</option>
-          <option value="1.25">1.25x</option>
-          <option value="1.5">1.5x</option>
-          <option value="2">2x</option>
-        </select>
-        <!-- Volume -->
-        <span style="font-size:9px;color:rgba(255,255,255,.2);">🔊</span>
-        <input type="range" id="edit-volume" min="0" max="1" step="0.05" value="1"
-          style="width:56px;accent-color:#00d4ff;"
-          oninput="var v=document.getElementById('edit-video'); if(v) v.volume=this.value;">
-        <!-- Safe zones toggle -->
-        <button onclick="toggleSafeZones()" title="Safe zones" style="background:none;border:.5px solid rgba(255,255,255,.08);border-radius:4px;padding:2px 6px;font-size:9px;color:rgba(255,255,255,.25);cursor:pointer;">⊞</button>
-        <!-- Subtitles toggle -->
-        <button onclick="tl_toggleSubtitles()" id="tl-sub-btn" style="background:none;border:.5px solid rgba(255,255,255,.08);border-radius:4px;padding:2px 6px;font-size:9px;color:rgba(255,255,255,.25);cursor:pointer;">CC</button>
-      </div>
-    </div>
-
-    <!-- ── RIGHT: Inspector Panel ─────────────────────────────── -->
-    <div id="edit-inspector" style="width:220px;flex-shrink:0;display:flex;flex-direction:column;background:#050810;border-left:.5px solid rgba(255,255,255,.06);overflow:hidden;">
-      <div style="flex-shrink:0;padding:8px 10px;border-bottom:.5px solid rgba(255,255,255,.05);font-size:9px;font-weight:700;color:rgba(255,255,255,.3);letter-spacing:.08em;">INSPECTOR</div>
-      <div id="edit-inspector-body" style="flex:1;overflow-y:auto;padding:12px;">
-        <div style="font-size:10px;color:rgba(255,255,255,.2);text-align:center;padding:24px 0 10px;">
-          <div style="font-size:20px;margin-bottom:8px;">👆</div>
-          Select a clip<br>to inspect
-        </div>
-      </div>
-      <!-- Text properties (shown when text layer selected) -->
-      <div id="edit-text-props" style="display:none;flex-shrink:0;border-top:.5px solid rgba(255,255,255,.05);padding:10px;">
-        <div class="insp-label">Font size</div>
-        <input type="range" min="12" max="72" value="28" style="width:100%;accent-color:#eab308;margin-bottom:8px;" oninput="edit_textProp('size',this.value)">
-        <div class="insp-label">Color</div>
-        <div style="display:flex;gap:4px;margin-bottom:8px;">
-          <button onclick="edit_textProp('color','#ffffff')" style="width:20px;height:20px;background:#fff;border-radius:3px;border:.5px solid rgba(255,255,255,.2);cursor:pointer;"></button>
-          <button onclick="edit_textProp('color','#facc15')" style="width:20px;height:20px;background:#facc15;border-radius:3px;border:none;cursor:pointer;"></button>
-          <button onclick="edit_textProp('color','#00d4ff')" style="width:20px;height:20px;background:#00d4ff;border-radius:3px;border:none;cursor:pointer;"></button>
-          <button onclick="edit_textProp('color','#f87171')" style="width:20px;height:20px;background:#f87171;border-radius:3px;border:none;cursor:pointer;"></button>
-          <button onclick="edit_textProp('color','#000000')" style="width:20px;height:20px;background:#000;border-radius:3px;border:.5px solid rgba(255,255,255,.2);cursor:pointer;"></button>
-        </div>
-        <div class="insp-label">Alignment</div>
-        <div style="display:flex;gap:4px;margin-bottom:8px;">
-          <button onclick="edit_textProp('align','left')" class="edit-align-btn">≡ Left</button>
-          <button onclick="edit_textProp('align','center')" class="edit-align-btn">≡ Center</button>
-          <button onclick="edit_textProp('align','right')" class="edit-align-btn">≡ Right</button>
-        </div>
-        <div class="insp-label">Animation</div>
-        <select onchange="edit_textProp('anim',this.value)" style="width:100%;background:rgba(255,255,255,.05);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.6);border-radius:4px;padding:4px;font-size:9px;">
-          <option value="none">None</option>
-          <option value="fade-in">Fade in</option>
-          <option value="slide-up">Slide up</option>
-          <option value="typewriter">Typewriter</option>
-        </select>
-      </div>
-    </div>
-  </div><!-- end main body -->
-
-  <!-- ════════════════════════════════════════════════════════════
-       TIMELINE RESIZE HANDLE
-  ════════════════════════════════════════════════════════════ -->
-  <div id="tl-resize-handle"
-    style="flex-shrink:0;height:5px;background:rgba(255,255,255,.04);cursor:ns-resize;border-top:.5px solid rgba(255,255,255,.08);transition:background .15s;"
-    onmouseenter="this.style.background='rgba(0,212,255,.18)'"
-    onmouseleave="this.style.background='rgba(255,255,255,.04)'"
-    onmousedown="tl_startResize(event)"
-    title="Drag to resize timeline ↕"></div>
-
-  <!-- ════════════════════════════════════════════════════════════
-       TIMELINE
-  ════════════════════════════════════════════════════════════ -->
-  <div id="timeline-panel" style="flex-shrink:0;height:260px;min-height:140px;max-height:55vh;display:flex;flex-direction:column;background:#04060e;border-top:1.5px solid rgba(0,212,255,.2);">
-
-    <!-- Timeline toolbar -->
-    <div style="flex-shrink:0;height:36px;display:flex;align-items:center;gap:3px;padding:0 8px;background:rgba(0,0,0,.35);border-bottom:.5px solid rgba(255,255,255,.06);flex-shrink:0;">
-      <!-- Tool mini buttons -->
-      <div style="display:flex;gap:2px;">
-        <button class="tl-tool on" id="tl-tool-select" onclick="edit_setTool('select')" title="Select (V)">↖</button>
-        <button class="tl-tool" id="tl-tool-trim" onclick="edit_setTool('trim')" title="Trim (T)">↔</button>
-        <button class="tl-tool" id="tl-tool-razor" onclick="edit_setTool('razor')" title="Razor (R)">✂</button>
-      </div>
-      <div style="width:.5px;height:14px;background:rgba(255,255,255,.07);margin:0 4px;"></div>
-      <!-- Zoom -->
-      <button onclick="tl_zoom(-1)" title="Zoom out [-]" class="tl-zoom-btn">−</button>
-      <input type="range" id="tl-zoom-slider" min="1" max="20" value="4" step="0.5"
-        style="width:60px;accent-color:#00d4ff;height:2px;" oninput="tl_setZoom(this.value)">
-      <button onclick="tl_zoom(1)" title="Zoom in [+]" class="tl-zoom-btn">+</button>
-      <span id="tl-zoom-label" style="font-size:8px;color:rgba(255,255,255,.2);min-width:24px;text-align:center;">4x</span>
-      <div style="width:.5px;height:14px;background:rgba(255,255,255,.07);margin:0 4px;"></div>
-      <!-- Add track buttons -->
-      <button onclick="tl_addTrack('text')" class="tl-add-track-btn" style="color:rgba(234,179,8,.7);border-color:rgba(234,179,8,.2);">+ Text</button>
-      <button onclick="wireEditBtns&&wireEditBtns(),typeof edit_uploadAudio==='function'&&edit_uploadAudio('music')" class="tl-add-track-btn" style="color:rgba(16,185,129,.7);border-color:rgba(16,185,129,.2);">+ Music</button>
-      <button onclick="edit_uploadSFX()" class="tl-add-track-btn" style="color:rgba(16,185,129,.6);border-color:rgba(16,185,129,.15);">+ SFX</button>
-      <!-- Snapping + ripple -->
-      <div style="width:.5px;height:14px;background:rgba(255,255,255,.07);margin:0 4px;"></div>
-      <button id="tl-snap-btn" onclick="tl_toggleSnap()" title="Magnetic snapping" class="tl-toggle-btn">🧲 Snap</button>
-      <button id="tl-ripple-btn" onclick="tl_toggleRipple()" title="Ripple edit mode" class="tl-toggle-btn">⟿ Ripple</button>
-      <!-- Right -->
-      <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
-        <button onclick="tl_addMarker()" title="Add marker (M)" style="background:none;border:.5px solid rgba(255,212,0,.2);border-radius:3px;padding:1px 6px;font-size:9px;color:rgba(255,212,0,.5);cursor:pointer;">♦ Marker</button>
-        <span id="tl-duration-display2" style="font-size:9px;font-family:'JetBrains Mono',monospace;color:rgba(255,255,255,.2);">0:00</span>
-      </div>
-    </div>
-
-    <!-- Timeline tracks area -->
-    <div style="flex:1;display:flex;overflow:hidden;min-height:0;">
-      <!-- Track label column -->
-      <div id="tl-labels" style="width:120px;min-width:120px;flex-shrink:0;border-right:.5px solid rgba(255,255,255,.07);overflow:hidden;display:flex;flex-direction:column;">
-        <div style="height:20px;border-bottom:.5px solid rgba(255,255,255,.05);flex-shrink:0;background:rgba(0,0,0,.3);display:flex;align-items:center;padding:0 8px;">
-          <span style="font-size:7px;color:rgba(255,255,255,.15);letter-spacing:.06em;">TRACKS</span>
-        </div>
-        <div id="tl-label-list" style="flex:1;overflow:hidden;display:flex;flex-direction:column;"></div>
-      </div>
-      <!-- Scrollable track canvas -->
-      <div style="flex:1;overflow:auto;position:relative;" id="tl-scroll-container" onscroll="syncLabelScroll(this)">
-        <!-- Ruler -->
-        <div id="tl-ruler" style="height:20px;background:rgba(255,255,255,.025);border-bottom:.5px solid rgba(255,255,255,.06);position:sticky;top:0;z-index:10;min-width:100%;"></div>
-        <!-- Tracks container -->
-        <div id="tl-tracks" style="position:relative;min-width:max-content;min-height:160px;">
-          <!-- Playhead -->
-          <div id="tl-playhead" style="position:absolute;top:0;bottom:0;width:2px;background:#00d4ff;z-index:20;pointer-events:none;left:0;box-shadow:0 0 6px rgba(0,212,255,.5);">
-            <div style="position:absolute;top:-1px;left:-5px;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:7px solid #00d4ff;"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div><!-- end timeline-panel -->
-
-  <!-- Speed dialog -->
-  <div id="edit-speed-dialog" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#12141f;border:.5px solid rgba(255,255,255,.1);border-radius:10px;padding:20px;z-index:1000;min-width:260px;box-shadow:0 20px 60px rgba(0,0,0,.6);">
-    <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.8);margin-bottom:14px;">⏩ Speed Ramp</div>
-    <div class="insp-label">Speed</div>
-    <input type="range" id="speed-dial" min="0.1" max="4" step="0.05" value="1" style="width:100%;accent-color:#00d4ff;margin-bottom:6px;" oninput="document.getElementById('speed-val').textContent=parseFloat(this.value).toFixed(2)+'x'">
-    <div id="speed-val" style="font-size:14px;font-weight:700;color:#00d4ff;text-align:center;margin-bottom:14px;">1.00x</div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;">
-      <button onclick="document.getElementById('edit-speed-dialog').style.display='none'" style="padding:5px 14px;font-size:10px;background:none;border:.5px solid rgba(255,255,255,.1);border-radius:5px;color:rgba(255,255,255,.4);cursor:pointer;">Cancel</button>
-      <button onclick="edit_applySpeed();document.getElementById('edit-speed-dialog').style.display='none'" style="padding:5px 14px;font-size:10px;background:rgba(0,212,255,.15);border:.5px solid rgba(0,212,255,.3);border-radius:5px;color:#00d4ff;cursor:pointer;">Apply</button>
+    <div style="flex:0 0 20px;padding:0 8px;display:flex;align-items:center;border-top:.5px solid rgba(255,255,255,.04);">
+      <span id="ebin-count" style="font-size:8px;color:rgba(255,255,255,.18);"></span>
     </div>
   </div>
 
-
-  <!-- Edit suite status bar -->
-  <div id="edit-status-bar" style="flex-shrink:0;height:22px;background:#070910;border-top:.5px solid rgba(255,255,255,.06);display:flex;align-items:center;padding:0 12px;gap:16px;z-index:10;">
-    <span style="font-size:9px;color:rgba(16,185,129,.6);display:flex;align-items:center;gap:4px;"><span style="width:5px;height:5px;border-radius:50%;background:#10b981;display:inline-block;"></span> Ready</span>
-    <span id="sb-tool-display" style="font-size:9px;color:rgba(255,255,255,.25);font-family:'JetBrains Mono',monospace;">↖ Select</span>
-    <span id="sb-snap-display" style="font-size:9px;color:rgba(255,255,255,.2);">🧲 Snap: ON</span>
-    <span id="sb-ripple-display" style="font-size:9px;color:rgba(255,255,255,.2);">⟿ Ripple: OFF</span>
-    <span style="margin-left:auto;font-size:9px;color:rgba(255,255,255,.2);font-family:'JetBrains Mono',monospace;" id="sb-clip-count">0 clips</span>
-    <span style="font-size:9px;color:rgba(255,255,255,.2);">☁️ Saved</span>
+  <!-- SOURCE MONITOR flex:1 -->
+  <div id="e-src" style="flex:1;min-width:0;display:flex;flex-direction:column;background:#06080e;border-right:1px solid rgba(0,212,255,.18);">
+    <!-- Label bar -->
+    <div style="flex:0 0 22px;display:flex;align-items:center;padding:0 8px;gap:6px;background:rgba(0,212,255,.05);border-bottom:.5px solid rgba(0,212,255,.12);">
+      <span style="font-size:7px;font-weight:700;color:#00d4ff;letter-spacing:.1em;">SOURCE MONITOR</span>
+      <span id="e-src-label" style="font-size:8px;color:rgba(255,255,255,.2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Click a clip to preview</span>
+      <button onclick="E.srcFullscreen()" style="background:none;border:none;color:rgba(255,255,255,.2);font-size:9px;cursor:pointer;" title="Fullscreen">⛶</button>
+    </div>
+    <!-- Video area -->
+    <div id="e-src-view" style="flex:1;position:relative;background:#030508;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+      <div id="e-src-empty" style="text-align:center;color:rgba(255,255,255,.1);pointer-events:none;user-select:none;">
+        <div style="font-size:28px;margin-bottom:6px;">🖼️</div>
+        <div style="font-size:9px;">Select a clip to preview</div>
+      </div>
+      <video id="e-src-vid" style="display:none;max-width:100%;max-height:100%;object-fit:contain;" playsinline></video>
+      <div id="e-src-filter" style="position:absolute;inset:0;pointer-events:none;opacity:0;"></div>
+      <div id="e-src-safe" style="display:none;position:absolute;inset:0;pointer-events:none;">
+        <div style="position:absolute;inset:5%;border:.5px solid rgba(255,255,255,.15);"></div>
+        <div style="position:absolute;inset:10%;border:.5px solid rgba(255,255,255,.07);"></div>
+      </div>
+    </div>
+    <!-- Source transport — directly under video -->
+    <div style="flex:0 0 34px;display:flex;align-items:center;gap:4px;padding:0 8px;background:rgba(0,0,0,.55);border-top:.5px solid rgba(255,255,255,.05);">
+      <button onclick="E.srcJump(0)" class="etrans-btn" title="Start">⏮</button>
+      <button onclick="E.srcStep(-1/30)" class="etrans-btn" title="← Frame">◀</button>
+      <button id="e-src-play" onclick="E.srcToggle()" class="etrans-btn play" title="Play/Pause">▶</button>
+      <button onclick="E.srcStep(1/30)" class="etrans-btn" title="Frame →">▶</button>
+      <button onclick="E.srcJump(-1)" class="etrans-btn" title="End">⏭</button>
+      <input type="range" id="e-src-seek" min="0" max="100" value="0" style="flex:1;accent-color:#00d4ff;height:2px;" oninput="E.srcSeek(+this.value)">
+      <span id="e-src-tc" style="font-size:8px;color:rgba(255,255,255,.3);font-family:monospace;min-width:70px;text-align:right;">0:00 / 0:00</span>
+      <button onclick="E.srcToTimeline()" style="background:rgba(0,212,255,.1);border:.5px solid rgba(0,212,255,.25);border-radius:4px;color:#00d4ff;padding:1px 7px;font-size:9px;cursor:pointer;" title="Send to timeline">→ TL</button>
+    </div>
   </div>
-  </div><!-- end edit-pg -->
 
-  <div id="export-pg" class="pg" style="background:var(--off);padding-top:52px;min-height:100vh;">
+  <!-- PROGRAM MONITOR flex:1 -->
+  <div id="e-prog" style="flex:1;min-width:0;display:flex;flex-direction:column;background:#04060e;border-right:1px solid rgba(139,92,246,.15);">
+    <!-- Label bar -->
+    <div style="flex:0 0 22px;display:flex;align-items:center;padding:0 8px;gap:6px;background:rgba(139,92,246,.04);border-bottom:.5px solid rgba(139,92,246,.1);">
+      <span style="font-size:7px;font-weight:700;color:#a78bfa;letter-spacing:.1em;">PROGRAM MONITOR</span>
+      <span id="e-prog-tc" style="font-size:8px;color:rgba(255,255,255,.18);font-family:monospace;flex:1;">0:00 / 0:00</span>
+      <button onclick="E.cycleQuality()" id="e-qual" style="background:none;border:none;color:rgba(255,255,255,.2);font-size:7px;cursor:pointer;">HD</button>
+      <button onclick="E.cycleRatio()" id="e-ratio" style="background:none;border:none;color:rgba(255,255,255,.2);font-size:7px;cursor:pointer;margin-left:2px;">16:9</button>
+      <button onclick="E.progFullscreen()" style="background:none;border:none;color:rgba(255,255,255,.2);font-size:9px;cursor:pointer;" title="Fullscreen">⛶</button>
+    </div>
+    <!-- Video area -->
+    <div id="e-prog-view" style="flex:1;position:relative;background:#030508;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+      <div id="e-prog-empty" style="text-align:center;color:rgba(255,255,255,.08);pointer-events:none;user-select:none;">
+        <div style="font-size:28px;margin-bottom:6px;">🎬</div>
+        <div style="font-size:9px;">Timeline output</div>
+        <div style="font-size:8px;color:rgba(255,255,255,.05);margin-top:3px;">Press ▶ to play</div>
+      </div>
+      <video id="e-prog-vid" style="display:none;max-width:100%;max-height:100%;object-fit:contain;" playsinline></video>
+      <!-- Subtitle overlay INSIDE program monitor -->
+      <div id="e-prog-subs" style="display:none;position:absolute;bottom:18px;left:5%;right:5%;text-align:center;font-size:14px;font-weight:700;color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.95),0 0 20px rgba(0,0,0,.7);pointer-events:none;line-height:1.4;max-height:60px;overflow:hidden;"></div>
+      <div id="e-prog-safe" style="display:none;position:absolute;inset:0;pointer-events:none;">
+        <div style="position:absolute;inset:5%;border:.5px solid rgba(255,255,255,.12);"></div>
+      </div>
+    </div>
+    <!-- Program transport — directly under video -->
+    <div style="flex:0 0 34px;display:flex;align-items:center;gap:4px;padding:0 8px;background:rgba(0,0,0,.55);border-top:.5px solid rgba(255,255,255,.05);">
+      <button onclick="E.progJump(0)" class="etrans-btn" title="Start">⏮</button>
+      <button onclick="E.progStep(-1)" class="etrans-btn" title="← 1s">◀</button>
+      <button id="e-prog-play" onclick="E.progToggle()" class="etrans-btn play" title="Play Timeline">▶</button>
+      <button onclick="E.progStep(1)" class="etrans-btn" title="1s →">▶</button>
+      <button onclick="E.progJump(-1)" class="etrans-btn" title="End">⏭</button>
+      <input type="range" id="e-prog-seek" min="0" max="100" value="0" style="flex:1;accent-color:#a78bfa;height:2px;" oninput="E.progSeek(+this.value)">
+      <span id="e-prog-tc2" style="font-size:8px;color:rgba(255,255,255,.3);font-family:monospace;min-width:70px;text-align:right;">0:00 / 0:00</span>
+      <button onclick="E.toggleSubs()" id="e-sub-btn" class="etrans-btn" title="CC/Subtitles">CC</button>
+      <button onclick="E.toggleLoop()" id="e-loop-btn" class="etrans-btn" title="Loop">↻</button>
+    </div>
+  </div>
+
+  <!-- INSPECTOR 220px -->
+  <div id="e-insp" style="flex:0 0 220px;display:flex;flex-direction:column;background:#050810;border-left:.5px solid rgba(255,255,255,.06);overflow:hidden;">
+    <div style="flex:0 0 28px;display:flex;align-items:center;padding:0 10px;border-bottom:.5px solid rgba(255,255,255,.05);">
+      <span style="font-size:8px;font-weight:700;color:rgba(255,255,255,.3);letter-spacing:.08em;">INSPECTOR</span>
+    </div>
+    <div id="e-insp-body" style="flex:1;overflow-y:auto;padding:8px 10px;">
+      <div style="font-size:9px;color:rgba(255,255,255,.12);text-align:center;padding:16px 0;">Select a clip on the<br>timeline to inspect.</div>
+    </div>
+  </div>
+
+</div><!-- end main -->
+
+<!-- RESIZE HANDLE 4px -->
+<div id="e-resize" style="flex:0 0 4px;background:rgba(255,255,255,.02);cursor:ns-resize;border-top:1.5px solid rgba(0,212,255,.2);" onmousedown="E.resizeStart(event)" onmouseenter="this.style.background='rgba(0,212,255,.12)'" onmouseleave="this.style.background='rgba(255,255,255,.02)'" title="Drag to resize"></div>
+
+<!-- TIMELINE 240px fixed -->
+<div id="e-timeline" style="flex:0 0 240px;min-height:120px;max-height:55vh;display:flex;flex-direction:column;background:#04060e;overflow:hidden;">
+
+  <!-- Timeline toolbar -->
+  <div style="flex:0 0 30px;display:flex;align-items:center;gap:3px;padding:0 6px;background:rgba(0,0,0,.4);border-bottom:.5px solid rgba(255,255,255,.05);">
+    <button class="tl-tool on" id="etlt-V" onclick="E.setTool('select')">↖</button>
+    <button class="tl-tool" id="etlt-R" onclick="E.setTool('razor')">✂</button>
+    <button class="tl-tool" id="etlt-T" onclick="E.setTool('trim')">↔</button>
+    <div style="width:.5px;height:10px;background:rgba(255,255,255,.07);margin:0 3px;"></div>
+    <button onclick="E.tlZoom(-1)" class="tl-zoom-btn">−</button>
+    <input type="range" id="e-zoom" min="1" max="30" value="6" step=".5" style="width:50px;accent-color:#00d4ff;height:2px;" oninput="E.tlSetZoom(+this.value)">
+    <button onclick="E.tlZoom(1)" class="tl-zoom-btn">+</button>
+    <span id="e-zoom-lbl" style="font-size:7px;color:rgba(255,255,255,.2);min-width:18px;">6x</span>
+    <div style="width:.5px;height:10px;background:rgba(255,255,255,.07);margin:0 3px;"></div>
+    <button onclick="E.tlFit()" class="tl-zoom-btn" title="Fit to window">⊡ Fit</button>
+    <button onclick="E.tlAddTrack()" class="tl-zoom-btn" style="color:rgba(0,212,255,.6);" title="Add track">+ Track</button>
+    <button onclick="E.autoCaption()" class="tl-zoom-btn" style="color:rgba(167,139,250,.6);" title="Generate captions">✨ CC</button>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+      <span id="e-ph-tc" style="font-size:8px;color:rgba(255,255,255,.25);font-family:monospace;">0:00</span>
+      <span style="font-size:8px;color:rgba(255,255,255,.1);">/</span>
+      <span id="e-tl-dur" style="font-size:8px;color:rgba(255,255,255,.2);font-family:monospace;">0:00</span>
+      <button onclick="E.saveMarker()" style="background:rgba(245,158,11,.08);border:.5px solid rgba(245,158,11,.2);border-radius:3px;color:rgba(245,158,11,.6);padding:1px 5px;font-size:8px;cursor:pointer;">🚩</button>
+    </div>
+  </div>
+
+  <!-- Track area: labels | scroll(ruler+rails+playhead) -->
+  <div style="flex:1;display:flex;overflow:hidden;">
+    <!-- Labels column — MUST match track heights exactly -->
+    <div id="e-tl-labels" style="flex:0 0 120px;width:120px;border-right:.5px solid rgba(255,255,255,.07);overflow:hidden;background:#050810;display:flex;flex-direction:column;"></div>
+    <!-- Scroll area -->
+    <div id="e-tl-scroll" style="flex:1;overflow:auto;position:relative;" onscroll="E.syncScroll(this)">
+      <!-- Ruler sticks to top -->
+      <div id="e-tl-ruler" style="position:sticky;top:0;height:20px;background:#050810;border-bottom:.5px solid rgba(255,255,255,.06);z-index:10;min-width:100%;"></div>
+      <!-- All track rails go here, same heights as labels -->
+      <div id="e-tl-rails" style="position:relative;"></div>
+      <!-- Playhead -->
+      <div id="e-tl-ph" style="position:absolute;top:0;bottom:0;width:2px;background:#00d4ff;z-index:20;pointer-events:none;left:0;">
+        <div style="position:absolute;top:20px;left:-5px;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid #00d4ff;"></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- end timeline -->
+
+</div><!-- end edit-pg -->
+
+
+<div id="export-pg" class="pg" style="background:var(--off);padding-top:52px;min-height:100vh;">
     <div class="export-inner">
       <h2 style="margin-bottom:6px;color:var(--ink);">Export your video</h2>
       <p style="color:var(--muted);margin-bottom:24px;">Choose format, platform and export method. Clips will be
