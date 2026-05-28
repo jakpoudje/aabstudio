@@ -7884,26 +7884,97 @@ window.AABE = {
 
   // ── INSPECTOR ────────────────────────────────────────────────────────
   _showInspector: function(trackId, clip) {
-    var body=document.getElementById('e-insp-body');
+    var body = document.getElementById('e-insp-body');
     if(!body) return;
-    var def=this.TRACK_TYPES[trackId]||{};
-    body.innerHTML=
-      '<div style="font-size:8px;font-weight:700;color:rgba(255,255,255,.5);margin-bottom:8px;">'+def.icon+' '+(def.label||trackId).toUpperCase()+'</div>'+
-      '<div style="font-size:10px;font-weight:600;color:rgba(255,255,255,.8);margin-bottom:12px;">'+(clip.name||clip.text||'Clip')+'</div>'+
-      '<div style="font-size:8px;color:rgba(255,255,255,.3);margin-bottom:4px;">POSITION</div>'+
-      '<input type="number" value="'+clip.start.toFixed(2)+'" step=".1" style="width:100%;background:rgba(255,255,255,.05);border:.5px solid rgba(255,255,255,.1);border-radius:4px;color:#fff;padding:3px 6px;font-size:10px;margin-bottom:8px;" oninput="E._clipProp('start',+this.value)">'+
-      '<div style="font-size:8px;color:rgba(255,255,255,.3);margin-bottom:4px;">DURATION</div>'+
-      '<input type="number" value="'+clip.duration.toFixed(2)+'" step=".1" style="width:100%;background:rgba(255,255,255,.05);border:.5px solid rgba(255,255,255,.1);border-radius:4px;color:#fff;padding:3px 6px;font-size:10px;margin-bottom:8px;" oninput="E._clipProp('duration',+this.value)">'+
-      '<div style="font-size:8px;color:rgba(255,255,255,.3);margin-bottom:4px;">VOLUME</div>'+
-      '<input type="range" min="0" max="2" step=".05" value="'+(clip.volume||1)+'" style="width:100%;accent-color:#10b981;margin-bottom:8px;" oninput="E._clipProp('volume',+this.value)">'+
-      '<div style="font-size:8px;color:rgba(255,255,255,.3);margin-bottom:4px;">SPEED</div>'+
-      '<input type="range" min=".25" max="4" step=".05" value="'+(clip.speed||1)+'" style="width:100%;accent-color:#f59e0b;margin-bottom:8px;" oninput="E._clipProp('speed',+this.value)">'+
-      '<div style="font-size:8px;color:rgba(255,255,255,.3);margin-bottom:4px;">TRANSITION BEFORE</div>'+
-      '<select style="width:100%;background:rgba(255,255,255,.05);border:.5px solid rgba(255,255,255,.1);border-radius:4px;color:#fff;padding:3px 6px;font-size:10px;margin-bottom:8px;" onchange="E._clipProp('transition',this.value)">'+
-        ['cut','dissolve','fade-black','fade-white','zoom-in','zoom-out','slide-left','whip','blur'].map(function(t){return '<option value="'+t+'"'+(clip.transition===t?' selected':'')+'>'+t+'</option>';}).join('')+
-      '</select>'+
-      (clip.url?'<div style="font-size:7px;color:rgba(255,255,255,.2);word-break:break-all;margin-top:4px;">'+clip.url.slice(0,60)+'…</div>':'');
-  },
+    var def = this.TRACK_TYPES[trackId] || {};
+    body.innerHTML = '';
+    var self = this;
+
+    function row(label, content) {
+      var d = document.createElement('div');
+      d.style.cssText = 'margin-bottom:10px;';
+      var l = document.createElement('div');
+      l.style.cssText = 'font-size:8px;color:rgba(255,255,255,.3);margin-bottom:4px;letter-spacing:.05em;';
+      l.textContent = label;
+      d.appendChild(l);
+      d.appendChild(content);
+      body.appendChild(d);
+    }
+
+    // Header
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'font-size:8px;font-weight:700;color:rgba(255,255,255,.5);margin-bottom:8px;';
+    hdr.textContent = (def.icon||'') + ' ' + (def.label||trackId).toUpperCase();
+    body.appendChild(hdr);
+
+    var title = document.createElement('div');
+    title.style.cssText = 'font-size:10px;font-weight:600;color:rgba(255,255,255,.8);margin-bottom:12px;overflow:hidden;text-overflow:ellipsis;';
+    title.textContent = clip.name || clip.text || 'Clip';
+    body.appendChild(title);
+
+    // Position input
+    var posIn = document.createElement('input');
+    posIn.type = 'number'; posIn.value = clip.start ? clip.start.toFixed(2) : '0'; posIn.step = '0.1';
+    posIn.style.cssText = 'width:100%;background:rgba(255,255,255,.05);border:.5px solid rgba(255,255,255,.1);border-radius:4px;color:#fff;padding:3px 6px;font-size:10px;box-sizing:border-box;';
+    posIn.oninput = function() { clip.start = +this.value; self.render(); };
+    row('POSITION', posIn);
+
+    // Duration input
+    var durIn = document.createElement('input');
+    durIn.type = 'number'; durIn.value = clip.duration ? clip.duration.toFixed(2) : '5'; durIn.step = '0.1';
+    durIn.style.cssText = posIn.style.cssText;
+    durIn.oninput = function() { clip.duration = Math.max(0.1, +this.value); self.render(); };
+    row('DURATION', durIn);
+
+    // Volume slider
+    var volIn = document.createElement('input');
+    volIn.type = 'range'; volIn.min = '0'; volIn.max = '2'; volIn.step = '0.05'; volIn.value = clip.volume || 1;
+    volIn.style.cssText = 'width:100%;accent-color:#10b981;';
+    volIn.oninput = function() { clip.volume = +this.value; };
+    row('VOLUME', volIn);
+
+    // Speed slider
+    var spdIn = document.createElement('input');
+    spdIn.type = 'range'; spdIn.min = '0.25'; spdIn.max = '4'; spdIn.step = '0.05'; spdIn.value = clip.speed || 1;
+    spdIn.style.cssText = 'width:100%;accent-color:#f59e0b;';
+    spdIn.oninput = function() { clip.speed = +this.value; clip.duration = (clip.duration || 5) / +this.value; self.render(); };
+    row('SPEED', spdIn);
+
+    // Transition select
+    var trSel = document.createElement('select');
+    trSel.style.cssText = 'width:100%;background:rgba(255,255,255,.05);border:.5px solid rgba(255,255,255,.1);border-radius:4px;color:#fff;padding:3px 6px;font-size:10px;';
+    ['cut','dissolve','fade-black','fade-white','zoom-in','zoom-out','slide-left','slide-right','whip','blur'].forEach(function(t) {
+      var o = document.createElement('option'); o.value = t; o.textContent = t;
+      if(clip.transition === t) o.selected = true;
+      trSel.appendChild(o);
+    });
+    trSel.onchange = function() { clip.transition = this.value; };
+    row('TRANSITION BEFORE', trSel);
+
+    // Text edit (for subtitle/text clips)
+    if(clip.text || def.type === 'text') {
+      var txtIn = document.createElement('textarea');
+      txtIn.style.cssText = 'width:100%;background:rgba(255,255,255,.05);border:.5px solid rgba(255,255,255,.1);border-radius:4px;color:#fff;padding:4px 6px;font-size:10px;min-height:50px;box-sizing:border-box;resize:vertical;font-family:inherit;';
+      txtIn.value = clip.text || '';
+      txtIn.oninput = function() { clip.text = this.value; clip.name = this.value.slice(0,30); };
+      row('TEXT', txtIn);
+    }
+
+    // Source URL
+    if(clip.url) {
+      var urlD = document.createElement('div');
+      urlD.style.cssText = 'font-size:7px;color:rgba(255,255,255,.2);word-break:break-all;margin-top:4px;';
+      urlD.textContent = clip.url.slice(0,60) + (clip.url.length > 60 ? '…' : '');
+      body.appendChild(urlD);
+    }
+
+    // Delete button
+    var delBtn = document.createElement('button');
+    delBtn.textContent = '🗑 Remove clip';
+    delBtn.style.cssText = 'margin-top:12px;width:100%;background:rgba(239,68,68,.1);border:.5px solid rgba(239,68,68,.3);border-radius:4px;color:#f87171;padding:5px;font-size:10px;cursor:pointer;font-family:inherit;';
+    delBtn.onclick = function() { self.rippleDel(); };
+    body.appendChild(delBtn);
+  }
   _showInspectorEmpty: function() {
     var body=document.getElementById('e-insp-body');
     if(body) body.innerHTML='<div style="font-size:9px;color:rgba(255,255,255,.12);text-align:center;padding:16px 0;">Select a clip on the<br>timeline to inspect.</div>';
