@@ -6799,6 +6799,145 @@ setTimeout(function(){
     };
   }
 
+  // ── 0. DUAL MONITORS + TIMELINE LAYOUT ─────────────────────────────────────
+  function _showTimeline() {
+    var tl = document.getElementById('timeline-panel');
+    var rh = document.getElementById('tl-resize-handle');
+    if (tl) { tl.style.setProperty('display','flex','important'); tl.style.height = '220px'; }
+    if (rh) { rh.style.setProperty('display','block','important'); }
+    if (typeof tl_render === 'function') { try { tl_render(); } catch(e) {} }
+    if (typeof tl_initTracks === 'function' && (!window.TL || !window.TL.tracks || !window.TL.tracks.length)) tl_initTracks();
+  }
+
+  function _initDualMonitors() {
+    var pp = document.getElementById('edit-preview-pane');
+    if (!pp || document.getElementById('aab-prog-mon-wrap')) return; // already done
+
+    // Make preview pane horizontal
+    pp.style.flexDirection = 'row';
+
+    // Rename/rebrand the existing viewport as SOURCE MONITOR
+    var vp = document.getElementById('edit-viewport');
+    var vpParent = vp && vp.parentElement;
+    if (!vp || !vpParent) return;
+
+    // Wrap viewport in source monitor container
+    var srcWrap = document.createElement('div');
+    srcWrap.id = 'aab-src-mon-wrap';
+    srcWrap.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;background:#06080e;border-right:.5px solid rgba(0,212,255,.12);';
+    
+    // Source label bar
+    var srcBar = document.createElement('div');
+    srcBar.style.cssText = 'flex-shrink:0;padding:3px 10px;background:rgba(0,212,255,.05);border-bottom:.5px solid rgba(0,212,255,.1);display:flex;align-items:center;justify-content:space-between;';
+    srcBar.innerHTML = '<span style="font-size:8px;font-weight:700;color:#00d4ff;letter-spacing:.08em;">SOURCE MONITOR</span><span id="aab-src-label" style="font-size:8px;color:rgba(255,255,255,.25);">Click clip to preview</span>';
+    
+    // Source controls
+    var srcCtrl = document.createElement('div');
+    srcCtrl.style.cssText = 'flex-shrink:0;height:30px;display:flex;align-items:center;gap:6px;padding:0 8px;background:rgba(0,0,0,.5);border-top:.5px solid rgba(255,255,255,.05);';
+    srcCtrl.innerHTML = '<button id="aab-src-play" onclick="var v=document.getElementById('edit-video');if(v){v.paused?v.play():v.pause();this.textContent=v.paused?'▶':'⏸';}" style="background:rgba(0,212,255,.1);border:.5px solid rgba(0,212,255,.25);border-radius:4px;color:#00d4ff;padding:1px 10px;font-size:11px;cursor:pointer;">▶</button>'
+      + '<input type="range" id="aab-src-seek" min="0" max="100" value="0" style="flex:1;accent-color:#00d4ff;height:2px;" oninput="var v=document.getElementById('edit-video');if(v&&v.duration)v.currentTime=v.duration*(this.value/100);">'
+      + '<span id="aab-src-tc" style="font-size:8px;color:rgba(255,255,255,.3);font-family:monospace;min-width:55px;">0:00/0:00</span>'
+      + '<button onclick="if(window.E&&E.sourceClip&&typeof E_addClip==='function')E_addClip(E.sourceClip,'main');" title="Add to timeline" style="background:rgba(255,255,255,.05);border:.5px solid rgba(255,255,255,.1);border-radius:4px;color:rgba(255,255,255,.4);padding:1px 7px;font-size:9px;cursor:pointer;">→TL</button>';
+
+    // Move vp into srcWrap
+    pp.insertBefore(srcWrap, vp);
+    srcWrap.appendChild(srcBar);
+    srcWrap.appendChild(vp);
+    vp.style.flex = '1';
+    srcWrap.appendChild(srcCtrl);
+
+    // Hook source monitor timecode
+    var editVid = document.getElementById('edit-video');
+    if (editVid && !editVid._srcHooked) {
+      editVid._srcHooked = true;
+      editVid.addEventListener('timeupdate', function() {
+        var tc = document.getElementById('aab-src-tc');
+        var seek = document.getElementById('aab-src-seek');
+        if (tc) tc.textContent = _fmtTime(editVid.currentTime)+'/'+_fmtTime(editVid.duration||0);
+        if (seek && editVid.duration) seek.value = (editVid.currentTime/editVid.duration*100).toFixed(1);
+        var pb = document.getElementById('aab-src-play');
+        if (pb) pb.textContent = editVid.paused ? '▶' : '⏸';
+      });
+    }
+
+    // Build PROGRAM MONITOR
+    var progWrap = document.createElement('div');
+    progWrap.id = 'aab-prog-mon-wrap';
+    progWrap.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;background:#04060e;';
+
+    var progBar = document.createElement('div');
+    progBar.style.cssText = 'flex-shrink:0;padding:3px 10px;background:rgba(139,92,246,.05);border-bottom:.5px solid rgba(139,92,246,.12);display:flex;align-items:center;justify-content:space-between;';
+    progBar.innerHTML = '<span style="font-size:8px;font-weight:700;color:#a78bfa;letter-spacing:.08em;">PROGRAM MONITOR</span><span id="aab-prog-tc" style="font-size:8px;color:rgba(255,255,255,.25);font-family:monospace;">0:00 / 0:00</span>';
+
+    var progView = document.createElement('div');
+    progView.id = 'aab-prog-view';
+    progView.style.cssText = 'flex:1;position:relative;display:flex;align-items:center;justify-content:center;background:#06080e;overflow:hidden;';
+    progView.innerHTML = '<div id="aab-prog-empty" style="text-align:center;color:rgba(255,255,255,.12);"><div style="font-size:28px;margin-bottom:8px;">🎬</div><div style="font-size:10px;">Timeline output</div><div style="font-size:9px;margin-top:4px;color:rgba(255,255,255,.08);">Press play on timeline</div></div>'
+      + '<video id="aab-prog-video" style="display:none;max-width:100%;max-height:100%;object-fit:contain;" playsinline></video>'
+      + '<div id="aab-prog-subs" style="position:absolute;bottom:16px;left:8%;right:8%;text-align:center;font-size:15px;font-weight:700;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.9);pointer-events:none;display:none;"></div>';
+
+    var progCtrl = document.createElement('div');
+    progCtrl.style.cssText = 'flex-shrink:0;height:30px;display:flex;align-items:center;gap:6px;padding:0 8px;background:rgba(0,0,0,.5);border-top:.5px solid rgba(255,255,255,.05);';
+    progCtrl.innerHTML = '<button id="aab-prog-play" onclick="_progPlay()" style="background:rgba(139,92,246,.1);border:.5px solid rgba(139,92,246,.25);border-radius:4px;color:#a78bfa;padding:1px 10px;font-size:11px;cursor:pointer;">▶</button>'
+      + '<input type="range" id="aab-prog-seek" min="0" max="100" value="0" style="flex:1;accent-color:#a78bfa;height:2px;" oninput="_progSeek(this.value)">'
+      + '<button onclick="if(typeof edit_autoCaption==='function')edit_autoCaption();" title="Auto captions" style="background:rgba(255,255,255,.04);border:.5px solid rgba(255,255,255,.08);border-radius:4px;color:rgba(255,255,255,.35);padding:1px 6px;font-size:9px;cursor:pointer;">CC</button>';
+
+    progWrap.appendChild(progBar);
+    progWrap.appendChild(progView);
+    progWrap.appendChild(progCtrl);
+    pp.appendChild(progWrap);
+  }
+
+  function _fmtTime(s) {
+    if (!s || isNaN(s)) return '0:00';
+    return Math.floor(s/60)+':'+(Math.floor(s%60)<10?'0':'')+Math.floor(s%60);
+  }
+
+  // Program monitor playback — plays clips sequentially from timeline
+  window._progPlay = function() {
+    var btn = document.getElementById('aab-prog-play');
+    var pv = document.getElementById('aab-prog-video');
+    var pe = document.getElementById('aab-prog-empty');
+    if (!pv) return;
+    if (!pv.paused) { pv.pause(); if(btn) btn.textContent='▶'; return; }
+    // Build playlist from TL tracks
+    var clips = [];
+    if (window.TL && TL.tracks) {
+      var main = TL.tracks.find(function(t){return t.id==='main-video'||t.id==='main'||t.id==='track_video';});
+      if (main) clips = (main.clips||[]).filter(function(c){return c.url;}).sort(function(a,b){return a.start-b.start;});
+    }
+    // Fallback: use project clips
+    if (!clips.length && window.PROJECT) {
+      var all = Object.values(PROJECT.apsVideos||{}).concat(Object.values(PROJECT.clips||{}));
+      all.sort(function(a,b){return (a.sceneNum||0)-(b.sceneNum||0);});
+      clips = all.filter(function(c){return c.url||c.videoUrl;}).map(function(c,i){return {url:c.url||c.videoUrl,start:i*10,duration:c.duration||10};});
+    }
+    if (!clips.length) { if(typeof toast==='function') toast('No clips on timeline','info'); return; }
+    if(pe) pe.style.display='none';
+    pv.style.display='';
+    var idx=0;
+    function playNext() {
+      if(idx>=clips.length){if(btn)btn.textContent='▶';pv.pause();return;}
+      pv.src=clips[idx++].url;
+      pv.play().catch(function(){playNext();});
+      pv.onended=playNext;
+      if(btn) btn.textContent='⏸';
+    }
+    playNext();
+    // Update prog timecode
+    pv.addEventListener('timeupdate', function(){
+      var tc=document.getElementById('aab-prog-tc');
+      var sk=document.getElementById('aab-prog-seek');
+      if(tc) tc.textContent=_fmtTime(pv.currentTime)+' / '+_fmtTime(pv.duration||0);
+      if(sk&&pv.duration) sk.value=(pv.currentTime/pv.duration*100).toFixed(1);
+    }, {once:false});
+  };
+  window._progSeek = function(v) {
+    var pv=document.getElementById('aab-prog-video');
+    if(pv&&pv.duration) pv.currentTime=pv.duration*(v/100);
+  };
+
+
   // ── 2. SEGMENTATION — skip if already done ──────────────────────────────────
   var _origSeg = window.startSegmentation;
   if (_origSeg && !window._segHooked) {
@@ -7256,6 +7395,7 @@ setTimeout(function(){
       if (e.detail && e.detail.page === 'edit-pg') {
         setTimeout(function() { edit_refreshBin(); edit_buildPlaylist(); }, 400);
         setTimeout(function(){ var r=document.querySelector('#edit-topbar>div+div'); if(r)r.style.setProperty('display','flex','important'); }, 200);
+        setTimeout(function(){ _initDualMonitors(); _showTimeline(); }, 300);
       }
       if (e.detail && e.detail.page === 'record-pg') {
         setTimeout(function() {
@@ -7278,6 +7418,16 @@ setTimeout(function(){
 <style id="edit-topbar-override">
 #edit-topbar{flex:0 0 auto!important;height:auto!important;min-height:74px!important;max-height:none!important;overflow:visible!important;}
 #edit-topbar>div+div{display:flex!important;min-height:36px!important;height:36px!important;}
+/* Timeline always visible */
+#timeline-panel{display:flex!important;flex-shrink:0!important;height:220px!important;min-height:140px!important;}
+#tl-resize-handle{display:block!important;height:5px!important;flex-shrink:0!important;}
+/* Main body row: bin + monitors + inspector */
+#edit-pg>#timeline-panel{order:3;}
+#edit-pg>div:not(#edit-topbar):not(#timeline-panel):not(#tl-resize-handle){flex:1 1 0!important;min-height:0!important;overflow:hidden!important;}
+/* Dual monitors inside preview pane */
+#edit-preview-pane{flex-direction:row!important;}
+#edit-preview-pane>#edit-viewport{flex:1!important;min-width:0!important;border-right:.5px solid rgba(0,212,255,.12)!important;}
+#aab-prog-mon-wrap{flex:1;min-width:0;display:flex;flex-direction:column;background:#04060e;}
 </style>
 </head>
 
