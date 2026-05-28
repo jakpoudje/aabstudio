@@ -25379,5 +25379,307 @@ console.log("AABStudio v4 loaded OK");
 
 </script>
 
+
+<script id="aab-layout-enforcer">
+(function(){
+'use strict';
+
+// Track type colour map
+var TRACK_COLOURS = {
+  'main-video':'#3b82f6','broll':'#60a5fa','overlay':'#a78bfa',
+  'text':'#34d399','subtitle':'#22d3ee','voice':'#10b981',
+  'music':'#059669','sfx':'#94a3b8','transition':'#f59e0b',
+  'fx':'#f97316','image':'#ec4899','background':'#6366f1'
+};
+
+// Apply grid layout - called after .on is added to edit-pg
+function applyGrid() {
+  var ep = document.getElementById('edit-pg');
+  if (!ep || !ep.classList.contains('on')) return;
+
+  // Force CSS Grid - must use setProperty with !important to beat .on{display:flex!important}
+  ep.style.setProperty('display', 'grid', 'important');
+  ep.style.setProperty('grid-template-rows', '36px 32px 1fr 5px 240px', 'important');
+  ep.style.setProperty('grid-template-columns', '1fr', 'important');
+  ep.style.setProperty('height', '100vh', 'important');
+  ep.style.setProperty('overflow', 'hidden', 'important');
+  ep.style.removeProperty('flex-direction');
+
+  // Fix nav row
+  var nav = document.getElementById('e-nav-bar');
+  if (nav) {
+    nav.style.setProperty('height', '36px', 'important');
+    nav.style.setProperty('min-height', '36px', 'important');
+    nav.style.setProperty('max-height', '36px', 'important');
+    nav.style.setProperty('overflow', 'hidden', 'important');
+    nav.style.setProperty('display', 'flex', 'important');
+    nav.style.setProperty('align-items', 'center', 'important');
+    nav.style.removeProperty('flex');
+  }
+
+  // Fix tools row
+  var tools = document.getElementById('e-tools-bar');
+  if (tools) {
+    tools.style.setProperty('height', '32px', 'important');
+    tools.style.setProperty('min-height', '32px', 'important');
+    tools.style.setProperty('max-height', '32px', 'important');
+    tools.style.setProperty('overflow', 'hidden', 'important');
+    tools.style.setProperty('display', 'flex', 'important');
+    tools.style.setProperty('align-items', 'center', 'important');
+    tools.style.removeProperty('flex');
+  }
+
+  // Fix resize handle
+  var resize = document.getElementById('e-resize');
+  if (resize) {
+    resize.style.setProperty('height', '5px', 'important');
+    resize.style.setProperty('min-height', '5px', 'important');
+    resize.style.setProperty('max-height', '5px', 'important');
+    resize.style.removeProperty('flex');
+  }
+
+  // Fix timeline
+  var tl = document.getElementById('e-timeline');
+  if (tl) {
+    tl.style.setProperty('height', '240px', 'important');
+    tl.style.setProperty('min-height', '240px', 'important');
+    tl.style.setProperty('max-height', '240px', 'important');
+    tl.style.setProperty('display', 'flex', 'important');
+    tl.style.setProperty('flex-direction', 'column', 'important');
+    tl.style.setProperty('overflow', 'hidden', 'important');
+    tl.style.removeProperty('flex');
+  }
+
+  // Fix main area
+  var main = document.getElementById('e-main');
+  if (main) {
+    main.style.setProperty('display', 'flex', 'important');
+    main.style.setProperty('overflow', 'hidden', 'important');
+    main.style.setProperty('min-height', '0', 'important');
+    main.style.removeProperty('flex');
+    main.style.removeProperty('height');
+  }
+
+  // Fix old topbar
+  var oldTb = document.getElementById('edit-topbar');
+  if (oldTb) oldTb.style.setProperty('display', 'none', 'important');
+
+  // Fix src monitor
+  var src = document.getElementById('e-src');
+  if (src) {
+    src.style.setProperty('flex', '1 1 0', 'important');
+    src.style.setProperty('min-width', '0', 'important');
+    src.style.setProperty('display', 'flex', 'important');
+    src.style.setProperty('flex-direction', 'column', 'important');
+    src.style.setProperty('overflow', 'hidden', 'important');
+  }
+
+  // Fix prog monitor
+  var prog = document.getElementById('e-prog');
+  if (prog) {
+    prog.style.setProperty('flex', '1 1 0', 'important');
+    prog.style.setProperty('min-width', '0', 'important');
+    prog.style.setProperty('display', 'flex', 'important');
+    prog.style.setProperty('flex-direction', 'column', 'important');
+    prog.style.setProperty('overflow', 'hidden', 'important');
+  }
+
+  // Fix inspector - ensure always visible
+  var insp = document.getElementById('e-insp');
+  if (insp) {
+    insp.style.setProperty('flex', '0 0 220px', 'important');
+    insp.style.setProperty('min-width', '220px', 'important');
+    insp.style.setProperty('width', '220px', 'important');
+    insp.style.setProperty('display', 'flex', 'important');
+    insp.style.setProperty('flex-direction', 'column', 'important');
+    insp.style.setProperty('overflow', 'hidden', 'important');
+  }
+
+  // Fix bin
+  var bin = document.getElementById('e-bin');
+  if (bin) {
+    bin.style.setProperty('flex', '0 0 190px', 'important');
+    bin.style.setProperty('min-width', '190px', 'important');
+    bin.style.setProperty('width', '190px', 'important');
+  }
+
+  // Apply track label colours
+  colourTrackLabels();
+
+  console.log('[AAB] Grid applied. ep display:', getComputedStyle(ep).display,
+    'main h:', document.getElementById('e-main')?.offsetHeight,
+    'tl h:', document.getElementById('e-timeline')?.offsetHeight);
+}
+
+// Colour track labels
+function colourTrackLabels() {
+  document.querySelectorAll('[data-trackid]').forEach(function(el) {
+    var tid = el.dataset.trackid;
+    var colour = TRACK_COLOURS[tid] || '#6b7280';
+    // Find the label span (track name text)
+    var nameSpan = el.querySelector('span:last-of-type,span');
+    if (nameSpan) nameSpan.style.color = colour;
+    // Left border colour
+    el.style.borderLeft = '3px solid ' + colour;
+  });
+
+  // Also colour any .e-track-lbl elements
+  document.querySelectorAll('.e-track-lbl').forEach(function(lbl) {
+    var rail = document.querySelector('.e-track-rail[data-trackid]');
+    if (!rail) return;
+    var tid = rail.dataset.trackid;
+    var colour = TRACK_COLOURS[tid] || '#6b7280';
+    lbl.style.borderLeft = '3px solid ' + colour;
+  });
+}
+
+// ── MUTATION OBSERVER: fires every time edit-pg gets class "on" ───────────
+var _ep = document.getElementById('edit-pg');
+if (_ep) {
+  var obs = new MutationObserver(function(mutations) {
+    mutations.forEach(function(m) {
+      if (m.attributeName === 'class' || m.attributeName === 'style') {
+        if (_ep.classList.contains('on')) {
+          // Small delay to let other scripts finish
+          setTimeout(applyGrid, 50);
+          setTimeout(applyGrid, 200);
+          setTimeout(applyGrid, 500);
+        }
+      }
+    });
+  });
+  obs.observe(_ep, {attributes: true});
+}
+
+// ── HOOK nav() to also trigger applyGrid ─────────────────────────────────
+var _origNav = window.nav;
+if (typeof _origNav === 'function' && !window._gridNavHooked) {
+  window._gridNavHooked = true;
+  window.nav = function(pg) {
+    var r = _origNav.apply(this, arguments);
+    if (pg === 'edit-pg') {
+      setTimeout(applyGrid, 80);
+      setTimeout(applyGrid, 300);
+      setTimeout(applyGrid, 700);
+    }
+    return r;
+  };
+}
+
+// ── RUN NOW if already on edit page ──────────────────────────────────────
+if (_ep && _ep.classList.contains('on')) {
+  applyGrid();
+  setTimeout(applyGrid, 300);
+}
+
+// ── GLOBAL CSS INJECTION: text visibility, track colours, markers ─────────
+var style = document.createElement('style');
+style.id = 'aab-visual-fixes';
+style.textContent = `
+/* === Text visibility === */
+.enb { color:rgba(255,255,255,.85)!important; }
+.emenu-btn { color:rgba(255,255,255,.85)!important; font-size:11px!important; }
+.ebin-tab { color:rgba(255,255,255,.65)!important; font-size:9px!important; }
+.ebin-tab.on { color:#00d4ff!important; }
+.tl-tool, .tl-zoom-btn { color:rgba(255,255,255,.75)!important; }
+.e-clip-name { color:rgba(255,255,255,.95)!important; font-size:9px!important; font-weight:700!important; }
+.e-clip-dur { color:rgba(255,255,255,.6)!important; font-size:8px!important; }
+#e-tl-ruler div span { color:rgba(255,255,255,.6)!important; }
+#e-tl-labels .e-track-lbl span { color:rgba(255,255,255,.85)!important; font-weight:600!important; }
+#e-tl-labels .e-track-lbl { border-left:3px solid #3b82f6; }
+#e-tl-labels button { color:rgba(255,255,255,.5)!important; }
+#ebin-count { color:rgba(255,255,255,.5)!important; }
+#e-src-label,#e-src-tc,#e-prog-tc,#e-prog-tc2 { color:rgba(255,255,255,.65)!important; }
+#e-ph-tc,#e-tl-dur { color:rgba(255,255,255,.6)!important; }
+#e-zoom-lbl { color:rgba(255,255,255,.5)!important; }
+#e-insp-body div { color:rgba(255,255,255,.75)!important; }
+
+/* === Source & Program monitor labels === */
+#e-src > div:first-child span:first-child { color:#00d4ff!important; font-size:8px!important; font-weight:800!important; letter-spacing:.1em!important; }
+#e-prog > div:first-child span:first-child { color:#a78bfa!important; font-size:8px!important; font-weight:800!important; letter-spacing:.1em!important; }
+
+/* === Track label colours by type === */
+[data-trackid="main-video"] { border-left:3px solid #3b82f6!important; }
+[data-trackid="broll"]       { border-left:3px solid #60a5fa!important; }
+[data-trackid="overlay"]     { border-left:3px solid #a78bfa!important; }
+[data-trackid="text"]        { border-left:3px solid #34d399!important; }
+[data-trackid="subtitle"]    { border-left:3px solid #22d3ee!important; }
+[data-trackid="voice"]       { border-left:3px solid #10b981!important; }
+[data-trackid="music"]       { border-left:3px solid #059669!important; }
+[data-trackid="sfx"]         { border-left:3px solid #94a3b8!important; }
+[data-trackid="transition"]  { border-left:3px solid #f59e0b!important; }
+[data-trackid="fx"]          { border-left:3px solid #f97316!important; }
+[data-trackid="image"]       { border-left:3px solid #ec4899!important; }
+[data-trackid="background"]  { border-left:3px solid #6366f1!important; }
+
+/* Track label text - bright and coloured */
+[data-trackid="main-video"] .e-track-lbl span,
+[data-trackid="main-video"] span { color:#3b82f6!important; }
+[data-trackid="broll"] span { color:#60a5fa!important; }
+[data-trackid="overlay"] span { color:#a78bfa!important; }
+[data-trackid="text"] span { color:#34d399!important; }
+[data-trackid="subtitle"] span { color:#22d3ee!important; }
+[data-trackid="voice"] span { color:#10b981!important; }
+[data-trackid="music"] span { color:#059669!important; }
+[data-trackid="sfx"] span { color:#94a3b8!important; }
+[data-trackid="transition"] span { color:#f59e0b!important; }
+[data-trackid="fx"] span { color:#f97316!important; }
+[data-trackid="image"] span { color:#ec4899!important; }
+[data-trackid="background"] span { color:#6366f1!important; }
+
+/* === Clip thumbnails - horizontal filmstrip === */
+.e-clip { display:flex!important; align-items:center!important; overflow:hidden!important; }
+.e-clip video.e-clip-thumb { 
+  width:50px!important; height:100%!important; min-width:50px!important;
+  object-fit:cover!important; flex-shrink:0!important;
+  display:block!important; border-radius:2px 0 0 2px!important;
+}
+.e-clip-info { flex:1!important; min-width:0!important; padding:2px 5px!important; }
+
+/* === Markers - visible yellow lines === */
+.e-marker {
+  position:absolute!important; top:0!important; bottom:0!important;
+  width:2px!important; background:#f59e0b!important; z-index:25!important;
+  pointer-events:none!important;
+}
+.e-marker::before {
+  content:attr(data-label)!important;
+  position:absolute!important; top:0!important; left:3px!important;
+  font-size:7px!important; color:#f59e0b!important; white-space:nowrap!important;
+  background:rgba(0,0,0,.8)!important; padding:1px 4px!important;
+  border-radius:2px!important; font-weight:700!important;
+}
+/* Marker flag at top of playhead area */
+#e-tl-ph::after {
+  content:'';
+  position:absolute!important; top:20px!important; left:-5px!important;
+  border-left:6px solid transparent!important;
+  border-right:6px solid transparent!important;
+  border-top:8px solid #00d4ff!important;
+}
+
+/* === Inspector - always visible, proper text === */
+#e-insp { background:#050810!important; border-left:1px solid rgba(255,255,255,.08)!important; }
+#e-insp-body input, #e-insp-body select, #e-insp-body textarea {
+  color:#fff!important; background:rgba(255,255,255,.06)!important;
+  border:.5px solid rgba(255,255,255,.12)!important; border-radius:4px!important;
+}
+#e-insp-body label { color:rgba(255,255,255,.6)!important; font-size:9px!important; }
+
+/* === Waveform on audio tracks === */
+.e-clip-wave { opacity:.6!important; }
+
+/* === Timeline ruler ticks - visible === */
+#e-tl-ruler { background:#050810!important; }
+`;
+// Remove old style if exists
+var old = document.getElementById('aab-visual-fixes');
+if (old) old.remove();
+document.head.appendChild(style);
+
+window._aabLayoutEnforcer = applyGrid;
+
+})();
+</script>
 </body>
 </html>
