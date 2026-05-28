@@ -7090,11 +7090,27 @@ window.AABE = {
       lbl.style.height = h+'px';
       lbl.style.minHeight = h+'px';
       lbl.title = 'Click to select track';
-      lbl.innerHTML =
-        '<button onclick="AABE.muteTrack(''+track.id+'')" style="background:none;border:none;cursor:pointer;font-size:10px;padding:0;color:'+(track.muted?'#ef4444':'rgba(255,255,255,.4)')+';flex-shrink:0;" title="'+(track.muted?'Unmute':'Mute')+'">'+def.icon+'</button>'+
-        '<span style="font-size:8px;font-weight:600;color:rgba(255,255,255,.'+(track.muted?'2':'55')+');flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(track.collapsed?'▶ ':'')+'</span>'+
-        '<span style="font-size:7px;color:rgba(255,255,255,.25);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">'+def.label+'</span>'+
-        '<button onclick="AABE.lockTrack(''+track.id+'')" style="background:none;border:none;cursor:pointer;font-size:9px;padding:0;color:'+(track.locked?'#f59e0b':'rgba(255,255,255,.15)')+';flex-shrink:0;" title="'+(track.locked?'Unlock':'Lock')+'">'+( track.locked?'🔒':'🔓')+'</button>';
+      // Build label with DOM (avoids quote escaping issues)
+      var muteBtn = document.createElement('button');
+      muteBtn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:10px;padding:0;flex-shrink:0;';
+      muteBtn.title = track.muted ? 'Unmute' : 'Mute';
+      muteBtn.textContent = def.icon;
+      muteBtn.style.color = track.muted ? '#ef4444' : 'rgba(255,255,255,.4)';
+      muteBtn.onclick = (function(tid){return function(){AABE.muteTrack(tid);};})(track.id);
+      var nameSpan = document.createElement('span');
+      nameSpan.style.cssText = 'font-size:8px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      nameSpan.style.color = 'rgba(255,255,255,.'+(track.muted?'2':'55')+')';
+      nameSpan.textContent = (track.collapsed?'▶ ':'');
+      var labelSpan = document.createElement('span');
+      labelSpan.style.cssText = 'font-size:7px;color:rgba(255,255,255,.25);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;';
+      labelSpan.textContent = def.label;
+      var lockBtn = document.createElement('button');
+      lockBtn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:9px;padding:0;flex-shrink:0;';
+      lockBtn.title = track.locked ? 'Unlock' : 'Lock';
+      lockBtn.textContent = track.locked ? '🔒' : '🔓';
+      lockBtn.style.color = track.locked ? '#f59e0b' : 'rgba(255,255,255,.15)';
+      lockBtn.onclick = (function(tid){return function(){AABE.lockTrack(tid);};})(track.id);
+      lbl.appendChild(muteBtn); lbl.appendChild(nameSpan); lbl.appendChild(labelSpan); lbl.appendChild(lockBtn);
       labels.appendChild(lbl);
 
       // ── RAIL ──
