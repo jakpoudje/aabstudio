@@ -5799,6 +5799,44 @@ body{max-width:100vw;overflow-x:hidden}
   border-radius: 4px; color: #60a5fa; font-size: 11px;
   padding: 3px 8px; cursor: pointer;
 }
+
+/* ═══ AABE Edit Suite Desktop Layout ═══ */
+#edit-pg.on:has(.aab-edit-body) {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100dvh !important;
+  overflow: hidden !important;
+}
+#edit-pg.on .aab-edit-body {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: row !important;
+  overflow: hidden !important;
+}
+#edit-pg.on .aab-tl-wrap {
+  flex: 0 0 240px !important;
+  height: 240px !important;
+  overflow: hidden !important;
+}
+#edit-pg.on .aab-monitors {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+#edit-pg.on .aab-monitors-row {
+  flex: 1 1 0 !important;
+  min-height: 80px !important;
+  height: 100% !important;
+}
+#edit-pg.on .aab-monitor { flex: 1 1 0 !important; min-height: 0 !important; position: relative !important; }
+#edit-pg.on .aab-bin { flex: 0 0 180px !important; border-right: 1px solid rgba(255,255,255,.08) !important; }
+#edit-pg.on .aab-inspector { flex: 0 0 200px !important; border-left: 1px solid rgba(255,255,255,.08) !important; }
+@media(max-width:768px){
+  #edit-pg.on .aab-bin, #edit-pg.on .aab-inspector { display: none !important; }
+  #edit-pg.on .aab-monitors-row { flex-direction: column !important; }
+  #edit-pg.on .aab-tl-wrap { flex: 0 0 180px !important; height: 180px !important; }
+}
 </style></head>
 
     <style>
@@ -15379,6 +15417,21 @@ function applyGrid(){
   var ep=document.getElementById('edit-pg');
   if(!ep||!ep.classList.contains('on'))return;
   var W=window.innerWidth,mob=W<=480,tab=W>480&&W<=768;
+  // If AABE engine is active, use flex instead of grid
+  if(ep.querySelector('.aab-edit-body')){
+    ep.style.setProperty('display','flex','important');
+    ep.style.setProperty('flex-direction','column','important');
+    ep.style.setProperty('height','100dvh','important');
+    ep.style.setProperty('overflow','hidden','important');
+    if(mob||tab) ep.style.setProperty('padding-bottom','56px','important');
+    var _body=ep.querySelector('.aab-edit-body');
+    if(_body){_body.style.setProperty('flex','1 1 0','important');_body.style.setProperty('min-height','0','important');_body.style.setProperty('display','flex','important');_body.style.setProperty('overflow','hidden','important');}
+    var _tl=ep.querySelector('.aab-tl-wrap');
+    if(_tl){_tl.style.setProperty('flex','0 0 240px','important');_tl.style.setProperty('height','240px','important');_tl.style.setProperty('overflow','hidden','important');}
+    var _mons=ep.querySelector('.aab-monitors');
+    if(_mons){_mons.style.setProperty('flex','1 1 0','important');_mons.style.setProperty('min-height','0','important');}
+    return;
+  }
   if(mob){
     ep.style.setProperty('display','flex','important');
     ep.style.setProperty('flex-direction','column','important');
@@ -15739,6 +15792,28 @@ else init();
 window._aabMasterApply=applyGrid;
 
 /* ═══ TP MODE SELECTOR WIRING ═══ */
+// Wire ▶ Play button in standalone TP page
+(function(){
+  var obs = new MutationObserver(function(){
+    var tpPg = document.getElementById('teleprompter-pg');
+    if(!tpPg || !tpPg.classList.contains('on')) return;
+    // Find play/start button
+    var playBtn = tpPg.querySelector('[id*="play"],[class*="play"],[onclick*="tpToggle"],[onclick*="tpStart"]');
+    if(playBtn && !playBtn._aabWired) {
+      playBtn._aabWired = true;
+      var origOnClick = playBtn.onclick;
+      playBtn.onclick = function(e){
+        if(window._tpMode === 'word'){
+          tpToggle(); e.stopPropagation();
+        } else if(origOnClick){
+          origOnClick.call(this, e);
+        }
+      };
+    }
+  });
+  obs.observe(document.body, {childList:true, subtree:true, attributes:true, attributeFilter:['class']});
+})();
+
 // Auto-load script into TP textarea when navigating to teleprompter-pg
 (function(){
   var _watchTP = function(){
@@ -15802,14 +15877,28 @@ document.addEventListener('click',function(e){
     if(pg==='edit-pg'){
       var _doBuild=function(){
         if(!window.E_build)return;
+        var _ep=document.getElementById('edit-pg');
+        if(_ep){
+          _ep.style.setProperty('display','flex','important');
+          _ep.style.setProperty('flex-direction','column','important');
+          _ep.style.setProperty('height','100vh','important');
+          _ep.style.setProperty('overflow','hidden','important');
+          _ep.style.setProperty('padding-bottom','0','important');
+        }
         // Hide old conflicting elements first
         ['e-main','e-resize','e-src','e-prog','e-bin','e-insp','e-mon-divider','e-timeline'].forEach(function(id){
           var el=document.getElementById(id);if(el)el.style.setProperty('display','none','important');
         });
         E_build();
         setTimeout(function(){
+          // Re-apply grid to lock AABE flex sizing
+          if(typeof window._aabMasterApply==='function')window._aabMasterApply();
           if(typeof E_loadClips==='function')E_loadClips();
           if(typeof window.aabLoadApsToTimeline==='function')window.aabLoadApsToTimeline();
+          // Scroll timeline to show clips
+          setTimeout(function(){
+            if(typeof E_fit==='function')E_fit();
+          },200);
         },300);
       };
       if(window.requestIdleCallback)window.requestIdleCallback(_doBuild,{timeout:500});
