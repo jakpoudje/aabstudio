@@ -4542,7 +4542,7 @@ if(window._editEngineV1)return;window._editEngineV1=true;
 
 /* ── CSS ────────────────────────────────────────────────────────────── */
 var _css=document.getElementById("_editEngineCSS");if(_css)_css.remove();
-_css=document.createElement("style");_css.style.id = 'aab-noop-_editEngineCSS';
+_css=document.createElement("style");_css.id = 'aab-noop-_editEngineCSS';
 _css.textContent=""+
 "#edit-pg.pg-full{display:flex!important;flex-direction:column!important;overflow:hidden!important;}"+
 ".aab-edit-body{display:flex!important;flex:1 1 0!important;min-height:0!important;overflow:hidden!important;background:#07090f;}"+
@@ -4643,7 +4643,7 @@ document.head.appendChild(_css);
 
 // Inject override style to beat old editor CSS specificity
 var _ovr=document.getElementById('_aab_override');if(_ovr)_ovr.remove();
-_ovr=document.createElement('style');_ovr.style.id = 'aab-noop-_aab_override';
+_ovr=document.createElement('style');_ovr.id = 'aab-noop-_aab_override';
 _ovr.textContent='#edit-pg.pg-full:not(.on){display:none!important;} #edit-pg.on #timeline-panel,#edit-pg.on #tl-resize-handle,#edit-pg.on #edit-status-bar,#edit-pg.on #edit-speed-dialog{display:none!important;} #aab-export-panel{display:none!important;} #edit-pg.on #edit-topbar>*:nth-child(n+2){display:none!important;} #edit-pg.on #edit-topbar{height:38px!important;flex-shrink:0!important;}';
 document.head.appendChild(_ovr);
 
@@ -5526,6 +5526,7 @@ body{max-width:100vw;overflow-x:hidden}
 
 /* ═══ TABLET (481–768px) ═══ */
 @media(max-width:768px){
+#e-mobile-toolbar{display:flex!important;align-items:center;}
   #edit-pg.on{grid-template-rows:44px 36px 1fr 4px 200px!important;height:100dvh!important}
   #e-bin,#e-insp,#e-mon-divider{display:none!important}
   #e-timeline{max-height:200px!important}
@@ -5551,7 +5552,7 @@ body{max-width:100vw;overflow-x:hidden}
   .enb{font-size:8px!important;padding:0 2px!important}
 }
 /* Safari */
-@supports(-webkit-touch-callout:none){#edit-pg.on{height:-webkit-fill-available!important}}
+@supports(-webkit-touch-callout:none){#edit-pg.on{height:-webkit-fill-available!important}#e-mobile-toolbar{padding-bottom:env(safe-area-inset-bottom,0px)!important}}
 /* Firefox */
 @-moz-document url-prefix(){#e-tl-scroll{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.1) transparent}}
 </style></head>
@@ -7811,6 +7812,11 @@ window.ap_setTpSettings = function(settings) {
       if (pg === 'edit-pg') renderEditSuite();
       if (pg === 'record-pg') {
       initStudio();
+      // Ensure studio-pg is visible
+      var spg = document.getElementById('studio-pg');
+      if(spg && getComputedStyle(spg).display === 'none') {
+        spg.style.display = 'flex';
+      }
       setTimeout(function() { if (typeof updateTP === 'function') updateTP(); }, 200);
     }
       if (pg !== 'record-pg' && pg !== 'teleprompter-pg') window.scrollTo(0, 0);
@@ -8310,6 +8316,13 @@ window.ap_setTpSettings = function(settings) {
     }
 
     async function startSegmentation() {
+      // GUARD: Never re-segment if project already has scenes
+      if(window.PROJECT && window.PROJECT.scenes && window.PROJECT.scenes.length > 0 && 
+         window.PROJECT.status && ['segmented','recorded','exported'].indexOf(window.PROJECT.status) >= 0) {
+        console.log('[AAB] Skipped re-segmentation - already has ' + PROJECT.scenes.length + ' scenes');
+        if(typeof renderSceneBoard === 'function') renderSceneBoard();
+        return;
+      }
       var title = (document.getElementById('proj-title') || {}).value || 'My Video';
       var script = getScript().trim();
       if (!script || script.length < 20) { toast('Please write or paste your script first.', 'err'); return; }
@@ -8864,6 +8877,8 @@ window.ap_setTpSettings = function(settings) {
             url: url,
             sceneIdx: STUDIO.currentScene,
             sceneNum: STUDIO.currentScene + 1,
+            narration: (scene && (scene.narration || scene.script)) || '',
+            script: (scene && (scene.narration || scene.script)) || '',
             duration: STUDIO.recSecs,
             size: blob.size,
             sceneName: (scene && scene.narration ? scene.narration.slice(0,40) : (scene && scene.type) || 'Scene ' + (STUDIO.currentScene + 1)),
@@ -8880,6 +8895,15 @@ window.ap_setTpSettings = function(settings) {
           var rb = document.getElementById('btn-retake');
           if (rb) rb.style.display = '';
           toast('Scene ' + (STUDIO.currentScene + 1) + ' saved ✓  ' + STUDIO.recSecs + 's', 'ok');
+          // Auto-advance to next scene after saving
+          setTimeout(function() {
+            if(STUDIO.currentScene < (PROJECT.scenes || []).length - 1) {
+              studioNext();
+            } else {
+              toast('All scenes recorded! 🎉 Go to Edit →', 'ok');
+              setTimeout(function(){ nav('edit-pg'); }, 2000);
+            }
+          }, 1500);
           setRecState('READY');
         };
         STUDIO.mr.stop();
@@ -9015,6 +9039,14 @@ window.ap_setTpSettings = function(settings) {
     } function setTpSpd(v) {
       var wpm = Math.max(20, Math.min(400, parseInt(v) || 80));
       if (window.STUDIO) STUDIO.tpSpeed = wpm;
+      // Update CSS variable for scroll speed immediately
+      var tpEl = document.getElementById('tp-text') || document.getElementById('tp-words') || document.querySelector('.tp-words,.tp-text,[id*="tp-text"],[id*="tp-words"]');
+      if(tpEl) {
+        var dur = Math.max(5, Math.round(10000 / Math.max(1, wpm)));
+        tpEl.style.animationDuration = dur + 's';
+        tpEl.style.setProperty('--tp-scroll-dur', dur + 's');
+      }
+      document.documentElement.style.setProperty('--tp-speed', wpm);
       // Sync ALL WPM display elements
       ['tp-spd-val','tp-spd-val2','s-wpm'].forEach(function(id){
         var el = document.getElementById(id);
@@ -9038,6 +9070,9 @@ window.ap_setTpSettings = function(settings) {
       cur = Math.min(44, cur + 1.5);
       root.style.setProperty('--tp-font-size', cur + 'px');
       root.style.setProperty('--tp-font-size-px', cur);
+      // Apply directly to TP text element
+      var tpTxt = document.getElementById('tp-text') || document.querySelector('.tp-text,.tp-words');
+      if(tpTxt) tpTxt.style.fontSize = cur + 'px';
       var el = document.getElementById('tp-cur');
       if (el) el.style.setProperty('font-size', cur + 'px', 'important');
       toast('Font size: ' + Math.round(cur) + 'px', 'ok');
@@ -9662,7 +9697,7 @@ window.ap_setTpSettings = function(settings) {
           setUser(session.user);
           // On sign in: push all local projects to cloud, then pull cloud projects
           setTimeout(function () {
-            pushAllLocalProjectsToCloud().then(function () {
+            (typeof pushAllLocalProjectsToCloud === 'function' ? pushAllLocalProjectsToCloud() : Promise.resolve()).then(function () {
               if (typeof loadDashboard === 'function') loadDashboard();
             }).catch(function () {
               if (typeof loadDashboard === 'function') loadDashboard();
@@ -12233,6 +12268,27 @@ window._reapplyNav=function(){
     }
 
     async function loadProjectsFromCloud() {
+      // First try Supabase user_projects table directly for full scene data
+      if(window.SUPA_URL && window.SUPA_KEY && window.USER_ID) {
+        try {
+          var r = await fetch(window.SUPA_URL+'/rest/v1/user_projects?user_id=eq.'+window.USER_ID+'&order=updated_at.desc&limit=50', {
+            headers:{'apikey':window.SUPA_KEY,'Authorization':'Bearer '+window.SUPA_KEY}
+          });
+          if(r.ok) {
+            var rows = await r.json();
+            if(rows && rows.length) {
+              var fullProjects = rows.map(function(row){
+                if(row.project_data){ try{ var p=JSON.parse(row.project_data); if(!p.id)p.id=row.id; return p; }catch(e){} }
+                return row;
+              }).filter(Boolean);
+              if(fullProjects.length) {
+                console.log('[AAB] Loaded '+fullProjects.length+' full projects from Supabase (scenes preserved)');
+                return fullProjects;
+              }
+            }
+          }
+        } catch(e) { console.warn('[AAB] Supabase direct load failed:', e.message); }
+      }
       try {
         var session = window._sbSession;
         if (!session || !session.access_token) return null;
@@ -17804,7 +17860,7 @@ window.renderMyAssets = function(container) {
 // ── 5. TIMELINE HORIZONTAL SCROLL FIX ─────────────────────────────
 (function fixTimeline() {
   var style = document.createElement('style');
-  style.id = 'aab-noop-aab-timeline-fix';
+  s.id = 'aab-noop-aab-timeline-fix';
   style.textContent = [
     '#tl-scroll-container { overflow-x: auto !important; overflow-y: auto !important; min-height: 200px; }',
     '#tl-tracks { min-width: max-content; position: relative; }',
@@ -18387,7 +18443,7 @@ window.edit_buildPlaylist = function() {
   var s = document.getElementById('edit-suite-layout-fix');
   if (s) s.remove();
   s = document.createElement('style');
-  style.id = 'aab-noop-edit-suite-layout-fix';
+  s.id = 'aab-noop-edit-suite-layout-fix';
   s.textContent = [
     '/* removed bad display rule */',
     '#edit-pg > #edit-topbar { flex:0 0 44px; min-height:44px; max-height:44px; overflow:hidden; }',
@@ -19965,7 +20021,7 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
     (function() {
       if (document.getElementById('edit-css-injected')) return;
       var s = document.createElement('style');
-      style.id = 'aab-noop-edit-css-injected';
+      s.id = 'aab-noop-edit-css-injected';
       s.textContent = [
         '.edit-dd-wrap{position:relative;height:100%;display:flex;align-items:center;}',
         '.edit-dd-panel{display:none;position:absolute;top:calc(100% + 2px);left:0;background:#12141f;border:.5px solid rgba(255,255,255,.12);border-radius:8px;min-width:200px;z-index:500;box-shadow:0 16px 48px rgba(0,0,0,.7);padding:4px 0;}',
@@ -21018,7 +21074,7 @@ console.log('AABStudio final fix ✓ — practice, sync rec countdown, backgroun
     (function() {
       if (document.getElementById('tp-controller-css')) return;
       var s = document.createElement('style');
-      style.id = 'aab-noop-tp-controller-css';
+      s.id = 'aab-noop-tp-controller-css';
       s.textContent = [
         '#studio-tp-panel { overflow:hidden!important; }',
         '#tp-body { overflow:hidden!important; height:100%!important; display:flex!important; flex-direction:column!important; }',
@@ -21330,6 +21386,7 @@ if(window._aabMaster)return;
 window._aabMaster=true;
 // Ensure el() helper exists (used by old app code)
 if(!window.el) window.el = function(t,c){var e=document.createElement(t);if(c)e.className=c;return e;};
+if(!window._el) window._el = window.el;
 
 /* ═══ TRACK COLOURS ═══ */
 var TC={'main-video':'#3b82f6','broll':'#60a5fa','overlay':'#a78bfa','text':'#34d399',
@@ -21438,7 +21495,7 @@ function initMobileTabs(){
   if(!main||document.getElementById('aab-mob-tabs'))return;
   var tabs=document.createElement('div');
   tabs.id='aab-mob-tabs';
-  tabs.innerHTML='<div class="aab-mon-tab on" onclick="window._aabMon('prog')">🎬 PROGRAM</div><div class="aab-mon-tab" onclick="window._aabMon('src')">📷 SOURCE</div>';
+  tabs.innerHTML='<div class="aab-mon-tab on" data-mon="prog" onclick="window._aabMon(this.dataset.mon)">🎬 PROGRAM</div><div class="aab-mon-tab" data-mon="src" onclick="window._aabMon(this.dataset.mon)">📷 SOURCE</div>';
   main.parentNode.insertBefore(tabs,main);
   window._aabMon=function(w){
     var s=document.getElementById('e-src'),p=document.getElementById('e-prog');
@@ -21455,11 +21512,11 @@ function setupMobileToolbar(){
   var tb=document.createElement('div');
   tb.id='e-mobile-toolbar';
   tb.innerHTML=[
-    '<button onclick="window._aabDrawer('bin')"><span class="mt-icon">📁</span>Clips</button>',
+    '<button data-drawer="bin" onclick="window._aabDrawer(this.dataset.drawer)"><span class="mt-icon">📁</span>Clips</button>',
     '<button onclick="window.AABE&&AABE.split&&AABE.split()"><span class="mt-icon">✂</span>Split</button>',
     '<button onclick="window.AABE&&AABE.undo&&AABE.undo()"><span class="mt-icon">↩</span>Undo</button>',
     '<button onclick="window.AABE&&AABE.redo&&AABE.redo()"><span class="mt-icon">↪</span>Redo</button>',
-    '<button onclick="window._aabDrawer('insp')"><span class="mt-icon">⚙</span>Inspect</button>',
+    '<button data-drawer="insp" onclick="window._aabDrawer(this.dataset.drawer)"><span class="mt-icon">⚙</span>Inspect</button>',
     '<button onclick="nav&&nav('export-pg')"><span class="mt-icon">⬇</span>Export</button>'
   ].join('');
   document.body.appendChild(tb);
@@ -21659,13 +21716,34 @@ function init(){
   });
   obs.observe(ep,{attributes:true});
   // Hook nav once
-  if(typeof window.nav==='function'&&!window._navHooked){
-    window._navHooked=true;
+  if(typeof window.nav==='function'&&!window._aabMsNav){
+    window._aabMsNav=true;
     var _on=window.nav;
     window.nav=function(pg){
       var r=_on.apply(this,arguments);
       if(pg==='edit-pg'){
         [80,300,700].forEach(function(ms){setTimeout(function(){applyGrid();colourTracks();fixGhost();removeDupExport();},ms);});
+        setTimeout(function(){
+          // Load scene clips into AABE from PROJECT.scenes
+          if(window.AABE&&window.PROJECT&&window.PROJECT.scenes&&window.PROJECT.scenes.length){
+            var mt=AABE.tracks&&AABE.tracks.find(function(t){return t.id==='main-video';});
+            var bt=AABE.tracks&&AABE.tracks.find(function(t){return t.id==='broll';});
+            if(mt&&mt.clips.length===0){
+              var pos=0;
+              window.PROJECT.scenes.forEach(function(sc,i){
+                var url=sc.recordedUrl||sc.apsVideoUrl||(window.PROJECT.apsVideos&&window.PROJECT.apsVideos[sc.id])||'';
+                var dur=sc.duration||8;
+                if(url){mt.clips.push({id:sc.id||('c'+i),name:sc.title||('Scene '+(i+1)),
+                  url:url,duration:dur,narration:sc.narration||sc.script||'',
+                  trackId:'main-video',start:pos,in:0,out:dur});}
+                pos+=dur;
+              });
+            }
+            if(typeof AABE.render==='function') AABE.render();
+          }
+          // Populate bin list
+          if(window.AABE&&typeof AABE._renderBin==='function') AABE._renderBin();
+        },900);
       }
       if(pg!=='edit-pg'&&window.AABE)try{window._aabEnforcer&&window._aabEnforcer.saveEditState&&window._aabEnforcer.saveEditState();}catch(e){}
       return r;
@@ -21681,6 +21759,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 else init();
 
 window._aabMasterApply=applyGrid;
+window._aabMaster=true;
+console.log('[AAB] Master script loaded OK');
 console.log('[AAB] Master script loaded');
 })();
 </script>
