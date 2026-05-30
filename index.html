@@ -4512,6 +4512,7 @@
 (function(){
 // Block old edit engine — set all guards before engine script runs
 window._editEngineV1=true; // prevents old IIFE from running
+window._aabV2Ready=true;   // tells AABE 56k engine it's safe to init
 window._navEng=true;       // prevents old nav override
 window._navHooked=true;    // prevents master script re-hooking
 window._v3NavHooked=true;
@@ -4538,7 +4539,7 @@ console.log('[AAB] Engine v1 blocked, globals stubbed');
 <script>
 
 (function(){
-if(window._editEngineV1)return;window._editEngineV1=true;
+if(!window._aabV2Ready||window._aabV2Init)return;window._aabV2Init=true;
 
 /* ── CSS ────────────────────────────────────────────────────────────── */
 var _css=document.getElementById("_editEngineCSS");if(_css)_css.remove();
@@ -4835,6 +4836,30 @@ function E_loadClips(){
     mainTrack.clips.push({id:"aps_"+a.sceneNum+"_"+Date.now(),trackId:"main",name:"Scene "+a.sceneNum,url:a.url,type:"video",start:pos,duration:dur,transitionOut:null,narration:a.narration||"",color:"#1e40af"});
     pos+=dur;
   });
+  // Fallback: load from PROJECT.scenes (recorded or AI clips)
+  if(mainTrack.clips.length===0&&PROJECT.scenes&&PROJECT.scenes.length){
+    pos=0;
+    PROJECT.scenes.forEach(function(sc,i){
+      var url=sc.recordedUrl||sc.apsVideoUrl||(PROJECT.apsVideos&&PROJECT.apsVideos[sc.id])||"";
+      var dur=sc.duration||8;
+      mainTrack.clips.push({id:sc.id||("c"+i),trackId:"main",name:sc.title||("Scene "+(i+1)),
+        url:url||"",type:"video",start:pos,duration:dur,narration:sc.narration||sc.script||"",color:"#1e40af"});
+      pos+=dur;
+    });
+  }
+  // Auto-populate subtitle track from clip narration
+  var subTrack=E.tracks.find(function(t){return t.id==="subtitle";});
+  if(subTrack){
+    subTrack.clips=[];
+    mainTrack.clips.forEach(function(c){
+      if(c.narration&&c.narration.trim()){
+        subTrack.clips.push({
+          id:"cc_"+c.id,trackId:"subtitle",name:c.narration.substring(0,40),
+          narration:c.narration,type:"text",start:c.start,duration:c.duration,color:"#22d3ee"
+        });
+      }
+    });
+  }
   var assets=(PROJECT.assets||[]).concat(JSON.parse(localStorage.getItem("aab_global_assets")||"[]"));
   E_renderBin(aps,assets);
   E_renderTL();
@@ -5090,8 +5115,23 @@ function E_renderTL(){
         ce2.appendChild(ts);
       }
       if(track.type==="audio"&&w>20){
-        var wv=_el("div","aab-waveform");wv.style.cssText="position:absolute;inset:0;opacity:.5;background:repeating-linear-gradient(90deg,transparent,transparent 3px,"+track.color+"70 3px,"+track.color+"70 4px);";
+        var wv=document.createElement("canvas");wv.className="aab-waveform";
+        wv.style.cssText="position:absolute;inset:0;opacity:.7;";
         ce2.appendChild(wv);
+        (function(wvCanvas,ce2El,color){
+          requestAnimationFrame(function(){
+            wvCanvas.width=Math.max(1,ce2El.offsetWidth||Math.round(w));
+            wvCanvas.height=Math.max(1,ce2El.offsetHeight||track.h-8);
+            var wctx=wvCanvas.getContext("2d");
+            if(!wctx)return;
+            var mid=wvCanvas.height/2;
+            wctx.strokeStyle=color;wctx.lineWidth=1;wctx.globalAlpha=0.7;
+            for(var xi=0;xi<wvCanvas.width;xi+=2){
+              var amp=mid*(0.3+0.7*Math.abs(Math.sin(xi*0.15)*Math.cos(xi*0.07)));
+              wctx.beginPath();wctx.moveTo(xi,mid-amp);wctx.lineTo(xi,mid+amp);wctx.stroke();
+            }
+          });
+        })(wv,ce2,track.color);
       }
       var lb2=_el("div","aab-clip-lbl");lb2.textContent=clip.name;ce2.appendChild(lb2);
       if(w>60){var db=_el("div","aab-clip-dur");db.textContent=_ft(clip.duration);ce2.appendChild(db);}
@@ -5320,7 +5360,7 @@ if(typeof _origNavE==="function"&&!window._navEng){window._navEng=true;
   };
 }
 
-window.E=E;window.E_build=E_build;window.E_loadClips=E_loadClips;
+window.E=E;window.AABE=E;window.E_build=E_build;window.E_loadClips=E_loadClips;
 window.E_renderTL=E_renderTL;window.E_fit=E_fit;
 window.E_selectClip=E_selectClip;window.E_addClip=E_addClip;
 window.E_progToggle=E_progToggle;window.E_drawProg=E_drawProg;
@@ -21759,6 +21799,29 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 else init();
 
 window._aabMasterApply=applyGrid;
+
+/* ═══ TP MODE SELECTOR WIRING ═══ */
+window.setTpScrollMode=function(mode){
+  window._tpMode=mode;
+  window._tpScrollMode=mode;
+  var wrap=document.getElementById('tp-wrap')||document.getElementById('tp-cur');
+  if(wrap){
+    ['auto','scroll','manual','mirror','autocue','horizontal'].forEach(function(m){
+      wrap.classList.remove('tp-mode-'+m);
+    });
+    wrap.classList.add('tp-mode-'+mode);
+  }
+  document.querySelectorAll('[data-tpmode]').forEach(function(btn){
+    btn.classList.toggle('on',btn.dataset.tpmode===mode);
+  });
+  if(window._aabTpActive&&typeof studioTpStart==='function')studioTpStart();
+  if(typeof toast==='function')toast('Teleprompter: '+mode,'info');
+};
+document.addEventListener('click',function(e){
+  var btn=e.target.closest('[data-tpmode]');
+  if(btn)window.setTpScrollMode(btn.dataset.tpmode);
+});
+
 window._aabMaster=true;
 console.log('[AAB] Master script loaded OK');
 console.log('[AAB] Master script loaded');
