@@ -4743,6 +4743,13 @@ function _mkMonitors(){
   var sadd=_el("button","aab-cb");sadd.title="Add to Main Video track";sadd.innerHTML="&#8594; TL";
   sadd.onclick=function(){if(E.sourceClip)E_addClip(E.sourceClip,"main");};sc.appendChild(sadd);
   src.appendChild(sc);row.appendChild(src);  var prog=_el("div","aab-monitor");prog.id="aab-prog-mon";
+  // CC subtitle overlay
+  (function(){
+    var _sub=document.createElement("div");_sub.id="aab-prog-subs";
+    _sub.style.cssText="position:absolute;bottom:44px;left:50%;transform:translateX(-50%);max-width:90%;text-align:center;pointer-events:none;z-index:10;font-size:clamp(12px,2.5vw,20px);font-weight:700;color:#fff;text-shadow:0 1px 4px #000;background:rgba(0,0,0,.55);padding:4px 12px;border-radius:4px;min-height:28px;display:none;align-items:center;justify-content:center;";
+    prog.style.position="relative";
+    prog.appendChild(_sub);
+  })();
   var pl=_el("div","aab-monitor-label prog");pl.textContent="PROGRAM MONITOR";prog.appendChild(pl);
   var pc=document.createElement("canvas");pc.id="aab-prog-canvas";pc.width=1920;pc.height=1080;
   pc.style.cssText="position:absolute;inset:0;width:100%;height:100%;display:block;background:#000;";prog.appendChild(pc);
@@ -4833,7 +4840,7 @@ function E_loadClips(){
   var pos=0;
   aps.forEach(function(a){
     var dur=a.duration||8;
-    mainTrack.clips.push({id:"aps_"+a.sceneNum+"_"+Date.now(),trackId:"main",name:"Scene "+a.sceneNum,url:a.url,type:"video",start:pos,duration:dur,transitionOut:null,narration:a.narration||"",color:"#1e40af"});
+    mainTrack.clips.push({id:"aps_"+a.sceneNum+"_"+Date.now(),trackId:"main",name:a.name||"Scene "+a.sceneNum,url:a.url||a.videoUrl||a.heygen_url||"",type:"video",start:pos,duration:dur,transitionOut:null,narration:a.narration||a.script||"",color:"#1e40af"});
     pos+=dur;
   });
   // Fallback: load from PROJECT.scenes (recorded or AI clips)
@@ -8295,12 +8302,13 @@ window.ap_setTpSettings = function(settings) {
       projects.forEach(function (p, i) {
         var sceneCount = p.scenes ? p.scenes.length : 0;
         var clipCount = Object.keys(p.clipsMeta || p.clips || {}).filter(function(k){ return !k.startsWith('aps_'); }).length;
-        var aiCount = Object.keys(p.aiClipsMeta || p.aiClips || {}).length + Object.keys(p.clipsMeta || p.clips || {}).filter(function(k){ return k.startsWith('aps_'); }).length;
+        var aiCount = Object.keys(p.apsVideos || p.aiClipsMeta || p.aiClips || {}).length;
         var card = document.createElement('div');
         card.className = 'proj-card';
         card.innerHTML =
-          '<div class="proj-thumb" style="height:120px;background:linear-gradient(135deg,#0f172a,#1e3a5f);border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;">'
-          + '<span style="font-size:36px;">🎬</span>'
+          '<div class="proj-thumb" style="height:120px;background:linear-gradient(135deg,#0f172a,#1e3a5f);border-radius:8px;overflow:hidden;margin-bottom:12px;position:relative;display:flex;align-items:center;justify-content:center;">'
+          + (p.thumb ? '<img src="'+p.thumb+'" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display=none">' : '<span style="font-size:36px;">🎬</span>')
+          + (aiCount ? '<span style="position:absolute;top:6px;right:6px;background:rgba(0,212,255,.85);color:#000;font-size:9px;font-weight:800;padding:2px 6px;border-radius:10px;">'+aiCount+' AI</span>' : '')
           + '</div>'
           + '<div class="proj-title" style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:4px;line-height:1.3;">' + (p.title || 'Untitled') + '</div>'
           + '<div class="proj-meta" style="font-size:12px;color:var(--muted);margin-bottom:10px;">'
@@ -15731,6 +15739,26 @@ else init();
 window._aabMasterApply=applyGrid;
 
 /* ═══ TP MODE SELECTOR WIRING ═══ */
+// Auto-load script into TP textarea when navigating to teleprompter-pg
+(function(){
+  var _watchTP = function(){
+    var tpPg = document.getElementById('teleprompter-pg');
+    if(!tpPg) return;
+    var obs = new MutationObserver(function(){
+      if(!tpPg.classList.contains('on')) return;
+      var ta = tpPg.querySelector('textarea');
+      if(!ta || ta.value.trim()) return;
+      var script = window.PROJECT && (PROJECT.script || (PROJECT.scenes && PROJECT.scenes.map(function(s){return s.narration||s.script||'';}).join('
+
+')));
+      if(script && script.trim()) ta.value = script.trim();
+    });
+    obs.observe(tpPg, {attributes:true, attributeFilter:['class']});
+  };
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _watchTP);
+  else _watchTP();
+})();
+
 window.setTpScrollMode=function(mode){
   window._tpMode=mode;
   window._tpScrollMode=mode;
@@ -15762,23 +15790,38 @@ document.addEventListener('click',function(e){
 (function(){
   var _origNav = window.nav;
   window.nav = function(pg, opts) {
+    // Call original nav first (makes element visible)
+    if(_origNav) _origNav(pg, opts);
+    // Then animate it in
     var target = document.getElementById(pg);
-    if(target && window.gsap) {
-      gsap.fromTo(target, {opacity:0, y:8}, {opacity:1, y:0, duration:.2, ease:'power2.out', 
-        onStart: function(){ if(_origNav) _origNav(pg, opts); }
-      });
-    } else {
-      if(_origNav) _origNav(pg, opts);
+    if(target && window.gsap && pg !== 'edit-pg') {
+      target.style.opacity = '0';
+      gsap.to(target, {opacity:1, y:0, duration:.18, ease:'power2.out', clearProps:'opacity,transform'});
     }
     // Persistence: show banner on scenes-pg if scenes already exist
     if(pg==='scenes-pg' || pg==='script-pg') _aabCheckPersist();
-    // AABE: rebuild on edit-pg
-    if(pg==='edit-pg') setTimeout(function(){ if(window.E_build) E_build(); }, 200);
+    // AABE: rebuild on edit-pg — use requestIdleCallback so nav animation finishes first
+    if(pg==='edit-pg'){
+      var _doBuild=function(){
+        if(!window.E_build)return;
+        // Hide old conflicting elements first
+        ['e-main','e-resize','e-src','e-prog','e-bin','e-insp','e-mon-divider','e-timeline'].forEach(function(id){
+          var el=document.getElementById(id);if(el)el.style.setProperty('display','none','important');
+        });
+        E_build();
+        setTimeout(function(){
+          if(typeof E_loadClips==='function')E_loadClips();
+          if(typeof window.aabLoadApsToTimeline==='function')window.aabLoadApsToTimeline();
+        },300);
+      };
+      if(window.requestIdleCallback)window.requestIdleCallback(_doBuild,{timeout:500});
+      else setTimeout(_doBuild,100);
+    }
   };
 })();
 
 // ── 2. PERSISTENCE GUARD ──────────────────────────────────────────
-function _aabCheckPersist() {
+window._aabCheckPersist = function _aabCheckPersist() {
   if(!window.PROJECT || !PROJECT.scenes || !PROJECT.scenes.length) return;
   // Remove any existing banner
   var old = document.getElementById('aab-persist-banner');
@@ -15868,17 +15911,17 @@ window.tpStopWordByWord = function() {
 var _origTpToggle = window.tpToggle;
 window.tpToggle = function() {
   if(window._tpMode === 'word') {
-    var btn = document.getElementById('tp-play-btn');
-    if(window._tpWBW.timer) {
+    var btn = document.getElementById('tp-play-btn') ||
+              document.querySelector('.tp-play-btn,[onclick*="tpToggle"]');
+    if(window._tpWBW && window._tpWBW.timer) {
       tpStopWordByWord();
-      if(btn) btn.textContent = '▶ Play';
+      if(btn){ btn.textContent = '▶ Play'; btn.classList.remove('active'); }
     } else {
       tpStartWordByWord();
-      if(btn) btn.textContent = '⏸ Pause';
+      if(btn){ btn.textContent = '⏸ Pause'; btn.classList.add('active'); }
     }
   } else if(window._tpMode === 'manual') {
-    // Manual: do nothing, user scrolls
-    if(typeof toast === 'function') toast('Manual mode: scroll to read', 'info');
+    if(typeof toast === 'function') toast('Manual mode — scroll to advance', 'info');
   } else {
     if(_origTpToggle) _origTpToggle();
   }
@@ -16181,6 +16224,22 @@ window.edit_uploadMusic = function(){ edit_uploadAudio('music'); };
 window.edit_uploadVoice = function(){ edit_uploadAudio('voice'); };
 window.startTeleprompter = function(){ if(typeof studioTpStart==='function') studioTpStart(); };
 
+// E2E verification report
+(function(){
+  var report = {
+    master: !!window._aabMaster,
+    aabe: typeof window.AABE,
+    gsap: typeof window.gsap,
+    tpWBW: typeof window.tpStartWordByWord,
+    settings: typeof window.toggleStudioSettings,
+    persist: typeof window._aabCheckPersist,
+    upload: typeof window.edit_uploadVideo,
+    aps: typeof window.aabLoadApsToTimeline,
+    textClip: typeof window.E_addTextClip,
+    trackNames: window.E ? window.E.tracks.map(function(t){return t.name;}) : []
+  };
+  console.log('[AAB] Platform ready:', JSON.stringify(report));
+})();
 console.log('[AAB] Master patch loaded — all systems wired');
 
 window._aabMaster=true;
