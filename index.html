@@ -4848,7 +4848,7 @@ function E_loadClips(){
     });
   }
   // Auto-populate subtitle track from clip narration
-  var subTrack=E.tracks.find(function(t){return t.id==="subtitle";});
+  var subTrack=E.tracks.find(function(t){return t.id==="subtitle"||t.id==="subs";});
   if(subTrack){
     subTrack.clips=[];
     mainTrack.clips.forEach(function(c){
@@ -5595,6 +5595,203 @@ body{max-width:100vw;overflow-x:hidden}
 @supports(-webkit-touch-callout:none){#edit-pg.on{height:-webkit-fill-available!important}#e-mobile-toolbar{padding-bottom:env(safe-area-inset-bottom,0px)!important}}
 /* Firefox */
 @-moz-document url-prefix(){#e-tl-scroll{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.1) transparent}}
+
+/* ═══════════════════════════════════════════════════════════
+   AABStudio Global Polish — consistent UI across all pages
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── CSS Custom Properties ── */
+:root {
+  --aab-bg:       #07090f;
+  --aab-surface:  #0d1117;
+  --aab-surface2: #111827;
+  --aab-border:   rgba(255,255,255,.08);
+  --aab-border2:  rgba(255,255,255,.12);
+  --aab-text:     #e2e8f0;
+  --aab-text2:    #9ca3af;
+  --aab-text3:    #6b7280;
+  --aab-accent:   #00d4ff;
+  --aab-blue:     #2563eb;
+  --aab-purple:   #7c3aed;
+  --aab-green:    #10b981;
+  --aab-gold:     #f59e0b;
+  --aab-red:      #ef4444;
+  --aab-radius:   8px;
+  --aab-radius-sm:4px;
+}
+
+/* ── Fix grey/dim text globally ── */
+.pg, .pg-full {
+  color: var(--aab-text) !important;
+}
+/* Subtext — was nearly invisible */
+[style*="color:rgba(255,255,255,.2)"],
+[style*="color:rgba(255,255,255,.25)"],
+[style*="color:rgba(255,255,255,.3)"],
+[style*="color:rgba(255,255,255,.35)"] {
+  color: rgba(255,255,255,.55) !important;
+}
+.tp-bar-label, .aab-insp-lbl, .aab-bin-clip-meta { color: var(--aab-text2) !important; }
+
+/* ── Studio bar nav buttons — bigger, clearer ── */
+.studio-bar button[onclick*="nav("],
+.studio-bar button[onclick*="navBack"] {
+  font-size: 11px !important;
+  padding: 5px 10px !important;
+  border-radius: 6px !important;
+  border: 1px solid var(--aab-border2) !important;
+  background: rgba(255,255,255,.05) !important;
+  color: var(--aab-text2) !important;
+  min-height: 30px !important;
+  white-space: nowrap !important;
+  transition: background .15s, color .15s !important;
+}
+.studio-bar button[onclick*="nav("]:hover,
+.studio-bar button[onclick*="navBack"]:hover {
+  background: rgba(255,255,255,.1) !important;
+  color: #fff !important;
+}
+.studio-bar { border-bottom: 1px solid var(--aab-border) !important; gap: 4px !important; }
+
+/* ── Pages — add subtle border-radius top on dark bg ── */
+#script-pg, #scenes-pg, #export-pg {
+  background: #f8fafc !important;
+}
+#record-pg, #teleprompter-pg, #edit-pg, #ai-presenter-studio {
+  background: var(--aab-bg) !important;
+}
+
+/* ── Script page ── */
+#script-pg { padding-bottom: 80px; }
+#script-pg .script-tab { font-weight: 700; }
+
+/* ── Scenes page ── */
+#scenes-pg .scene-card {
+  border-left: 3px solid var(--aab-blue);
+  transition: box-shadow .15s;
+}
+#scenes-pg .scene-card:hover { box-shadow: 0 2px 12px rgba(37,99,235,.15); }
+
+/* ── Record page enhancements ── */
+#record-pg .studio-bar { min-height: 46px; padding: 0 8px; }
+#record-pg .rec-badge { font-size: 11px; font-weight: 800; letter-spacing: .1em; }
+
+/* Settings panel in studio */
+#studio-settings-panel {
+  position: absolute; right: 0; top: 46px; bottom: 0; width: 260px;
+  background: var(--aab-surface); border-left: 1px solid var(--aab-border);
+  overflow-y: auto; padding: 16px; z-index: 50;
+  transform: translateX(100%); transition: transform .25s ease;
+}
+#studio-settings-panel.open { transform: translateX(0); }
+.studio-settings-row { margin-bottom: 14px; }
+.studio-settings-label {
+  font-size: 10px; font-weight: 700; color: var(--aab-text2);
+  text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px;
+}
+.studio-settings-select {
+  width: 100%; background: var(--aab-surface2); border: 1px solid var(--aab-border2);
+  border-radius: var(--aab-radius-sm); color: var(--aab-text); font-size: 12px;
+  padding: 6px 8px; font-family: inherit;
+}
+
+/* ── Teleprompter mode buttons ── */
+.tp-mode-btn {
+  background: rgba(255,255,255,.05) !important;
+  border: 1px solid var(--aab-border2) !important;
+  border-radius: 6px !important; color: var(--aab-text2) !important;
+  font-size: 11px !important; padding: 5px 10px !important;
+  cursor: pointer; transition: all .15s; font-family: inherit;
+}
+.tp-mode-btn.active, .tp-mode-btn:active {
+  background: rgba(37,99,235,.2) !important;
+  border-color: var(--aab-blue) !important;
+  color: #60a5fa !important;
+}
+
+/* ── Word-by-word TP word spans ── */
+.tp-word {
+  display: inline-block; margin: 0 2px;
+  border-radius: 3px; transition: all .1s;
+  cursor: default;
+}
+.tp-word.active {
+  color: var(--aab-accent) !important;
+  text-shadow: 0 0 12px rgba(0,212,255,.6), 0 0 24px rgba(0,212,255,.3) !important;
+  background: rgba(0,212,255,.08);
+}
+.tp-word.done { opacity: .45; }
+
+/* ── Timeline CC subtitle overlay ── */
+#aab-prog-subs {
+  position: absolute; bottom: 44px; left: 50%; transform: translateX(-50%);
+  max-width: 90%; text-align: center; pointer-events: none; z-index: 10;
+  font-size: clamp(12px, 2.5vw, 20px); font-weight: 700;
+  color: #fff; text-shadow: 0 1px 4px #000, 0 0 8px #000;
+  background: rgba(0,0,0,.55); padding: 4px 12px; border-radius: 4px;
+  min-height: 28px; display: flex; align-items: center; justify-content: center;
+}
+#aab-prog-subs.word-glow .tw {
+  display: inline-block; margin: 0 2px;
+  transition: color .08s, text-shadow .08s;
+}
+#aab-prog-subs.word-glow .tw.lit {
+  color: var(--aab-accent);
+  text-shadow: 0 0 10px rgba(0,212,255,.8);
+}
+
+/* ── AABE Track labels — professional names ── */
+.aab-track-name {
+  font-size: 10px !important; font-weight: 700 !important;
+  letter-spacing: .04em; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis;
+}
+.aab-track-lbl { padding: 0 6px !important; }
+.aab-lane { border-bottom: 1px solid var(--aab-border) !important; }
+.aab-tl-toolbar { border-bottom: 1px solid var(--aab-border) !important; }
+
+/* ── Edit nav bar professional look ── */
+#e-nav-bar {
+  background: linear-gradient(90deg, #0d1117, #111827) !important;
+  border-bottom: 1px solid var(--aab-border) !important;
+}
+#e-nav-bar button {
+  font-size: 11px !important; font-weight: 600 !important;
+  padding: 5px 10px !important; border-radius: 5px !important;
+  transition: all .12s !important; white-space: nowrap !important;
+}
+#e-nav-bar button.on, #e-nav-bar button[style*="#2563eb"] {
+  background: var(--aab-blue) !important;
+  color: #fff !important; border-color: var(--aab-blue) !important;
+}
+
+/* ── GSAP entrance animations ── */
+.pg.on { animation: aab-fadein .22s ease both; }
+@keyframes aab-fadein { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
+.pg-full.on { animation: aab-fadein .18s ease both; }
+
+/* ── AI Presenter Studio ── */
+#ai-presenter-studio { color: var(--aab-text) !important; }
+#ai-presenter-studio [style*="color:#6b7280"],
+#ai-presenter-studio [style*="rgba(255,255,255,.3)"] {
+  color: var(--aab-text2) !important;
+}
+
+/* ── Export page ── */
+#export-pg h2, #export-pg h3 { color: #1e293b; }
+#export-pg p { color: #475569; }
+
+/* ── Persistence guard banner ── */
+#aab-persist-banner {
+  background: rgba(37,99,235,.12); border: 1px solid rgba(37,99,235,.3);
+  border-radius: 8px; padding: 10px 14px; margin: 8px 0;
+  font-size: 12px; color: #93c5fd; display: flex; align-items: center; gap: 8px;
+}
+#aab-persist-banner button {
+  margin-left: auto; background: none; border: 1px solid rgba(37,99,235,.4);
+  border-radius: 4px; color: #60a5fa; font-size: 11px;
+  padding: 3px 8px; cursor: pointer;
+}
 </style></head>
 
     <style>
@@ -6403,6 +6600,7 @@ body{max-width:100vw;overflow-x:hidden}
               style="font-size:9px;color:rgba(255,255,255,.25);">SCENE</span><span
               style="font-size:11px;font-weight:600;color:#fff;" id="st-scene-cnt">1/1</span></div>
           <button class="btn btn-primary btn-sm" onclick="endStudioSession()">Done → Edit</button>
+          <button onclick="toggleStudioSettings()" title="Settings" style="background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);border-radius:4px;color:rgba(255,255,255,.6);font-size:14px;cursor:pointer;padding:3px 8px;line-height:1;">⚙</button>
         
           <button class="btn btn-ghost btn-sm" onclick="doSignOut()"
             style="color:rgba(239,68,68,.6);border-color:rgba(239,68,68,.2);">Sign out</button>
@@ -21821,6 +22019,437 @@ document.addEventListener('click',function(e){
   var btn=e.target.closest('[data-tpmode]');
   if(btn)window.setTpScrollMode(btn.dataset.tpmode);
 });
+
+
+
+/* ═══════════════════════════════════════════════════════════════
+   AABStudio Master Patch — full platform wiring
+   ═══════════════════════════════════════════════════════════════ */
+
+// ── 1. GSAP: wire nav transitions ─────────────────────────────────
+(function(){
+  var _origNav = window.nav;
+  window.nav = function(pg, opts) {
+    var target = document.getElementById(pg);
+    if(target && window.gsap) {
+      gsap.fromTo(target, {opacity:0, y:8}, {opacity:1, y:0, duration:.2, ease:'power2.out', 
+        onStart: function(){ if(_origNav) _origNav(pg, opts); }
+      });
+    } else {
+      if(_origNav) _origNav(pg, opts);
+    }
+    // Persistence: show banner on scenes-pg if scenes already exist
+    if(pg==='scenes-pg' || pg==='script-pg') _aabCheckPersist();
+    // AABE: rebuild on edit-pg
+    if(pg==='edit-pg') setTimeout(function(){ if(window.E_build) E_build(); }, 200);
+  };
+})();
+
+// ── 2. PERSISTENCE GUARD ──────────────────────────────────────────
+function _aabCheckPersist() {
+  if(!window.PROJECT || !PROJECT.scenes || !PROJECT.scenes.length) return;
+  // Remove any existing banner
+  var old = document.getElementById('aab-persist-banner');
+  if(old) old.remove();
+  // Find the active page
+  var activePg = document.querySelector('.pg.on');
+  if(!activePg) return;
+  var banner = document.createElement('div');
+  banner.id = 'aab-persist-banner';
+  banner.innerHTML = '🔒 <strong>' + PROJECT.scenes.length + ' scenes saved</strong> — segmentation preserved. ' +
+    '<button onclick="if(confirm(\'Re-segment? This uses AI credits and overwrites scenes.\'))' +
+    '{PROJECT.scenes=[];PROJECT.status=\'\';ap_save(true);startSegmentation();}">Re-segment</button>';
+  activePg.insertBefore(banner, activePg.firstChild);
+}
+
+// ── 3. TELEPROMPTER MODES ─────────────────────────────────────────
+window._tpMode = window._tpMode || 'auto';
+window._tpCCMode = false; // CC subtitles in timeline
+
+// Inject TP mode bar into teleprompter-pg
+(function() {
+  var tp = document.getElementById('teleprompter-pg');
+  if(!tp) return;
+  var bar = tp.querySelector('.tp-ctrl-bar-v2');
+  if(!bar || bar.querySelector('.aab-tp-modes')) return;
+  var modeBar = document.createElement('div');
+  modeBar.className = 'tp-bar-section aab-tp-modes';
+  modeBar.style.cssText = 'gap:4px;flex-wrap:nowrap;';
+  [['auto','⬆ Auto-scroll'],['word','🔤 Word-by-word'],['manual','⏸ Manual']].forEach(function(m){
+    var btn = document.createElement('button');
+    btn.className = 'tp-mode-btn' + (m[0]===window._tpMode?' active':'');
+    btn.textContent = m[1];
+    btn.dataset.tpmode = m[0];
+    btn.onclick = function() {
+      document.querySelectorAll('.tp-mode-btn').forEach(function(b){b.classList.remove('active');});
+      btn.classList.add('active');
+      window.setTpScrollMode(m[0]);
+    };
+    modeBar.appendChild(btn);
+  });
+  // Insert after speed section
+  var speedSec = bar.querySelector('[id="tp-spd"]');
+  if(speedSec) speedSec.closest('.tp-bar-section').after(modeBar);
+  else bar.appendChild(modeBar);
+})();
+
+// ── 4. WORD-BY-WORD TELEPROMPTER ENGINE ───────────────────────────
+window._tpWBW = {
+  words: [], idx: 0, timer: null, wpm: 80
+};
+
+window.tpStartWordByWord = function() {
+  var inner = document.getElementById('tp-cur-inner');
+  if(!inner) return;
+  var text = inner.textContent || inner.innerText || '';
+  var words = text.trim().split(/\s+/).filter(Boolean);
+  if(!words.length) return;
+  // Wrap words in spans
+  inner.innerHTML = words.map(function(w,i){
+    return '<span class="tp-word" data-wi="'+i+'">'+w+'</span>';
+  }).join(' ');
+  window._tpWBW.words = words;
+  window._tpWBW.idx = 0;
+  clearInterval(window._tpWBW.timer);
+  var wpm = parseInt((document.getElementById('tp-spd')||{}).value)||80;
+  var msPerWord = Math.round(60000/wpm);
+  window._tpWBW.timer = setInterval(function(){
+    var spans = inner.querySelectorAll('.tp-word');
+    spans.forEach(function(s){ s.classList.remove('active'); if(+s.dataset.wi < window._tpWBW.idx) s.classList.add('done'); });
+    if(window._tpWBW.idx >= spans.length) { clearInterval(window._tpWBW.timer); return; }
+    spans[window._tpWBW.idx].classList.add('active');
+    // Scroll active word into view
+    spans[window._tpWBW.idx].scrollIntoView({behavior:'smooth',block:'center'});
+    // Sync CC subtitle in timeline
+    if(window._tpCCMode) _aabSyncCC(window._tpWBW.words[window._tpWBW.idx]);
+    window._tpWBW.idx++;
+  }, msPerWord);
+};
+
+window.tpStopWordByWord = function() {
+  clearInterval(window._tpWBW.timer);
+  var inner = document.getElementById('tp-cur-inner');
+  if(inner) inner.querySelectorAll('.tp-word').forEach(function(s){s.classList.remove('active','done');});
+};
+
+// Override tpToggle to branch on mode
+var _origTpToggle = window.tpToggle;
+window.tpToggle = function() {
+  if(window._tpMode === 'word') {
+    var btn = document.getElementById('tp-play-btn');
+    if(window._tpWBW.timer) {
+      tpStopWordByWord();
+      if(btn) btn.textContent = '▶ Play';
+    } else {
+      tpStartWordByWord();
+      if(btn) btn.textContent = '⏸ Pause';
+    }
+  } else if(window._tpMode === 'manual') {
+    // Manual: do nothing, user scrolls
+    if(typeof toast === 'function') toast('Manual mode: scroll to read', 'info');
+  } else {
+    if(_origTpToggle) _origTpToggle();
+  }
+};
+
+// Sync WPM speed to word-by-word timer
+var _origTpSetSpd = window.tpSetSpd;
+window.tpSetSpd = function(v) {
+  if(_origTpSetSpd) _origTpSetSpd(v);
+  if(window._tpMode === 'word' && window._tpWBW.timer) {
+    clearInterval(window._tpWBW.timer);
+    tpStartWordByWord(); // restart with new speed
+  }
+};
+
+// ── 5. CC SUBTITLE SYNC IN TIMELINE PREVIEW ───────────────────────
+window._aabSyncCC = function(word) {
+  var sub = document.getElementById('aab-prog-subs');
+  if(!sub) return;
+  sub.textContent = word || '';
+};
+
+// CC button in timeline — toggle subtitle display
+window._aabCCEnabled = false;
+(function(){
+  // Find CC button and wire it
+  var ccBtns = document.querySelectorAll('[onclick*="CC"],[id*="cc-btn"],[class*="cc"]');
+  // Also hook the aab-tl-toolbar CC button via mutation observer
+  var observer = new MutationObserver(function(){
+    var tlBar = document.querySelector('.aab-tl-toolbar');
+    if(!tlBar) return;
+    tlBar.querySelectorAll('button').forEach(function(btn){
+      if(btn.textContent.trim().includes('CC') && !btn._aabCCWired) {
+        btn._aabCCWired = true;
+        btn.onclick = function() {
+          window._aabCCEnabled = !window._aabCCEnabled;
+          btn.classList.toggle('on', window._aabCCEnabled);
+          var sub = document.getElementById('aab-prog-subs');
+          if(sub) sub.style.display = window._aabCCEnabled ? '' : 'none';
+          if(typeof toast === 'function') toast('CC subtitles ' + (window._aabCCEnabled?'on':'off'), 'info');
+        };
+      }
+    });
+  });
+  observer.observe(document.body, {childList:true, subtree:true});
+})();
+
+// E_drawProg subtitle rendering — show current clip narration as CC
+var _origEDrawProg = window.E_drawProg;
+window.E_drawProg = function() {
+  if(_origEDrawProg) _origEDrawProg();
+  if(!window._aabCCEnabled || !window.E) return;
+  var sub = document.getElementById('aab-prog-subs');
+  if(!sub) return;
+  // Find subtitle track clip at current playhead
+  var t = E.playhead;
+  var subTrack = E.tracks && E.tracks.find(function(tr){ return tr.id==='subtitle'||tr.id==='subs'; });
+  if(!subTrack) return;
+  var clip = subTrack.clips.find(function(c){ return t>=c.start && t<(c.start+c.duration); });
+  if(clip && clip.narration) {
+    // Word-glow: find which word based on position within clip
+    var elapsed = t - clip.start;
+    var words = clip.narration.trim().split(/\s+/);
+    var wpm = 80; var wIdx = Math.floor(elapsed * wpm/60);
+    sub.classList.add('word-glow');
+    sub.innerHTML = words.map(function(w,i){
+      return '<span class="tw'+(i===wIdx?' lit':'')+'">'+w+'</span>';
+    }).join(' ');
+  } else {
+    sub.innerHTML = '';
+  }
+};
+
+// ── 6. RECORDING STUDIO SETTINGS ──────────────────────────────────
+window.toggleStudioSettings = function() {
+  var panel = document.getElementById('studio-settings-panel');
+  if(!panel) {
+    panel = _aabBuildSettingsPanel();
+    var recPg = document.getElementById('record-pg');
+    if(recPg) recPg.appendChild(panel);
+  }
+  panel.classList.toggle('open');
+};
+
+function _aabBuildSettingsPanel() {
+  var panel = document.createElement('div');
+  panel.id = 'studio-settings-panel';
+  panel.innerHTML = [
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">',
+    '<span style="font-size:13px;font-weight:800;color:#e2e8f0;">⚙ Studio Settings</span>',
+    '<button onclick="toggleStudioSettings()" style="background:none;border:none;color:#6b7280;font-size:18px;cursor:pointer;">×</button>',
+    '</div>',
+    // Camera
+    '<div class="studio-settings-row">',
+    '<div class="studio-settings-label">📹 Camera</div>',
+    '<select class="studio-settings-select" id="ss-cam-sel" onchange="studioChangeCam(this.value)">',
+    '<option>Default camera</option></select></div>',
+    // Mic
+    '<div class="studio-settings-row">',
+    '<div class="studio-settings-label">🎤 Microphone</div>',
+    '<select class="studio-settings-select" id="ss-mic-sel" onchange="studioChangeMic(this.value)">',
+    '<option>Default microphone</option></select></div>',
+    // Resolution
+    '<div class="studio-settings-row">',
+    '<div class="studio-settings-label">📐 Resolution</div>',
+    '<select class="studio-settings-select" id="ss-res-sel">',
+    '<option value="1080">1080p HD</option>',
+    '<option value="720">720p</option>',
+    '<option value="480">480p</option>',
+    '</select></div>',
+    // Countdown
+    '<div class="studio-settings-row">',
+    '<div class="studio-settings-label">⏱ Countdown</div>',
+    '<select class="studio-settings-select" id="ss-count-sel">',
+    '<option value="3">3 seconds</option>',
+    '<option value="5">5 seconds</option>',
+    '<option value="0">No countdown</option>',
+    '</select></div>',
+    // Mirror
+    '<div class="studio-settings-row">',
+    '<div class="studio-settings-label">↔ Mirror Preview</div>',
+    '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">',
+    '<input type="checkbox" id="ss-mirror" onchange="document.getElementById('studio-canvas')&&(document.getElementById('studio-canvas').style.transform=this.checked?'scaleX(-1)':'')">',
+    '<span style="font-size:12px;color:#9ca3af;">Flip camera horizontally</span>',
+    '</label></div>',
+    // TP mode
+    '<div class="studio-settings-row">',
+    '<div class="studio-settings-label">📜 Teleprompter Mode</div>',
+    '<select class="studio-settings-select" onchange="setTpScrollMode(this.value)">',
+    '<option value="auto">Auto-scroll</option>',
+    '<option value="word">Word-by-word</option>',
+    '<option value="manual">Manual</option>',
+    '</select></div>',
+  ].join('');
+  // Populate device lists
+  if(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+    navigator.mediaDevices.enumerateDevices().then(function(devices){
+      var camSel = document.getElementById('ss-cam-sel');
+      var micSel = document.getElementById('ss-mic-sel');
+      if(camSel) camSel.innerHTML = '';
+      if(micSel) micSel.innerHTML = '';
+      devices.forEach(function(d){
+        if(d.kind==='videoinput' && camSel) {
+          var o = document.createElement('option'); o.value=d.deviceId; o.textContent=d.label||'Camera '+d.deviceId.slice(0,6); camSel.appendChild(o);
+        }
+        if(d.kind==='audioinput' && micSel) {
+          var o = document.createElement('option'); o.value=d.deviceId; o.textContent=d.label||'Mic '+d.deviceId.slice(0,6); micSel.appendChild(o);
+        }
+      });
+    });
+  }
+  return panel;
+}
+
+// Wire the settings button (gear icon ⚙ in studio bar)
+(function(){
+  var obs = new MutationObserver(function(){
+    var recPg = document.getElementById('record-pg');
+    if(!recPg) return;
+    // Find gear icon button
+    var btns = recPg.querySelectorAll('button');
+    btns.forEach(function(btn){
+      var txt = btn.textContent.trim();
+      if((txt==='⚙'||txt.includes('⚙')||btn.title==='Settings') && !btn._aabSettingsWired) {
+        btn._aabSettingsWired = true;
+        btn.onclick = function(e){ e.stopPropagation(); toggleStudioSettings(); };
+      }
+    });
+  });
+  obs.observe(document.body, {childList:true, subtree:true});
+})();
+
+// ── 7. TEXT OVERLAY EDITOR — wire Text▾ dropdown ─────────────────
+window.aabOpenTextOverlay = function(type) {
+  if(typeof E_openTextEditor === 'function') E_openTextEditor();
+  else if(typeof toast === 'function') toast('Navigate to Edit first', 'warn');
+};
+
+// Wire the Text dropdown items to use E_openTextEditor
+(function(){
+  document.addEventListener('click', function(e) {
+    var item = e.target.closest('[data-text-type]');
+    if(!item) return;
+    var type = item.dataset.textType;
+    if(window.E && typeof E_openTextEditor === 'function') {
+      E_openTextEditor();
+    }
+  });
+})();
+
+// ── 8. SCENE PERSISTENCE — guard on nav ───────────────────────────
+var _origStartSeg = window.startSegmentation;
+window.startSegmentation = function() {
+  if(window.PROJECT && window.PROJECT.scenes && window.PROJECT.scenes.length > 0 &&
+     window.PROJECT.status && ['segmented','recorded','exported'].indexOf(window.PROJECT.status)>=0) {
+    if(typeof toast==='function') toast('Scenes already saved — skipping re-segmentation', 'ok');
+    if(typeof renderSceneBoard==='function') renderSceneBoard();
+    return;
+  }
+  if(_origStartSeg) _origStartSeg();
+};
+
+// ── 9. LOAD EXISTING APS VIDEOS INTO TIMELINE ─────────────────────
+// Called when navigating to edit-pg with apsVideos already present
+window.aabLoadApsToTimeline = function() {
+  if(!window.E || !window.PROJECT) return;
+  var aps = Object.values(PROJECT.apsVideos||{});
+  if(!aps.length) return;
+  var mainTrack = E.tracks.find(function(t){return t.id==='main';});
+  if(!mainTrack || mainTrack.clips.length) return; // already loaded
+  if(typeof E_loadClips === 'function') E_loadClips();
+};
+
+// ── 10. PROFESSIONAL TRACK NAMES (update existing E tracks) ───────
+(function() {
+  var obs = new MutationObserver(function(){
+    if(window.E && window.E.tracks && !window.E._tracksNamed) {
+      window.E._tracksNamed = true;
+      var names = {
+        main:'▶ Main Video', broll:'🎬 B-Roll', voice:'🎤 Voice Over',
+        music:'🎵 Background Music', sfx:'🔊 Sound FX',
+        subtitle:'💬 Subtitles / CC', subs:'💬 Subtitles / CC',
+        overlays:'🖼 Text Overlays'
+      };
+      window.E.tracks.forEach(function(t){
+        if(names[t.id]) t.name = names[t.id];
+      });
+    }
+  });
+  obs.observe(document.body, {childList:true, subtree:true});
+})();
+
+// ── 11. GSAP: Animate scene cards on scenes-pg ───────────────────
+var _origRenderSceneBoard = window.renderSceneBoard;
+window.renderSceneBoard = function() {
+  if(_origRenderSceneBoard) _origRenderSceneBoard();
+  if(!window.gsap) return;
+  setTimeout(function(){
+    var cards = document.querySelectorAll('#scenes-pg .scene-card, #scenes-pg [class*="scene-row"]');
+    if(cards.length) gsap.fromTo(cards,
+      {opacity:0, x:-10},
+      {opacity:1, x:0, duration:.25, stagger:.04, ease:'power2.out'}
+    );
+  }, 100);
+};
+
+// ── 12. E_addTextClip full implementation ─────────────────────────
+window.E_addTextClip = function(opts) {
+  if(!window.E) return;
+  var overlayTrack = E.tracks.find(function(t){ return t.id==='overlays'; });
+  if(!overlayTrack) return;
+  var clip = {
+    id: 'txt_' + Date.now(),
+    trackId: 'overlays',
+    name: (opts && opts.text) ? opts.text.substring(0,30) : 'Text Overlay',
+    text: (opts && opts.text) || 'Your text here',
+    type: 'text',
+    start: E.playhead || 0,
+    duration: (opts && opts.duration) || 5,
+    color: '#7c3aed',
+    style: opts && opts.style ? opts.style : {
+      fontSize: 32, fontFamily: 'inherit', color: '#ffffff',
+      bg: 'rgba(0,0,0,0.6)', position: 'center',
+      bold: false, italic: false
+    }
+  };
+  overlayTrack.clips.push(clip);
+  if(typeof E_renderTL === 'function') E_renderTL();
+  if(typeof toast === 'function') toast('Text overlay added', 'ok');
+  // Open inspector for the new clip
+  if(typeof E_selectClip === 'function') E_selectClip(clip, overlayTrack);
+};
+
+// ── 13. FIX edit_uploadVideo / edit_uploadAudio ───────────────────
+window.edit_uploadVideo = function() {
+  var input = document.createElement('input');
+  input.type = 'file'; input.accept = 'video/*';
+  input.onchange = function() {
+    var file = input.files[0]; if(!file) return;
+    var url = URL.createObjectURL(file);
+    E_addClip({url:url, type:'video', name:file.name, duration:30}, 'broll');
+    if(typeof toast==='function') toast('Video added to B-Roll', 'ok');
+  };
+  input.click();
+};
+window.edit_uploadAudio = function(trackId) {
+  var input = document.createElement('input');
+  input.type = 'file'; input.accept = 'audio/*';
+  input.onchange = function() {
+    var file = input.files[0]; if(!file) return;
+    var url = URL.createObjectURL(file);
+    var tid = trackId || 'music';
+    E_addClip({url:url, type:'audio', name:file.name, duration:180}, tid);
+    if(typeof toast==='function') toast('Audio added', 'ok');
+  };
+  input.click();
+};
+window.edit_uploadSFX = function(){ edit_uploadAudio('sfx'); };
+window.edit_uploadMusic = function(){ edit_uploadAudio('music'); };
+window.edit_uploadVoice = function(){ edit_uploadAudio('voice'); };
+window.startTeleprompter = function(){ if(typeof studioTpStart==='function') studioTpStart(); };
+
+console.log('[AAB] Master patch loaded — all systems wired');
 
 window._aabMaster=true;
 console.log('[AAB] Master script loaded OK');
