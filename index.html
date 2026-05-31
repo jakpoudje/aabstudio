@@ -4591,7 +4591,7 @@ _css.textContent=""+
 ".aab-insp-del:hover{background:rgba(239,68,68,.22);}"+
 ".aab-insp-empty{padding:20px 12px;text-align:center;color:#374151;font-size:11px;line-height:1.6;}"+
 /* Timeline */
-".aab-tl-wrap{flex:0 0 260px;display:flex;flex-direction:column;background:#07090f;border-top:1px solid #111827;min-height:180px;max-height:60vh;}"+
+".aab-tl-wrap{flex:0 0 clamp(160px,32dvh,280px);display:flex;flex-direction:column;background:#07090f;border-top:1px solid #111827;min-height:180px;max-height:60vh;}"+
 ".aab-tl-toolbar{flex:0 0 36px;display:flex;align-items:center;padding:0 8px;gap:5px;background:#0a0d14;border-bottom:1px solid #111827;flex-shrink:0;}"+
 ".aab-tl-tool{background:none;border:1px solid #1f2937;color:#6b7280;border-radius:4px;padding:3px 7px;font-size:10px;cursor:pointer;}"+
 ".aab-tl-tool.on{background:rgba(37,99,235,.2);border-color:#2563eb;color:#60a5fa;}"+
@@ -4708,6 +4708,23 @@ function _mkBin(){
     };
     tabs.appendChild(btn);
   });
+  // Bin transport bar
+  var bTr=_el("div","");bTr.id="aab-bin-transport";
+  bTr.style.cssText="display:flex;align-items:center;padding:3px 6px;gap:3px;background:#0a0d14;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0;";
+  [["⏮","First",function(){var cs=document.querySelectorAll(".aab-bin-clip");if(cs.length)cs[0].click();}],
+   ["◄","Prev",function(){var cs=[...document.querySelectorAll(".aab-bin-clip")],s=document.querySelector(".aab-bin-clip.on"),i=s?[...cs].indexOf(s):1;if(i>0)cs[i-1].click();}],
+   ["►","Preview in Source",function(){E_srcToggle();}],
+   ["►►","Next",function(){var cs=[...document.querySelectorAll(".aab-bin-clip")],s=document.querySelector(".aab-bin-clip.on"),i=s?[...cs].indexOf(s):-1;if(i<cs.length-1)cs[i+1].click();}],
+   ["⏭","Last",function(){var cs=document.querySelectorAll(".aab-bin-clip");if(cs.length)cs[cs.length-1].click();}]
+  ].forEach(function(d){
+    var b=_el("button","aab-cb");b.innerHTML=d[0];b.title=d[1];b.style.cssText="font-size:10px;padding:2px 6px;";
+    b.onclick=d[2];bTr.appendChild(b);
+  });
+  var bIns=_el("button","aab-cb");bIns.innerHTML="→ TL";bIns.title="Insert selected clip to timeline at playhead";
+  bIns.style.cssText="font-size:9px;font-weight:700;padding:2px 7px;background:#2563eb;color:#fff;border-radius:3px;margin-left:auto;";
+  bIns.onclick=function(){if(E.sourceClip)E_addClip(Object.assign({},E.sourceClip,{id:"c_"+Date.now(),start:E.playhead||0}),"main");};
+  bTr.appendChild(bIns);
+  bin.insertBefore(bTr, tabs);
   bin.appendChild(tabs);
   var upBtn=_el("button","");
   upBtn.style.cssText="margin:5px 7px;width:calc(100% - 14px);background:rgba(37,99,235,.12);border:1px dashed rgba(37,99,235,.3);color:#60a5fa;border-radius:5px;padding:5px;font-size:9px;font-weight:700;cursor:pointer;";
@@ -4851,8 +4868,7 @@ function _mkTimeline(){
     tb.appendChild(btn);
   });
   var sep=_el("div","");sep.style.cssText="width:1px;height:18px;background:#1f2937;margin:0 3px;";tb.appendChild(sep);
-  var zmOut=_el("button","aab-tl-tool");zmOut.textContent="−";zmOut.onclick=function(){E.pxPerSec=Math.max(15,E.pxPerSec-8);E_renderTL();};tb.appendChild(zmOut);
-  var zmIn=_el("button","aab-tl-tool");zmIn.textContent="+";zmIn.onclick=function(){E.pxPerSec=Math.min(300,E.pxPerSec+8);E_renderTL();};tb.appendChild(zmIn);
+
   var zmO=_el("button","aab-tl-tool");zmO.innerHTML="&minus;";zmO.title="Zoom Out";
   zmO.onclick=function(){E.pxPerSec=Math.max(8,E.pxPerSec/1.4);E_renderTL();};tb.appendChild(zmO);
   var zmI=_el("button","aab-tl-tool");zmI.innerHTML="+";zmI.title="Zoom In";
@@ -5213,6 +5229,7 @@ function E_renderTL(){
     row.appendChild(lbl);
     var lane=_el("div","aab-lane"+(track.locked?" locked":""));lane.dataset.tid=track.id;
     lane.style.height=track.h+"px";
+    lane.addEventListener("contextmenu",function(e){e.preventDefault();_aabTrackCtx(e,track);});
     lane.addEventListener("dragover",function(e){e.preventDefault();this.classList.add("drop-active");});
     lane.addEventListener("dragleave",function(){this.classList.remove("drop-active");});
     lane.addEventListener("drop",function(e){
@@ -5316,7 +5333,23 @@ function E_renderTL(){
         var up=function(){document.removeEventListener("mousemove",mv);document.removeEventListener("mouseup",up);if(typeof saveProject==="function")saveProject();};
         document.addEventListener("mousemove",mv);document.addEventListener("mouseup",up);
       });
-      ce2.addEventListener("contextmenu",function(e){e.preventDefault();if(confirm("Delete \""+clip.name+"\"?")){track.clips=track.clips.filter(function(c){return c.id!==clip.id;});E_renderTL();if(E.selectedClipId===clip.id){E.selectedClipId=null;E_showInspector(null,null);}}});
+      ce2.addEventListener("contextmenu",function(e){
+        e.preventDefault();
+        E_selectClip(clip,track);
+        _aabCtxMenu(e,[
+          {icon:"✂",label:"Split at playhead",act:function(){E_razorAt(E.playhead);}},
+          {icon:"📋",label:"Duplicate clip",act:function(){var c2=Object.assign({},clip);c2.id="c_"+Date.now();c2.start=clip.start+clip.duration+0.1;E_addClip(c2,track.id);}},
+          {icon:"✏️",label:"Edit in Inspector",act:function(){E_showInspector(clip,track);}},
+          {icon:"⏩",label:"Trim: start → playhead",act:function(){var d=E.playhead-clip.start;if(d>0&&d<clip.duration){clip.start=E.playhead;clip.duration-=d;E_renderTL();}}},
+          {icon:"⏪",label:"Trim: end → playhead",act:function(){var d=E.playhead-clip.start;if(d>0&&d<clip.duration){clip.duration=d;E_renderTL();}}},
+          null,
+          {icon:"🗑️",label:"Delete clip",cls:"danger",act:function(){
+            track.clips=track.clips.filter(function(c){return c.id!==clip.id;});
+            E_renderTL();if(E.selectedClipId===clip.id){E.selectedClipId=null;E_showInspector(null,null);}
+            if(typeof toast==="function")toast("Deleted: "+clip.name,"ok");
+          }}
+        ],clip,track);
+      });
       lane.appendChild(ce2);
     });
     row.appendChild(lane);rows.appendChild(row);
@@ -6307,6 +6340,33 @@ body{max-width:100vw;overflow-x:hidden}
 .aab-bin-clip-meta { font-size: 10px !important; color: #6b7280 !important; }
 .aab-bin-clip-thumb { border-radius: 4px !important; }
 .aab-monitor-label { font-size: 9px !important; font-weight: 800 !important; letter-spacing: .1em !important; color: #4b5563 !important; padding: 4px 10px !important; text-transform: uppercase !important; position: absolute !important; top: 0 !important; left: 0 !important; z-index: 2 !important; }
+
+/* ═══ Footer & Global Polish ═══ */
+body { margin-bottom: 0 !important; }
+.pg:not(.pg-full).on { padding-bottom: 44px !important; }
+
+/* Context menu */
+#aab-ctx button:hover { background: rgba(255,255,255,.07) !important; }
+
+/* Bin transport */
+#aab-bin-transport .aab-cb { font-size: 11px !important; min-width: 24px !important; }
+
+/* TP karaoke improvements */
+.tp-word { cursor: pointer; user-select: none; }
+.tp-word.active {
+  color: #00d4ff !important;
+  text-shadow: 0 0 20px rgba(0,212,255,.9), 0 0 40px rgba(0,212,255,.5) !important;
+  font-weight: 900 !important;
+  transform: scale(1.08) !important;
+  display: inline-block !important;
+  transition: all .08s ease !important;
+}
+.tp-word.done { color: rgba(255,255,255,.28) !important; text-shadow: none !important; transition: color .2s !important; }
+.tp-word.upcoming { color: rgba(255,255,255,.55) !important; }
+.tp-word:hover { color: rgba(255,255,255,.8) !important; text-decoration: underline; }
+
+/* Timeline responsive */
+.aab-tl-wrap { flex: 0 0 clamp(160px,32dvh,280px) !important; height: clamp(160px,32dvh,280px) !important; }
 </style></head>
 
     <style>
@@ -16804,6 +16864,57 @@ console.log('[AAB] Master patch loaded — all systems wired');
 window._aabMaster=true;
 console.log('[AAB] Master script loaded OK');
 console.log('[AAB] Master script loaded');
+})();
+</script>
+
+<!-- ═══ AABStudio Global Footer ═══ -->
+<div id="aab-footer" style="display:none;position:fixed;bottom:0;left:0;right:0;height:36px;background:#060810;border-top:1px solid rgba(255,255,255,.07);display:flex;align-items:center;padding:0 20px;gap:20px;z-index:9000;font-family:'Sora','Inter',sans-serif;font-size:11px;color:#4b5563;">
+  <span style="font-weight:800;color:#1e40af;letter-spacing:.05em;">AAB<span style="color:#06b6d4;">Studio</span>.ai</span>
+  <span style="margin-left:auto;display:flex;align-items:center;gap:16px;">
+    <a onclick="nav('pricing-pg')" style="color:#4b5563;cursor:pointer;text-decoration:none;" onmouseover="this.style.color='#9ca3af'" onmouseout="this.style.color='#4b5563'">Pricing</a>
+    <a href="mailto:support@aabstudio.ai" style="color:#4b5563;text-decoration:none;" onmouseover="this.style.color='#9ca3af'" onmouseout="this.style.color='#4b5563'">Support</a>
+    <a onclick="nav('remote-pg')" style="color:#4b5563;cursor:pointer;text-decoration:none;" onmouseover="this.style.color='#9ca3af'" onmouseout="this.style.color='#4b5563'">Remote</a>
+    <span id="aab-footer-plan" style="background:rgba(37,99,235,.15);color:#60a5fa;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;"></span>
+    <span id="aab-footer-status" style="color:#10b981;font-size:10px;display:flex;align-items:center;gap:4px;"><span style="width:6px;height:6px;border-radius:50%;background:#10b981;display:inline-block;"></span>Connected</span>
+    <span style="color:#374151;">© 2025 AABStudio</span>
+  </span>
+</div>
+<script>
+// Show footer on all pages except auth/home
+(function(){
+  var footer = document.getElementById('aab-footer');
+  if(!footer) return;
+  var hiddenPages = ['home','auth-pg'];
+  function updateFooter(){
+    var activePg = document.querySelector('.pg.on, .pg-full.on');
+    var pgId = activePg ? activePg.id : '';
+    footer.style.display = hiddenPages.indexOf(pgId) > -1 ? 'none' : 'flex';
+    // Update plan badge
+    var planEl = document.getElementById('aab-footer-plan');
+    if(planEl && window._sbSession){
+      planEl.textContent = (window.PROJECT && window.PROJECT.plan) || 'Free';
+    }
+    // Push page content up to avoid footer overlap
+    if(activePg && hiddenPages.indexOf(pgId) === -1){
+      // Only push non-full pages
+      if(!activePg.classList.contains('pg-full')){
+        activePg.style.paddingBottom = '44px';
+      }
+    }
+  }
+  // Observe nav changes
+  var _origNav = window.nav;
+  if(_origNav && !window._footerNavWired){
+    window._footerNavWired = true;
+    var __nav = window.nav;
+    window.nav = function(pg, opts){
+      var r = __nav(pg, opts);
+      setTimeout(updateFooter, 100);
+      return r;
+    };
+  }
+  updateFooter();
+  setTimeout(updateFooter, 500);
 })();
 </script>
 </body>
