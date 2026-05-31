@@ -5027,7 +5027,17 @@ function _mkVThumb(url,w,h){
     ph.innerHTML="<span style='font-size:18px'>🎬</span><span style='font-size:7px;color:#6b7280;'>VIDEO</span>";
     wrap.appendChild(ph);v.remove();
   });
-  // Duration badge overlay
+  // Timeout fallback: if video hasn't yielded a frame in 4s, show gradient
+  var tmout=setTimeout(function(){
+    if(!captured){
+      v.remove();
+      var ph=document.createElement("div");
+      ph.style.cssText="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%);";
+      ph.innerHTML="<span style='font-size:18px'>&#127916;</span><span style='font-size:7px;color:#6b7280;font-family:monospace;'>VIDEO</span>";
+      wrap.appendChild(ph);
+    }
+  },3500);
+  v.addEventListener("seeked",function(){clearTimeout(tmout);});
   wrap.appendChild(v);
   return wrap;
 }
@@ -5218,7 +5228,7 @@ function E_renderTL(){
       ce2.style.left=l+"px";ce2.style.width=Math.max(w,20)+"px";
       ce2.style.height=(track.h-6)+"px";
       ce2.style.top="3px";ce2.style.bottom="auto";
-      ce2.style.background=track.color+"44";ce2.style.borderColor=track.color;
+      ce2.style.background=track.color+"55";ce2.style.borderColor=track.color;
       ce2.style.borderRadius="5px";ce2.style.overflow="hidden";
       if((track.type==="image"||clip.type==="image")&&clip.url&&w>30){
         var imgTs=document.createElement("div");imgTs.className="aab-thumb-strip";
@@ -5228,6 +5238,11 @@ function E_renderTL(){
         imgTs.appendChild(imgEl);ce2.appendChild(imgTs);
       }
       if(track.type==="video"&&clip.url&&w>40){
+        // Video icon fallback (shown until thumbnails load)
+        var vIcon=document.createElement("div");
+        vIcon.style.cssText="position:absolute;top:50%;left:6px;transform:translateY(-50%);font-size:14px;opacity:.4;z-index:1;";
+        vIcon.textContent="🎬";
+        ce2.appendChild(vIcon);
         var ts=_el("div","aab-thumb-strip");
         var nt=Math.min(8,Math.ceil(w/50));
         for(var ti=0;ti<nt;ti++){
@@ -5236,7 +5251,8 @@ function E_renderTL(){
             tc.style.cssText="flex-shrink:0;height:100%;object-fit:cover;";
             var tv=document.createElement("video");tv.src=clip.url;tv.muted=true;tv.preload="metadata";tv.setAttribute("playsinline","");
             tv.addEventListener("loadedmetadata",function(){tv.currentTime=clip.duration*(idx/(totalN>1?totalN-1:1));});
-            tv.addEventListener("seeked",function(){try{tc.getContext("2d").drawImage(tv,0,0,50,tc.height);}catch(er){}});
+            var tcTmout=setTimeout(function(){tc.style.display="none";},4000);
+            tv.addEventListener("seeked",function(){clearTimeout(tcTmout);try{tc.getContext("2d").drawImage(tv,0,0,50,tc.height);tc.style.display="";}catch(er){}});
             ts.appendChild(tc);
           })(ti,nt);
         }
