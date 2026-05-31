@@ -6446,6 +6446,51 @@ body { margin-bottom: 0 !important; }
 
 /* Timeline responsive */
 .aab-tl-wrap { flex: 0 0 clamp(160px,32dvh,280px) !important; height: clamp(160px,32dvh,280px) !important; }
+
+/* ═══════ Recording Studio Upgrade ═══════ */
+#record-pg.on { padding: 10px !important; background: #04060c !important; box-sizing: border-box !important; }
+#record-pg.on .studio-wrap { border-radius: 12px !important; border: 1px solid rgba(255,255,255,.09) !important; overflow: hidden !important; box-shadow: 0 2px 40px rgba(0,0,0,.6) !important; }
+
+/* Top bar */
+.studio-bar { background: #060810 !important; border-bottom: 1px solid rgba(255,255,255,.09) !important; }
+
+/* Scene queue */
+.studio-q { width: 175px !important; background: #060810 !important; border-right: 1px solid rgba(255,255,255,.07) !important; display: flex !important; flex-direction: column !important; }
+.studio-q-hdr { flex-shrink: 0; }
+.studio-q-list { flex: 1 !important; overflow-y: auto !important; }
+
+/* Camera canvas rounded in context */
+.studio-canvas { border-radius: 0 !important; }
+
+/* TP Panel */
+#studio-tp-panel { background: #07090f !important; }
+
+/* Bottom panel groups */
+.studio-bottom, #studio-bottom { background: #060810 !important; border-top: 1px solid rgba(255,255,255,.09) !important; }
+.panel-group { border-right: 1px solid rgba(255,255,255,.07) !important; min-width: 0 !important; }
+.panel-group-label { font-size: 9px !important; font-weight: 800 !important; color: rgba(255,255,255,.25) !important; letter-spacing: .07em !important; padding: 5px 10px 3px !important; text-transform: uppercase !important; }
+.panel-group-body { padding: 6px 10px 8px !important; gap: 6px !important; }
+
+/* Recording button states */
+.btn-rec-main { font-size: 13px !important; font-weight: 800 !important; letter-spacing: .05em !important; }
+.rec-badge.recording .rdot { background: #ef4444 !important; animation: pulse .8s infinite !important; }
+.rec-badge.recording .rtxt { color: #ef4444 !important; }
+
+/* Karaoke in studio TP */
+#tp-cur .tp-word.active {
+  color: #00d4ff !important;
+  text-shadow: 0 0 18px rgba(0,212,255,.9), 0 0 36px rgba(0,212,255,.5) !important;
+  font-weight: 900 !important;
+  display: inline-block !important;
+  transform: scale(1.07) !important;
+  transition: all .07s ease !important;
+}
+#tp-cur .tp-word.done { color: rgba(255,255,255,.22) !important; text-shadow: none !important; }
+#tp-cur .tp-word.upcoming { color: rgba(255,255,255,.48) !important; }
+#tp-cur .tp-word:hover { text-decoration: underline; cursor: pointer; }
+
+/* Scene queue items */
+.studio-q-item.active { background: rgba(139,92,246,.15) !important; border-left: 3px solid #a78bfa !important; color: #a78bfa !important; font-weight: 700 !important; }
 </style></head>
 
     <style>
@@ -7229,47 +7274,47 @@ body { margin-bottom: 0 !important; }
   <!-- ══ RECORDING STUDIO ═════════════════════════════════════════════════════════ -->
   <div id="record-pg" class="pg-full" style="background:var(--navy);">
     <div class="studio-wrap" style="height:100vh;display:flex;flex-direction:column;overflow:hidden;">
-      <div class="studio-bar">
-        <!-- App navigation -->
-        <div style="display:flex;align-items:center;gap:2px;padding:0 6px;border-right:.5px solid rgba(255,255,255,.06);height:100%;flex-shrink:0;">
-          <button onclick="navBack()" style="background:none;border:.5px solid rgba(255,255,255,.1);border-radius:4px;color:rgba(255,255,255,.5);font-size:9px;cursor:pointer;padding:3px 8px;font-family:inherit;">← Back</button>
-          <button onclick="saveProject();nav('dashboard-pg')" style="background:none;border:.5px solid rgba(255,255,255,.06);border-radius:4px;color:rgba(255,255,255,.3);font-size:9px;cursor:pointer;padding:3px 7px;font-family:inherit;">🏠</button>
-          <button onclick="saveProject();nav('script-pg')" style="background:none;border:.5px solid rgba(255,255,255,.06);border-radius:4px;color:rgba(255,255,255,.3);font-size:9px;cursor:pointer;padding:3px 7px;font-family:inherit;">📝</button>
-          <button onclick="saveProject();nav('scenes-pg')" style="background:none;border:.5px solid rgba(255,255,255,.06);border-radius:4px;color:rgba(255,255,255,.3);font-size:9px;cursor:pointer;padding:3px 7px;font-family:inherit;">🎬</button>
-          <button onclick="nav('ai-presenter-studio')" style="background:none;border:.5px solid rgba(255,255,255,.06);border-radius:4px;color:rgba(255,255,255,.3);font-size:9px;cursor:pointer;padding:3px 7px;font-family:inherit;">🤖</button>
-          <button onclick="saveProject();nav('edit-pg')" style="background:none;border:.5px solid rgba(255,255,255,.06);border-radius:4px;color:rgba(255,255,255,.3);font-size:9px;cursor:pointer;padding:3px 7px;font-family:inherit;">✂️</button>
-        </div>
-        <div class="rec-badge ready" id="rec-badge">
-          <div class="rdot"></div>
-          <div class="rtxt" id="rec-txt">READY</div>
-        </div>
-        <div class="studio-scene-pill" id="st-scene-pill">Scene 1</div>
-        <div class="studio-scene-name" id="st-scene-name"></div>
-        <div style="margin-left:auto;display:flex;align-items:center;gap:12px;">
-          <div style="display:flex;align-items:center;gap:4px;"><span
-              style="font-size:9px;color:rgba(255,255,255,.25);">ELAPSED</span><span
-              style="font-size:11px;font-weight:600;color:var(--gold);font-family:'JetBrains Mono',monospace;"
-              id="st-elapsed">0:00</span></div>
-          <div style="display:flex;align-items:center;gap:4px;"><span
-              style="font-size:9px;color:rgba(255,255,255,.25);">SCENE</span><span
-              style="font-size:11px;font-weight:600;color:#fff;" id="st-scene-cnt">1/1</span></div>
-          <button class="btn btn-primary btn-sm" onclick="endStudioSession()">Done → Edit</button>
-          <button onclick="toggleStudioSettings()" title="Settings" style="background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);border-radius:4px;color:rgba(255,255,255,.6);font-size:14px;cursor:pointer;padding:3px 8px;line-height:1;">⚙</button>
-        
-          <button class="btn btn-ghost btn-sm" onclick="doSignOut()"
-            style="color:rgba(239,68,68,.6);border-color:rgba(239,68,68,.2);">Sign out</button>
-        </div>
-      </div>
+      <div class="studio-bar" style="height:52px;background:#060810;border-bottom:1px solid rgba(255,255,255,.09);display:flex;align-items:center;padding:0 12px;gap:8px;flex-shrink:0;font-family:'Sora','Inter',sans-serif;">
+  <!-- Left nav buttons -->
+  <div style="display:flex;align-items:center;gap:4px;padding-right:12px;border-right:1px solid rgba(255,255,255,.07);">
+    <button onclick="navBack()" title="Back" style="background:none;border:1px solid rgba(255,255,255,.1);border-radius:6px;color:rgba(255,255,255,.6);font-size:11px;cursor:pointer;padding:4px 10px;font-family:inherit;transition:all .12s;" onmouseover="this.style.background='rgba(255,255,255,.08)'" onmouseout="this.style.background='none'">← Back</button>
+    <button onclick="saveProject();nav('dashboard-pg')" title="Dashboard" style="background:none;border:1px solid rgba(255,255,255,.07);border-radius:6px;color:rgba(255,255,255,.35);font-size:13px;cursor:pointer;padding:4px 8px;transition:all .12s;" onmouseover="this.style.background='rgba(255,255,255,.07)'" onmouseout="this.style.background='none'">🏠</button>
+    <button onclick="saveProject();nav('script-pg')" title="Script" style="background:none;border:1px solid rgba(255,255,255,.07);border-radius:6px;color:rgba(255,255,255,.35);font-size:11px;cursor:pointer;padding:4px 8px;font-family:inherit;transition:all .12s;" onmouseover="this.style.background='rgba(255,255,255,.07)'" onmouseout="this.style.background='none'">📝 Script</button>
+    <button onclick="saveProject();nav('scenes-pg')" title="Scenes" style="background:none;border:1px solid rgba(255,255,255,.07);border-radius:6px;color:rgba(255,255,255,.35);font-size:11px;cursor:pointer;padding:4px 8px;font-family:inherit;transition:all .12s;" onmouseover="this.style.background='rgba(255,255,255,.07)'" onmouseout="this.style.background='none'">🎬 Scenes</button>
+    <button onclick="saveProject();nav('edit-pg')" title="Edit Suite" style="background:none;border:1px solid rgba(255,255,255,.07);border-radius:6px;color:rgba(255,255,255,.35);font-size:11px;cursor:pointer;padding:4px 8px;font-family:inherit;transition:all .12s;" onmouseover="this.style.background='rgba(255,255,255,.07)'" onmouseout="this.style.background='none'">✂ Edit</button>
+  </div>
+  <!-- REC Badge -->
+  <div class="rec-badge ready" id="rec-badge" style="display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);">
+    <div class="rdot" style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.3);"></div>
+    <div class="rtxt" id="rec-txt" style="font-size:10px;font-weight:700;letter-spacing:.06em;color:rgba(255,255,255,.4);">READY</div>
+  </div>
+  <!-- Scene pill -->
+  <div class="studio-scene-pill" id="st-scene-pill" style="font-size:11px;font-weight:600;color:#a78bfa;background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.25);border-radius:12px;padding:3px 10px;">Scene 1</div>
+  <div class="studio-scene-name" id="st-scene-name" style="font-size:11px;color:rgba(255,255,255,.4);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+  <!-- Right controls -->
+  <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
+    <div style="display:flex;align-items:center;gap:6px;">
+      <span style="font-size:9px;color:rgba(255,255,255,.2);letter-spacing:.06em;">ELAPSED</span>
+      <span style="font-size:12px;font-weight:700;color:#facc15;font-family:'JetBrains Mono',monospace;" id="st-elapsed">0:00</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <span style="font-size:9px;color:rgba(255,255,255,.2);letter-spacing:.06em;">SCENE</span>
+      <span style="font-size:12px;font-weight:700;color:#fff;" id="st-scene-cnt">1/1</span>
+    </div>
+    <button onclick="endStudioSession()" style="background:#2563eb;border:none;border-radius:6px;color:#fff;font-size:11px;font-weight:600;cursor:pointer;padding:5px 14px;font-family:inherit;transition:background .12s;" onmouseover="this.style.background='#1d4ed8'" onmouseout="this.style.background='#2563eb'">Done → Edit</button>
+    <button onclick="openStudioSettings()" title="Studio Settings" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:rgba(255,255,255,.6);font-size:14px;cursor:pointer;padding:4px 10px;transition:all .12s;" onmouseover="this.style.background='rgba(255,255,255,.1)'" onmouseout="this.style.background='rgba(255,255,255,.06)'">⚙</button>
+  </div>
+</div>
       <div class="studio-main" style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;">
         <!-- Camera row: scene queue + canvas + panel -->
         <div style="flex:1;display:flex;min-height:0;overflow:hidden;">
         <!-- Scene queue -->
         <div class="studio-q">
-          <div class="studio-q-hdr">Scenes</div>
+          <div class="studio-q-hdr" style="padding:10px 12px;font-size:10px;font-weight:800;color:#6b7280;letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,.06);">Scenes</div>
           <div class="studio-q-list" id="studio-q-list"></div>
-          <div class="studio-q-footer">
-            <button class="s-btn" style="flex:1;" onclick="studioPrev()">← Prev</button>
-            <button class="s-btn" style="flex:1;" onclick="studioNext()">Next →</button>
+          <div class="studio-q-footer" style="padding:8px;border-top:1px solid rgba(255,255,255,.06);display:flex;gap:4px;">
+            <button class="s-btn" style="flex:1;font-size:11px;" onclick="studioPrev()" title="Previous scene">← Prev</button>
+            <button class="s-btn" style="flex:1;font-size:11px;" onclick="studioNext()" title="Next scene">Next →</button>
           </div>
         </div>
         <!-- Camera canvas -->
@@ -7327,44 +7372,57 @@ body { margin-bottom: 0 !important; }
           <!-- teleprompter moved below camera -->
         </div>
         <!-- TP panel sits directly below camera within same column -->
-        <div id="studio-tp-panel" style="flex-shrink:0;background:rgba(0,0,0,.92);border-top:.5px solid rgba(255,255,255,.08);overflow:hidden;max-height:160px;">
-          <!-- TP Header -->
-          <div style="display:flex;align-items:center;gap:6px;padding:5px 12px;height:32px;border-bottom:.5px solid rgba(255,255,255,.06);overflow-x:auto;flex-shrink:0;">
-            <span style="font-size:9px;font-weight:700;color:rgba(255,255,255,.3);letter-spacing:.08em;flex-shrink:0;">TELEPROMPTER</span>
-            <div style="display:flex;align-items:center;gap:3px;flex-shrink:0;">
-              <span style="font-size:8px;color:rgba(255,255,255,.2);">Speed</span>
-              <input type="range" id="tp-speed-slider" min="20" max="300" value="80" style="width:60px;accent-color:#facc15;height:2px;flex-shrink:0;" oninput="setTpSpd(this.value);">
-              <span id="tp-spd-val" style="font-size:8px;color:rgba(255,212,0,.6);min-width:18px;flex-shrink:0;">80</span>
-            </div>
-            <button onclick="decreaseTpFont()" style="background:none;border:.5px solid rgba(255,255,255,.1);border-radius:3px;padding:1px 5px;font-size:9px;color:rgba(255,255,255,.25);cursor:pointer;flex-shrink:0;">A-</button>
-            <button onclick="increaseTpFont()" style="background:none;border:.5px solid rgba(255,255,255,.1);border-radius:3px;padding:1px 5px;font-size:9px;color:rgba(255,255,255,.25);cursor:pointer;flex-shrink:0;">A+</button>
-            <button onclick="toggleMirror()" style="background:none;border:.5px solid rgba(255,255,255,.08);border-radius:3px;padding:1px 6px;font-size:9px;color:rgba(255,255,255,.25);cursor:pointer;flex-shrink:0;">⇄ Mirror</button>
-            <div style="display:flex;align-items:center;gap:2px;flex-shrink:0;">
-              <span style="font-size:8px;color:rgba(255,255,255,.15);">BG</span>
-              <span onclick="setTpBg('#000000')" style="display:inline-block;width:13px;height:13px;border-radius:2px;background:#000;cursor:pointer;border:1.5px solid rgba(255,255,255,.25);"></span>
-              <span onclick="setTpBg('#111827')" style="display:inline-block;width:13px;height:13px;border-radius:2px;background:#111827;cursor:pointer;border:1.5px solid rgba(255,255,255,.1);"></span>
-              <span onclick="setTpBg('rgba(0,0,0,.75)')" style="display:inline-block;width:13px;height:13px;border-radius:2px;background:rgba(0,0,0,.75);cursor:pointer;border:1.5px solid rgba(255,212,0,.25);"></span>
-              <span onclick="setTpBg('#ffffff')" style="display:inline-block;width:13px;height:13px;border-radius:2px;background:#fff;cursor:pointer;border:1.5px solid rgba(0,212,255,.25);"></span>
-            </div>
-            <select id="tp-scroll-mode" style="background:rgba(255,255,255,.04);border:.5px solid rgba(255,255,255,.07);color:rgba(255,255,255,.35);border-radius:3px;padding:2px 4px;font-size:9px;flex-shrink:0;" onchange="setTpScrollMode(this.value)">
-              <option value="auto">Auto-scroll</option>
-              <option value="manual">Manual</option>
-              <option value="word">Word-by-word</option>
-            </select>
-            <div style="margin-left:auto;display:flex;align-items:center;gap:5px;flex-shrink:0;">
-              <button onclick="resetTpScroll()" style="background:none;border:none;cursor:pointer;font-size:9px;color:rgba(255,255,255,.2);">↺ Reset</button>
-              <button onclick="toggleTpPanel()" id="tp-toggle-btn" style="background:none;border:.5px solid rgba(255,255,255,.1);border-radius:4px;padding:1px 7px;font-size:9px;color:rgba(255,255,255,.3);cursor:pointer;">▼</button>
-            </div>
-          </div>
-          <!-- Script display -->
-          <div id="studio-tp" class="studio-tp" style="overflow:hidden;height:113px;">
-            <div class="tp-body" id="tp-body" style="padding:8px 24px 10px;display:flex;flex-direction:column;gap:3px;height:100%;overflow:auto;scroll-behavior:smooth;scrollbar-width:none;">
-              <div class="tp-prev-txt" id="tp-prev" style="font-size:11px;color:rgba(255,255,255,.2);line-height:1.3;flex-shrink:0;height:15px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;"></div>
-              <div class="tp-cur-txt"  id="tp-cur"  style="flex:1;overflow:hidden;font-size:clamp(15px,1.7vw,21px);line-height:1.55;color:rgba(255,255,255,.92);"></div>
-              <div class="tp-next-txt" id="tp-next" style="font-size:11px;color:rgba(255,255,255,.15);line-height:1.3;flex-shrink:0;height:15px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;"></div>
-            </div>
-          </div>
-        </div>
+        <div id="studio-tp-panel" style="flex-shrink:0;background:#07090f;border-top:1px solid rgba(255,255,255,.08);overflow:hidden;display:flex;flex-direction:column;max-height:180px;min-height:140px;">
+  <!-- TP Control Bar -->
+  <div style="display:flex;align-items:center;gap:6px;padding:0 12px;height:36px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0;overflow-x:auto;">
+    <span style="font-size:9px;font-weight:800;color:rgba(255,255,255,.25);letter-spacing:.1em;text-transform:uppercase;flex-shrink:0;">Teleprompter</span>
+    <!-- Mode selector -->
+    <div style="display:flex;align-items:center;gap:2px;flex-shrink:0;margin-left:4px;">
+      <button id="tp-btn-auto" onclick="studioSetMode('auto')" style="font-size:9px;font-weight:700;padding:3px 8px;border-radius:4px;border:1px solid rgba(255,255,255,.1);background:rgba(37,99,235,.25);color:#93c5fd;cursor:pointer;transition:all .1s;">↓ Auto</button>
+      <button id="tp-btn-word" onclick="studioSetMode('word')" style="font-size:9px;font-weight:700;padding:3px 8px;border-radius:4px;border:1px solid rgba(255,255,255,.07);background:none;color:rgba(255,255,255,.3);cursor:pointer;transition:all .1s;">💡 Word</button>
+      <button id="tp-btn-manual" onclick="studioSetMode('manual')" style="font-size:9px;font-weight:700;padding:3px 8px;border-radius:4px;border:1px solid rgba(255,255,255,.07);background:none;color:rgba(255,255,255,.3);cursor:pointer;transition:all .1s;">✋ Manual</button>
+    </div>
+    <!-- Speed -->
+    <div style="display:flex;align-items:center;gap:3px;flex-shrink:0;border-left:1px solid rgba(255,255,255,.06);padding-left:8px;">
+      <span style="font-size:8px;color:rgba(245,158,11,.5);flex-shrink:0;">Speed</span>
+      <input type="range" id="tp-speed-slider" min="20" max="300" value="80" style="width:60px;accent-color:#facc15;height:2px;flex-shrink:0;" oninput="setTpSpd(this.value);document.getElementById('tp-spd-val').textContent=this.value;">
+      <span id="tp-spd-val" style="font-size:8px;color:rgba(245,158,11,.7);min-width:24px;flex-shrink:0;">80</span>
+    </div>
+    <!-- Font size -->
+    <div style="display:flex;align-items:center;gap:2px;flex-shrink:0;border-left:1px solid rgba(255,255,255,.06);padding-left:8px;">
+      <button onclick="decreaseTpFont()" style="background:none;border:1px solid rgba(255,255,255,.08);border-radius:3px;padding:2px 6px;font-size:9px;color:rgba(255,255,255,.3);cursor:pointer;">A-</button>
+      <button onclick="increaseTpFont()" style="background:none;border:1px solid rgba(255,255,255,.08);border-radius:3px;padding:2px 6px;font-size:9px;color:rgba(255,255,255,.3);cursor:pointer;">A+</button>
+    </div>
+    <!-- BG swatches -->
+    <div style="display:flex;align-items:center;gap:3px;flex-shrink:0;border-left:1px solid rgba(255,255,255,.06);padding-left:8px;">
+      <span style="font-size:8px;color:rgba(255,255,255,.15);">BG</span>
+      <span onclick="setTpBg('#000000')" style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#000;cursor:pointer;border:1.5px solid rgba(255,255,255,.25);"></span>
+      <span onclick="setTpBg('#111827')" style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#111827;cursor:pointer;border:1.5px solid rgba(255,255,255,.1);"></span>
+      <span onclick="setTpBg('rgba(0,0,0,.7)')" style="display:inline-block;width:14px;height:14px;border-radius:3px;background:rgba(0,0,0,.7);cursor:pointer;border:1.5px solid rgba(255,212,0,.3);"></span>
+      <span onclick="setTpBg('#ffffff')" style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#fff;cursor:pointer;border:1.5px solid rgba(0,212,255,.3);"></span>
+    </div>
+    <!-- Mirror -->
+    <button onclick="toggleMirror()" style="background:none;border:1px solid rgba(255,255,255,.08);border-radius:4px;padding:2px 7px;font-size:9px;color:rgba(255,255,255,.3);cursor:pointer;flex-shrink:0;border-left-width:1px;">⇄ Mirror</button>
+    <!-- Right controls -->
+    <div style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+      <button onclick="resetTpScroll()" style="background:none;border:none;cursor:pointer;font-size:9px;color:rgba(255,255,255,.2);padding:2px 4px;">↺ Reset</button>
+      <button onclick="toggleTpPanel()" id="tp-toggle-btn" style="background:none;border:1px solid rgba(255,255,255,.08);border-radius:4px;padding:2px 8px;font-size:9px;color:rgba(255,255,255,.3);cursor:pointer;">▼</button>
+    </div>
+  </div>
+  <!-- Text display area -->
+  <div id="studio-tp" class="studio-tp" style="flex:1;overflow:hidden;min-height:0;position:relative;">
+    <div class="tp-body" id="tp-body" style="padding:8px 28px 10px;display:flex;flex-direction:column;gap:4px;height:100%;overflow:auto;scroll-behavior:smooth;scrollbar-width:none;">
+      <!-- Prev scene hint -->
+      <div class="tp-prev-txt" id="tp-prev" style="font-size:11px;color:rgba(255,255,255,.18);line-height:1.3;flex-shrink:0;min-height:16px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;"></div>
+      <!-- Current text — where karaoke words go -->
+      <div class="tp-cur-txt" id="tp-cur" style="flex:1;overflow:hidden;font-size:clamp(15px,1.7vw,22px);line-height:1.6;color:rgba(255,255,255,.92);"></div>
+      <!-- Next scene hint -->
+      <div class="tp-next-txt" id="tp-next" style="font-size:11px;color:rgba(255,255,255,.14);line-height:1.3;flex-shrink:0;min-height:16px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;"></div>
+    </div>
+    <!-- Karaoke guide line overlay -->
+    <div id="tp-guide-line" style="position:absolute;left:0;right:0;top:50%;height:1px;background:rgba(0,212,255,.1);pointer-events:none;display:none;"></div>
+  </div>
+</div>
         </div><!-- end canvas+TP column -->
         <!-- Right panel -->
         <div class="studio-panel" id="studio-panel">
@@ -7469,74 +7527,86 @@ body { margin-bottom: 0 !important; }
 
       <!-- INPUT -->
       <div class="panel-group grp-input">
-      <div class="panel-group-label">📷 Input</div>
-      <div class="panel-group-body">
-      <button class="s-btn s-btn-blue" id="btn-cam" onclick="toggleCamera()" style="font-size:12px;padding:6px 12px;">📷 Cam</button>
-      <button class="s-btn s-btn-blue" id="btn-mic" onclick="toggleMic()" style="font-size:12px;padding:6px 12px;">🎙 Mic</button>
-      <div class="mic-level-wrap" style="position:relative;"><div class="mic-level-fill" id="mic-level-fill"></div></div>
-      <select id="cam-select" onchange="switchCamera(this.value)" style="display:none;font-size:9px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);color:rgba(255,255,255,.5);border-radius:4px;padding:2px 4px;font-family:'Sora',sans-serif;max-width:90px;"></select>
-      <select id="mic-select" onchange="switchMic(this.value)" style="display:none;font-size:9px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);color:rgba(255,255,255,.5);border-radius:4px;padding:2px 4px;font-family:'Sora',sans-serif;max-width:90px;"></select>
-      </div>
+        <div class="panel-group-label">📷 Input</div>
+        <div class="panel-group-body">
+          <button class="s-btn s-btn-blue" id="btn-cam" onclick="toggleCamera()" title="Toggle camera">
+            <span id="btn-cam-icon">📷</span> Cam
+          </button>
+          <button class="s-btn s-btn-blue" id="btn-mic" onclick="toggleMic()" title="Toggle microphone">
+            <span id="btn-mic-icon">🎙</span> Mic
+          </button>
+          <div class="mic-level-wrap" title="Mic level" style="position:relative;width:6px;height:36px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden;">
+            <div class="mic-level-fill" id="mic-level-fill" style="position:absolute;bottom:0;left:0;right:0;background:#10b981;transition:height .05s;height:0%;border-radius:3px;"></div>
+          </div>
+          <select id="cam-select" onchange="switchCamera(this.value)" title="Camera device" style="display:none;font-size:9px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);color:rgba(255,255,255,.5);border-radius:4px;padding:2px 4px;font-family:'Sora',sans-serif;max-width:100px;"></select>
+          <select id="mic-select" onchange="switchMic(this.value)" title="Mic device" style="display:none;font-size:9px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);color:rgba(255,255,255,.5);border-radius:4px;padding:2px 4px;font-family:'Sora',sans-serif;max-width:100px;"></select>
+        </div>
       </div>
 
       <!-- RECORD -->
       <div class="panel-group grp-rec">
-      <div class="panel-group-label">⏺ Record</div>
-      <div class="panel-group-body" style="gap:8px;">
-      <button class="btn-rec-main" id="btn-rec" onclick="toggleRecording()">⏺ REC</button>
-      <div style="display:flex;flex-direction:column;gap:4px;">
-      <button class="btn-sync-rec" id="btn-auto" onclick="startSyncRecord()" title="Start camera + teleprompter together">⏱ Sync REC</button>
-      <button class="s-btn s-btn-red" id="btn-retake" style="display:none;font-size:10px;" onclick="retakeScene()">↺ Retake scene</button>
-      </div>
-      <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
-      <div id="rec-badge" class="rec-badge ready" style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.2);"></div>
-      <div id="rec-timer-display" style="font-size:10px;font-family:'JetBrains Mono',monospace;color:rgba(239,68,68,.7);">0:00</div>
-      </div>
-      </div>
+        <div class="panel-group-label">⏺ Record</div>
+        <div class="panel-group-body" style="gap:8px;">
+          <button class="btn-rec-main" id="btn-rec" onclick="toggleRecording()" title="Start / Stop recording">⏺ REC</button>
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <button class="btn-sync-rec" id="btn-auto" onclick="startSyncRecord()" title="Sync: starts recording + teleprompter together">⏱ Sync</button>
+            <button class="s-btn s-btn-red" id="btn-retake" style="display:none;font-size:10px;" onclick="retakeScene()" title="Discard and redo this scene">↺ Retake</button>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
+            <div id="rec-badge-dot" style="width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,.2);transition:background .2s;"></div>
+            <div id="rec-timer-display" style="font-size:10px;font-family:'JetBrains Mono',monospace;color:rgba(239,68,68,.7);min-width:28px;text-align:center;">0:00</div>
+          </div>
+        </div>
       </div>
 
       <!-- SCENE NAV -->
       <div class="panel-group grp-scene">
-      <div class="panel-group-label">🎬 Scene</div>
-      <div class="panel-group-body" style="gap:6px;">
-      <button class="s-btn s-btn-purple" onclick="studioPrev()" style="font-size:12px;padding:6px 12px;">← Prev</button>
-      <div style="font-size:12px;font-weight:700;color:rgba(139,92,246,.9);min-width:44px;text-align:center;line-height:1.3;">
-      <div id="studio-scene-counter">1/1</div>
-      <div id="studio-scene-name-mini" style="font-size:9px;font-weight:400;color:rgba(255,255,255,.3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px;"></div>
-      </div>
-      <button class="s-btn s-btn-purple" onclick="studioNext()" style="font-size:12px;padding:6px 12px;">Next →</button>
-      </div>
+        <div class="panel-group-label">🎬 Scene</div>
+        <div class="panel-group-body" style="gap:6px;">
+          <button class="s-btn s-btn-purple" onclick="studioPrev()" style="font-size:13px;padding:6px 14px;" title="Previous scene (← arrow)">← Prev</button>
+          <div style="text-align:center;min-width:48px;">
+            <div id="studio-scene-counter" style="font-size:14px;font-weight:800;color:#a78bfa;">1/1</div>
+            <div id="studio-scene-name-mini" style="font-size:9px;color:rgba(255,255,255,.3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px;"></div>
+          </div>
+          <button class="s-btn s-btn-purple" onclick="studioNext()" style="font-size:13px;padding:6px 14px;" title="Next scene (→ arrow)">Next →</button>
+        </div>
       </div>
 
-      <!-- TELEPROMPTER -->
+      <!-- TELEPROMPTER CONTROLS -->
       <div class="panel-group grp-tp">
-      <div class="panel-group-label">📖 Teleprompter</div>
-      <div class="panel-group-body" style="gap:6px;flex-wrap:wrap;">
-      <button class="s-btn s-btn-gold" id="btn-tp-start" onclick="startPracticeMode()" style="font-size:11px;padding:6px 12px;font-weight:600;">▶ Practice</button>
-      <button class="s-btn s-btn-gold" id="btn-adaptive" onclick="toggleAdaptiveTp()" style="font-size:11px;padding:6px 10px;" title="Mic listens and advances text to match your speech">🎤 Adapt</button>
-      <div style="display:flex;align-items:center;gap:4px;">
-      <span style="font-size:9px;color:rgba(245,158,11,.5);">Speed</span>
-      <input type="range" min="20" max="220" value="80" id="tp-spd-range" oninput="setTpSpd(this.value); var v2=document.getElementById('tp-spd-val2'); if(v2) v2.textContent=this.value+'wpm';" style="width:60px;accent-color:var(--gold);">
-      <span id="tp-spd-val2" style="font-size:10px;color:var(--gold);min-width:34px;">80wpm</span>
-      <span style="font-size:9px;color:rgba(255,255,255,.2);">|</span>
-      <select id="tp-mode-sel" onchange="setTpScrollMode(this.value); document.getElementById('tp-scroll-mode') && (document.getElementById('tp-scroll-mode').value=this.value);" title="Scroll mode" style="font-size:9px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.5);border-radius:4px;padding:2px 4px;cursor:pointer;"><option value="auto" selected>📜 Auto-scroll</option><option value="word">💡 Word-by-word</option><option value="manual">✋ Manual</option></select>
-      </div>
-      <button class="s-btn" onclick="resetTpScroll()" style="font-size:10px;padding:4px 8px;" title="Reset scroll to top">↺</button>
-      <div style="display:flex;align-items:center;gap:3px;">
-      <button class="s-btn" onclick="decreaseTpFont()" style="font-size:10px;padding:4px 7px;">A-</button>
-      <button class="s-btn" onclick="increaseTpFont()" style="font-size:10px;padding:4px 7px;">A+</button>
-      </div>
-      </div>
+        <div class="panel-group-label">📖 Teleprompter</div>
+        <div class="panel-group-body" style="gap:6px;flex-wrap:wrap;">
+          <button class="s-btn s-btn-gold" id="btn-tp-start" onclick="startPracticeMode()" style="font-size:11px;padding:6px 14px;font-weight:700;" title="Start / Stop teleprompter">▶ Start</button>
+          <button class="s-btn s-btn-gold" id="btn-adaptive" onclick="toggleAdaptiveTp()" style="font-size:11px;padding:6px 10px;" title="Adaptive: mic listens and advances text to match your speech">🎤 Adapt</button>
+          <div style="display:flex;align-items:center;gap:4px;border-left:1px solid rgba(255,255,255,.07);padding-left:8px;">
+            <span style="font-size:9px;color:rgba(245,158,11,.4);">Speed</span>
+            <input type="range" min="20" max="220" value="80" id="tp-spd-range" style="width:60px;accent-color:var(--gold);"
+              oninput="setTpSpd(this.value);document.getElementById('tp-spd-val2').textContent=this.value+'wpm';document.getElementById('tp-speed-slider')&&(document.getElementById('tp-speed-slider').value=this.value);">
+            <span id="tp-spd-val2" style="font-size:10px;color:var(--gold);min-width:34px;">80wpm</span>
+          </div>
+          <select id="tp-mode-sel" onchange="studioSetMode(this.value)" title="Teleprompter mode" style="font-size:9px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.6);border-radius:5px;padding:3px 6px;cursor:pointer;">
+            <option value="auto" selected>📜 Auto-scroll</option>
+            <option value="word">💡 Word-by-word</option>
+            <option value="manual">✋ Manual</option>
+          </select>
+          <div style="display:flex;align-items:center;gap:3px;border-left:1px solid rgba(255,255,255,.07);padding-left:8px;">
+            <button class="s-btn" onclick="decreaseTpFont()" style="font-size:10px;padding:4px 7px;" title="Decrease font size">A-</button>
+            <button class="s-btn" onclick="increaseTpFont()" style="font-size:10px;padding:4px 7px;" title="Increase font size">A+</button>
+          </div>
+          <button class="s-btn" onclick="resetTpScroll()" style="font-size:10px;padding:4px 8px;" title="Reset teleprompter to top">↺</button>
+        </div>
       </div>
 
       <!-- SESSION -->
-      <!-- SESSION — recording info + saved count -->
-      <div class="panel-group grp-session" style="margin-left:auto;">
-      <div class="panel-group-label">✅ SESSION</div>
-      <div class="panel-group-body" style="gap:6px;align-items:center;padding:4px 8px;">
-        <div id="st-rec-time" style="font-size:16px;font-weight:700;color:#10b981;font-family:'JetBrains Mono',monospace;">0:00</div>
-        <div style="font-size:9px;color:rgba(255,255,255,.35);padding-left:6px;border-left:.5px solid rgba(255,255,255,.08);">
-          <span style="color:#10b981;font-weight:600;" id="st-clips-saved">0</span><br><span style="color:rgba(255,255,255,.2);">saved</span>
+      <div class="panel-group grp-session">
+        <div class="panel-group-label">📁 Session</div>
+        <div class="panel-group-body" style="gap:6px;">
+          <div style="text-align:center;">
+            <div style="font-size:9px;color:rgba(255,255,255,.2);">Elapsed</div>
+            <div id="st-elapsed-bar" style="font-size:14px;font-weight:800;color:#facc15;font-family:'JetBrains Mono',monospace;">0:00</div>
+          </div>
+          <button onclick="openStudioSettings()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:rgba(255,255,255,.5);font-size:14px;cursor:pointer;padding:6px 10px;" title="Studio settings">⚙</button>
+          <button onclick="endStudioSession()" style="background:#2563eb;border:none;border-radius:6px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;padding:6px 14px;font-family:inherit;" title="Finish recording and go to edit">Done →</button>
         </div>
       </div>
       </div>
@@ -16943,6 +17013,210 @@ console.log('[AAB] Master patch loaded — all systems wired');
 window._aabMaster=true;
 console.log('[AAB] Master script loaded OK');
 console.log('[AAB] Master script loaded');
+})();
+
+
+/* ═══════════════════════════════════════════════════════════════
+   RECORDING STUDIO — Missing functions + Karaoke TP engine
+═══════════════════════════════════════════════════════════════ */
+
+// Sync Record: starts recording + teleprompter together
+window.startSyncRecord = function() {
+  if (!STUDIO.stream) {
+    toast('Start camera first', 'info');
+    return;
+  }
+  // Start recording
+  if (!STUDIO.recording) {
+    toggleRecording();
+  }
+  // Start TP after brief delay
+  setTimeout(function() {
+    startPracticeMode();
+    toast('Sync recording started', 'ok');
+  }, 300);
+};
+
+// Practice mode = start/stop the studio teleprompter
+window.startPracticeMode = function() {
+  var btn = document.getElementById('btn-tp-start');
+  if (STUDIO_TP && STUDIO_TP.running) {
+    studioTpStop();
+    if (btn) { btn.textContent = '▶ Start'; btn.style.background = ''; }
+  } else {
+    studioTpStart();
+    if (btn) { btn.textContent = '⏸ Stop'; btn.style.background = 'rgba(245,158,11,.2)'; }
+  }
+};
+
+// setTpScrollMode for studio context
+window.studioSetMode = function(mode) {
+  window._studioTpMode = mode;
+  // Sync selectors
+  ['tp-scroll-mode','tp-mode-sel'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.value = mode;
+  });
+  // Update mode buttons in TP panel
+  ['auto','word','manual'].forEach(function(m) {
+    var btn = document.getElementById('tp-btn-' + m);
+    if (!btn) return;
+    if (m === mode) {
+      btn.style.background = 'rgba(37,99,235,.25)';
+      btn.style.borderColor = 'rgba(37,99,235,.5)';
+      btn.style.color = '#93c5fd';
+    } else {
+      btn.style.background = 'none';
+      btn.style.borderColor = 'rgba(255,255,255,.07)';
+      btn.style.color = 'rgba(255,255,255,.3)';
+    }
+  });
+  // If word-by-word, trigger karaoke mode
+  if (mode === 'word') {
+    _studioStartWBW();
+  } else if (mode === 'auto') {
+    _studioStopWBW();
+    if (typeof startTpAutoTimer === 'function') startTpAutoTimer();
+    else if (typeof studioTpStart === 'function') studioTpStart();
+  } else {
+    _studioStopWBW();
+    if (typeof stopTeleprompter === 'function') stopTeleprompter();
+    else if (typeof studioTpStop === 'function') studioTpStop();
+  }
+  toast('Mode: ' + mode, 'info');
+};
+
+/* ── Studio Karaoke Word-by-Word Engine ───────────────────────── */
+var _studioWBW = { timer: null, idx: 0, words: [] };
+
+function _studioStartWBW() {
+  _studioStopWBW();
+  var inner = document.getElementById('tp-cur-inner') || document.getElementById('tp-cur');
+  if (!inner) return;
+  var rawText = inner.textContent || inner.innerText || '';
+  var words = rawText.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return;
+  // Wrap in karaoke spans
+  inner.innerHTML = words.map(function(w, i) {
+    return '<span class="tp-word" data-wi="' + i + '" onclick="_studioJumpWord(' + i + ')">' + 
+           w.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</span>';
+  }).join(' ');
+  _studioWBW.words = words;
+  _studioWBW.idx = 0;
+  var wpm = parseInt((document.getElementById('tp-spd-range')||{}).value || 80);
+  var msPerWord = Math.round(60000 / wpm);
+  function advance() {
+    var spans = inner.querySelectorAll('.tp-word');
+    spans.forEach(function(s, i) {
+      s.classList.remove('active', 'upcoming');
+      if (i < _studioWBW.idx) s.classList.add('done');
+      else if (i === _studioWBW.idx + 1 || i === _studioWBW.idx + 2) s.classList.add('upcoming');
+    });
+    if (_studioWBW.idx >= spans.length) {
+      clearInterval(_studioWBW.timer);
+      _studioWBW.timer = null;
+      return;
+    }
+    spans[_studioWBW.idx].classList.add('active');
+    spans[_studioWBW.idx].scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    _studioWBW.idx++;
+  }
+  advance();
+  _studioWBW.timer = setInterval(function() {
+    var currentWpm = parseInt((document.getElementById('tp-spd-range')||{}).value || 80);
+    if (currentWpm !== wpm) {
+      wpm = currentWpm;
+      msPerWord = Math.round(60000 / wpm);
+      clearInterval(_studioWBW.timer);
+      _studioWBW.timer = setInterval(arguments.callee, msPerWord);
+    }
+    advance();
+  }, msPerWord);
+}
+
+function _studioStopWBW() {
+  if (_studioWBW.timer) {
+    clearInterval(_studioWBW.timer);
+    _studioWBW.timer = null;
+  }
+}
+
+window._studioJumpWord = function(idx) {
+  _studioWBW.idx = idx;
+  var inner = document.getElementById('tp-cur-inner');
+  if (inner) {
+    var spans = inner.querySelectorAll('.tp-word');
+    spans.forEach(function(s, i) {
+      s.classList.remove('active','done','upcoming');
+      if (i < idx) s.classList.add('done');
+      else if (i === idx + 1 || i === idx + 2) s.classList.add('upcoming');
+    });
+    if (spans[idx]) spans[idx].classList.add('active');
+  }
+};
+
+/* ── Keyboard shortcuts in Studio ─────────────────────────────── */
+document.addEventListener('keydown', function(e) {
+  var pg = document.getElementById('record-pg');
+  if (!pg || !pg.classList.contains('on')) return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  switch(e.code) {
+    case 'Space': e.preventDefault(); startPracticeMode(); break;
+    case 'ArrowRight': e.preventDefault(); studioNext(); break;
+    case 'ArrowLeft': e.preventDefault(); studioPrev(); break;
+    case 'KeyR': if (e.ctrlKey||e.metaKey) { e.preventDefault(); toggleRecording(); } break;
+    case 'Escape': 
+      if (_studioWBW.timer) { _studioStopWBW(); toast('TP paused','info'); }
+      break;
+  }
+});
+
+/* ── Studio elapsed timer wired to bar display ─────────────────── */
+var _studioElapsedOrig = window.endStudioSession;
+
+/* ── openStudioSettings shortcut ───────────────────────────────── */
+if (typeof window.toggleStudioSettings === 'function' && !window.openStudioSettings) {
+  window.openStudioSettings = window.toggleStudioSettings;
+}
+
+/* ── Karaoke CSS for studio TP ──────────────────────────────────── */
+(function() {
+  if (document.getElementById('studio-karaoke-css')) return;
+  var s = document.createElement('style');
+  s.id = 'studio-karaoke-css';
+  s.textContent = [
+    '#tp-cur .tp-word { display:inline; cursor:pointer; transition:color .1s, text-shadow .1s; border-radius:3px; padding:0 1px; }',
+    '#tp-cur .tp-word:hover { color:rgba(255,255,255,.85)!important; text-decoration:underline; }',
+    '#tp-cur .tp-word.active { color:#00d4ff!important; text-shadow:0 0 18px rgba(0,212,255,.9),0 0 36px rgba(0,212,255,.5)!important; font-weight:900!important; display:inline-block!important; transform:scale(1.07)!important; transition:all .07s ease!important; }',
+    '#tp-cur .tp-word.done { color:rgba(255,255,255,.22)!important; text-shadow:none!important; }',
+    '#tp-cur .tp-word.upcoming { color:rgba(255,255,255,.5)!important; }',
+    '.studio-q-item { padding:10px 12px; cursor:pointer; border-bottom:1px solid rgba(255,255,255,.05); font-size:11px; color:rgba(255,255,255,.5); transition:background .1s; display:flex; align-items:center; gap:8px; }',
+    '.studio-q-item:hover { background:rgba(255,255,255,.05); color:#fff; }',
+    '.studio-q-item.active { background:rgba(139,92,246,.15); border-left:3px solid #a78bfa; color:#a78bfa; font-weight:700; }',
+    '.studio-q-item .q-num { font-size:9px; font-weight:800; color:inherit; opacity:.6; min-width:16px; }',
+    '.studio-q-item .q-check { font-size:12px; margin-left:auto; }',
+    '.panel-group { transition:background .1s; }',
+    '.panel-group:hover { background:rgba(255,255,255,.02); }',
+    '.panel-group-label { font-size:9px!important; font-weight:800!important; color:rgba(255,255,255,.25)!important; letter-spacing:.06em!important; }',
+    '.btn-rec-main { font-size:13px!important; font-weight:800!important; min-width:60px; }',
+    '.btn-rec-main.recording { background:rgba(239,68,68,.9)!important; border-color:#ef4444!important; animation:recPulse 1s infinite; }',
+    '@keyframes recPulse { 0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.4)} 50%{box-shadow:0 0 0 8px rgba(239,68,68,0)} }',
+    '.studio-canvas { border-radius:8px; overflow:hidden; }',
+    '#studio-tp-panel { border-radius:0 0 8px 8px; }',
+    '.s-btn-gold { background:rgba(245,158,11,.12)!important; border-color:rgba(245,158,11,.3)!important; color:#fbbf24!important; }',
+    '.s-btn-gold:hover { background:rgba(245,158,11,.2)!important; }',
+    '.s-btn-gold.active { background:rgba(245,158,11,.25)!important; border-color:rgba(245,158,11,.6)!important; }',
+    '.s-btn-purple { background:rgba(139,92,246,.1)!important; border-color:rgba(139,92,246,.25)!important; color:#c4b5fd!important; }',
+    '.s-btn-purple:hover { background:rgba(139,92,246,.2)!important; }',
+    '.s-btn-blue { background:rgba(37,99,235,.1)!important; border-color:rgba(37,99,235,.25)!important; color:#93c5fd!important; }',
+    '.s-btn-blue:hover { background:rgba(37,99,235,.2)!important; }',
+    '.s-btn-blue.active { background:rgba(37,99,235,.3)!important; border-color:#2563eb!important; }',
+    '.btn-sync-rec { background:rgba(245,158,11,.08)!important; border-color:rgba(245,158,11,.2)!important; color:rgba(245,158,11,.7)!important; font-size:10px!important; padding:4px 8px!important; }',
+    '.btn-sync-rec.active { background:rgba(245,158,11,.25)!important; border-color:rgba(245,158,11,.5)!important; }',
+    '#record-pg.on { padding:10px; background:#05070d; box-sizing:border-box; }',
+    '#record-pg.on .studio-wrap { border-radius:10px; border:1px solid rgba(255,255,255,.08); overflow:hidden; }'
+  ].join('\n');
+  document.head.appendChild(s);
 })();
 </script>
 
