@@ -4947,7 +4947,15 @@ function E_renderBin(aps,assets){
     aps.forEach(function(a){
       var d=_el("div","aab-bin-clip");d.draggable=true;
       d.dataset.url=a.url;d.dataset.type="video";d.dataset.name="Scene "+a.sceneNum;d.dataset.dur=a.duration||8;
-      var th=a.type==="image"?_mkImgThumb(a.url,64,38):_mkVThumb(a.url,64,38);d.appendChild(th);
+      var th;
+      if(a.type==="image"){th=_mkImgThumb(a.url,64,38);}
+      else if(a.type==="audio"){
+        th=document.createElement("div");th.className="aab-bin-clip-thumb";
+        th.style.background="linear-gradient(135deg,#065f46,#022c22)";
+        th.style.display="flex";th.style.flexDirection="column";th.style.alignItems="center";th.style.justifyContent="center";th.style.gap="2px";
+        th.innerHTML="<span style='font-size:16px'>🎵</span><span style='font-size:7px;color:#10b981;'>AUDIO</span>";
+      }
+      else{th=_mkVThumb(a.url,64,38);}d.appendChild(th);
       var info=_el("div","aab-bin-clip-info");
       var nm=_el("div","aab-bin-clip-name");nm.textContent="AI Scene "+a.sceneNum;
       var mt=_el("div","aab-bin-clip-meta");mt.textContent="HeyGen • "+(a.duration||"?")+"s";
@@ -5014,8 +5022,10 @@ function _mkVThumb(url,w,h){
     }catch(e){wrap.appendChild(v);}
   });
   v.addEventListener("error",function(){
-    // Show placeholder on error
-    var ph=document.createElement("div");ph.style.cssText="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:14px;color:#374151;background:#111827;";ph.textContent="🎬";wrap.appendChild(ph);
+    var ph=document.createElement("div");
+    ph.style.cssText="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px;background:linear-gradient(135deg,#0f172a,#1e3a5f);";
+    ph.innerHTML="<span style='font-size:18px'>🎬</span><span style='font-size:7px;color:#6b7280;'>VIDEO</span>";
+    wrap.appendChild(ph);v.remove();
   });
   // Duration badge overlay
   wrap.appendChild(v);
@@ -5030,7 +5040,7 @@ function _mkImgThumb(url,w,h){
   if(!url){wrap.innerHTML="<div style='width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:14px;'>🖼</div>";return wrap;}
   var img=new Image();img.crossOrigin="anonymous";img.src=url;
   img.style.cssText="width:100%;height:100%;object-fit:cover;";
-  img.onerror=function(){wrap.innerHTML="<div style='width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:14px;background:#1f2937;'>🖼</div>";};
+  img.onerror=function(){wrap.innerHTML="<div style='width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px;background:linear-gradient(135deg,#1f2937,#111827);'><span style='font-size:18px'>🖼</span><span style='font-size:7px;color:#6b7280;'>IMAGE</span></div>";};
   wrap.appendChild(img);
   return wrap;
 }
@@ -6234,6 +6244,53 @@ body{max-width:100vw;overflow-x:hidden}
 .aab-bin-clip-meta{font-size:10px!important;color:#6b7280!important;margin-top:1px!important;}
 /* Monitor labels */
 .aab-monitor-label{font-size:9px!important;font-weight:800!important;letter-spacing:.1em!important;color:#4b5563!important;padding:4px 10px!important;text-transform:uppercase!important;position:absolute!important;top:0!important;left:0!important;z-index:2!important;}
+
+/* ═══ AABStudio Borders & Polish (final) ═══ */
+#record-pg.on {
+  padding: 10px !important;
+  background: #05070d !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+}
+#record-pg.on > * {
+  border-radius: 10px !important;
+  border: 1px solid rgba(255,255,255,.07) !important;
+  overflow: hidden !important;
+}
+/* Uniform bold tracks */
+.aab-track-name { font-size: 11px !important; font-weight: 800 !important; color: #d1d5db !important; }
+.aab-track-lbl { min-height: 48px !important; background: #09090f !important; }
+.aab-lane { min-height: 48px !important; }
+.video-row .aab-track-lbl, .video-row .aab-lane { min-height: 64px !important; }
+.audio-row .aab-track-lbl, .audio-row .aab-lane { min-height: 56px !important; }
+.text-row .aab-track-lbl, .text-row .aab-lane { min-height: 40px !important; }
+/* Edit panels border */
+.aab-edit-body { border-radius: 10px !important; border: 1px solid rgba(255,255,255,.08) !important; overflow: hidden !important; }
+.aab-tl-wrap { border-radius: 10px !important; border: 1px solid rgba(255,255,255,.08) !important; overflow: hidden !important; }
+.aab-bin { border-radius: 10px 0 0 10px !important; }
+.aab-inspector { border-radius: 0 10px 10px 0 !important; }
+/* Timeline tools */
+.aab-tl-toolbar { padding: 0 8px !important; gap: 3px !important; }
+.aab-tl-tool { min-width: 26px !important; padding: 3px 7px !important; font-size: 12px !important; border-radius: 5px !important; font-weight: 600 !important; border: 1px solid rgba(255,255,255,.08) !important; color: #9ca3af !important; transition: all .12s !important; }
+.aab-tl-tool:hover { background: rgba(255,255,255,.08) !important; color: #e2e8f0 !important; }
+.aab-tl-tool.on { background: rgba(37,99,235,.28) !important; border-color: rgba(37,99,235,.6) !important; color: #93c5fd !important; }
+/* Clips */
+.aab-clip { border-radius: 5px !important; box-shadow: 0 1px 4px rgba(0,0,0,.4) !important; transition: box-shadow .1s !important; }
+.aab-clip:hover { box-shadow: 0 0 0 2px rgba(255,255,255,.25) !important; }
+.aab-clip.sel { box-shadow: 0 0 0 2px #2563eb !important; }
+.aab-clip-lbl { font-size: 9px !important; font-weight: 800 !important; color: #fff !important; text-shadow: 0 1px 3px rgba(0,0,0,.95) !important; position: relative !important; z-index: 2 !important; padding: 3px 5px !important; }
+.aab-clip-dur { position: absolute !important; bottom: 2px !important; right: 3px !important; font-size: 8px !important; color: rgba(255,255,255,.7) !important; font-family: monospace !important; background: rgba(0,0,0,.5) !important; padding: 1px 3px !important; border-radius: 2px !important; z-index: 3 !important; }
+.aab-thumb-strip { opacity: 1 !important; }
+.aab-waveform { opacity: 1 !important; }
+.aab-lane.drop-active { background: rgba(37,99,235,.12) !important; outline: 2px dashed rgba(37,99,235,.4) !important; outline-offset: -3px !important; }
+/* Bin */
+.aab-bin-clip { gap: 8px !important; padding: 8px 6px !important; border-radius: 6px !important; }
+.aab-bin-clip-name { font-size: 11px !important; font-weight: 700 !important; color: #e2e8f0 !important; }
+.aab-bin-clip-meta { font-size: 10px !important; color: #6b7280 !important; }
+.aab-bin-clip-thumb { border-radius: 4px !important; }
+.aab-monitor-label { font-size: 9px !important; font-weight: 800 !important; letter-spacing: .1em !important; color: #4b5563 !important; padding: 4px 10px !important; text-transform: uppercase !important; position: absolute !important; top: 0 !important; left: 0 !important; z-index: 2 !important; }
 </style></head>
 
     <style>
