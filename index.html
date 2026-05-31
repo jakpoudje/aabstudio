@@ -6491,6 +6491,10 @@ body { margin-bottom: 0 !important; }
 
 /* Scene queue items */
 .studio-q-item.active { background: rgba(139,92,246,.15) !important; border-left: 3px solid #a78bfa !important; color: #a78bfa !important; font-weight: 700 !important; }
+
+/* Studio TP word spacing fix */
+#tp-cur { word-spacing: 0.12em !important; }
+#tp-cur .tp-word { display: inline !important; white-space: normal !important; word-break: break-word !important; }
 </style></head>
 
     <style>
@@ -17091,16 +17095,24 @@ var _studioWBW = { timer: null, idx: 0, words: [] };
 
 function _studioStartWBW() {
   _studioStopWBW();
-  var inner = document.getElementById('tp-cur-inner') || document.getElementById('tp-cur');
-  if (!inner) return;
-  var rawText = inner.textContent || inner.innerText || '';
-  var words = rawText.trim().split(/\s+/).filter(Boolean);
+  // Target tp-cur-inner (inside tp-cur), or tp-cur itself
+  var outer = document.getElementById('tp-cur');
+  var inner = document.getElementById('tp-cur-inner') || outer;
+  if (!inner || !outer) return;
+  // Get raw text from the narration display
+  var rawText = (inner.textContent || inner.innerText || '').trim();
+  var words = rawText.split(/\s+/).filter(Boolean);
   if (!words.length) return;
-  // Wrap in karaoke spans
+  // Rebuild with karaoke spans — use non-breaking spaces between words for proper display
   inner.innerHTML = words.map(function(w, i) {
-    return '<span class="tp-word" data-wi="' + i + '" onclick="_studioJumpWord(' + i + ')">' + 
-           w.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</span>';
+    return '<span class="tp-word" data-wi="' + i + '" onclick="window._studioJumpWord(' + i + ')" style="display:inline;cursor:pointer;">' + 
+           w.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</span>';
   }).join(' ');
+  // Apply word mode styles to container
+  if (outer) {
+    outer.style.wordSpacing = '0.15em';
+    outer.style.lineHeight = '1.7';
+  }
   _studioWBW.words = words;
   _studioWBW.idx = 0;
   var wpm = parseInt((document.getElementById('tp-spd-range')||{}).value || 80);
