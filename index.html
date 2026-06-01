@@ -6158,6 +6158,18 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
 .aab-track-label{background:#0a0d14!important;}
 /* APS char card selected */
 .aps-char-card.selected{border-color:#2563eb!important;box-shadow:0 0 0 1px #2563eb!important;}
+
+/* Professional Edit Suite CSS */
+.aab-track-lane { min-height: 48px !important; }
+.aab-track-label { min-width: 120px !important; width: 120px !important; background: #0a0d14 !important; border-right: 1px solid rgba(255,255,255,.08) !important; }
+.aab-track-name { font-size: 10px !important; font-weight: 700 !important; letter-spacing: .04em !important; color: #e5e7eb !important; }
+.aab-clip { border-radius: 4px !important; cursor: pointer; }
+.aab-clip:hover { border-color: rgba(255,255,255,.5) !important; }
+.aab-clip.sel { border-color: #3b82f6 !important; box-shadow: 0 0 0 1px #3b82f6 !important; }
+.aab-marker { position:absolute;top:0;bottom:0;width:2px;background:#f59e0b;z-index:30;pointer-events:none; }
+.aab-marker-lbl { position:absolute;top:0;font-size:8px;background:#f59e0b;color:#000;padding:1px 3px;border-radius:0 2px 2px 0;white-space:nowrap; }
+.aab-region-overlay { position:absolute;top:0;bottom:0;background:rgba(37,99,235,.12);border-left:2px solid #3b82f6;border-right:2px solid #3b82f6;pointer-events:none;z-index:28; }
+.aab-track-lane.drop-active { background: rgba(37,99,235,.15) !important; }
 </style></head>
 
     <style>
@@ -10398,7 +10410,21 @@ function loadDashboard() {
     // ══ TELEPROMPTER SOLO ═════════════════════════════════════════════════════════
     var TP = { playing: false, speed: 80, currentWord: 0, scrollTimer: null, theme: 'dark', adaptive: false, recognition: null, remoteId: null, remotePoll: null, remoteLastCmd: null };
     var TP_THEMES = { dark: { bg: '#000', text: '#fff', gold: '#f59e0b' }, light: { bg: '#fff', text: '#1a1a1a', gold: '#d97706' }, blue: { bg: '#0a1628', text: '#fff', gold: '#00d4ff' }, green: { bg: '#00b140', text: '#fff', gold: '#ffff00' } };
-    function openTeleprompter() { if (PROJECT.script && PROJECT.script.length > 20) { var inp = document.getElementById('tp-input'); if (inp) inp.value = PROJECT.script; } navFree('teleprompter-pg'); }
+    function openTeleprompter() {
+  if (PROJECT && PROJECT.script && PROJECT.script.length > 2) {
+    var inp = document.getElementById('tp-input');
+    if (inp) inp.value = PROJECT.script;
+  }
+  // Hide all pages, show teleprompter as flex
+  document.querySelectorAll('.pg,.pg-full').forEach(function(el){ el.style.display='none'; el.classList.remove('on'); });
+  ['home','auth-pg','dashboard-pg','script-pg','scenes-pg','record-pg','edit-pg','export-pg','teleprompter-pg','remote-pg','pricing-pg','ai-presenter-studio','privacy-pg','terms-pg','guide-pg','contact-pg'].forEach(function(id){
+    var el=document.getElementById(id);if(el){el.style.display='none';el.classList.remove('on');}
+  });
+  var tp = document.getElementById('teleprompter-pg');
+  if (tp) { tp.style.display='flex'; tp.style.flexDirection='column'; tp.classList.add('on'); }
+  var footer = document.getElementById('aab-footer');
+  if (footer) footer.style.display='flex';
+}
     function tpBack() { var disp = document.getElementById('tp-display-screen'), setup = document.getElementById('tp-setup-screen'); if (disp) disp.style.display = 'none'; if (setup) setup.style.display = 'flex'; clearInterval(TP.scrollTimer); TP.playing = false; navFree('home'); }
     function tpStart() {
       var script = (document.getElementById('tp-input') || {}).value?.trim();
@@ -10540,14 +10566,18 @@ function loadDashboard() {
         if (event === 'SIGNED_IN' && session) {
           window._sbSession = session;
           setUser(session.user);
-          // On sign in: push all local projects to cloud, then pull cloud projects
+          // Load cloud projects, merge, then show dashboard
           setTimeout(function () {
-            (typeof pushAllLocalProjectsToCloud === 'function' ? pushAllLocalProjectsToCloud() : Promise.resolve()).then(function () {
+            var loadCloud = typeof loadProjectsFromCloud === 'function' ? loadProjectsFromCloud() : Promise.resolve();
+            loadCloud.then(function() {
+              var push = typeof pushAllLocalProjectsToCloud === 'function' ? pushAllLocalProjectsToCloud() : Promise.resolve();
+              return push;
+            }).catch(function() {}).then(function() {
               if (typeof loadDashboard === 'function') loadDashboard();
-            }).catch(function () {
-              if (typeof loadDashboard === 'function') loadDashboard();
+              nav('dashboard-pg');
+              setTimeout(function(){ if(typeof renderProjectList==='function') renderProjectList(); }, 400);
             });
-          }, 1000);
+          }, 600);
         }
         if (event === 'SIGNED_OUT') { window._sbSession = null; APP.user = null; APP.plan = 'free'; updateNavState(); navFree('home'); }
         if (event === 'TOKEN_REFRESHED' && session) { setUser(session.user); }
