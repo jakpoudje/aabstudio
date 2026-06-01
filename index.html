@@ -5662,6 +5662,53 @@ function _aabTrackCtx(e,track){
 }
 window._aabTrackCtx=_aabTrackCtx;
 
+
+/* ── Markers ── */
+if(!E.markers)E.markers=[];
+function E_addMarker(t,lbl){t=t===undefined?E.playhead:t;E.markers.push({t:t,label:lbl||'M'+(E.markers.length+1),color:'#f59e0b'});E_renderTL();if(typeof toast==='function')toast('Marker: '+_ft(t),'ok');}
+function E_clearMarkers(){E.markers=[];E_renderTL();}
+window.E_addMarker=E_addMarker;window.E_clearMarkers=E_clearMarkers;
+/* ── Region ── */
+E.regionIn=null;E.regionOut=null;
+function E_setRegionIn(t){E.regionIn=t!==undefined?t:E.playhead;E_renderTL();if(typeof toast==='function')toast('In: '+_ft(E.regionIn),'ok');}
+function E_setRegionOut(t){E.regionOut=t!==undefined?t:E.playhead;E_renderTL();if(typeof toast==='function')toast('Out: '+_ft(E.regionOut),'ok');}
+function E_clearRegion(){E.regionIn=null;E.regionOut=null;E_renderTL();}
+window.E_setRegionIn=E_setRegionIn;window.E_setRegionOut=E_setRegionOut;window.E_clearRegion=E_clearRegion;
+/* ── Waveform ── */
+function E_renderWaveform(clip,canvas){
+  if(!clip.url||!canvas)return;
+  var ctx=canvas.getContext('2d');var w=canvas.width,h=canvas.height;
+  ctx.clearRect(0,0,w,h);ctx.fillStyle='rgba(16,185,129,.6)';
+  var bars=Math.floor(w/3);var bw=w/bars;
+  for(var i=0;i<bars;i++){var bh=(0.3+Math.random()*0.7)*h;ctx.fillRect(i*bw,(h-bh)/2,Math.max(1,bw-1),bh);}
+  if(clip.url.match(/^https?:/)){try{
+    var ac=new(window.AudioContext||window.webkitAudioContext)();
+    fetch(clip.url).then(function(r){return r.arrayBuffer();}).then(function(b){return ac.decodeAudioData(b);}).then(function(d){
+      var data=d.getChannelData(0),step=Math.ceil(data.length/bars);
+      ctx.clearRect(0,0,w,h);ctx.fillStyle='rgba(16,185,129,.85)';
+      for(var i2=0;i2<bars;i2++){var mx=0;for(var j=0;j<step;j++){var v=Math.abs(data[i2*step+j]||0);if(v>mx)mx=v;}
+        var bh2=Math.max(2,mx*h);ctx.fillRect(i2*bw,(h-bh2)/2,Math.max(1,bw-1),bh2);}
+    }).catch(function(){});
+  }catch(e){}}
+}
+window.E_renderWaveform=E_renderWaveform;
+/* ── Timeline Export ── */
+window.E_exportTimeline=async function(){
+  var has=E.tracks.some(function(t){return t.clips&&t.clips.length>0;});
+  if(!has){if(typeof toast==='function')toast('No clips on timeline','error');return;}
+  var clips=[];
+  E.tracks.forEach(function(tr){(tr.clips||[]).forEach(function(c){if(c.url&&c.url.match(/^https?:/))clips.push({url:c.url,start:c.start,duration:c.duration,track:tr.id});});});
+  if(!clips.length){if(typeof toast==='function')toast('No cloud clips to export — generate AI videos first','error');return;}
+  clips.sort(function(a,b){return a.start-b.start;});
+  if(typeof toast==='function')toast('Preparing export...','info');
+  try{
+    var resp=await fetch((window.API||'https://aabstudio-production.up.railway.app')+'/api/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clips:clips,title:(window.PROJECT&&window.PROJECT.title)||'export'})});
+    if(resp.ok){var d=await resp.json();if(d.url){var a=document.createElement('a');a.href=d.url;a.download='export.mp4';a.target='_blank';a.click();if(typeof toast==='function')toast('Export ready!','ok');return;}}
+  }catch(e){}
+  var a2=document.createElement('a');a2.href=clips[0].url;a2.download='clip.mp4';a2.target='_blank';a2.click();
+  if(typeof toast==='function')toast('Downloading first clip...','info');
+};
+/* ── Marker CSS ── */
 })();
 
 
@@ -6120,6 +6167,16 @@ body{max-width:100vw;overflow-x:hidden}
 video { object-fit: cover; -webkit-playsinline: true; }
 input[type="range"] { -webkit-appearance: none; appearance: none; }
 input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #00d4ff; cursor: pointer; }
+
+/* Markers + Region on timeline */
+.aab-marker{position:absolute;top:0;bottom:0;width:2px;background:#f59e0b;z-index:30;pointer-events:none;}
+.aab-marker-lbl{position:absolute;top:-1px;font-size:7px;color:#000;background:#f59e0b;padding:1px 3px;border-radius:0 2px 2px 0;white-space:nowrap;}
+.aab-region-overlay{position:absolute;top:0;bottom:0;background:rgba(37,99,235,.1);border-left:2px solid #3b82f6;border-right:2px solid #3b82f6;pointer-events:none;z-index:28;}
+/* Track names professional */
+.aab-track-name{font-size:10px!important;font-weight:600!important;letter-spacing:.02em!important;color:#d1d5db!important;}
+.aab-track-label{background:#0a0d14!important;}
+/* APS char card selected */
+.aps-char-card.selected{border-color:#2563eb!important;box-shadow:0 0 0 1px #2563eb!important;}
 </style></head>
 
     <style>
@@ -7732,7 +7789,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
         </div>
       </div>
 
-      <button class="btn btn-primary btn-lg" onclick="doExport()" id="export-btn">Export video →</button>
+      <button class="btn btn-primary btn-lg" onclick="E_exportTimeline?E_exportTimeline():doExport()" id="export-btn">Export video →</button>
       <button class="btn btn-dark btn-sm" style="margin-left:10px;" onclick="nav('edit-pg')">← Back to edit</button>
 
       <div id="export-status" style="margin-top:18px;font-size:13px;"></div>
@@ -8647,7 +8704,10 @@ function renderProjectList() {
           '<div style="font-size:14px;font-weight:700;color:#111827;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (p.title || 'Untitled') + '</div>' +
           '<div style="font-size:12px;color:#6b7280;margin-bottom:8px;">' + scenes + ' scenes · ' + (p.date || '') + '</div>' +
           '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">' + badges + '</div>' +
-          '<button onclick="event.stopPropagation();openProject(' + JSON.stringify(p.id) + ')" style="width:100%;background:#00d4ff;color:#000;border:none;border-radius:6px;padding:7px;font-size:12px;font-weight:700;cursor:pointer;">Open →</button>' +
+          '<div style="display:flex;gap:6px;margin-top:8px;">' +
+        '<button onclick="event.stopPropagation();openProject(' + JSON.stringify(p.id) + ')" style="flex:1;background:#00d4ff;color:#000;border:none;border-radius:6px;padding:7px;font-size:12px;font-weight:700;cursor:pointer;">Open →</button>' +
+        '<button onclick="window.deleteProject&&window.deleteProject(' + JSON.stringify(p.id) + ',event)" title="Delete project" style="background:#fee2e2;color:#ef4444;border:1px solid #fca5a5;border-radius:6px;padding:7px 10px;font-size:12px;cursor:pointer;">🗑</button>' +
+        '</div>' +
         '</div></div>';
     }).join('') + '</div>';
 }
@@ -14371,8 +14431,12 @@ window.aps_clearPhoto = aps_clearPhoto;
             <span>Saved Characters</span>
             <button onclick="aps_renderCharGrid()" style="background:none;border:none;color:rgba(255,255,255,.3);font-size:9px;cursor:pointer;padding:0;">↻ Refresh</button>
           </div>
-          <div id="aps-char-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px;max-height:180px;overflow-y:auto;">
-            <div style="grid-column:1/-1;text-align:center;color:rgba(255,255,255,.2);font-size:10px;padding:12px 0;">
+          <div style="display:flex;gap:4px;margin-bottom:6px;">
+              <input id="aps-char-name-input" type="text" placeholder="Character name..." style="flex:1;padding:5px 8px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);border-radius:5px;color:#e5e7eb;font-size:10px;font-family:inherit;outline:none;">
+              <button onclick="window.aps_saveCharProfile&&window.aps_saveCharProfile()" style="background:rgba(37,99,235,.2);border:.5px solid rgba(37,99,235,.4);color:#93c5fd;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:10px;white-space:nowrap;">💾 Save</button>
+            </div>
+            <div id="aps-char-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:8px;max-height:200px;overflow-y:auto;">
+              <div style="grid-column:1/-1;text-align:center;color:rgba(255,255,255,.2);font-size:10px;padding:12px 0;">
               No saved characters yet
             </div>
           </div>
@@ -16032,6 +16096,107 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
 <!-- removed:aab-layout-enforcer -->
 
 <script id="aab-master-script">
+/* ── Smart pricing nav ── */
+window.navPricing=function(){
+  if(window.APP&&window.APP.user){if(typeof nav==='function')nav('pricing-pg');}
+  else{if(typeof navFree==='function')navFree('home');setTimeout(function(){var s=document.querySelector('.pricing-section,.home-pricing');if(s)s.scrollIntoView({behavior:'smooth'});},300);}
+};
+
+/* ── Studio overlay drag+resize ── */
+window.initOverlayInteraction=function(el){
+  var drag=false,rsz=false,sx,sy,sl,st,sw,sh;
+  el.onmousedown=function(e){if(e.target.classList.contains('ov-rsz'))return;drag=true;sx=e.clientX;sy=e.clientY;sl=parseInt(el.style.left)||0;st=parseInt(el.style.top)||0;e.preventDefault();};
+  var rh=el.querySelector('.ov-rsz');
+  if(rh)rh.onmousedown=function(e){rsz=true;sx=e.clientX;sy=e.clientY;sw=parseInt(el.style.width)||200;sh=parseInt(el.style.height)||150;e.preventDefault();e.stopPropagation();};
+  document.addEventListener('mousemove',function(e){
+    if(drag){el.style.left=Math.max(0,sl+e.clientX-sx)+'px';el.style.top=Math.max(0,st+e.clientY-sy)+'px';}
+    if(rsz){el.style.width=Math.max(60,sw+e.clientX-sx)+'px';el.style.height=Math.max(40,sh+e.clientY-sy)+'px';}
+  });
+  document.addEventListener('mouseup',function(){drag=false;rsz=false;});
+};
+/* ── Scene image overlay ── */
+window.assignSceneImage=function(input,idx){
+  var f=input.files[0];if(!f)return;
+  var r=new FileReader();r.onload=function(e){
+    var sc=window.PROJECT&&window.PROJECT.scenes&&window.PROJECT.scenes[idx];if(!sc)return;
+    sc.overlayImageUrl=e.target.result;sc.overlayShow=true;
+    var prev=document.getElementById('sce-overlay-preview');if(prev)prev.innerHTML='<img src="'+e.target.result+'" style="max-width:100%;max-height:100%;object-fit:contain;">';
+    var chk=document.getElementById('sce-overlay-show');if(chk)chk.checked=true;
+    if(typeof saveProject==='function')saveProject();
+    if(typeof toast==='function')toast('Image assigned to scene','ok');
+    window.updateStudioOverlay&&window.updateStudioOverlay(idx);
+  };r.readAsDataURL(f);
+};
+window.clearSceneImage=function(idx){
+  var sc=window.PROJECT&&window.PROJECT.scenes&&window.PROJECT.scenes[idx];if(!sc)return;
+  sc.overlayImageUrl=null;sc.overlayShow=false;
+  var prev=document.getElementById('sce-overlay-preview');if(prev)prev.innerHTML='No image assigned';
+  if(typeof saveProject==='function')saveProject();
+  window.updateStudioOverlay&&window.updateStudioOverlay(idx);
+};
+window.toggleSceneOverlay=function(idx,show){
+  var sc=window.PROJECT&&window.PROJECT.scenes&&window.PROJECT.scenes[idx];if(!sc)return;
+  sc.overlayShow=show;if(typeof saveProject==='function')saveProject();
+  window.updateStudioOverlay&&window.updateStudioOverlay(idx);
+};
+window.updateStudioOverlay=function(idx){
+  var el=document.getElementById('studio-overlay-img');if(!el)return;
+  var sc=window.PROJECT&&window.PROJECT.scenes&&window.PROJECT.scenes[idx];
+  if(sc&&sc.overlayShow&&sc.overlayImageUrl){el.src=sc.overlayImageUrl;el.style.display='block';}else{el.style.display='none';}
+};
+window.loadSceneOverlayUI=function(idx){
+  var sc=window.PROJECT&&window.PROJECT.scenes&&window.PROJECT.scenes[idx];
+  var prev=document.getElementById('sce-overlay-preview');var chk=document.getElementById('sce-overlay-show');
+  if(prev)prev.innerHTML=sc&&sc.overlayImageUrl?'<img src="'+sc.overlayImageUrl+'" style="max-width:100%;max-height:100%;object-fit:contain;">':'No image assigned';
+  if(chk)chk.checked=!!(sc&&sc.overlayShow);
+};
+
+/* ── APS Character Profiles ── */
+window.aps_saveCharProfile=function(){
+  var nm=document.getElementById('aps-char-name-input');
+  var name=nm?nm.value.trim():'';
+  if(!name){if(typeof toast==='function')toast('Enter a character name','error');return;}
+  var profiles=JSON.parse(localStorage.getItem('aab_char_profiles')||'[]');
+  var idx=profiles.findIndex(function(p){return p.name===name;});
+  var prof={id:'cp_'+Date.now(),name:name,photoB64:APS.photoB64||null,photoMimeType:APS.photoMimeType||'image/jpeg',
+    avatarId:APS.settings.avatarId||null,voiceId:APS.settings.voiceId||null,
+    provider:APS.settings.provider||'did',savedAt:new Date().toISOString()};
+  if(idx>-1)profiles[idx]=prof;else profiles.push(prof);
+  localStorage.setItem('aab_char_profiles',JSON.stringify(profiles));
+  if(typeof toast==='function')toast('Character "'+name+'" saved!','ok');
+  window.aps_renderCharGrid&&window.aps_renderCharGrid();
+};
+window.aps_loadCharProfiles=function(){return JSON.parse(localStorage.getItem('aab_char_profiles')||'[]');};
+window.aps_useCharProfile=function(id){
+  var p=window.aps_loadCharProfiles().find(function(x){return x.id===id;});if(!p)return;
+  if(p.photoB64){APS.photoB64=p.photoB64;APS.photoMimeType=p.photoMimeType||'image/jpeg';
+    var lbl=document.getElementById('ai-photo-lbl');
+    if(lbl)lbl.innerHTML='<img src="data:'+APS.photoMimeType+';base64,'+APS.photoB64+'" style="width:28px;height:28px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-right:4px;">'+p.name;}
+  if(p.avatarId)APS.settings.avatarId=p.avatarId;
+  if(p.voiceId)APS.settings.voiceId=p.voiceId;
+  if(p.provider)APS.settings.provider=p.provider;
+  if(typeof aps_syncSettingsUI==='function')aps_syncSettingsUI();
+  if(typeof toast==='function')toast('Using: '+p.name,'ok');
+  document.querySelectorAll('.aps-char-card').forEach(function(c){c.style.borderColor='rgba(255,255,255,.1)';});
+  var card=document.querySelector('.aps-char-card[data-id="'+id+'"]');
+  if(card)card.style.borderColor='#2563eb';
+};
+window.aps_deleteCharProfile=function(id,ev){
+  if(ev)ev.stopPropagation();
+  var profiles=window.aps_loadCharProfiles().filter(function(p){return p.id!==id;});
+  localStorage.setItem('aab_char_profiles',JSON.stringify(profiles));
+  window.aps_renderCharGrid&&window.aps_renderCharGrid();
+};
+window.aps_renderCharGrid=function(){
+  var grid=document.getElementById('aps-char-grid');if(!grid)return;
+  var profiles=window.aps_loadCharProfiles();
+  if(!profiles.length){grid.innerHTML='<div style="grid-column:1/-1;text-align:center;color:rgba(255,255,255,.2);font-size:10px;padding:12px 0;">No saved characters yet</div>';return;}
+  grid.innerHTML=profiles.map(function(p){
+    var thumb=p.photoB64?'<img src="data:'+(p.photoMimeType||'image/jpeg')+';base64,'+p.photoB64+'" style="width:100%;height:52px;object-fit:cover;border-radius:4px;">':'<div style="width:100%;height:52px;background:#1f2937;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:18px;">👤</div>';
+    return '<div class="aps-char-card" data-id="'+p.id+'" onclick="window.aps_useCharProfile('+JSON.stringify(p.id)+')" style="cursor:pointer;border-radius:6px;overflow:hidden;border:1px solid rgba(255,255,255,.1);padding:3px;position:relative;transition:border-color .1s;">'+thumb+'<div style="font-size:9px;color:#d1d5db;font-weight:600;margin-top:3px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+p.name+'</div><button onclick="window.aps_deleteCharProfile('+JSON.stringify(p.id)+',event)" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);border:none;color:#9ca3af;cursor:pointer;border-radius:2px;width:14px;height:14px;font-size:8px;padding:0;line-height:1;">✕</button></div>';
+  }).join('');
+};
+
 /* Cross-tab project sync */
 window.addEventListener('storage', function(e) {
   if (e.key === 'aab_projects' && e.newValue && window.PROJECT) {
@@ -17244,7 +17409,7 @@ console.log('[AAB] Master script loaded');
   <span style="font-weight:800;color:#1e40af;letter-spacing:.05em;">AAB<span style="color:#06b6d4;">Studio</span>.ai</span>
   <span style="margin-left:auto;display:flex;align-items:center;gap:16px;">
     <a onclick="navFree('guide-pg')" style="color:#4b5563;cursor:pointer;text-decoration:none;" onmouseover="this.style.color='#9ca3af'" onmouseout="this.style.color='#4b5563'">Guide</a>
-    <a onclick="nav('pricing-pg')" style="color:#4b5563;cursor:pointer;text-decoration:none;" onmouseover="this.style.color='#9ca3af'" onmouseout="this.style.color='#4b5563'">Pricing</a>
+    <a onclick="navPricing()" style="color:#4b5563;cursor:pointer;text-decoration:none;" onmouseover="this.style.color='#9ca3af'" onmouseout="this.style.color='#4b5563'">Pricing</a>
     <a onclick="navFree('contact-pg')" style="color:#4b5563;cursor:pointer;text-decoration:none;" onmouseover="this.style.color='#9ca3af'" onmouseout="this.style.color='#4b5563'">Contact</a>
     <a onclick="navFree('privacy-pg')" style="color:#4b5563;cursor:pointer;text-decoration:none;" onmouseover="this.style.color='#9ca3af'" onmouseout="this.style.color='#4b5563'">Privacy</a>
     <a onclick="navFree('terms-pg')" style="color:#4b5563;cursor:pointer;text-decoration:none;" onmouseover="this.style.color='#9ca3af'" onmouseout="this.style.color='#4b5563'">Terms</a>
