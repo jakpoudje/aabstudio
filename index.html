@@ -6444,7 +6444,7 @@ body{max-width:100vw;overflow-x:hidden}
           <div class="dash-avatar" id="d-av">?</div>
           <div class="dash-name" id="d-name">—</div>
           <div class="dash-email" id="d-email">—</div>
-          <div class="dash-plan" id="d-plan">Free</div>
+          <div class="dash-plan" id="d-plan"></div>
         </div>
         <div class="sb-nav">
           <button class="sb-item on" onclick="dashNav('projects',this)">
@@ -8569,14 +8569,146 @@ function dashNav(section, btn) {
   if (section === 'projects') {
     renderProjectList();
   } else if (section === 'my-videos') {
-    renderMyVideos();
+    dash_loadVideos();
   } else if (section === 'my-assets') {
-    renderMyAssets();
+    dash_loadAssets();
   } else if (section === 'account') {
     renderAccountPage();
   }
 }
 window.dashNav = dashNav;
+
+/* ── Dashboard render functions ──────────────────────────── */
+function renderProjectList() {
+  var grid = document.getElementById('proj-list');
+  if (!grid) return;
+  var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+  if (!projects.length) {
+    grid.innerHTML = '<div style="text-align:center;padding:40px;color:#9ca3af;">No projects yet. <a onclick="newProject&&newProject()" style="color:#06b6d4;cursor:pointer;">Create one →</a></div>';
+    return;
+  }
+  grid.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:20px;">' +
+    projects.map(function(p) {
+      var scenes = (p.scenes || []).length;
+      var recorded = Object.keys(p.clips || {}).length;
+      var aiClips = Object.keys(p.apsVideos || {}).length;
+      var thumb = '<div style="height:140px;background:linear-gradient(135deg,#0f172a,#1e3a5f);display:flex;align-items:center;justify-content:center;font-size:32px;">🎬</div>';
+      var badges = '';
+      if (recorded) badges += '<span style="background:rgba(0,212,255,.15);color:#00d4ff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;">' + recorded + ' recorded</span>';
+      if (aiClips) badges += '<span style="background:rgba(139,92,246,.15);color:#a78bfa;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;">' + aiClips + ' AI clips</span>';
+      return '<div style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 8px rgba(0,0,0,.08);cursor:pointer;" onclick="openProject(' + JSON.stringify(p.id) + ')">' +
+        thumb +
+        '<div style="padding:14px;">' +
+          '<div style="font-size:14px;font-weight:700;color:#111827;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (p.title || 'Untitled') + '</div>' +
+          '<div style="font-size:12px;color:#6b7280;margin-bottom:8px;">' + scenes + ' scenes · ' + (p.date || '') + '</div>' +
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">' + badges + '</div>' +
+          '<button onclick="event.stopPropagation();openProject(' + JSON.stringify(p.id) + ')" style="width:100%;background:#00d4ff;color:#000;border:none;border-radius:6px;padding:7px;font-size:12px;font-weight:700;cursor:pointer;">Open →</button>' +
+        '</div></div>';
+    }).join('') + '</div>';
+}
+window.renderProjectList = renderProjectList;
+
+function openProject(id) {
+  var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+  var p = projects.find(function(x) { return x.id === id; });
+  if (!p) return;
+  window.PROJECT = p;
+  nav('scenes-pg');
+}
+window.openProject = openProject;
+
+function dash_loadVideos() {
+  var grid = document.getElementById('dash-videos-grid');
+  if (!grid) return;
+  var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+  var allVideos = [];
+  projects.forEach(function(p) {
+    Object.entries(p.clips || {}).forEach(function(e) {
+      if (e[1] && e[1].url) allVideos.push({ url: e[1].url, name: 'Scene ' + e[0], project: p.title, type: 'recording', thumb: e[1].thumb || null });
+    });
+    Object.entries(p.apsVideos || {}).forEach(function(e) {
+      if (e[1] && e[1].url) allVideos.push({ url: e[1].url, name: e[1].name || 'AI Clip', project: p.title, type: 'ai-presenter', thumb: null });
+    });
+  });
+  window._dashVideos = allVideos;
+  dash_filterVideos('all');
+}
+window.dash_loadVideos = dash_loadVideos;
+
+function dash_filterVideos(filter, btn) {
+  document.querySelectorAll('.dash-vid-filter').forEach(function(b) { b.classList.remove('on'); });
+  if (btn) btn.classList.add('on');
+  else {
+    var allBtn = document.querySelector('.dash-vid-filter[data-filter="all"]');
+    if (allBtn) allBtn.classList.add('on');
+  }
+  var videos = (window._dashVideos || []).filter(function(v) {
+    return filter === 'all' || v.type === filter;
+  });
+  var grid = document.getElementById('dash-videos-grid');
+  if (!grid) return;
+  if (!videos.length) {
+    grid.innerHTML = '<div style="padding:48px;text-align:center;color:#9ca3af;grid-column:1/-1;">No ' + (filter === 'all' ? '' : filter + ' ') + 'videos yet.</div>';
+    return;
+  }
+  grid.innerHTML = videos.map(function(v) {
+    return '<div style="background:#f8fafc;border-radius:10px;overflow:hidden;border:1px solid #e5e7eb;">' +
+      '<video src="' + v.url + '" style="width:100%;height:130px;object-fit:cover;background:#000;" preload="metadata"></video>' +
+      '<div style="padding:10px;">' +
+        '<div style="font-size:12px;font-weight:600;color:#111827;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + v.name + '</div>' +
+        '<div style="font-size:11px;color:#6b7280;">' + v.project + '</div>' +
+        '<a href="' + v.url + '" download style="display:block;margin-top:6px;background:#f1f5f9;border:none;border-radius:5px;padding:4px 8px;font-size:11px;font-weight:600;color:#374151;text-decoration:none;text-align:center;">↓ Download</a>' +
+      '</div></div>';
+  }).join('');
+}
+window.dash_filterVideos = dash_filterVideos;
+
+function dash_loadAssets() {
+  var grid = document.getElementById('dash-assets-grid');
+  if (!grid) return;
+  var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+  var allAssets = [];
+  projects.forEach(function(p) {
+    (p.assets || []).forEach(function(a) {
+      allAssets.push(Object.assign({}, a, { projectTitle: p.title, projectId: p.id }));
+    });
+  });
+  if (!allAssets.length) {
+    grid.innerHTML = '<div style="padding:48px;text-align:center;color:#9ca3af;grid-column:1/-1;">No assets yet. Upload images, audio, or use the AI Presenter Studio.</div>';
+    return;
+  }
+  grid.innerHTML = allAssets.map(function(a) {
+    var thumb = a.type === 'presenter-photo' && a.dataUrl ?
+      '<img src="' + a.dataUrl + '" style="width:100%;height:110px;object-fit:cover;">' :
+      '<div style="height:110px;display:flex;align-items:center;justify-content:center;font-size:32px;background:#f1f5f9;">' + (a.type === 'audio' ? '🎵' : a.type === 'presenter-photo' ? '👤' : '📁') + '</div>';
+    return '<div style="background:#f8fafc;border-radius:10px;overflow:hidden;border:1px solid #e5e7eb;">' +
+      thumb +
+      '<div style="padding:8px;">' +
+        '<div style="font-size:11px;font-weight:600;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + a.name + '">' + a.name + '</div>' +
+        '<div style="font-size:10px;color:#9ca3af;">' + a.projectTitle + '</div>' +
+        '<div style="font-size:10px;color:#6b7280;margin-top:2px;text-transform:uppercase;letter-spacing:.03em;">' + (a.type || 'file') + '</div>' +
+      '</div></div>';
+  }).join('');
+}
+window.dash_loadAssets = dash_loadAssets;
+
+function renderAccountPage() {
+  var el = document.getElementById('dash-account');
+  if (!el) return;
+  var u = window.APP && window.APP.user;
+  var plan = window.APP && window.APP.plan || 'free';
+  var planLabel = plan === 'studio' || plan === 'pro' || plan === 'pro_studio' ? '★ Pro Studio' : plan === 'creator' ? '✦ Creator' : plan === 'team' ? '⬡ Team' : 'Free';
+  el.innerHTML = '<div style="max-width:500px;padding:32px 24px;">' +
+    '<h2 style="font-size:20px;font-weight:800;color:#111827;margin-bottom:24px;">Account</h2>' +
+    '<div style="display:flex;flex-direction:column;gap:12px;margin-bottom:24px;">' +
+      '<div style="background:#f8fafc;border-radius:10px;padding:14px 16px;"><div style="font-size:11px;color:#9ca3af;margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em;">Email</div><div style="font-size:14px;color:#111827;font-weight:500;">' + (u ? u.email : '—') + '</div></div>' +
+      '<div style="background:#f8fafc;border-radius:10px;padding:14px 16px;"><div style="font-size:11px;color:#9ca3af;margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em;">Plan</div><div style="font-size:14px;color:#111827;font-weight:700;">' + planLabel + '</div></div>' +
+    '</div>' +
+    '<button onclick="doSignOut()" style="background:#ef4444;color:#fff;border:none;padding:10px 24px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;">Sign out</button>' +
+    '</div>';
+}
+window.renderAccountPage = renderAccountPage;
+
 
 function renderMyVideos() {
   var el = document.getElementById('dash-my-videos');
@@ -15850,6 +15982,126 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
 <!-- removed:aab-layout-enforcer -->
 
 <script id="aab-master-script">
+/* ── Recording Studio functions ──────────────────────────── */
+window.startPracticeMode = function() {
+  var btn = document.getElementById('btn-tp-start');
+  if (window.STUDIO_TP && window.STUDIO_TP.running) {
+    if (typeof studioTpStop === 'function') studioTpStop();
+    if (btn) { btn.textContent = '▶ Start'; btn.style.background = ''; }
+  } else {
+    if (typeof studioTpStart === 'function') studioTpStart();
+    if (btn) { btn.textContent = '⏸ Stop'; btn.style.background = 'rgba(245,158,11,.2)'; }
+  }
+};
+
+window.studioSetMode = function(mode) {
+  window._studioTpMode = mode;
+  ['auto','word','manual'].forEach(function(m) {
+    var b = document.getElementById('tp-btn-' + m);
+    if (!b) return;
+    if (m === mode) { b.style.background = 'rgba(37,99,235,.25)'; b.style.color = '#93c5fd'; b.style.borderColor = 'rgba(37,99,235,.5)'; }
+    else { b.style.background = 'none'; b.style.color = 'rgba(255,255,255,.3)'; b.style.borderColor = 'rgba(255,255,255,.07)'; }
+  });
+  var sel = document.getElementById('tp-mode-sel');
+  if (sel) sel.value = mode;
+  if (mode === 'word') _studioStartWBW && _studioStartWBW();
+  else { _studioStopWBW && _studioStopWBW(); }
+};
+
+window.startSyncRecord = function() {
+  if (!window.STUDIO || !window.STUDIO.stream) { toast && toast('Enable camera first', 'error'); return; }
+  if (!window.STUDIO.recording && typeof toggleRecording === 'function') toggleRecording();
+  setTimeout(function() { window.startPracticeMode && window.startPracticeMode(); }, 300);
+};
+
+var _studioWBW = { timer: null, idx: 0 };
+function _studioStartWBW() {
+  _studioStopWBW();
+  var el = document.getElementById('tp-cur');
+  if (!el) return;
+  var text = el.textContent.trim();
+  var words = text.split(/\s+/).filter(Boolean);
+  if (!words.length) return;
+  el.innerHTML = words.map(function(w, i) {
+    return '<span class="tp-word" data-i="' + i + '" onclick="window._studioJumpWord(' + i + ')" style="cursor:pointer;">' + w.replace(/</g,'&lt;') + '</span>';
+  }).join(' ');
+  _studioWBW.idx = 0;
+  var wpm = parseInt((document.getElementById('tp-spd-range') || {}).value || 80);
+  function step() {
+    var spans = el.querySelectorAll('.tp-word');
+    spans.forEach(function(s, i) {
+      s.classList.toggle('active', i === _studioWBW.idx);
+      s.classList.toggle('done', i < _studioWBW.idx);
+      s.classList.toggle('upcoming', i === _studioWBW.idx + 1 || i === _studioWBW.idx + 2);
+    });
+    if (_studioWBW.idx < spans.length) spans[_studioWBW.idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    _studioWBW.idx++;
+    if (_studioWBW.idx > spans.length) { clearInterval(_studioWBW.timer); _studioWBW.timer = null; }
+  }
+  step();
+  _studioWBW.timer = setInterval(step, Math.round(60000 / wpm));
+}
+window._studioStartWBW = _studioStartWBW;
+
+function _studioStopWBW() {
+  if (_studioWBW.timer) { clearInterval(_studioWBW.timer); _studioWBW.timer = null; }
+}
+window._studioStopWBW = _studioStopWBW;
+
+window._studioJumpWord = function(idx) {
+  _studioWBW.idx = idx;
+  var el = document.getElementById('tp-cur');
+  if (!el) return;
+  var spans = el.querySelectorAll('.tp-word');
+  spans.forEach(function(s, i) {
+    s.classList.toggle('active', i === idx);
+    s.classList.toggle('done', i < idx);
+  });
+};
+
+/* ── Edit suite upload stubs (wired in AABE engine) ─────── */
+window.E_uploadVideo = window.E_uploadVideo || function(trackId) {
+  var inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'video/*';
+  inp.onchange = function() {
+    var f = inp.files[0]; if (!f) return;
+    var url = URL.createObjectURL(f);
+    var tr = E.tracks.find(function(t){ return t.id === (trackId||'main'); });
+    if (tr) {
+      var pos = tr.clips.reduce(function(m,c){ return Math.max(m,c.start+c.duration); },0);
+      tr.clips.push({id:'v_'+Date.now(),name:f.name,url:url,type:'video',start:pos,duration:10,color:'#2563eb'});
+      E_renderTL && E_renderTL(); E_loadClips && E_loadClips();
+    }
+  }; inp.click();
+};
+
+window.E_uploadAudio = window.E_uploadAudio || function(trackId) {
+  var inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'audio/*';
+  inp.onchange = function() {
+    var f = inp.files[0]; if (!f) return;
+    var url = URL.createObjectURL(f);
+    var tr = E.tracks.find(function(t){ return t.id === (trackId||'music'); }) || E.tracks.find(function(t){ return t.type==='audio'; });
+    if (tr) {
+      var pos = tr.clips.reduce(function(m,c){ return Math.max(m,c.start+c.duration); },0);
+      tr.clips.push({id:'a_'+Date.now(),name:f.name,url:url,type:'audio',start:pos,duration:20,color:'#10b981'});
+      E_renderTL && E_renderTL(); E_loadClips && E_loadClips();
+    }
+  }; inp.click();
+};
+
+window.E_uploadImage = window.E_uploadImage || function(trackId) {
+  var inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+  inp.onchange = function() {
+    var f = inp.files[0]; if (!f) return;
+    var url = URL.createObjectURL(f);
+    var tr = E.tracks.find(function(t){ return t.id === (trackId||'overlays'); }) || E.tracks[E.tracks.length-1];
+    if (tr) {
+      var pos = tr.clips.reduce(function(m,c){ return Math.max(m,c.start+c.duration); },0);
+      tr.clips.push({id:'i_'+Date.now(),name:f.name,url:url,type:'image',start:pos,duration:5,color:'#f59e0b'});
+      E_renderTL && E_renderTL(); E_loadClips && E_loadClips();
+    }
+  }; inp.click();
+};
+
 /* ─── Contact form handler (email address kept server-side) ─── */
 window.aabSubmitContact = function(e) {
   e.preventDefault();
