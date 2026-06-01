@@ -7944,11 +7944,15 @@ body{max-width:100vw;overflow-x:hidden}
       <div style="margin-bottom:14px;">
         <div class="sec-label" style="color:rgba(255,255,255,.3);">Reference photo (optional)</div>
         <label
-          style="display:flex;align-items:center;gap:7px;padding:9px 13px;border:.5px dashed rgba(255,255,255,.15);border-radius:var(--r);cursor:pointer;background:rgba(255,255,255,.02);margin-top:5px;">
-          <span style="font-size:12px;color:rgba(255,255,255,.4);" id="ai-photo-lbl">Upload presenter photo</span>
-          <input type="file" style="display:none;" accept="image/*"
+          style="display:flex;align-items:center;gap:7px;padding:9px 13px;border:.5px dashed rgba(255,255,255,.15);border-radius:var(--r);cursor:pointer;background:rgba(255,255,255,.02);margin-top:5px;" id="ai-photo-label">
+          <span style="font-size:12px;color:rgba(255,255,255,.4);" id="ai-photo-lbl">📸 Upload presenter photo</span>
+          <input type="file" style="display:none;" accept="image/*" id="ai-photo-input"
             onchange="(window.aps_loadPhoto||window.loadAIPhoto||function(){})(this)">
         </label>
+        <div id="ai-photo-actions" style="display:flex;gap:6px;margin-top:6px;">
+          <button onclick="document.getElementById('ai-photo-input')&&document.getElementById('ai-photo-input').click()" style="flex:1;background:rgba(255,255,255,.04);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.5);padding:5px 8px;border-radius:5px;cursor:pointer;font-size:10px;">📁 Upload</button>
+          <button onclick="aps_clearPhoto()" style="flex:1;background:rgba(255,255,255,.04);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.3);padding:5px 8px;border-radius:5px;cursor:pointer;font-size:10px;">✕ Clear</button>
+        </div>
       </div>
       <div style="margin-bottom:16px;">
         <div class="sec-label" style="color:rgba(255,255,255,.3);">Voice</div>
@@ -8236,6 +8240,10 @@ window.ap_setTpSettings = function(settings) {
     function requiresPaid(pg) { return PAID_PAGES.indexOf(pg) > -1; }
 
     function nav(pg) {
+      // Save project state before navigating  
+      if (window.PROJECT && typeof saveProject === 'function') {
+        try { saveProject(); } catch(e) {}
+      }
       // Auth gate
       if (requiresLogin(pg) && !APP.user) {
         nav('auth-pg');
@@ -8471,7 +8479,87 @@ window.ap_setTpSettings = function(settings) {
     // ══════════════════════════════════════════════════════════════════════════════
     // DASHBOARD
     // ══════════════════════════════════════════════════════════════════════════════
-    function loadDashboard() {
+    
+function dashNav(section, btn) {
+  // Update active state on sidebar buttons
+  document.querySelectorAll('.sb-item').forEach(function(b){ b.classList.remove('on'); });
+  if (btn) btn.classList.add('on');
+  
+  // Show/hide dashboard sections
+  var sections = ['projects', 'my-videos', 'my-assets', 'account'];
+  sections.forEach(function(s) {
+    var el = document.getElementById('dash-' + s);
+    if (el) el.style.display = s === section ? '' : 'none';
+  });
+  
+  // Load section content
+  if (section === 'projects') {
+    renderProjectList();
+  } else if (section === 'my-videos') {
+    renderMyVideos();
+  } else if (section === 'my-assets') {
+    renderMyAssets();
+  } else if (section === 'account') {
+    renderAccountPage();
+  }
+}
+window.dashNav = dashNav;
+
+function renderMyVideos() {
+  var el = document.getElementById('dash-my-videos');
+  if (!el) return;
+  var projects = JSON.parse(localStorage.getItem('aab_projects')||'[]');
+  var allVideos = [];
+  projects.forEach(function(p){
+    var clips = p.clips || {};
+    Object.values(clips).forEach(function(c){
+      if (c && c.url) allVideos.push({url:c.url, project:p.title, date:p.date});
+    });
+    if (p.apsVideos) Object.values(p.apsVideos).forEach(function(v){
+      if (v && v.url) allVideos.push({url:v.url, project:p.title+' (AI)', date:p.date});
+    });
+  });
+  el.innerHTML = allVideos.length ? 
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;padding:20px;">' +
+    allVideos.map(function(v){ return '<div style="background:#f1f5f9;border-radius:8px;overflow:hidden;"><video src="'+v.url+'" style="width:100%;height:120px;object-fit:cover;" controls></video><div style="padding:8px;font-size:12px;color:#374151;">'+v.project+'</div></div>'; }).join('') +
+    '</div>' :
+    '<div style="padding:40px;text-align:center;color:#9ca3af;">No videos yet. Record your first video in the Studio.</div>';
+}
+
+function renderMyAssets() {
+  var el = document.getElementById('dash-my-assets');
+  if (!el) return;
+  var projects = JSON.parse(localStorage.getItem('aab_projects')||'[]');
+  var allAssets = [];
+  projects.forEach(function(p){
+    (p.assets||[]).forEach(function(a){ allAssets.push(Object.assign({},a,{project:p.title})); });
+  });
+  el.innerHTML = allAssets.length ?
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;padding:20px;">' +
+    allAssets.map(function(a){
+      var thumb = a.type === 'presenter-photo' ? '<img src="'+a.dataUrl+'" style="width:100%;height:100px;object-fit:cover;">' :
+                  '<div style="height:100px;display:flex;align-items:center;justify-content:center;font-size:28px;">'+(a.type==='audio'?'🎵':'📁')+'</div>';
+      return '<div style="background:#f1f5f9;border-radius:8px;overflow:hidden;cursor:pointer;" title="'+a.name+'">'+thumb+'<div style="padding:6px 8px;font-size:11px;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+a.name+'</div><div style="padding:0 8px 6px;font-size:10px;color:#9ca3af;">'+a.project+'</div></div>';
+    }).join('') + '</div>' :
+    '<div style="padding:40px;text-align:center;color:#9ca3af;">No assets yet. Upload images or audio in the Studio or AI Presenter.</div>';
+}
+
+function renderAccountPage() {
+  var el = document.getElementById('dash-account');
+  if (!el) return;
+  var u = window.APP && window.APP.user;
+  el.innerHTML = '<div style="padding:32px;max-width:500px;">' +
+    '<h2 style="font-size:20px;font-weight:700;color:#111827;margin-bottom:20px;">Account</h2>' +
+    '<div style="background:#f8fafc;border-radius:10px;padding:16px;margin-bottom:16px;">' +
+    '<div style="font-size:12px;color:#6b7280;margin-bottom:4px;">Email</div>' +
+    '<div style="font-size:14px;color:#111827;">'+(u?u.email:'—')+'</div></div>' +
+    '<div style="background:#f8fafc;border-radius:10px;padding:16px;margin-bottom:16px;">' +
+    '<div style="font-size:12px;color:#6b7280;margin-bottom:4px;">Plan</div>' +
+    '<div style="font-size:14px;color:#111827;font-weight:600;">'+(window.APP?window.APP.plan:'—')+'</div></div>' +
+    '<button onclick="doSignOut()" style="background:#ef4444;color:#fff;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;">Sign out</button>' +
+    '</div>';
+}
+function loadDashboard() {
       var grid = document.getElementById('proj-list');
       if (!grid) return;
 
@@ -9534,7 +9622,7 @@ window.ap_setTpSettings = function(settings) {
       if(tpTxt) tpTxt.style.fontSize = cur + 'px';
       var el = document.getElementById('tp-cur');
       if (el) el.style.setProperty('font-size', cur + 'px', 'important');
-      toast('Font size: ' + Math.round(cur) + 'px', 'ok');
+      // font updated
     }
     function decreaseTpFont() {
       var root = document.documentElement;
@@ -9551,7 +9639,7 @@ window.ap_setTpSettings = function(settings) {
       // Also directly set on element as backup
       var el = document.getElementById('tp-cur');
       if (el) el.style.setProperty('font-size', cur + 'px', 'important');
-      toast('Font size: ' + Math.round(cur) + 'px', 'ok');
+      // font updated
     }
     function toggleMirror() {
       // Apply mirror to tp-body (text content) so panel borders don't flip
@@ -12827,6 +12915,66 @@ window._reapplyNav=function(){
       'custom': 'custom user-provided background'
     };
 
+/* ── APS Reference Photo — upload + save to project assets ─────── */
+function aps_loadPhoto(input) {
+  var file = input.files[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) { toast('Please upload an image file', 'error'); return; }
+  if (file.size > 8 * 1024 * 1024) { toast('Image must be under 8MB', 'error'); return; }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var b64 = e.target.result;
+    APS.photoB64 = b64.split(',')[1]; // base64 data only
+    APS.photoMimeType = file.type;
+    APS.photoFileName = file.name;
+    // Update preview
+    var lbl = document.getElementById('ai-photo-lbl');
+    if (lbl) {
+      lbl.innerHTML = '<img src="' + b64 + '" style="width:40px;height:40px;object-fit:cover;border-radius:4px;"> ' + file.name;
+    }
+    // Save to project assets for reuse
+    if (window.PROJECT) {
+      if (!window.PROJECT.assets) window.PROJECT.assets = [];
+      var existing = window.PROJECT.assets.find(function(a){ return a.name === file.name && a.type === 'presenter-photo'; });
+      if (!existing) {
+        window.PROJECT.assets.push({
+          id: 'asset_' + Date.now(),
+          name: file.name,
+          type: 'presenter-photo',
+          mimeType: file.type,
+          dataUrl: b64,
+          addedAt: new Date().toISOString()
+        });
+        saveProject();
+      }
+    }
+    toast('Photo uploaded: ' + file.name, 'ok');
+  };
+  reader.readAsDataURL(file);
+}
+window.aps_loadPhoto = aps_loadPhoto;
+window.loadAIPhoto = aps_loadPhoto; // legacy alias
+
+/* ── Load saved presenter photos from project assets ─────────────── */
+function aps_loadSavedPhotos() {
+  var assets = (window.PROJECT && window.PROJECT.assets) || [];
+  var photos = assets.filter(function(a){ return a.type === 'presenter-photo'; });
+  var lbl = document.getElementById('ai-photo-lbl');
+  if (!lbl) return;
+  if (photos.length > 0) {
+    // Auto-load the most recent photo
+    var latest = photos[photos.length - 1];
+    APS.photoB64 = latest.dataUrl.split(',')[1];
+    APS.photoMimeType = latest.mimeType;
+    lbl.innerHTML = '<img src="' + latest.dataUrl + '" style="width:40px;height:40px;object-fit:cover;border-radius:4px;"> ' + latest.name + ' (saved)';
+  }
+}
+
+/* ── PiAPI Video Generation via backend ─────────────────────────── */
+/* The backend at /api/presenter calls piapi.ai/kling/d-id depending on provider */
+/* APS.settings.provider controls which: 'did', 'kling', 'runway', 'piapi' */
+
+
     var APS_BG_CSS = {
       'news-studio': 'linear-gradient(135deg,#0a1628,#1a2f5a,#0d2040)',
       'podcast': 'linear-gradient(135deg,#0d0020,#1a0535,#0a0015)',
@@ -12841,6 +12989,7 @@ window._reapplyNav=function(){
     function openAIPresenterStudio() {
       if (!APP.user) {
         toast('Sign in first', 'info');
+    setTimeout(aps_loadSavedPhotos, 100);
         setTimeout(function () { nav('auth-pg'); }, 1500);
         return;
       }
@@ -13519,35 +13668,35 @@ window.aps_goToEditSuite = aps_goToEditSuite;
     }
 
     function aps_addClipToTimeline(sc) {
-      // aab_sceneDone already saves to PROJECT.clips — we just
-      // also cache to APS_CLIPS for the Go to Edit Suite button
-      if (!sc.videoUrl) return;
-      var clipKey = 'aps_' + sc.id;
-      var clipData = PROJECT.clips && PROJECT.clips[clipKey];
-      if (!clipData) {
-        clipData = {
-          id: clipKey,
-          sceneId: sc.id,
-          sceneNum: sc.num,
-          sceneName: sc.title || ('Scene ' + sc.num),
-          url: sc.videoUrl,
-          videoUrl: sc.videoUrl,
-          duration: sc.duration || 8,
-          source: 'ai-presenter',
-          provider: window.APS && APS.settings ? APS.settings.provider : 'did',
-          generatedAt: new Date().toISOString()
-        };
-        if (!PROJECT.clips) PROJECT.clips = {};
-        PROJECT.clips[clipKey] = clipData;
+      if (!sc || !sc.videoUrl) return;
+      // Add to project apsVideos store
+      if (!window.PROJECT.apsVideos) window.PROJECT.apsVideos = {};
+      window.PROJECT.apsVideos[sc.id] = {
+        url: sc.videoUrl,
+        name: 'AI Scene ' + sc.num,
+        duration: sc.duration || 10,
+        num: sc.num,
+        narration: sc.narration
+      };
+      
+      // Add to edit suite E.tracks if E is loaded
+      if (window.E && window.E.tracks) {
+        var mainTrack = window.E.tracks.find(function(t){ return t.id === 'main'; });
+        if (mainTrack) {
+          var pos = mainTrack.clips.reduce(function(max, c){ return Math.max(max, c.start + c.duration); }, 0);
+          mainTrack.clips.push({
+            id: 'aps_' + sc.id + '_' + Date.now(),
+            name: 'AI Scene ' + sc.num,
+            url: sc.videoUrl,
+            type: 'video',
+            start: pos,
+            duration: sc.duration || 10,
+            color: '#2563eb',
+            source: 'aps'
+          });
+        }
       }
-      // Cache to APS_CLIPS
-      if (!window.APS_CLIPS) window.APS_CLIPS = {};
-      APS_CLIPS[clipKey] = clipData;
-      try {
-        var saved = JSON.parse(localStorage.getItem('aab_aps_clips') || '{}');
-        saved[clipKey] = clipData;
-        localStorage.setItem('aab_aps_clips', JSON.stringify(saved));
-      } catch(e) {}
+      saveProject();
     }
 
     // ── SAFARI COMPATIBILITY: Explicitly expose all handler functions on window ──
@@ -13569,6 +13718,16 @@ window.aps_goToEditSuite = aps_goToEditSuite;
     window.aps_regenerateCurrent = aps_regenerateCurrent;
     window.aps_regenerateScene = aps_regenerateScene;
     window.aps_stopQueue = aps_stopQueue;
+
+function aps_clearPhoto() {
+  APS.photoB64 = null;
+  APS.photoMimeType = null;
+  var lbl = document.getElementById('ai-photo-lbl');
+  if (lbl) lbl.innerHTML = '📸 Upload presenter photo';
+  var inp = document.getElementById('ai-photo-input');
+  if (inp) inp.value = '';
+}
+window.aps_clearPhoto = aps_clearPhoto;
     window.aps_selectScene = aps_selectScene;
     window.aps_selectAll = aps_selectAll;
     window.aps_filterScenes = aps_filterScenes;
@@ -16128,7 +16287,7 @@ window.setTpScrollMode=function(mode){
     btn.classList.toggle('on',btn.dataset.tpmode===mode);
   });
   if(window._aabTpActive&&typeof studioTpStart==='function')studioTpStart();
-  if(typeof toast==='function')toast('Teleprompter: '+mode,'info');
+  // mode set
 };
 document.addEventListener('click',function(e){
   var btn=e.target.closest('[data-tpmode]');
@@ -16292,7 +16451,7 @@ window.tpToggle = function() {
       if(btn){ btn.textContent = '⏸ Pause'; btn.classList.add('active'); }
     }
   } else if(window._tpMode === 'manual') {
-    if(typeof toast === 'function') toast('Manual mode — scroll to advance', 'info');
+    // manual
   } else {
     if(_origTpToggle) _origTpToggle();
   }
