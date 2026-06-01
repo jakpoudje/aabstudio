@@ -5536,32 +5536,6 @@ setTimeout(function(){
     window.navBack=function(){nav('dashboard-pg');};
   }
   
-  // doSignIn polyfill
-  if(typeof doSignIn!=='function'){
-    window.doSignIn=async function(){
-      var email=document.getElementById('si-email')?.value?.trim();
-      var pass=document.getElementById('si-pass')?.value;
-      var errEl=document.getElementById('err-in');
-      function showErr(msg){if(errEl){errEl.textContent=msg;errEl.style.display='block';}else alert(msg);}
-      if(!email||!pass){showErr('Please fill in all fields.');return;}
-      try{
-        var r=await fetch(SURL+'/auth/v1/token?grant_type=password',{
-          method:'POST',headers:{'Content-Type':'application/json','apikey':SKEY,'Authorization':'Bearer '+SKEY},
-          body:JSON.stringify({email:email,password:pass})
-        }).then(function(x){return x.json();});
-        if(r.access_token){
-          localStorage.setItem('sb-phjlxkyloafogznhyyig-auth-token',JSON.stringify({
-            access_token:r.access_token,refresh_token:r.refresh_token,
-            expires_at:Math.floor(Date.now()/1000)+r.expires_in,expires_in:r.expires_in,user:r.user
-          }));
-          window.USER_ID=r.user?.id;window.USER_EMAIL=r.user?.email;
-          if(typeof loadDashboard==='function'){loadDashboard();nav('dashboard-pg');}
-          else{nav('dashboard-pg');}
-        } else {showErr(r.error_description||r.error||'Sign in failed.');}
-      }catch(e){showErr(e.message);}
-    };
-  }
-  
   // doSignOut polyfill  
   if(typeof doSignOut!=='function'){
     window.doSignOut=function(){
@@ -5711,6 +5685,11 @@ window.E_exportTimeline=async function(){
   if(typeof toast==='function')toast('Downloading first clip...','info');
 };
 /* ── Marker CSS ── */
+
+/* AABE.dd — drag/drop stub exposed for external callers */
+var AABE=window.AABE||{};
+AABE.dd=function(clip,trackId){if(clip&&E.tracks){var t=E.tracks.find(function(tr){return tr.id===(trackId||'main');});if(t){var pos=t.clips.reduce(function(m,c){return Math.max(m,c.start+c.duration);},0);t.clips.push(Object.assign({},clip,{id:'dd_'+Date.now(),start:pos,trackId:t.id}));E_renderTL&&E_renderTL();}}};
+window.AABE=AABE;
 })();
 
 
@@ -8600,6 +8579,7 @@ window.ap_setTpSettings = function(settings) {
         if (!user) throw new Error('Email not confirmed or account not found. Check your inbox.');
         setUser(user);
         nav('dashboard-pg');
+      setTimeout(function(){if(typeof renderProjectList==='function')renderProjectList();},300);
       } catch (e) {
         showErr('err-in', e.message || 'Sign in failed. Please try again.');
       }
@@ -10552,8 +10532,9 @@ function loadDashboard() {
       }
       var supa = getSupa(); if (!supa) { updateNavState(); return; }
       supa.auth.getSession().then(function (r) {
-        if (r.data && r.data.session) { setUser(r.data.session.user); nav('dashboard-pg'); }
-        else { updateNavState(); navFree('home'); }
+        if (r.data && r.data.session) { setUser(r.data.session.user); nav('dashboard-pg');
+          setTimeout(function(){if(typeof renderProjectList==='function')renderProjectList();},500);
+        } else { updateNavState(); navFree('home'); }
       });
       supa.auth.onAuthStateChange(function (event, session) {
         if (event === 'SIGNED_IN' && session) {
@@ -17453,18 +17434,18 @@ console.log('[AAB] Master script loaded');
 </script>
 
 <script>
+/* AABStudio auto-init — fires renderProjectList after auth resolves */
 (function(){
-  var _ri=function(){var pg=document.getElementById('dashboard-pg');if(pg&&pg.classList.contains('on')&&typeof renderProjectList==='function')renderProjectList();};
-  setTimeout(_ri,1500);setTimeout(_ri,3000);
-  // Hook dashNav
-  var _tries=0;var _hook=setInterval(function(){
-    if(window.dashNav&&!window._dashNavHooked){
-      window._dashNavHooked=true;clearInterval(_hook);
-      var _orig=window.dashNav;
-      window.dashNav=function(s,b){_orig(s,b);if(s==='projects')setTimeout(function(){if(typeof renderProjectList==='function')renderProjectList();},50);};
+  function tryRender(){
+    var pg=document.getElementById('dashboard-pg');
+    if(pg&&pg.classList.contains('on')&&typeof renderProjectList==='function'){
+      renderProjectList();
     }
-    if(++_tries>30)clearInterval(_hook);
-  },100);
+  }
+  // Poll at intervals to catch auth completing
+  setTimeout(tryRender,800);
+  setTimeout(tryRender,1500);
+  setTimeout(tryRender,3000);
 })();
 </script></body>
 </html>
