@@ -5580,6 +5580,11 @@ setTimeout(function(){
       if(active&&(active.id==='home'||active.id==='auth-pg')){
         if(typeof loadDashboard==='function')loadDashboard();
         nav('dashboard-pg');
+        setTimeout(function(){
+          var lid=localStorage.getItem('aab_last_project');
+          if(lid){var ps=JSON.parse(localStorage.getItem('aab_projects')||'[]');var lp=ps.find(function(x){return x.id===lid;});if(lp)window.PROJECT=lp;}
+          if(typeof renderProjectList==='function')renderProjectList();
+        },400);
       }
     }
   },1200);
@@ -6075,6 +6080,46 @@ body{max-width:100vw;overflow-x:hidden}
 #privacy-pg > div, #terms-pg > div, #guide-pg > div, #contact-pg > div {
   width: 100%;
 }
+
+/* ══ MOBILE RESPONSIVE ════════════════════════════════════════ */
+@media (max-width: 768px) {
+  /* Dashboard stacks vertically */
+  .dash-layout { flex-direction: column !important; }
+  .dash-sidebar { width: 100% !important; min-height: auto !important; flex-direction: row !important; padding: 8px 12px !important; gap: 4px !important; border-right: none !important; border-bottom: 1px solid rgba(0,0,0,.08) !important; overflow-x: auto !important; justify-content: flex-start !important; }
+  .dash-user { display: none !important; }
+  .sb-nav { flex-direction: row !important; flex-wrap: nowrap !important; gap: 4px !important; }
+  .sb-item { padding: 8px 12px !important; font-size: 12px !important; white-space: nowrap !important; flex-shrink: 0 !important; }
+  .sb-div { display: none !important; }
+  .dash-main { padding: 12px !important; }
+  /* Home */
+  .hero { padding: 50px 16px 32px !important; }
+  .hero-cards { flex-direction: column !important; gap: 10px !important; }
+  .hero-card { width: 100% !important; }
+  /* Studio bottom panels wrap */
+  .studio-bottom, #studio-bottom { flex-wrap: wrap !important; height: auto !important; min-height: auto !important; padding: 4px !important; gap: 2px !important; }
+  .panel-group { flex: 1 1 calc(50% - 4px) !important; min-width: calc(50% - 4px) !important; border-right: none !important; border-bottom: 1px solid rgba(255,255,255,.06) !important; }
+  .grp-tp { flex: 1 1 100% !important; min-width: 100% !important; }
+  /* APS stacks */
+  #ai-presenter-studio > div:nth-child(2) { flex-direction: column !important; }
+}
+@media (max-width: 480px) {
+  .dash-layout { font-size: 13px !important; }
+  .sb-item { padding: 6px 10px !important; font-size: 11px !important; }
+  .studio-bar { flex-wrap: wrap !important; height: auto !important; padding: 4px !important; gap: 4px !important; }
+  #aab-footer { flex-wrap: wrap !important; height: auto !important; padding: 6px 12px !important; gap: 6px !important; font-size: 10px !important; }
+}
+/* Touch targets */
+@media (hover: none) and (pointer: coarse) {
+  .btn, button { min-height: 40px !important; }
+}
+/* Safari */
+@supports (-webkit-touch-callout: none) {
+  .pg-full { min-height: -webkit-fill-available; }
+}
+/* Cross-browser video */
+video { object-fit: cover; -webkit-playsinline: true; }
+input[type="range"] { -webkit-appearance: none; appearance: none; }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #00d4ff; cursor: pointer; }
 </style></head>
 
     <style>
@@ -8623,11 +8668,13 @@ function dash_loadVideos() {
   var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
   var allVideos = [];
   projects.forEach(function(p) {
-    Object.entries(p.clips || {}).forEach(function(e) {
-      if (e[1] && e[1].url) allVideos.push({ url: e[1].url, name: 'Scene ' + e[0], project: p.title, type: 'recording', thumb: e[1].thumb || null });
+    Object.entries(p.clips || {}).forEach(function(kv) {
+      var c = kv[1];
+      if (c && (c.url || c.videoUrl)) allVideos.push({ url: c.url||c.videoUrl, name: c.name||'Scene '+kv[0], project: p.title, type: 'recording' });
     });
-    Object.entries(p.apsVideos || {}).forEach(function(e) {
-      if (e[1] && e[1].url) allVideos.push({ url: e[1].url, name: e[1].name || 'AI Clip', project: p.title, type: 'ai-presenter', thumb: null });
+    Object.entries(p.apsVideos || {}).forEach(function(kv) {
+      var v = kv[1];
+      if (v && (v.url || v.videoUrl || v.heygen_url)) allVideos.push({ url: v.url||v.videoUrl||v.heygen_url, name: v.name||'AI Scene '+kv[0], project: p.title, type: 'ai-presenter' });
     });
   });
   window._dashVideos = allVideos;
@@ -8638,26 +8685,28 @@ window.dash_loadVideos = dash_loadVideos;
 function dash_filterVideos(filter, btn) {
   document.querySelectorAll('.dash-vid-filter').forEach(function(b) { b.classList.remove('on'); });
   if (btn) btn.classList.add('on');
-  else {
-    var allBtn = document.querySelector('.dash-vid-filter[data-filter="all"]');
-    if (allBtn) allBtn.classList.add('on');
-  }
-  var videos = (window._dashVideos || []).filter(function(v) {
-    return filter === 'all' || v.type === filter;
-  });
+  else { var ab = document.querySelector('.dash-vid-filter[data-filter="all"]'); if (ab) ab.classList.add('on'); }
+  var videos = (window._dashVideos || []).filter(function(v) { return filter === 'all' || v.type === filter; });
   var grid = document.getElementById('dash-videos-grid');
   if (!grid) return;
   if (!videos.length) {
-    grid.innerHTML = '<div style="padding:48px;text-align:center;color:#9ca3af;grid-column:1/-1;">No ' + (filter === 'all' ? '' : filter + ' ') + 'videos yet.</div>';
+    grid.innerHTML = '<div style="padding:48px;text-align:center;color:#9ca3af;grid-column:1/-1;font-size:14px;">No ' + (filter === 'all' ? '' : filter + ' ') + 'videos yet.<br><br><a onclick="nav('record-pg')" style="color:#06b6d4;cursor:pointer;font-weight:600;">Record in Studio →</a></div>';
     return;
   }
   grid.innerHTML = videos.map(function(v) {
-    return '<div style="background:#f8fafc;border-radius:10px;overflow:hidden;border:1px solid #e5e7eb;">' +
-      '<video src="' + v.url + '" style="width:100%;height:130px;object-fit:cover;background:#000;" preload="metadata"></video>' +
+    var isHttp = v.url && (v.url.startsWith('http://') || v.url.startsWith('https://'));
+    var vidEl = isHttp
+      ? '<video src="'+v.url+'" style="width:100%;height:130px;object-fit:cover;background:#111827;display:block;" preload="metadata" playsinline muted onmouseenter="this.play()" onmouseleave="this.pause();this.currentTime=0;"></video>'
+      : '<div style="width:100%;height:130px;background:linear-gradient(135deg,#0f172a,#1e3a5f);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;"><span style="font-size:28px;">📹</span><span style="font-size:10px;color:#6b7280;">Not available after refresh</span></div>';
+    var badge = v.type==='ai-presenter'
+      ? '<span style="background:rgba(139,92,246,.15);color:#a78bfa;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px;letter-spacing:.03em;">AI</span>'
+      : '<span style="background:rgba(0,212,255,.1);color:#00d4ff;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px;letter-spacing:.03em;">REC</span>';
+    return '<div style="background:#fff;border-radius:10px;overflow:hidden;border:1px solid #e5e7eb;box-shadow:0 1px 4px rgba(0,0,0,.06);transition:transform .15s,box-shadow .15s;" onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(0,0,0,.12)'" onmouseleave="this.style.transform='';this.style.boxShadow='0 1px 4px rgba(0,0,0,.06)'">' +
+      vidEl +
       '<div style="padding:10px;">' +
-        '<div style="font-size:12px;font-weight:600;color:#111827;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + v.name + '</div>' +
-        '<div style="font-size:11px;color:#6b7280;">' + v.project + '</div>' +
-        '<a href="' + v.url + '" download style="display:block;margin-top:6px;background:#f1f5f9;border:none;border-radius:5px;padding:4px 8px;font-size:11px;font-weight:600;color:#374151;text-decoration:none;text-align:center;">↓ Download</a>' +
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">' + badge + '<div style="font-size:12px;font-weight:600;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;">' + v.name + '</div></div>' +
+        '<div style="font-size:11px;color:#6b7280;margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + v.project + '</div>' +
+        (isHttp ? '<a href="'+v.url+'" download target="_blank" style="display:block;background:#f1f5f9;border-radius:5px;padding:5px;font-size:11px;font-weight:600;color:#374151;text-decoration:none;text-align:center;border:1px solid #e5e7eb;">↓ Download</a>' : '') +
       '</div></div>';
   }).join('');
 }
@@ -8866,6 +8915,7 @@ function loadDashboard() {
     }
     function saveProject() {
       PROJECT.date = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+      localStorage.setItem('aab_last_project', PROJECT.id);
       var light = JSON.parse(JSON.stringify(PROJECT));
 
       // Strip binary data from assets to avoid quota exceeded
@@ -15982,6 +16032,23 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
 <!-- removed:aab-layout-enforcer -->
 
 <script id="aab-master-script">
+/* Cross-tab project sync */
+window.addEventListener('storage', function(e) {
+  if (e.key === 'aab_projects' && e.newValue && window.PROJECT) {
+    try { var ps = JSON.parse(e.newValue); var m = ps.find(function(p){return p.id===window.PROJECT.id;}); if (m) window.PROJECT = m; } catch(e){}
+  }
+});
+window.syncProjectNow = function() {
+  if (!window.PROJECT) return;
+  var ps = JSON.parse(localStorage.getItem('aab_projects')||'[]');
+  var idx = ps.findIndex(function(p){return p.id===window.PROJECT.id;});
+  var light = JSON.parse(JSON.stringify(window.PROJECT));
+  if (light.clips) Object.keys(light.clips).forEach(function(k){ if(light.clips[k]&&light.clips[k].url&&light.clips[k].url.startsWith('blob:'))light.clips[k].url=null; });
+  if (idx > -1) ps[idx] = light; else ps.push(light);
+  localStorage.setItem('aab_projects', JSON.stringify(ps));
+  localStorage.setItem('aab_last_project', window.PROJECT.id);
+};
+
 /* ── Recording Studio functions ──────────────────────────── */
 window.startPracticeMode = function() {
   var btn = document.getElementById('btn-tp-start');
