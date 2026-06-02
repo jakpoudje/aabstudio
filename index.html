@@ -1017,11 +1017,14 @@
       display: inline-block;
       margin-top: 5px;
       font-size: 10px;
-      padding: 2px 8px;
+      padding: 3px 10px;
       border-radius: 10px;
-      background: rgba(245, 158, 11, .1);
+      background: rgba(245, 158, 11, .12);
       color: var(--gold);
-      border: .5px solid rgba(245, 158, 11, .2);
+      border: .5px solid rgba(245, 158, 11, .3);
+      font-weight: 600;
+      letter-spacing: .03em;
+      text-transform: uppercase;
     }
 
     .sb-nav {
@@ -1597,8 +1600,11 @@
       padding: 10px 22px;
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 8px;
       flex-shrink: 0;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
     }
 
     .scenes-title {
@@ -4446,11 +4452,11 @@
   
 /* ── STUDIO BOTTOM BAR COMPACT ── */
 
-.studio-ctrl-row { max-height: 64px !important; overflow-y: hidden; }
+.studio-ctrl-row { max-height: 68px !important; overflow-y: visible; overflow-x: auto; }
 .panel-group { flex-shrink: 0; min-width: 0; }
 .panel-group-body { padding: 3px 8px !important; gap: 4px !important; }
 .panel-group-label { padding: 2px 8px !important; }
-.grp-bg .panel-group-body { max-width: 280px; flex-wrap: wrap; }
+.grp-bg .panel-group-body { max-width: 320px; flex-wrap: wrap; }
 .s-btn { font-size: 9px !important; padding: 3px 6px !important; }
 
 /* ── STUDIO LAYOUT FIX — camera never covers bottom panel ── */
@@ -4458,11 +4464,11 @@
 .studio-bar { flex-shrink: 0 !important; height: 46px !important; }
 .studio-main { flex: 1 !important; min-height: 0 !important; overflow: hidden !important; }
 /* removed ctrl rule */
-.studio-ctrl-row { max-height: 64px !important; overflow-y: hidden !important; }
+.studio-ctrl-row { max-height: 68px !important; overflow-y: visible !important; overflow-x: auto !important; }
 .panel-group { flex-shrink: 0 !important; }
 .panel-group-body { padding: 3px 8px !important; gap: 4px !important; }
 .panel-group-label { padding: 2px 8px !important; }
-.grp-bg .panel-group-body { max-width: 280px !important; flex-wrap: wrap !important; }
+.grp-bg .panel-group-body { max-width: 320px !important; flex-wrap: wrap !important; }
 .s-btn { font-size: 9px !important; padding: 3px 6px !important; }
 </style>
 <!-- removed:tp-smooth-css -->
@@ -5764,6 +5770,184 @@ window.E_exportTimeline=async function(){
 var AABE=window.AABE||{};
 AABE.dd=function(clip,trackId){if(clip&&E.tracks){var t=E.tracks.find(function(tr){return tr.id===(trackId||'main');});if(t){var pos=t.clips.reduce(function(m,c){return Math.max(m,c.start+c.duration);},0);t.clips.push(Object.assign({},clip,{id:'dd_'+Date.now(),start:pos,trackId:t.id}));E_renderTL&&E_renderTL();}}};
 window.AABE=AABE;
+
+/* ── aabConfirm — reusable confirm dialog ─────────────────────────────── */
+window.aabConfirm = function(msg, onYes, onNo, opts) {
+  opts = opts || {};
+  var title = opts.title || 'Confirm';
+  var yesLabel = opts.yes || 'Confirm';
+  var danger = opts.danger || false;
+  
+  // Remove any existing confirm dialog
+  var old = document.getElementById('aab-confirm-overlay');
+  if (old) old.remove();
+  
+  var overlay = document.createElement('div');
+  overlay.id = 'aab-confirm-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
+  
+  var box = document.createElement('div');
+  box.style.cssText = 'background:#111827;border:.5px solid rgba(255,255,255,.12);border-radius:16px;padding:28px;max-width:380px;width:90%;box-shadow:0 24px 60px rgba(0,0,0,.6);animation:fadeUp .15s ease;';
+  box.innerHTML = 
+    '<div style="font-size:16px;font-weight:700;color:#fff;margin-bottom:10px;">' + title + '</div>' +
+    '<div style="font-size:14px;color:rgba(255,255,255,.6);margin-bottom:22px;line-height:1.6;">' + msg + '</div>' +
+    '<div style="display:flex;gap:10px;justify-content:flex-end;">' +
+    '<button id="aab-confirm-no" style="padding:9px 20px;border-radius:8px;border:.5px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:rgba(255,255,255,.7);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;">Cancel</button>' +
+    '<button id="aab-confirm-yes" style="padding:9px 20px;border-radius:8px;border:none;background:' + (danger ? '#ef4444' : '#00d4ff') + ';color:' + (danger ? '#fff' : '#0a0e1a') + ';font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">' + yesLabel + '</button>' +
+    '</div>';
+  
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  
+  var close = function() { overlay.remove(); };
+  
+  box.querySelector('#aab-confirm-yes').onclick = function() { close(); if (typeof onYes === 'function') onYes(); };
+  box.querySelector('#aab-confirm-no').onclick = function() { close(); if (typeof onNo === 'function') onNo(); };
+  overlay.onclick = function(e) { if (e.target === overlay) { close(); if (typeof onNo === 'function') onNo(); } };
+};
+
+/* ── dash_uploadAsset — upload asset from My Assets tab ─────────────────── */
+window.dash_uploadAsset = function(file, type) {
+  if (!file) return;
+  if (typeof toast === 'function') toast('Uploading ' + (file.name || type) + '...', 'info');
+  if (typeof asset_upload === 'function') {
+    asset_upload(file, type).then(function(a) {
+      if (!a) return;
+      if (typeof toast === 'function') toast('Uploaded: ' + (a.name || file.name), 'ok');
+      // Refresh asset grid
+      if (typeof dash_loadAssets === 'function') dash_loadAssets();
+    }).catch(function(e) {
+      if (typeof toast === 'function') toast('Upload failed: ' + e.message, 'error');
+    });
+  } else {
+    // Fallback: read as dataURL and save locally
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      var asset = {
+        id: 'asset_' + Date.now(),
+        name: file.name,
+        type: type || file.type.split('/')[0],
+        size: file.size,
+        dataUrl: ev.target.result,
+        url: ev.target.result,
+        createdAt: new Date().toISOString()
+      };
+      var assets = [];
+      try { assets = JSON.parse(localStorage.getItem('aab_global_assets') || '[]'); } catch(e) {}
+      assets.unshift(asset);
+      localStorage.setItem('aab_global_assets', JSON.stringify(assets.slice(0, 50)));
+      if (window.PROJECT) {
+        if (!PROJECT.assets) PROJECT.assets = [];
+        PROJECT.assets.unshift(asset);
+        if (typeof ap_save === 'function') ap_save(true);
+      }
+      if (typeof toast === 'function') toast('Saved: ' + file.name, 'ok');
+      // Refresh asset grid if visible
+      var grid = document.getElementById('dash-assets-grid');
+      if (grid) dash_loadAssets && dash_loadAssets();
+    };
+    reader.readAsDataURL(file);
+  }
+};
+
+/* ── dash_loadAssets — load assets into My Assets grid ─────────────────── */
+window.dash_loadAssets = function() {
+  var grid = document.getElementById('dash-assets-grid');
+  if (!grid) return;
+  var assets = [];
+  try { assets = JSON.parse(localStorage.getItem('aab_global_assets') || '[]'); } catch(e) {}
+  if (window.PROJECT && PROJECT.assets) assets = PROJECT.assets.concat(assets);
+  // Deduplicate by id
+  var seen = {}; assets = assets.filter(function(a){ if(!a||seen[a.id])return false; seen[a.id]=1; return true; });
+  
+  if (!assets.length) {
+    grid.innerHTML = '<div style="color:var(--muted);font-size:13px;grid-column:1/-1;padding:24px 0;text-align:center;">No assets yet — upload files above</div>';
+    return;
+  }
+  grid.innerHTML = '';
+  assets.forEach(function(a) {
+    var card = document.createElement('div');
+    card.style.cssText = 'background:#fff;border:.5px solid var(--bdr);border-radius:10px;overflow:hidden;position:relative;';
+    var thumb = a.type === 'image' || a.type === 'video' 
+      ? (a.type === 'image' ? '<img src="' + (a.url||a.dataUrl) + '" style="width:100%;height:100px;object-fit:cover;display:block;">' 
+          : '<video src="' + (a.url||a.dataUrl) + '" style="width:100%;height:100px;object-fit:cover;display:block;" muted></video>')
+      : '<div style="height:100px;display:flex;align-items:center;justify-content:center;font-size:32px;background:#f1f5f9;">' + (a.type==='audio'||a.type==='sfx'?'🎵':'📄') + '</div>';
+    card.innerHTML = thumb +
+      '<div style="padding:8px;">' +
+      '<div style="font-size:12px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (a.name||'Asset') + '</div>' +
+      '<div style="font-size:10px;color:var(--muted2);margin-top:2px;">' + (a.type||'file') + '</div>' +
+      '</div>' +
+      '<button onclick="dash_deleteAsset('' + a.id + '')" style="position:absolute;top:4px;right:4px;background:rgba(239,68,68,.8);border:none;border-radius:50%;width:20px;height:20px;color:#fff;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;">×</button>';
+    grid.appendChild(card);
+  });
+};
+
+window.dash_deleteAsset = function(id) {
+  aabConfirm('Delete this asset?', function() {
+    var assets = [];
+    try { assets = JSON.parse(localStorage.getItem('aab_global_assets') || '[]'); } catch(e) {}
+    assets = assets.filter(function(a){ return a && a.id !== id; });
+    localStorage.setItem('aab_global_assets', JSON.stringify(assets));
+    if (window.PROJECT && PROJECT.assets) {
+      PROJECT.assets = PROJECT.assets.filter(function(a){ return a && a.id !== id; });
+      if (typeof ap_save === 'function') ap_save(true);
+    }
+    if (typeof dash_loadAssets === 'function') dash_loadAssets();
+    if (typeof toast === 'function') toast('Asset deleted', 'ok');
+  }, null, {title:'Delete Asset', yes:'Delete', danger:true});
+};
+
+/* ── dash_loadVideos — load recorded + AI videos into My Videos grid ────── */
+window.dash_loadVideos = function() {
+  var grid = document.getElementById('dash-videos-grid');
+  if (!grid) return;
+  var videos = [];
+  // Gather from all projects
+  var projects = [];
+  try { projects = JSON.parse(localStorage.getItem('aab_projects') || '[]'); } catch(e) {}
+  projects.forEach(function(p) {
+    if (!p) return;
+    // Recorded clips
+    var meta = p.clipsMeta || {};
+    Object.keys(meta).forEach(function(k) {
+      var c = meta[k];
+      if (c && c.recorded) videos.push({type:'recording', projectTitle:p.title||'My Video', sceneNum:c.sceneIdx||0, duration:c.duration||0, name:'Scene '+(c.sceneIdx||'?')+' — '+p.title});
+    });
+    // AI clips  
+    var aiMeta = p.aiClipsMeta || {};
+    Object.keys(aiMeta).forEach(function(k) {
+      var c = aiMeta[k];
+      if (c) videos.push({type:'ai-presenter', projectTitle:p.title||'My Video', sceneNum:c.sceneNum||0, url:c.url, name:'AI Scene '+(c.sceneNum||'?')+' — '+p.title});
+    });
+  });
+  
+  if (!videos.length) {
+    grid.innerHTML = '<div style="color:rgba(255,255,255,.3);font-size:13px;grid-column:1/-1;padding:24px 0;text-align:center;">No videos yet — record scenes or generate AI videos first</div>';
+    return;
+  }
+  grid.innerHTML = videos.map(function(v) {
+    var icon = v.type === 'ai-presenter' ? '🤖' : '🎥';
+    var badge = v.type === 'ai-presenter' ? 'AI' : 'REC';
+    var badgeColor = v.type === 'ai-presenter' ? '#00d4ff' : '#ef4444';
+    return '<div style="background:rgba(255,255,255,.04);border:.5px solid rgba(255,255,255,.1);border-radius:10px;overflow:hidden;">' +
+      '<div style="height:100px;background:linear-gradient(135deg,#0f172a,#1e3a5f);display:flex;align-items:center;justify-content:center;font-size:32px;position:relative;">' + icon +
+      '<span style="position:absolute;top:6px;right:6px;background:' + badgeColor + ';color:' + (v.type==='ai-presenter'?'#000':'#fff') + ';font-size:9px;font-weight:800;padding:2px 6px;border-radius:8px;">' + badge + '</span></div>' +
+      '<div style="padding:10px;"><div style="font-size:12px;font-weight:600;color:var(--aab-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + v.name + '</div>' +
+      (v.duration ? '<div style="font-size:10px;color:var(--aab-text2);margin-top:2px;">' + Math.round(v.duration) + 's</div>' : '') + '</div></div>';
+  }).join('');
+};
+
+window.dash_filterVideos = function(filter, btn) {
+  document.querySelectorAll('.dash-vid-filter').forEach(function(b){b.classList.remove('on');});
+  if(btn) btn.classList.add('on');
+  if (typeof dash_loadVideos === 'function') dash_loadVideos();
+};
+
+window.dash_filterAssets = function(type, btn) {
+  document.querySelectorAll('.dash-asset-filter').forEach(function(b){b.classList.remove('on');});
+  if(btn) btn.classList.add('on');
+  if (typeof dash_loadAssets === 'function') dash_loadAssets();
+};
 
 /* ── AABE Extended Methods — wires all Edit Suite buttons ─────────────────── */
 (function(){
