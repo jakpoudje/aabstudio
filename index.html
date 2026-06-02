@@ -8426,10 +8426,6 @@ window.ap_setTpSettings = function(settings) {
     function requiresPaid(pg) { return PAID_PAGES.indexOf(pg) > -1; }
 
     function nav(pg) {
-      // Save project state before navigating  
-      if (window.PROJECT && typeof saveProject === 'function') {
-        try { saveProject(); } catch(e) {}
-      }
       // Auth gate
       if (requiresLogin(pg) && !APP.user) {
         nav('auth-pg');
@@ -8706,7 +8702,13 @@ window.dashNav = dashNav;
 function renderProjectList() {
   var grid = document.getElementById('proj-list');
   if (!grid) return;
-  var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+  var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]').filter(Boolean);
+  // Fix any projects with null ids
+  projects = projects.map(function(p) {
+    if (!p.id) { p.id = 'proj_' + Date.now() + '_' + Math.random().toString(36).slice(2,6); }
+    return p;
+  });
+  if (projects.length) localStorage.setItem('aab_projects', JSON.stringify(projects));
   if (!projects.length) {
     grid.innerHTML = '<div style="text-align:center;padding:40px;color:#9ca3af;">No projects yet. <a onclick="newProject&&newProject()" style="color:#06b6d4;cursor:pointer;">Create one →</a></div>';
     return;
@@ -16143,41 +16145,30 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
 <script id="aab-master-script">
 /* ── Direct Supabase scene/project backup ─────────────────────── */
 window._saveScenesToSupabase = function(proj) {
-  var uid = window.APP && window.APP.user && window.APP.user.id;
-  if (!uid) return;
-  var SUPA = 'https://phjlxkyloafogznhyyig.supabase.co';
-  var KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBoamx4a3lsb2Fmb2d6bmh5eWlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc4MzUxMjEsImV4cCI6MjA2MzQxMTEyMX0.v-sRKSZLHYMY6RuTrPdN7l6NuKuTm1dh-1WwMUFjepA';
-  var tok = window._sbSession && window._sbSession.access_token ? window._sbSession.access_token : KEY;
-  
-  // Strip large binary data before saving
-  var light = JSON.parse(JSON.stringify(proj));
+  if (!window.APP || !window.APP.user) return;
+  var API = 'https://aabstudio-production.up.railway.app';
+  var light = JSON.parse(JSON.stringify(proj || window.PROJECT));
+  // Strip blobs
+  if (light.clips) Object.keys(light.clips).forEach(function(k) {
+    if (light.clips[k] && light.clips[k].url && light.clips[k].url.startsWith('blob:')) light.clips[k].url = null;
+  });
   if (light.assets) light.assets = light.assets.map(function(a) {
     return { id: a.id, name: a.name, type: a.type, url: a.url || null };
   });
-  if (light.clips) Object.keys(light.clips).forEach(function(k) {
-    var c = light.clips[k];
-    if (c && c.url && c.url.startsWith('blob:')) c.url = null;
-  });
-  
-  fetch(SUPA + '/rest/v1/user_projects', {
+  fetch(API + '/api/save-project', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'apikey': KEY,
-      'Authorization': 'Bearer ' + tok,
-      'Prefer': 'resolution=merge-duplicates'
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      user_id: uid,
-      project_id: proj.id,
-      title: proj.title || 'Untitled',
-      data: JSON.stringify(light),
-      updated_at: new Date().toISOString()
+      userId: window.APP.user.id,
+      projectId: light.id,
+      title: light.title || 'Untitled',
+      data: light
     })
   }).then(function(r) {
-    if (!r.ok) r.text().then(function(t) { console.warn('Supabase save:', r.status, t.slice(0,80)); });
-  }).catch(function(e) { console.warn('Supabase save error:', e.message); });
+    if (!r.ok) r.text().then(function(t) { console.warn('Save failed:', r.status, t.slice(0,60)); });
+  }).catch(function(e) { console.warn('Save error:', e.message); });
 };
+
 
 /* ── syncProjectToCloud via Supabase REST directly ─────────────── */
 window.syncProjectToCloud = window.syncProjectToCloud || function(proj) {
