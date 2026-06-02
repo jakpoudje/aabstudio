@@ -5636,8 +5636,12 @@ setTimeout(function(){
       // If on home/auth page, navigate to dashboard
       var active=document.querySelector('.pg.on');
       if(active&&(active.id==='home'||active.id==='auth-pg')){
-        if(typeof loadDashboard==='function')loadDashboard();
-        nav('dashboard-pg');
+        // Only go to dashboard if not already on another page
+        var _curPg2 = document.querySelector('.pg.on,.pg-full.on');
+        if (!_curPg2 || _curPg2.id === 'dashboard-pg') {
+          if(typeof loadDashboard==='function')loadDashboard();
+          nav('dashboard-pg');
+        }
         setTimeout(function(){
           var lid=localStorage.getItem('aab_last_project');
           if(lid){var ps=JSON.parse(localStorage.getItem('aab_projects')||'[]');var lp=ps.find(function(x){return x.id===lid;});if(lp)window.PROJECT=lp;}
@@ -11638,9 +11642,14 @@ function loadDashboard() {
               var push = typeof pushAllLocalProjectsToCloud === 'function' ? pushAllLocalProjectsToCloud() : Promise.resolve();
               return push;
             }).catch(function() {}).then(function() {
-              if (typeof loadDashboard === 'function') loadDashboard();
-              nav('dashboard-pg');
-              setTimeout(function(){ if(typeof renderProjectList==='function') renderProjectList(); }, 400);
+              // Only refresh dashboard if user is already on it — don't interrupt other pages
+              var curPg = document.querySelector('.pg.on, .pg-full.on');
+              var curId = curPg ? curPg.id : '';
+              if (curId === 'dashboard-pg' || curId === '') {
+                if (typeof loadDashboard === 'function') loadDashboard();
+                nav('dashboard-pg');
+                setTimeout(function(){ if(typeof renderProjectList==='function') renderProjectList(); }, 400);
+              }
             });
           }, 600);
         }
