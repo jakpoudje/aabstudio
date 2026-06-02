@@ -8703,12 +8703,20 @@ function renderProjectList() {
   var grid = document.getElementById('proj-list');
   if (!grid) return;
   var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]').filter(Boolean);
-  // Fix any projects with null ids
+  // Fix null ids but only assign unique ones
+  var needsSave = false;
   projects = projects.map(function(p) {
-    if (!p.id) { p.id = 'proj_' + Date.now() + '_' + Math.random().toString(36).slice(2,6); }
+    if (!p.id) { p.id = 'proj_' + Date.now() + '_' + Math.random().toString(36).slice(2,6); needsSave = true; }
     return p;
   });
-  if (projects.length) localStorage.setItem('aab_projects', JSON.stringify(projects));
+  // Remove exact duplicates (same id)
+  var seenIds = {};
+  projects = projects.filter(function(p) {
+    if (seenIds[p.id]) return false;
+    seenIds[p.id] = true;
+    return true;
+  });
+  if (needsSave) localStorage.setItem('aab_projects', JSON.stringify(projects));
   if (!projects.length) {
     grid.innerHTML = '<div style="text-align:center;padding:40px;color:#9ca3af;">No projects yet. <a onclick="newProject&&newProject()" style="color:#06b6d4;cursor:pointer;">Create one →</a></div>';
     return;
