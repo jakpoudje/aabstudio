@@ -8833,12 +8833,60 @@ window.ap_load = function(projectId) {
 
   if (proj) {
     // Merge into default to ensure all keys exist
-    window.PROJECT = Object.assign(_defaultProject(), proj);
-    // Restore clip metadata (blobs are gone after reload, but metadata survives)
-    if (!PROJECT.clips) PROJECT.clips = {};
+    var defaults = _defaultProject();
+    window.PROJECT = Object.assign(defaults, proj);
+    
+    // ── Restore ALL paid/credit-consuming data ─────────────────────
+    // NEVER lose: scenes, script, AI video URLs, recorded clip metadata
+    
+    // Restore scenes with full data (narration, videoUrls, status)
+    if (!PROJECT.scenes) PROJECT.scenes = [];
+    // Ensure each scene has all required fields
+    PROJECT.scenes = PROJECT.scenes.map(function(sc) {
+      return Object.assign({ status: 'draft', duration: 8, assets: [] }, sc);
+    });
+    
+    // Restore AI clip URLs from aiClipsMeta → aiClips
     if (!PROJECT.aiClips) PROJECT.aiClips = {};
-    if (!PROJECT.assets) PROJECT.assets = [];
+    if (proj.aiClipsMeta) {
+      Object.keys(proj.aiClipsMeta).forEach(function(k) {
+        var meta = proj.aiClipsMeta[k];
+        if (meta) {
+          PROJECT.aiClips[k] = Object.assign({}, meta);
+          // Also update scene videoUrl if we have it
+          var sceneIdx = parseInt(k);
+          if (!isNaN(sceneIdx) && PROJECT.scenes[sceneIdx]) {
+            if (meta.url && !PROJECT.scenes[sceneIdx].videoUrl) {
+              PROJECT.scenes[sceneIdx].videoUrl = meta.url;
+              PROJECT.scenes[sceneIdx].apsVideoUrl = meta.url;
+            }
+          }
+        }
+      });
+    }
+    
+    // Restore apsVideos (AI presenter generated videos)
+    if (!PROJECT.apsVideos) PROJECT.apsVideos = {};
+    if (proj.apsVideos) PROJECT.apsVideos = proj.apsVideos;
+    
+    // Restore clip metadata
+    if (!PROJECT.clips) PROJECT.clips = {};
+    if (proj.clipsMeta) {
+      Object.keys(proj.clipsMeta).forEach(function(k) {
+        if (!PROJECT.clips[k]) PROJECT.clips[k] = proj.clipsMeta[k];
+      });
+    }
+    
+    // Restore timeline
     if (!PROJECT.timeline) PROJECT.timeline = { tracks: [], duration: 0, zoom: 60 };
+    if (!PROJECT.assets) PROJECT.assets = [];
+    
+    // Restore status — critical for guard checks
+    if (!PROJECT.status && PROJECT.scenes.length > 0) PROJECT.status = 'segmented';
+    
+    // Restore script
+    if (!PROJECT.script && proj.script) PROJECT.script = proj.script;
+    
     localStorage.setItem('aab_active_project_id', PROJECT.id);
     return PROJECT;
   }
@@ -8888,7 +8936,28 @@ window.ap_open = function(projectId) {
   }
   window.PROJECT = proj;
 
-  // Navigate to script page — bypass auth gate if already logged in
+  // Navigate to the CORRECT page based on project state — never reset paid work
+  localStorage.setItem('aab_active_project_id', proj.id);
+  
+  // Determine where to navigate based on project completion status
+  var hasScenes = proj.scenes && proj.scenes.length > 0;
+  var hasRecorded = proj.clipsMeta && Object.keys(proj.clipsMeta).length > 0;
+  var hasAI = proj.aiClipsMeta && Object.keys(proj.aiClipsMeta).length > 0;
+  var isSegmented = hasScenes || proj.status === 'segmented' || proj.status === 'recorded' || proj.status === 'exported';
+  
+  if (isSegmented) {
+    // Project has scenes — go to scene board, NOT script page
+    document.querySelectorAll('.pg,.pg-flex,.pg-full').forEach(function(p){ p.classList.remove('on'); });
+    var scenesPg = document.getElementById('scenes-pg');
+    if (scenesPg) {
+      scenesPg.classList.add('on');
+      if (typeof renderSceneBoard === 'function') setTimeout(renderSceneBoard, 50);
+    }
+    if (typeof toast === 'function') toast('✓ Opened: ' + (proj.title || 'Project') + ' — ' + proj.scenes.length + ' scenes', 'ok');
+    return;
+  }
+  
+  // No scenes yet — go to script page
   document.querySelectorAll('.pg,.pg-flex,.pg-full').forEach(function(p){ p.classList.remove('on'); });
   var scriptPg = document.getElementById('script-pg');
   if (scriptPg) {
@@ -9358,6 +9427,23 @@ function renderProjectList() {
     }).join('') + '</div>';
 }
 window.renderProjectList = renderProjectList;
+// confirmResegment — warn user before destroying scenes
+window.confirmResegment = function() {
+  var sceneCount = window.PROJECT && window.PROJECT.scenes ? window.PROJECT.scenes.length : 0;
+  var hasAI = window.PROJECT && window.PROJECT.aiClips && Object.keys(window.PROJECT.aiClips).length > 0;
+  var msg = 'Re-segmenting will replace your ' + sceneCount + ' existing scenes.';
+  if (hasAI) msg += ' Your ' + Object.keys(window.PROJECT.aiClips).length + ' AI-generated videos will be lost — these cost credits to regenerate.';
+  msg += '\n\nAre you sure?';
+  aabConfirm(msg, function() {
+    if (window.PROJECT) {
+      window.PROJECT.status = 'draft';
+      window.PROJECT.scenes = [];
+    }
+    nav('script-pg');
+  }, null, {title: 'Re-segment Script?', yes: 'Yes, re-segment', danger: true});
+};
+
+
 
 // ── aabConfirm — global confirm dialog ─────────────────────────────────
 window.aabConfirm = function(msg, onYes, onNo, opts) {
@@ -9778,6 +9864,63 @@ function loadDashboard() {
         });
       }
       delete light.clips; // blob URLs can't be serialised
+      
+      // ── CRITICAL: Preserve all paid/credit-consuming data ──────────
+      // These must NEVER be stripped — losing them forces users to repay
+      light.status = PROJECT.status || light.status || 'draft';
+      light.script = PROJECT.script || light.script || '';
+      // Preserve AI presenter video URLs (HeyGen costs credits)
+      if (PROJECT.apsVideos && Object.keys(PROJECT.apsVideos).length > 0) {
+        light.apsVideos = PROJECT.apsVideos;
+      }
+      // Preserve APS scene data with video URLs
+      if (PROJECT.scenes && PROJECT.scenes.length > 0) {
+        // Ensure each scene's videoUrl, apsVideoUrl and status are saved
+        light.scenes = PROJECT.scenes.map(function(sc) {
+          return Object.assign({}, sc, {
+            // Keep narration text (never strip)
+            narration: sc.narration || '',
+            // Keep AI video URLs (never strip — costs credits to regenerate)
+            videoUrl: sc.videoUrl || sc.apsVideoUrl || null,
+            apsVideoUrl: sc.apsVideoUrl || sc.videoUrl || null,
+            // Keep status (recorded/done/draft)
+            status: sc.status || 'draft',
+            // Keep duration
+            duration: sc.duration || 8
+          });
+        });
+      }
+      // Preserve AI clip metadata with video URLs
+      if (PROJECT.aiClips && Object.keys(PROJECT.aiClips).length > 0) {
+        light.aiClipsMeta = {};
+        Object.keys(PROJECT.aiClips).forEach(function(k) {
+          var c = PROJECT.aiClips[k];
+          if (c) light.aiClipsMeta[k] = {
+            sceneId: c.sceneId, sceneNum: c.sceneNum, sceneName: c.sceneName,
+            duration: c.duration, source: c.source, provider: c.provider,
+            generatedAt: c.generatedAt,
+            // Preserve actual video URL — costs credits to regenerate!
+            url: (c.url && !c.url.startsWith('blob:')) ? c.url : null,
+            videoUrl: (c.videoUrl && !c.videoUrl.startsWith('blob:')) ? c.videoUrl : null,
+            heygen_url: c.heygen_url || null
+          };
+        });
+      }
+      // Preserve timeline tracks (edit work)
+      if (window.E && window.E.tracks && window.E.tracks.length > 0) {
+        light.timeline = light.timeline || {};
+        light.timeline.tracks = window.E.tracks.map(function(t) {
+          return Object.assign({}, t, {
+            clips: (t.clips || []).map(function(c) {
+              return Object.assign({}, c, {
+                // Keep cloud URLs, strip blob URLs
+                url: (c.url && !c.url.startsWith('blob:')) ? c.url : null
+              });
+            })
+          });
+        });
+        light.timeline.duration = typeof E_dur === 'function' ? E_dur() : (light.timeline.duration || 0);
+      }
       // Save aiClips metadata (without blob URLs)
       if (PROJECT.aiClips) {
         light.aiClipsMeta = {};
@@ -9991,6 +10134,7 @@ function loadDashboard() {
         if (prog) prog.style.width = '100%';
         PROJECT.scenes = data.scenes;
         PROJECT.title = data.title || title;
+        PROJECT.status = 'segmented'; // Mark so we never re-segment
         var ss = document.getElementById('s-scenes'); if (ss) ss.textContent = data.totalScenes || data.scenes.length;
         var sd = document.getElementById('s-dur'); if (sd) sd.textContent = data.estimatedDuration || '—';
         saveProject();
@@ -10004,6 +10148,7 @@ function loadDashboard() {
         if (fallbackScenes.length) {
           PROJECT.scenes = fallbackScenes;
           PROJECT.title = title;
+          PROJECT.status = 'segmented';
           steps.forEach(function (id) { var el = document.getElementById(id); if (el) { el.classList.remove('run'); el.classList.add('done'); } });
           if (prog) prog.style.width = '100%';
           saveProject();
@@ -14513,6 +14658,7 @@ function aps_loadSavedPhotos() {
             if (statD.done && statD.videoUrl) {
               sc.status = 'done';
               sc.videoUrl = statD.videoUrl;
+              ap_save(true); // Save immediately — AI video URL costs credits
               APS.results[sc.id] = statD.videoUrl;
               try { aps_updateSceneRow(sc); } catch(e2) {}
               try { aps_addClipToBar(sc); } catch(e2) {}
@@ -17537,9 +17683,17 @@ function supaLoadProjects(){
     return (rows||[]).map(function(row){
       if(row.project_data){
         try{
-          var p=JSON.parse(row.project_data);
-          // Ensure status/scenes/scripts all present
-          if(!p.id)p.id=row.id;
+          var p = typeof row.project_data === 'string' ? JSON.parse(row.project_data) : row.project_data;
+          if(!p.id) p.id = row.id;
+          // Restore status from DB row if not in data
+          if(!p.status && row.status) p.status = row.status;
+          // Restore AI video URLs from aiClipsMeta
+          if(p.aiClipsMeta && !p.aiClips) {
+            p.aiClips = {};
+            Object.keys(p.aiClipsMeta).forEach(function(k){
+              p.aiClips[k] = p.aiClipsMeta[k];
+            });
+          }
           return p;
         }catch(e){}
       }
