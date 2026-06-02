@@ -8749,28 +8749,42 @@ function _defaultProject() {
 }
 
 // ── Ensure PROJECT is always the global active project ───────────────────
-// Guard: only create a default project if this is a genuinely fresh session.
-// Chrome bfcache causes inline scripts to re-run on back-navigation, which
-// would otherwise call _defaultProject() again (new Date.now() ID = new project).
+// Use sessionStorage to track the session project ID — prevents bfcache 
+// re-runs from creating new default projects with new timestamps.
 if (!window.PROJECT || !window.PROJECT.id) {
-  // Check if we have a saved active project to restore first
-  var _existingId = localStorage.getItem('aab_active_project_id');
+  var _existingId = localStorage.getItem('aab_active_project_id') || sessionStorage.getItem('aab_session_project_id');
   var _existingProjects = [];
   try { _existingProjects = JSON.parse(localStorage.getItem('aab_projects') || '[]'); } catch(e) {}
+  if (!Array.isArray(_existingProjects)) _existingProjects = [];
   var _existingProj = _existingId ? _existingProjects.find(function(p){ return p && p.id === _existingId; }) : null;
   if (_existingProj) {
     window.PROJECT = Object.assign(_defaultProject(), _existingProj);
-  } else if (_existingProjects.length > 0 && _existingProjects[0]) {
-    // Fall back to most recent project
+  } else if (_existingProjects.length > 0 && _existingProjects[0] && _existingProjects[0].id) {
     window.PROJECT = Object.assign(_defaultProject(), _existingProjects[0]);
   } else {
+    // Truly fresh — no existing projects at all
     window.PROJECT = _defaultProject();
+    // Mark as "new project not yet saved" — don't auto-save until user does something
+    window.PROJECT._isNew = true;
   }
+}
+// Track session project to survive bfcache
+if (window.PROJECT && window.PROJECT.id) {
+  try { sessionStorage.setItem('aab_session_project_id', window.PROJECT.id); } catch(e) {}
 }
 
 // ── ap_save — Save the active project (localStorage immediately, cloud async) ─
 window.ap_save = function(silent) {
   if (!window.PROJECT) return;
+  // CRITICAL: Don't save a brand-new empty project — this creates ghost projects.
+  // Only save if the project has actual content (title changed, script, or scenes).
+  var hasContent = (PROJECT.title && PROJECT.title !== 'My Video') ||
+                   (PROJECT.script && PROJECT.script.length > 10) ||
+                   (PROJECT.scenes && PROJECT.scenes.length > 0) ||
+                   (PROJECT.clips && Object.keys(PROJECT.clips).length > 0) ||
+                   (PROJECT.aiClips && Object.keys(PROJECT.aiClips).length > 0);
+  if (!hasContent && PROJECT._isNew) return; // Skip empty new projects
+  PROJECT._isNew = false; // Once saved, no longer new
   PROJECT.updatedAt = new Date().toISOString();
 
   // Show save indicator
@@ -9081,10 +9095,15 @@ window._safeFetch = async function(url, opts, timeoutMs) {
     // APP STATE
     // ══════════════════════════════════════════════════════════════════════════════
     var APP = { user: null, credits: 0, plan: 'free' } // plans: free, creator, studio;
-    // NOTE: window.PROJECT is already set by the Active Project System above (with restored data).
-    // We just reference it here as a local alias — do NOT overwrite with a blank object.
-    // var PROJECT was removed to prevent shadowing window.PROJECT with a fresh blank object on every script parse.
-    if (!window.PROJECT || !window.PROJECT.id) { window.PROJECT = window._defaultProject ? window._defaultProject() : { id: 'proj_' + Date.now(), title: 'My Video', mode: 'studio', script: '', wpm: 150, sceneDuration: 8, scenes: [], assets: [], clips: {} }; }
+    // Reference window.PROJECT as local alias — NEVER overwrite
+    if (!window.PROJECT || !window.PROJECT.id) {
+      // ap_restore should have set this — if not, load from localStorage
+      var _lid = localStorage.getItem('aab_active_project_id');
+      var _lps = []; try { _lps = JSON.parse(localStorage.getItem('aab_projects')||'[]'); } catch(e) {}
+      var _lp = _lid ? _lps.find(function(p){return p&&p.id===_lid;}) : (_lps[0]||null);
+      if (_lp) { window.PROJECT = Object.assign(window._defaultProject ? window._defaultProject() : {}, _lp); }
+      else { window.PROJECT = window._defaultProject ? window._defaultProject() : { id: 'proj_' + Date.now(), title: 'My Video', scenes: [], assets: [], clips: {} }; window.PROJECT._isNew = true; }
+    }
     var PROJECT = window.PROJECT;
     var STUDIO = { stream: null, mr: null, chunks: [], recording: false, camOn: false, micOn: false, recTimer: null, recSecs: 0, analyser: null, currentScene: 0, tpAuto: false, tpSpeed: 80, adaptive: false, recognition: null, overlayPos: 'pip-right', drawActive: false, drawMode: 'pen', drawColor: '#00d4ff', drawCtx: null, isDrawing: false, sx: 0, sy: 0, snap: null, elapsed: 0, elTimer: null, mirrored: false, focusMode: false };
     var TP = { playing: false, speed: 80, fontSize: 28, mirrored: false, adaptive: false, recognition: null, scrollTimer: null, currentWord: 0, totalWords: 0, theme: 'dark', remoteId: null, remotePoll: null, remoteLastCmd: null };
@@ -17662,7 +17681,7 @@ function supaUpsertProject(proj){
         headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
         body:JSON.stringify({id:proj.id,user_id:payload.user_id,project_data:payload.project_data,updated_at:payload.updated_at})
       }).catch(function(){});
-    });
+    }
   }).catch(function(){});
 }
 
