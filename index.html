@@ -5995,516 +5995,233 @@ window.E_deleteSelected = E_deleteSelected;
 window.E_razorAt = E_razorAt;
 window.E_clearMarkers = E_clearMarkers;
 
-/* ══════════════════════════════════════════════════════════════════
-   COMPREHENSIVE BUTTON FIXES — Every broken button now wired
-   ══════════════════════════════════════════════════════════════════ */
+})(); // close edit engine IIFE
 
-/* ── Copy/Duplicate Project ──────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════
+   AABStudio Master Extensions — all additional functions as top-level
+   ══════════════════════════════════════════════════════════════════════ */
+
+// Copy/Duplicate Project
 window.copyProject = window.duplicateProject = function(projectId) {
-  var projects = [];
-  try { projects = JSON.parse(localStorage.getItem('aab_projects')||'[]'); } catch(e) {}
+  var projects = []; try { projects = JSON.parse(localStorage.getItem('aab_projects')||'[]'); } catch(e) {}
   var src = projects.find(function(p){ return p && p.id === projectId; });
   if (!src) { if(typeof toast==='function') toast('Project not found','error'); return; }
   var copy = JSON.parse(JSON.stringify(src));
   copy.id = 'proj_' + Date.now() + '_copy';
   copy.title = (copy.title || 'My Video') + ' (Copy)';
   copy.createdAt = new Date().toISOString();
-  copy.updatedAt = new Date().toISOString();
   projects.unshift(copy);
-  localStorage.setItem('aab_projects', JSON.stringify(projects.slice(0, 30)));
-  if (typeof loadDashboard === 'function') loadDashboard();
-  if (typeof toast === 'function') toast('Project duplicated: ' + copy.title, 'ok');
+  localStorage.setItem('aab_projects', JSON.stringify(projects.slice(0,30)));
+  if(typeof loadDashboard==='function') loadDashboard();
+  if(typeof toast==='function') toast('Duplicated: ' + copy.title, 'ok');
 };
 
-/* ── Studio TP functions — ensure all are defined and wired ──────── */
+// setTpBg — set teleprompter background on BOTH pages
 window.setTpBg = function(color) {
-  // Studio TP elements
-  var panel = document.getElementById('studio-tp-panel');
-  if (panel) panel.style.background = color;
-  var tpBody = document.getElementById('tp-body');
-  if (tpBody) tpBody.style.background = color;
-  var studioTp = document.querySelector('#studio-tp');
-  if (studioTp) studioTp.style.background = color;
-  // Standalone TP elements
-  var tpDisplay = document.getElementById('tp-display-screen');
-  if (tpDisplay) tpDisplay.style.background = color;
-  var tpPg = document.getElementById('teleprompter-pg');
-  if (tpPg && tpPg.classList.contains('on')) tpPg.style.background = color;
-  var tpText = document.getElementById('tp-text');
-  if (tpText) tpText.style.background = color;
-  // Update TP state
-  if (window.TP) TP.bg = color;
-  // Save preference
-  if (window.PROJECT) { if(!PROJECT.tpSettings)PROJECT.tpSettings={}; PROJECT.tpSettings.bg=color; if(typeof ap_save==='function')ap_save(true); }
+  ['studio-tp-panel','tp-body','studio-tp','tp-display-screen','tp-text','tp-setup-screen'].forEach(function(id){
+    var el = document.getElementById(id); if(el) el.style.background = color;
+  });
+  var tpPg = document.getElementById('teleprompter-pg'); if(tpPg) tpPg.style.background = color;
+  if(window.TP) TP.bg = color;
+  if(window.PROJECT){ if(!PROJECT.tpSettings)PROJECT.tpSettings={}; PROJECT.tpSettings.bg=color; }
 };
 
-
-/* ══════════════════════════════════════════════════════════════════════
-   MASTER TELEPROMPTER FIX — All TP buttons fully functional
-   ══════════════════════════════════════════════════════════════════════ */
-
-// Helper: get the active TP text container (works for both pages)
-function _getTpContainer() {
-  return document.getElementById('tp-body') ||       // studio TP
-         document.getElementById('tp-text') ||        // standalone TP
-         document.getElementById('tp-display-screen');
-}
-function _getTpPage() {
-  return document.getElementById('teleprompter-pg') ||
-         document.getElementById('studio-tp-panel');
-}
-
-// ── setTpBg — Background colour (studio colour swatches + standalone theme) ──
-window.setTpBg = function(color) {
-  // Studio TP
-  ['studio-tp-panel','tp-body','studio-tp'].forEach(function(id){
-    var el = document.getElementById(id);
-    if (el) el.style.background = color;
-  });
-  // Standalone TP
-  ['tp-display-screen','tp-text','tp-setup-screen'].forEach(function(id){
-    var el = document.getElementById(id);
-    if (el) el.style.background = color;
-  });
-  var tpPg = document.getElementById('teleprompter-pg');
-  if (tpPg) tpPg.style.background = color;
-  if (window.TP) TP.bg = color;
-  if (window.PROJECT) { if(!PROJECT.tpSettings)PROJECT.tpSettings={}; PROJECT.tpSettings.bg=color; }
-};
-
-// ── Font size ──────────────────────────────────────────────────────────
+// Font size — works on both TP pages
 window.increaseTpFont = function() {
   var cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tp-font-size-px')||'22');
-  cur = Math.min(56, cur + 2);
+  cur = Math.min(56, cur+2);
   document.documentElement.style.setProperty('--tp-font-size', cur+'px');
-  document.documentElement.style.setProperty('--tp-font-size-px', cur);
-  // Also resize the tp-cur element in studio
-  var tpCur = document.getElementById('tp-cur');
-  if (tpCur) tpCur.style.fontSize = cur + 'px';
-  var tpText = document.getElementById('tp-text');
-  if (tpText) tpText.style.fontSize = cur + 'px';
-  if (window.TP) TP.fontSize = cur;
+  document.documentElement.style.setProperty('--tp-font-size-px', String(cur));
+  ['tp-cur','tp-text','tp-body'].forEach(function(id){ var el=document.getElementById(id); if(el) el.style.fontSize=cur+'px'; });
+  if(window.TP) TP.fontSize=cur;
 };
 window.decreaseTpFont = function() {
   var cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tp-font-size-px')||'22');
-  cur = Math.max(12, cur - 2);
+  cur = Math.max(12, cur-2);
   document.documentElement.style.setProperty('--tp-font-size', cur+'px');
-  document.documentElement.style.setProperty('--tp-font-size-px', cur);
-  var tpCur = document.getElementById('tp-cur');
-  if (tpCur) tpCur.style.fontSize = cur + 'px';
-  var tpText = document.getElementById('tp-text');
-  if (tpText) tpText.style.fontSize = cur + 'px';
-  if (window.TP) TP.fontSize = cur;
+  document.documentElement.style.setProperty('--tp-font-size-px', String(cur));
+  ['tp-cur','tp-text','tp-body'].forEach(function(id){ var el=document.getElementById(id); if(el) el.style.fontSize=cur+'px'; });
+  if(window.TP) TP.fontSize=cur;
 };
 
-// ── Mirror ─────────────────────────────────────────────────────────────
+// Mirror — works on both pages
 window.toggleMirror = function() {
-  // Mirror ALL TP text containers
   ['tp-body','tp-cur','tp-text','tp-display-screen'].forEach(function(id){
-    var el = document.getElementById(id);
-    if (!el) return;
-    var isMirrored = el.style.transform === 'scaleX(-1)';
-    el.style.transform = isMirrored ? '' : 'scaleX(-1)';
+    var el=document.getElementById(id); if(!el) return;
+    el.style.transform = el.style.transform==='scaleX(-1)' ? '' : 'scaleX(-1)';
   });
-  if (window.TP) TP.mirrored = !TP.mirrored;
-  if (window.STUDIO) STUDIO.mirrored = !STUDIO.mirrored;
-  // Update mirror button label
-  document.querySelectorAll('[onclick*="toggleMirror"]').forEach(function(btn){
-    var txt = btn.textContent || '';
-    if (txt.includes('Mirror')) btn.style.background = (window.TP && TP.mirrored) ? 'rgba(0,212,255,.15)' : '';
-  });
+  if(window.TP) TP.mirrored = !TP.mirrored;
 };
 
-// ── Speed ──────────────────────────────────────────────────────────────
+// Speed
 window.setTpSpd = window.tpSetSpd = function(v) {
-  var val = parseInt(v) || 80;
-  if (window.TP) TP.speed = val;
-  if (window.STUDIO) STUDIO.tpSpeed = val;
-  // Update all speed displays
-  ['tp-spd-val','tp-spd-val2','tp-spd-disp'].forEach(function(id){
-    var el = document.getElementById(id);
-    if (el) el.textContent = val + 'wpm';
-  });
-  // Update range inputs
-  ['tp-spd-range','tp-spd','tp-speed-slider'].forEach(function(id){
-    var el = document.getElementById(id);
-    if (el) el.value = val;
-  });
-  // Restart scroll if active with new speed
-  if (window.TP && TP.playing && TP.scrollTimer) {
-    clearInterval(TP.scrollTimer);
-    _startTpAutoScroll();
-  }
-  if (window.STUDIO_TP && STUDIO_TP.running && STUDIO_TP.timer) {
-    clearInterval(STUDIO_TP.timer);
-    _startStudioTpScroll();
-  }
+  var val=parseInt(v)||80;
+  if(window.TP) TP.speed=val;
+  ['tp-spd-val','tp-spd-disp','tp-spd-val2'].forEach(function(id){ var el=document.getElementById(id); if(el) el.textContent=val+'wpm'; });
+  ['tp-spd','tp-spd-range','tp-speed-slider'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=val; });
 };
 
-// ── Scroll mode ────────────────────────────────────────────────────────
+// Scroll mode
 window.setTpScrollMode = function(mode) {
-  window._tpMode = mode;
-  window._tpScrollMode = mode;
-  // Sync all mode selects
-  ['tp-scroll-mode','tp-mode-sel'].forEach(function(id){
-    var el = document.getElementById(id);
-    if (el && mode) el.value = mode;
-  });
-  if (mode === 'word') {
-    if (typeof tpStartWordByWord === 'function') tpStartWordByWord();
-  } else if (mode === 'manual') {
-    if (typeof tpStopAuto === 'function') tpStopAuto();
-    clearInterval(window._tpAutoTimer);
-  } else if (mode === 'auto') {
-    if (typeof tpStartAuto === 'function') tpStartAuto();
-    else _startTpAutoScroll();
-  }
+  window._tpMode = mode; window._tpScrollMode = mode;
+  ['tp-scroll-mode','tp-mode-sel'].forEach(function(id){ var el=document.getElementById(id); if(el&&mode) el.value=mode; });
+  if(mode==='word' && typeof tpStartWordByWord==='function') tpStartWordByWord();
+  else if(mode==='manual' && typeof tpStopAuto==='function') tpStopAuto();
+  else if(mode==='auto' && window.TP) { TP.playing=true; if(typeof _startTpAutoScroll==='function') _startTpAutoScroll(); }
 };
 
-// ── Reset scroll ────────────────────────────────────────────────────────
+// Reset scroll
 window.resetTpScroll = function() {
-  // Standalone TP
-  var tpText = document.getElementById('tp-text');
-  var tpDisp = document.getElementById('tp-display-screen');
-  if (tpText) tpText.style.transform = 'translateY(0)';
-  if (tpDisp) tpDisp.scrollTop = 0;
-  // Studio TP
-  var studioTp = document.getElementById('tp-body');
-  if (studioTp) studioTp.scrollTop = 0;
-  var tpCur = document.getElementById('tp-cur');
-  if (tpCur) tpCur.textContent = tpCur.dataset.original || tpCur.textContent;
-  // Reset word position
-  if (window._tpWBW) { _tpWBW.currentWord = 0; }
-  if (window.TP) TP.playing = false;
-  // Stop auto scroll
   clearInterval(window._tpAutoTimer);
-  if (window.STUDIO_TP) { STUDIO_TP.running = false; clearInterval(STUDIO_TP.timer); }
-  // Reset play button
-  var playBtn = document.getElementById('tp-play-btn');
-  if (playBtn) { playBtn.textContent = '▶ Play'; playBtn.classList.remove('active','playing'); }
-  var startBtn = document.getElementById('btn-tp-start');
-  if (startBtn) { startBtn.textContent = '▶ Practice'; startBtn.style.background = ''; }
+  if(window.STUDIO_TP){ STUDIO_TP.running=false; clearInterval(STUDIO_TP.timer); }
+  ['tp-text','tp-display-screen'].forEach(function(id){ var el=document.getElementById(id); if(el){ el.style.transform='translateY(0)'; el.scrollTop=0; } });
+  var sb=document.getElementById('tp-body'); if(sb) sb.scrollTop=0;
+  if(window._tpWBW) _tpWBW.currentWord=0;
+  if(window.TP) TP.playing=false;
+  var pb=document.getElementById('tp-play-btn'); if(pb){ pb.textContent='▶ Play'; pb.classList.remove('active'); }
+  var sb2=document.getElementById('btn-tp-start'); if(sb2){ sb2.textContent='▶ Practice'; sb2.style.background=''; }
 };
 
-// ── Auto-scroll helper ──────────────────────────────────────────────────
-function _startTpAutoScroll() {
-  clearInterval(window._tpAutoTimer);
-  var speed = (window.TP && TP.speed) || 80;
-  var container = document.getElementById('tp-display-screen') || document.getElementById('tp-text');
-  if (!container) return;
-  window._tpAutoTimer = setInterval(function() {
-    if (!window.TP || !TP.playing) { clearInterval(window._tpAutoTimer); return; }
-    container.scrollTop += speed / 60;
-  }, 50);
-}
-function _startStudioTpScroll() {
-  clearInterval(window._studioTpTimer);
-  var speed = (window.STUDIO && STUDIO.tpSpeed) || 80;
-  var body = document.getElementById('tp-body');
-  if (!body) return;
-  window.STUDIO_TP = window.STUDIO_TP || {};
-  STUDIO_TP.running = true;
-  window._studioTpTimer = setInterval(function() {
-    if (!STUDIO_TP.running) { clearInterval(window._studioTpTimer); return; }
-    body.scrollTop += speed / 60;
-  }, 50);
-  STUDIO_TP.timer = window._studioTpTimer;
-}
-
-// ── Practice mode (studio) ──────────────────────────────────────────────
+// Practice mode (studio)
 window.startPracticeMode = function() {
-  var btn = document.getElementById('btn-tp-start');
-  window.STUDIO_TP = window.STUDIO_TP || {};
-  if (STUDIO_TP.running) {
-    STUDIO_TP.running = false;
-    clearInterval(STUDIO_TP.timer);
-    clearInterval(window._studioTpTimer);
-    if (btn) { btn.textContent = '▶ Practice'; btn.style.background = ''; }
+  window.STUDIO_TP = window.STUDIO_TP||{};
+  var btn=document.getElementById('btn-tp-start');
+  if(STUDIO_TP.running){
+    STUDIO_TP.running=false; clearInterval(STUDIO_TP.timer);
+    if(btn){ btn.textContent='▶ Practice'; btn.style.background=''; }
   } else {
-    _startStudioTpScroll();
-    if (btn) { btn.textContent = '⏸ Pause'; btn.style.background = 'rgba(0,212,255,.15)'; }
+    STUDIO_TP.running=true;
+    var speed=(window.STUDIO&&STUDIO.tpSpeed)||80;
+    var body=document.getElementById('tp-body');
+    STUDIO_TP.timer=setInterval(function(){ if(!STUDIO_TP.running){clearInterval(STUDIO_TP.timer);return;} if(body) body.scrollTop+=speed/60; },50);
+    if(btn){ btn.textContent='⏸ Pause'; btn.style.background='rgba(0,212,255,.15)'; }
   }
 };
 
-// ── Adaptive mode (studio) ──────────────────────────────────────────────
+// Adaptive mic (studio)
 window.toggleAdaptiveTp = function() {
-  var btn = document.getElementById('btn-adaptive');
-  if (window.STUDIO && STUDIO.adaptive) {
-    STUDIO.adaptive = false;
-    if (STUDIO.recognition) { try { STUDIO.recognition.stop(); } catch(e) {} STUDIO.recognition = null; }
-    if (btn) { btn.textContent = '🎤 Adapt'; btn.style.background = ''; }
-    toast('Adaptive mode off', 'info');
+  var btn=document.getElementById('btn-adaptive');
+  if(window.STUDIO&&STUDIO.adaptive){
+    STUDIO.adaptive=false;
+    if(STUDIO.recognition){try{STUDIO.recognition.stop();}catch(e){}} STUDIO.recognition=null;
+    if(btn){btn.textContent='🎤 Adapt';btn.style.background='';}
+    if(typeof toast==='function') toast('Adaptive OFF','info');
   } else {
-    if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
-      toast('Speech recognition not available in this browser', 'error'); return;
-    }
-    if (window.STUDIO) STUDIO.adaptive = true;
-    if (btn) { btn.textContent = '🎤 Adapt: ON'; btn.style.background = 'rgba(0,212,255,.15)'; }
-    // Start recognition to advance TP on speech
-    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    var rec = new SR();
-    rec.continuous = true; rec.interimResults = true;
-    rec.onresult = function(e) {
-      for (var i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) {
-          // Advance TP by scrolling
-          var body = document.getElementById('tp-body');
-          if (body) body.scrollTop += 80;
-        }
-      }
-    };
-    rec.onerror = function() { STUDIO.adaptive = false; if(btn){btn.textContent='🎤 Adapt';btn.style.background='';} };
-    rec.start();
-    if (window.STUDIO) STUDIO.recognition = rec;
-    toast('Adaptive mode ON — speak to advance', 'ok');
+    var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR){if(typeof toast==='function') toast('Speech recognition not supported','error');return;}
+    if(window.STUDIO) STUDIO.adaptive=true;
+    if(btn){btn.textContent='🎤 ON';btn.style.background='rgba(0,212,255,.15)';}
+    var rec=new SR(); rec.continuous=true; rec.interimResults=true;
+    rec.onresult=function(){ var b=document.getElementById('tp-body'); if(b) b.scrollTop+=80; };
+    rec.onerror=function(){ if(window.STUDIO) STUDIO.adaptive=false; if(btn){btn.textContent='🎤 Adapt';btn.style.background='';} };
+    rec.start(); if(window.STUDIO) STUDIO.recognition=rec;
+    if(typeof toast==='function') toast('Adaptive ON — speak to advance','ok');
   }
 };
 
-/* ── End Master TP Fix ─────────────────────────────────────────── */
+// TP panel toggle
 window.toggleTpPanel = function() {
-  var panel = document.getElementById('studio-tp-panel');
-  var btn = document.getElementById('tp-toggle-btn');
-  if (!panel) return;
-  var collapsed = panel.style.maxHeight === '32px' || panel.dataset.collapsed === '1';
-  if (collapsed) {
-    panel.style.maxHeight = '160px';
-    panel.dataset.collapsed = '0';
-    if (btn) btn.textContent = '▼';
-  } else {
-    panel.style.maxHeight = '32px';
-    panel.dataset.collapsed = '1';
-    if (btn) btn.textContent = '▲';
-  }
+  var panel=document.getElementById('studio-tp-panel');
+  if(!panel) return;
+  var collapsed=panel.dataset.collapsed==='1';
+  panel.style.maxHeight=collapsed?'160px':'32px';
+  panel.dataset.collapsed=collapsed?'0':'1';
 };
 
-// Ensure setTpScrollMode is globally available
-if (!window.setTpScrollMode) {
-  window.setTpScrollMode = function(mode) {
-    window._tpMode = mode;
-    window._tpScrollMode = mode;
-    var sel1 = document.getElementById('tp-scroll-mode');
-    var sel2 = document.getElementById('tp-mode-sel');
-    if(sel1&&mode) sel1.value=mode;
-    if(sel2&&mode) sel2.value=mode;
-    if (mode === 'word' && typeof tpStartWordByWord === 'function') tpStartWordByWord();
-    else if (mode === 'auto' && typeof tpStartAuto === 'function') tpStartAuto();
-    else if (mode === 'manual' && typeof tpStopAuto === 'function') tpStopAuto();
-    // Studio: set the scroll mode select to match
-    var studioSel = document.getElementById('tp-mode-sel');
-    if (studioSel && mode) studioSel.value = mode;
-  };
-
-// startPracticeMode — toggle studio teleprompter scroll
-if (!window.startPracticeMode) {
-  window.startPracticeMode = function() {
-    var btn = document.getElementById('btn-tp-start');
-    if (window.STUDIO_TP && window.STUDIO_TP.running) {
-      window.STUDIO_TP.running = false;
-      clearInterval(window.STUDIO_TP.timer);
-      if(btn){btn.textContent='▶ Practice';btn.style.background='';}
-    } else {
-      window.STUDIO_TP = window.STUDIO_TP || {};
-      window.STUDIO_TP.running = true;
-      var tpBody = document.getElementById('tp-body');
-      if(btn){btn.textContent='⏸ Pause';btn.style.background='rgba(0,212,255,.15)';}
-      if (typeof tpAutoScroll === 'function') tpAutoScroll();
-      else if (tpBody) {
-        var speed = parseInt(document.getElementById('tp-spd-range')&&document.getElementById('tp-spd-range').value||'80');
-        var pxPerMs = speed / 60000;
-        var start = null;
-        var startTop = tpBody.scrollTop;
-        window.STUDIO_TP.timer = setInterval(function(){
-          if (!window.STUDIO_TP.running) { clearInterval(window.STUDIO_TP.timer); return; }
-          tpBody.scrollTop += 1;
-        }, 1000 / speed);
-      }
-    }
-  };
-}
-
-/* ── Delete button fix — wire into dashboard card HTML ──────────── */
-// Ensure renderProjectGrid has delete button
-var _origRPG = window.renderProjectGrid;
-window.renderProjectGrid = function(projects) {
-  if (typeof _origRPG === 'function') _origRPG(projects);
-  // After render, add copy+delete buttons to cards that are missing them
-  setTimeout(function() {
-    var grid = document.getElementById('proj-list');
-    if (!grid) return;
-    grid.querySelectorAll('.proj-card, [class*="proj-card"]').forEach(function(card) {
-      var actions = card.querySelector('[style*="display:flex"][style*="gap"]');
-      if (!actions) return;
-      var hasDel = actions.innerHTML.includes('deleteProject') || actions.innerHTML.includes('✕') || actions.innerHTML.includes('Delete');
-      var hasCopy = actions.innerHTML.includes('copy') || actions.innerHTML.includes('Copy') || actions.innerHTML.includes('⧉');
-      
-      // Get project id from the open button
-      var openBtn = actions.querySelector('button');
-      if (!openBtn) return;
-      var onclickStr = openBtn.getAttribute('onclick') || '';
-      var idMatch = onclickStr.match(/['"](proj_[^'"]+)['"]/);
-      var projId = idMatch ? idMatch[1] : null;
-      if (!projId) return;
-      
-      if (!hasCopy) {
-        var copyBtn = document.createElement('button');
-        copyBtn.className = 'btn btn-ghost btn-sm';
-        copyBtn.title = 'Duplicate project';
-        copyBtn.textContent = '⧉';
-        copyBtn.onclick = function(e) { e.stopPropagation(); copyProject(projId); };
-        actions.appendChild(copyBtn);
-      }
-      if (!hasDel) {
-        var delBtn = document.createElement('button');
-        delBtn.className = 'btn btn-ghost btn-sm';
-        delBtn.title = 'Delete project';
-        delBtn.style.color = '#ef4444';
-        delBtn.textContent = '🗑';
-        delBtn.onclick = function(e) { 
-          e.stopPropagation(); 
-          if (typeof aabConfirm === 'function') {
-            aabConfirm('Delete this project? Cannot be undone.', function(){
-              deleteProjectById(projId);
-            }, null, {title:'Delete Project',yes:'Delete',danger:true});
-          } else if (confirm('Delete this project?')) {
-            deleteProjectById(projId);
-          }
-        };
-        actions.appendChild(delBtn);
-      }
-    });
-  }, 100);
-};
-
-/* ── Fix the auto-save interval spam ─────────────────────────────── */
-// Clear ALL existing auto-save timers and replace with one clean one
-if (window._aabAutoSaveTimer) clearInterval(window._aabAutoSaveTimer);
-window._aabAutoSaveTimer = setInterval(function() {
-  if (window.PROJECT && window.PROJECT.id && typeof ap_save === 'function') {
-    ap_save(true); // silent=true, localStorage only, no cloud spam
-  }
-}, 45000); // Every 45s instead of 30s
-
-/* ── Fix the studio auto-save timer (every 10s in recording studio) ─ */
-if (window.startAutoSave) {
-  var _origSAS = window.startAutoSave;
-  window.startAutoSave = function() {
-    if (window._studioSaveTimer) clearInterval(window._studioSaveTimer);
-    window._studioSaveTimer = setInterval(function() {
-      if (window.PROJECT && (PROJECT.scenes.length || Object.keys(PROJECT.clips||{}).length)) {
-        if (typeof ap_save === 'function') ap_save(true); // localStorage only
-      }
-    }, 60000); // 60s, not 10s
-  };
-}
-
-/* ── AABE missing timeline methods ───────────────────────────────── */
+// AABE methods (timeline/edit suite buttons)
 (function(){
-  var AB = window.AABE = window.AABE || {};
-  if (!AB.toggleSubs) AB.toggleSubs = function() {
-    var el = document.getElementById('e-prog-subs');
-    if (el) el.style.display = el.style.display==='none'?'flex':'none';
-    if(typeof toast==='function') toast('Subtitles toggled','info');
-  };
-  if (!AB.toggleLoop) AB.toggleLoop = function() {
-    AB._loop = !AB._loop;
-    if(typeof toast==='function') toast('Loop '+(AB._loop?'ON':'OFF'),'info');
-  };
-  if (!AB.tlZoom) AB.tlZoom = function(dir) {
-    if(window.E){E.pxPerSec=Math.max(10,Math.min(400,E.pxPerSec*(dir>0?1.4:0.7)));if(typeof E_renderTL==='function')E_renderTL();}
-  };
-  if (!AB.tlFit) AB.tlFit = function() { if(typeof E_fit==='function')E_fit(); };
-  if (!AB.tlAddTrack) AB.tlAddTrack = function() {
+  var AB=window.AABE=window.AABE||{};
+  AB.toggleSubs=AB.toggleSubs||function(){ var el=document.getElementById('e-prog-subs'); if(el) el.style.display=el.style.display==='none'?'flex':'none'; if(typeof toast==='function') toast('Subtitles toggled','info'); };
+  AB.toggleLoop=AB.toggleLoop||function(){ AB._loop=!AB._loop; if(typeof toast==='function') toast('Loop '+(AB._loop?'ON':'OFF'),'info'); };
+  AB.tlZoom=AB.tlZoom||function(dir){ if(window.E){E.pxPerSec=Math.max(10,Math.min(400,E.pxPerSec*(dir>0?1.4:0.7)));if(typeof E_renderTL==='function')E_renderTL();} };
+  AB.tlFit=AB.tlFit||function(){ if(typeof E_fit==='function')E_fit(); };
+  AB.tlAddTrack=AB.tlAddTrack||function(){
     if(!window.E)return;
-    var name=prompt('Track name:','New Track');if(!name)return;
+    var name=prompt('Track name:','New Track'); if(!name)return;
     var type=prompt('Type (video/audio/text):','audio')||'audio';
     E.tracks.push({id:'track_'+Date.now(),name:name,type:type,clips:[],muted:false,locked:false,color:'#6366f1',h:type==='video'?58:type==='audio'?40:32});
     if(typeof E_renderTL==='function')E_renderTL();
-    if(typeof toast==='function')toast('Track added: '+name,'ok');
+    if(typeof toast==='function') toast('Track: '+name,'ok');
   };
-  if (!AB.saveMarker) AB.saveMarker = function() { if(typeof E_addMarker==='function')E_addMarker(); };
+  AB.saveMarker=AB.saveMarker||function(){ if(typeof E_addMarker==='function')E_addMarker(); };
 })();
 
-console.log('[AABStudio] All buttons wired ✓');
-/* ── setTpBg — set teleprompter background colour in studio ─────────── */
-window.setTpBg = function(color) {
-  // Apply to the studio TP panel background
-  var tp = document.getElementById('studio-tp-panel');
-  if (tp) tp.style.background = color;
-  var tpBody = document.getElementById('tp-body');
-  if (tpBody) tpBody.style.background = color;
-  // Also update the standalone teleprompter if open
-  var tpDisp = document.querySelector('.tp-display, #tp-display');
-  if (tpDisp) tpDisp.style.background = color;
-  // Store preference
-  if (window.PROJECT) { if (!PROJECT.tpSettings) PROJECT.tpSettings = {}; PROJECT.tpSettings.bg = color; if (typeof ap_save==='function') ap_save(true); }
-  if (typeof TP !== 'undefined') TP.theme = color;
+// aabConfirm dialog
+window.aabConfirm = window.aabConfirm || function(msg,onYes,onNo,opts){
+  opts=opts||{}; var title=opts.title||'Confirm',yes=opts.yes||'OK',danger=opts.danger||false;
+  var old=document.getElementById('aab-confirm-overlay'); if(old) old.remove();
+  var ov=document.createElement('div');
+  ov.id='aab-confirm-overlay';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:99999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
+  var bg=danger?'#ef4444':'#00d4ff'; var fg=danger?'#fff':'#0a0e1a';
+  ov.innerHTML='<div style="background:#111827;border:.5px solid rgba(255,255,255,.15);border-radius:16px;padding:28px;max-width:400px;width:90%;box-shadow:0 24px 60px rgba(0,0,0,.7);">'+
+    '<div style="font-size:16px;font-weight:700;color:#fff;margin-bottom:10px;">'+title+'</div>'+
+    '<div style="font-size:14px;color:rgba(255,255,255,.6);margin-bottom:22px;line-height:1.65;">'+msg+'</div>'+
+    '<div style="display:flex;gap:10px;justify-content:flex-end;">'+
+    '<button id="aab-cn" style="padding:9px 20px;border-radius:8px;border:.5px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:rgba(255,255,255,.7);font-size:13px;cursor:pointer;font-family:inherit;">Cancel</button>'+
+    '<button id="aab-cy" style="padding:9px 20px;border-radius:8px;border:none;background:'+bg+';color:'+fg+';font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">'+yes+'</button>'+
+    '</div></div>';
+  document.body.appendChild(ov);
+  var close=function(){ov.remove();};
+  ov.querySelector('#aab-cy').onclick=function(){close();if(typeof onYes==='function')onYes();};
+  ov.querySelector('#aab-cn').onclick=function(){close();if(typeof onNo==='function')onNo();};
+  ov.onclick=function(e){if(e.target===ov){close();if(typeof onNo==='function')onNo();}};
+};
+function aabConfirm(m,y,n,o){window.aabConfirm(m,y,n,o);}
+
+// confirmResegment
+window.confirmResegment = function() {
+  var sc=(window.PROJECT&&PROJECT.scenes)?PROJECT.scenes.length:0;
+  aabConfirm('Re-segmenting will replace your '+sc+' scenes. Any AI-generated videos will be lost (they cost credits to regenerate). Continue?',
+    function(){if(window.PROJECT){PROJECT.status='draft';PROJECT.scenes=[];} nav('script-pg');},
+    null,{title:'Re-segment?',yes:'Re-segment',danger:true});
 };
 
-/* ── AABE missing methods ────────────────────────────────────────────── */
-(function(){
-  var AB = window.AABE || {};
-  window.AABE = AB;
-
-  // CC/Subtitles toggle
-  AB.toggleSubs = function() {
-    var subs = document.getElementById('e-prog-subs') || document.getElementById('aab-prog-subs');
-    if (subs) { subs.style.display = subs.style.display === 'none' ? 'flex' : 'none'; }
-    if (typeof toast === 'function') toast('Subtitles toggled', 'info');
+// dash_uploadAsset, dash_loadAssets, dash_deleteAsset
+window.dash_uploadAsset = function(file,type){
+  if(!file) return;
+  var reader=new FileReader();
+  reader.onload=function(ev){
+    var asset={id:'asset_'+Date.now(),name:file.name,type:type||(file.type.split('/')[0]||'file'),size:file.size,dataUrl:ev.target.result,url:ev.target.result,createdAt:new Date().toISOString()};
+    var assets=[]; try{assets=JSON.parse(localStorage.getItem('aab_global_assets')||'[]');}catch(e){}
+    assets.unshift(asset); localStorage.setItem('aab_global_assets',JSON.stringify(assets.slice(0,100)));
+    if(typeof toast==='function') toast('Saved: '+file.name,'ok');
+    if(typeof dash_loadAssets==='function') dash_loadAssets();
   };
+  reader.readAsDataURL(file);
+};
+window.dash_loadAssets=function(){
+  var grid=document.getElementById('dash-assets-grid'); if(!grid) return;
+  var assets=[]; try{assets=JSON.parse(localStorage.getItem('aab_global_assets')||'[]');}catch(e){}
+  if(!assets.length){grid.innerHTML='<div style="color:var(--muted);font-size:13px;padding:24px;text-align:center;">No assets yet</div>';return;}
+  grid.innerHTML=assets.map(function(a){
+    var thumb=a.type==='image'?'<img src="'+(a.url||a.dataUrl||'')+'" style="width:100%;height:90px;object-fit:cover;">':'<div style="height:90px;display:flex;align-items:center;justify-content:center;font-size:28px;">'+(a.type==='audio'?'🎵':'📄')+'</div>';
+    return '<div style="background:#fff;border:.5px solid var(--bdr);border-radius:8px;overflow:hidden;position:relative;">'+thumb+'<div style="padding:6px;font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(a.name||'Asset')+'</div>'+
+    '<button onclick="dash_deleteAsset(\u0027'+a.id+'\u0027)" style="position:absolute;top:3px;right:3px;background:rgba(239,68,68,.85);border:none;border-radius:50%;width:18px;height:18px;color:#fff;font-size:11px;cursor:pointer;line-height:1;">×</button></div>';
+  }).join('');
+};
+window.dash_deleteAsset=function(id){
+  aabConfirm('Delete this asset?',function(){
+    var assets=[]; try{assets=JSON.parse(localStorage.getItem('aab_global_assets')||'[]');}catch(e){}
+    localStorage.setItem('aab_global_assets',JSON.stringify(assets.filter(function(a){return a&&a.id!==id;})));
+    if(typeof dash_loadAssets==='function') dash_loadAssets();
+    if(typeof toast==='function') toast('Deleted','ok');
+  },null,{title:'Delete Asset',yes:'Delete',danger:true});
+};
+window.dash_loadVideos=function(){
+  var grid=document.getElementById('dash-videos-grid'); if(!grid) return;
+  grid.innerHTML='<div style="color:rgba(255,255,255,.4);font-size:13px;padding:24px;text-align:center;grid-column:1/-1;">No recorded videos yet — record scenes first</div>';
+};
+window.dash_filterVideos=function(){};
+window.dash_filterAssets=function(){};
 
-  // Loop playback toggle
-  AB.toggleLoop = function() {
-    AB._loop = !AB._loop;
-    var btn = document.querySelector('[onclick="AABE.toggleLoop()"]');
-    if (btn) btn.style.background = AB._loop ? 'rgba(0,212,255,.15)' : '';
-    if (typeof toast === 'function') toast('Loop ' + (AB._loop ? 'ON' : 'OFF'), 'info');
-  };
+// Auto-save (single clean timer)
+if(window._aabAutoSaveTimer) clearInterval(window._aabAutoSaveTimer);
+window._aabAutoSaveTimer=setInterval(function(){
+  if(window.PROJECT&&PROJECT.id&&!PROJECT._isNew&&typeof ap_save==='function') ap_save(true);
+},60000);
 
-  // Timeline zoom
-  AB.tlZoom = function(dir) {
-    if (window.E) {
-      E.pxPerSec = Math.max(10, Math.min(400, E.pxPerSec * (dir > 0 ? 1.4 : 0.7)));
-      if (typeof E_renderTL === 'function') E_renderTL();
-    }
-  };
-
-  // Timeline fit to window
-  AB.tlFit = function() { if (typeof E_fit === 'function') E_fit(); };
-
-  // Add track
-  AB.tlAddTrack = function() {
-    if (!window.E) return;
-    var name = prompt('Track name:', 'New Track');
-    if (!name) return;
-    var type = prompt('Type (video/audio/text):', 'audio') || 'audio';
-    E.tracks.push({ id: 'track_'+Date.now(), name: name, type: type, clips: [], muted: false, locked: false, color: '#6366f1', h: type==='video'?58:type==='audio'?40:32 });
-    if (typeof E_renderTL === 'function') E_renderTL();
-    if (typeof toast === 'function') toast('Track added: ' + name, 'ok');
-  };
-
-  // Save marker (alias for addMarker)
-  AB.saveMarker = function() { if (typeof E_addMarker === 'function') E_addMarker(); };
-
-  window.AABE = AB;
-})();
-
-/* ── Dashboard sidebar nav fix — wire sb-item buttons ───────────────── */
-document.addEventListener('DOMContentLoaded', function() {
-  // Re-wire sidebar items in case they rendered before dashNav was defined
-  document.querySelectorAll('.sb-item').forEach(function(btn) {
-    var oc = btn.getAttribute('onclick');
-    if (oc && oc.includes('dashNav')) {
-      // Already wired
-    }
-  });
-});
-
-})();
-
-
-
-
-
+console.log('[AABStudio] Master extensions loaded OK');
 </script>
 
 <!-- aab-engine-v3 removed -->
@@ -9012,6 +8729,15 @@ if (window.PROJECT && window.PROJECT.id) {
 // ── ap_save — Save the active project (localStorage immediately, cloud async) ─
 window.ap_save = function(silent) {
   if (!window.PROJECT) return;
+  // Fix localStorage quota: prune old empty projects first
+  try {
+    var ps = JSON.parse(localStorage.getItem('aab_projects')||'[]');
+    if (ps.length > 20) {
+      // Remove projects with no scenes and no title, oldest first
+      ps = ps.filter(function(p,i){ return p && (p.scenes&&p.scenes.length>0 || (p.title&&p.title!=='My Video') || i<10); });
+      localStorage.setItem('aab_projects', JSON.stringify(ps.slice(0,20)));
+    }
+  } catch(e) {}
   // CRITICAL: Don't save a brand-new empty project — this creates ghost projects.
   // Only save if the project has actual content (title changed, script, or scenes).
   var hasContent = (PROJECT.title && PROJECT.title !== 'My Video') ||
