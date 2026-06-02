@@ -6001,6 +6001,170 @@ window.E_clearMarkers = E_clearMarkers;
    AABStudio Master Extensions — all additional functions as top-level
    ══════════════════════════════════════════════════════════════════════ */
 
+
+/* ══════════════════════════════════════════════════════════════════════
+   LIVE WAVEFORM — Real audio visualization on timeline tracks
+   ══════════════════════════════════════════════════════════════════════ */
+
+// Real waveform from decoded audio (replaces random bars)
+window.E_renderWaveform = function(clip, canvas) {
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  // Draw placeholder bars immediately (green gradient)
+  var bars = Math.max(20, Math.floor(W / 3));
+  ctx.fillStyle = 'rgba(16,185,129,.4)';
+  for (var i = 0; i < bars; i++) {
+    var bh = (0.2 + Math.random() * 0.6) * H;
+    ctx.fillRect(i * (W / bars), (H - bh) / 2, Math.max(1, W / bars - 1), bh);
+  }
+
+  // If we have a real URL, decode and render actual waveform
+  var url = clip.url || clip.dataUrl || clip.src;
+  if (!url || url.startsWith('blob:fake')) return;
+
+  var AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return;
+
+  var ac = new AudioCtx();
+
+  var drawWave = function(data, color) {
+    var step = Math.ceil(data.length / bars);
+    ctx.clearRect(0, 0, W, H);
+    // Background
+    ctx.fillStyle = 'rgba(0,0,0,.15)';
+    ctx.fillRect(0, 0, W, H);
+    // Center line
+    ctx.strokeStyle = 'rgba(16,185,129,.2)';
+    ctx.beginPath(); ctx.moveTo(0, H/2); ctx.lineTo(W, H/2); ctx.stroke();
+    // Bars
+    var grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, color || 'rgba(0,212,255,.9)');
+    grad.addColorStop(0.5, 'rgba(16,185,129,.95)');
+    grad.addColorStop(1, color || 'rgba(0,212,255,.9)');
+    ctx.fillStyle = grad;
+    for (var i = 0; i < bars; i++) {
+      var max = 0;
+      for (var j = 0; j < step; j++) {
+        var v = Math.abs(data[i * step + j] || 0);
+        if (v > max) max = v;
+      }
+      var bh = Math.max(2, max * H * 0.9);
+      ctx.fillRect(i * (W/bars), (H - bh) / 2, Math.max(1, W/bars - 1), bh);
+    }
+    try { ac.close(); } catch(e) {}
+  };
+
+  // Try fetch decode
+  fetch(url)
+    .then(function(r) { return r.arrayBuffer(); })
+    .then(function(buf) { return ac.decodeAudioData(buf); })
+    .then(function(decoded) {
+      drawWave(decoded.getChannelData(0));
+    })
+    .catch(function() {
+      // Blob URL or CORS — use AnalyserNode approach
+      var audio = new Audio();
+      audio.crossOrigin = 'anonymous';
+      audio.src = url;
+      var source = ac.createMediaElementSource(audio);
+      var analyser = ac.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      analyser.connect(ac.destination);
+      audio.play().catch(function(){});
+      
+      // Capture a snapshot after a short play
+      setTimeout(function() {
+        var data = new Float32Array(analyser.frequencyBinCount);
+        analyser.getFloatTimeDomainData(data);
+        drawWave(data, 'rgba(99,102,241,.9)');
+        audio.pause();
+        try { ac.close(); } catch(e) {}
+      }, 500);
+    });
+};
+
+// Live microphone waveform on a canvas during recording
+window._aabLiveMic = null;
+window.startLiveWaveform = function(canvasId) {
+  var canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width || canvas.offsetWidth;
+  var H = canvas.height || canvas.offsetHeight;
+  canvas.width = W; canvas.height = H;
+
+  navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+    .then(function(stream) {
+      var ac = new (window.AudioContext || window.webkitAudioContext)();
+      var src = ac.createMediaStreamSource(stream);
+      var analyser = ac.createAnalyser();
+      analyser.fftSize = 128;
+      src.connect(analyser);
+      var buf = new Uint8Array(analyser.frequencyBinCount);
+      var running = true;
+
+      window._aabLiveMic = {
+        stop: function() {
+          running = false;
+          stream.getTracks().forEach(function(t) { t.stop(); });
+          try { ac.close(); } catch(e) {}
+          ctx.clearRect(0, 0, W, H);
+        }
+      };
+
+      var draw = function() {
+        if (!running) return;
+        requestAnimationFrame(draw);
+        analyser.getByteTimeDomainData(buf);
+        ctx.clearRect(0, 0, W, H);
+        // Background
+        ctx.fillStyle = 'rgba(6,8,15,.8)';
+        ctx.fillRect(0, 0, W, H);
+        // Waveform line
+        ctx.beginPath();
+        ctx.strokeStyle = '#00d4ff';
+        ctx.lineWidth = 1.5;
+        var sliceW = W / buf.length;
+        var x = 0;
+        for (var i = 0; i < buf.length; i++) {
+          var v = buf[i] / 128.0;
+          var y = (v * H) / 2;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+          x += sliceW;
+        }
+        ctx.lineTo(W, H / 2);
+        ctx.stroke();
+      };
+      draw();
+    })
+    .catch(function(e) { console.warn('Live waveform mic error:', e); });
+};
+
+window.stopLiveWaveform = function() {
+  if (window._aabLiveMic) { _aabLiveMic.stop(); _aabLiveMic = null; }
+};
+
+// Wire up waveform rendering when clips are added to timeline
+var _origE_addClip = window.E_addClip;
+window.E_addClip = function(clipData, trackId, startT) {
+  var result = _origE_addClip ? _origE_addClip(clipData, trackId, startT) : null;
+  // After clip is added, render its waveform if audio
+  if (clipData && (clipData.type === 'audio' || clipData.type === 'sfx' || clipData.type === 'voice')) {
+    setTimeout(function() {
+      var canvas = document.querySelector('[data-clip-id="' + (clipData.id||'') + '"] canvas.waveform-canvas');
+      if (!canvas && clipData.waveformCanvas) canvas = clipData.waveformCanvas;
+      if (canvas) window.E_renderWaveform(clipData, canvas);
+    }, 100);
+  }
+  return result;
+};
+
+console.log('[AABStudio] Live waveform engine loaded');
 // Copy/Duplicate Project
 window.copyProject = window.duplicateProject = function(projectId) {
   var projects = []; try { projects = JSON.parse(localStorage.getItem('aab_projects')||'[]'); } catch(e) {}
