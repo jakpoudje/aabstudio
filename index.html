@@ -5690,6 +5690,24 @@ window.E_exportTimeline=async function(){
 var AABE=window.AABE||{};
 AABE.dd=function(clip,trackId){if(clip&&E.tracks){var t=E.tracks.find(function(tr){return tr.id===(trackId||'main');});if(t){var pos=t.clips.reduce(function(m,c){return Math.max(m,c.start+c.duration);},0);t.clips.push(Object.assign({},clip,{id:'dd_'+Date.now(),start:pos,trackId:t.id}));E_renderTL&&E_renderTL();}}};
 window.AABE=AABE;
+
+/* Expose inspector for external access */
+window.E_showInspector = E_showInspector;
+window.E_addMarker = E_addMarker;
+window.E_setRegionIn = E_setRegionIn;
+window.E_setRegionOut = E_setRegionOut;
+window.E_clearRegion = E_clearRegion;
+window.E_exportTimeline = E_exportTimeline;
+window.E_renderWaveform = E_renderWaveform;
+window.E_drawProg = E_drawProg;
+window.E_progToggle = E_progToggle;
+window.E_renderTL = E_renderTL;
+window.E_loadSrc = E_loadSrc;
+window.E_loadClips = E_loadClips;
+window.E_upClip = E_upClip;
+window.E_deleteSelected = E_deleteSelected;
+window.E_razorAt = E_razorAt;
+window.E_clearMarkers = E_clearMarkers;
 })();
 
 
@@ -8970,6 +8988,10 @@ function loadDashboard() {
     function saveProject() {
       PROJECT.date = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
       localStorage.setItem('aab_last_project', PROJECT.id);
+      // Sync to cloud (non-blocking)
+      if (typeof syncProjectToCloud === 'function') {
+        syncProjectToCloud(PROJECT).catch(function(e){ console.warn('Cloud sync:', e.message); });
+      }
       var light = JSON.parse(JSON.stringify(PROJECT));
 
       // Strip binary data from assets to avoid quota exceeded
@@ -16109,6 +16131,50 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
 <!-- removed:aab-layout-enforcer -->
 
 <script id="aab-master-script">
+/* ── Direct Supabase scene/project backup ─────────────────────── */
+window._saveScenesToSupabase = function(proj) {
+  var uid = window.APP && window.APP.user && window.APP.user.id;
+  if (!uid) return;
+  var SUPA = 'https://phjlxkyloafogznhyyig.supabase.co';
+  var KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBoamx4a3lsb2Fmb2d6bmh5eWlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc4MzUxMjEsImV4cCI6MjA2MzQxMTEyMX0.v-sRKSZLHYMY6RuTrPdN7l6NuKuTm1dh-1WwMUFjepA';
+  var tok = window._sbSession && window._sbSession.access_token ? window._sbSession.access_token : KEY;
+  
+  // Strip large binary data before saving
+  var light = JSON.parse(JSON.stringify(proj));
+  if (light.assets) light.assets = light.assets.map(function(a) {
+    return { id: a.id, name: a.name, type: a.type, url: a.url || null };
+  });
+  if (light.clips) Object.keys(light.clips).forEach(function(k) {
+    var c = light.clips[k];
+    if (c && c.url && c.url.startsWith('blob:')) c.url = null;
+  });
+  
+  fetch(SUPA + '/rest/v1/user_projects', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': KEY,
+      'Authorization': 'Bearer ' + tok,
+      'Prefer': 'resolution=merge-duplicates'
+    },
+    body: JSON.stringify({
+      user_id: uid,
+      project_id: proj.id,
+      title: proj.title || 'Untitled',
+      data: JSON.stringify(light),
+      updated_at: new Date().toISOString()
+    })
+  }).then(function(r) {
+    if (!r.ok) r.text().then(function(t) { console.warn('Supabase save:', r.status, t.slice(0,80)); });
+  }).catch(function(e) { console.warn('Supabase save error:', e.message); });
+};
+
+/* ── syncProjectToCloud via Supabase REST directly ─────────────── */
+window.syncProjectToCloud = window.syncProjectToCloud || function(proj) {
+  window._saveScenesToSupabase && window._saveScenesToSupabase(proj || window.PROJECT);
+  return Promise.resolve();
+};
+
 /* ── Smart pricing nav ── */
 window.navPricing=function(){
   if(window.APP&&window.APP.user){if(typeof nav==='function')nav('pricing-pg');}
