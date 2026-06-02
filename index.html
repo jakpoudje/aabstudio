@@ -8738,11 +8738,16 @@ function renderProjectList() {
 window.renderProjectList = renderProjectList;
 
 function openProject(id) {
-  var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
-  var p = projects.find(function(x) { return x.id === id; });
-  if (!p) return;
+  var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]').filter(Boolean);
+  var p = id ? projects.find(function(x) { return x.id === id; }) : projects[0];
+  if (!p) { if (typeof toast === 'function') toast('Project not found', 'error'); return; }
+  // Fix null id
+  if (!p.id) { p.id = 'proj_' + Date.now(); localStorage.setItem('aab_projects', JSON.stringify(projects)); }
+  p.scenes = p.scenes || []; p.clips = p.clips || {}; p.apsVideos = p.apsVideos || {}; p.assets = p.assets || []; p.script = p.script || '';
   window.PROJECT = p;
+  localStorage.setItem('aab_last_project', p.id);
   nav('scenes-pg');
+  if (typeof toast === 'function') toast('Opened: ' + p.title, 'ok');
 }
 window.openProject = openProject;
 
