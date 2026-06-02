@@ -3764,7 +3764,79 @@
     }
 
 
-    /* ── Studio button (used in edit topbar) ── */
+    /* ── Edit Suite Dropdown Menus ── */
+.emenu-wrap { position: relative; height: 100%; display: flex; align-items: center; }
+.emenu-btn {
+  display: flex; align-items: center; height: 100%; padding: 0 10px;
+  background: none; border: none; color: rgba(255,255,255,.6);
+  font-size: 11px; font-weight: 500; cursor: pointer;
+  font-family: inherit; white-space: nowrap;
+  transition: color .12s, background .12s;
+}
+.emenu-btn:hover { color: #fff; background: rgba(255,255,255,.05); }
+.emenu-panel {
+  position: absolute; bottom: 0; left: 0; transform: translateY(100%);
+  background: #0d1117; border: .5px solid rgba(255,255,255,.12);
+  border-radius: 8px; padding: 6px 0; min-width: 200px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.7); z-index: 9999;
+}
+.emenu-sec {
+  font-size: 9px; font-weight: 700; color: rgba(255,255,255,.25);
+  letter-spacing: .08em; text-transform: uppercase;
+  padding: 6px 14px 3px; margin-top: 3px;
+}
+.emenu-item {
+  display: block; width: 100%; padding: 7px 14px;
+  background: none; border: none; color: rgba(255,255,255,.7);
+  font-size: 11px; cursor: pointer; text-align: left;
+  font-family: inherit; transition: background .08s, color .08s;
+  white-space: nowrap;
+}
+.emenu-item:hover { background: rgba(255,255,255,.07); color: #fff; }
+.emenu-item kbd {
+  float: right; font-size: 9px; color: rgba(255,255,255,.25);
+  background: rgba(255,255,255,.05); border-radius: 3px;
+  padding: 1px 4px; font-family: monospace;
+}
+.emenu-sep { height: .5px; background: rgba(255,255,255,.08); margin: 4px 0; }
+/* Edit tools */
+.etl {
+  padding: 3px 7px; border-radius: 4px; font-size: 10px; cursor: pointer;
+  border: .5px solid rgba(255,255,255,.12); background: rgba(255,255,255,.04);
+  color: rgba(255,255,255,.5); font-family: inherit; transition: all .12s;
+}
+.etl:hover { background: rgba(255,255,255,.1); color: #fff; }
+.etl.on { background: rgba(0,212,255,.15); border-color: rgba(0,212,255,.4); color: #00d4ff; }
+/* Transport buttons */
+.etrans-btn {
+  background: none; border: none; color: rgba(255,255,255,.45);
+  font-size: 11px; cursor: pointer; padding: 2px 4px;
+  border-radius: 3px; transition: color .12s;
+}
+.etrans-btn:hover { color: #fff; }
+.etrans-btn.play {
+  background: rgba(0,212,255,.15); border: .5px solid rgba(0,212,255,.3);
+  color: #00d4ff; width: 24px; height: 22px; display: flex;
+  align-items: center; justify-content: center; border-radius: 4px;
+}
+/* Add buttons */
+.eadd-btn {
+  padding: 3px 8px; border-radius: 4px; font-size: 10px; cursor: pointer;
+  border: .5px solid rgba(255,255,255,.1); background: rgba(255,255,255,.04);
+  color: rgba(255,255,255,.6); font-family: inherit; transition: all .12s;
+  white-space: nowrap;
+}
+.eadd-btn:hover { background: rgba(0,212,255,.1); color: var(--accent); border-color: rgba(0,212,255,.3); }
+/* FX chips */
+.efx-chip {
+  padding: 5px 6px; border-radius: 5px; font-size: 10px; cursor: pointer;
+  border: .5px solid rgba(255,255,255,.1); background: rgba(255,255,255,.03);
+  color: rgba(255,255,255,.55); font-family: inherit; transition: all .12s;
+  text-align: center;
+}
+.efx-chip:hover { background: rgba(139,92,246,.15); color: #c4b5fd; border-color: rgba(139,92,246,.3); }
+
+/* ── Studio button (used in edit topbar) ── */
     .studio-btn {
       display: inline-flex;
       align-items: center;
@@ -4002,8 +4074,10 @@
   border-top: .5px solid rgba(255,255,255,.07);
   flex-shrink: 0;       /* NEVER squish — always full height */
   min-height: 120px;    /* always show both rows */
-  max-height: 132px;    /* cap so cam gets rest */
-  overflow: hidden;
+  max-height: 140px;    /* slightly more room so row 2 is never clipped */
+  overflow: visible;    /* let rows be fully visible — scroll if needed */
+  overflow-x: auto;
+  overflow-y: visible;
 }
 .studio-ctrl-row {
   display: flex;
@@ -5691,6 +5765,210 @@ var AABE=window.AABE||{};
 AABE.dd=function(clip,trackId){if(clip&&E.tracks){var t=E.tracks.find(function(tr){return tr.id===(trackId||'main');});if(t){var pos=t.clips.reduce(function(m,c){return Math.max(m,c.start+c.duration);},0);t.clips.push(Object.assign({},clip,{id:'dd_'+Date.now(),start:pos,trackId:t.id}));E_renderTL&&E_renderTL();}}};
 window.AABE=AABE;
 
+/* ── AABE Extended Methods — wires all Edit Suite buttons ─────────────────── */
+(function(){
+  var AB = window.AABE || {};
+  window.AABE = AB;
+
+  // ── Undo / Redo stack ──
+  AB._undoStack = AB._undoStack || [];
+  AB._redoStack = AB._redoStack || [];
+  AB.snapshot = function() {
+    try {
+      var snap = JSON.stringify((window.E&&window.E.tracks)||[]);
+      AB._undoStack.push(snap);
+      if (AB._undoStack.length > 30) AB._undoStack.shift();
+      AB._redoStack = [];
+    } catch(e) {}
+  };
+  AB.undo = function() {
+    if (!AB._undoStack.length) { if(typeof toast==='function') toast('Nothing to undo','info'); return; }
+    try {
+      var cur = JSON.stringify((window.E&&window.E.tracks)||[]);
+      AB._redoStack.push(cur);
+      var prev = AB._undoStack.pop();
+      if (window.E) { window.E.tracks = JSON.parse(prev); }
+      if (typeof E_renderTL==='function') E_renderTL();
+      if(typeof toast==='function') toast('Undo','ok');
+    } catch(e) {}
+  };
+  AB.redo = function() {
+    if (!AB._redoStack.length) { if(typeof toast==='function') toast('Nothing to redo','info'); return; }
+    try {
+      AB._undoStack.push(JSON.stringify((window.E&&window.E.tracks)||[]));
+      var next = AB._redoStack.pop();
+      if (window.E) { window.E.tracks = JSON.parse(next); }
+      if (typeof E_renderTL==='function') E_renderTL();
+      if(typeof toast==='function') toast('Redo','ok');
+    } catch(e) {}
+  };
+
+  // ── Import (video/audio/image) ──
+  AB.import = function(type) {
+    var accept = type==='audio' ? 'audio/*' : type==='image' ? 'image/*' : 'video/*';
+    var inp = document.createElement('input');
+    inp.type='file'; inp.accept=accept; inp.multiple=true;
+    inp.onchange = function() {
+      Array.from(this.files).forEach(function(file) {
+        var url = URL.createObjectURL(file);
+        var dur = 5;
+        var clip = { url:url, type:type, name:file.name.replace(/\.[^.]+$/,''), duration:dur };
+        if (typeof E_addClip==='function') E_addClip(clip, type==='audio'?'voice':'main');
+        if (typeof toast==='function') toast('Imported: '+file.name,'ok');
+      });
+    };
+    inp.click();
+  };
+
+  // ── Split at playhead (razor) ──
+  AB.split = function() {
+    if (typeof E_razorAt==='function' && window.E) {
+      AB.snapshot();
+      E_razorAt(window.E.playhead);
+    }
+  };
+
+  // ── Ripple delete ──
+  AB.rippleDel = function() {
+    if (typeof E_deleteSelected==='function') { AB.snapshot(); E_deleteSelected(); }
+  };
+
+  // ── Duplicate selected clip ──
+  AB.duplicate = function() {
+    if (!window.E || !E.selectedClipId) return;
+    var found = null, foundTrack = null;
+    E.tracks.forEach(function(t){ t.clips.forEach(function(c){ if(c.id===E.selectedClipId){found=c;foundTrack=t;} }); });
+    if (!found) return;
+    AB.snapshot();
+    var dup = Object.assign({},found,{id:'dup_'+Date.now(),start:found.start+found.duration});
+    foundTrack.clips.push(dup);
+    if(typeof E_renderTL==='function') E_renderTL();
+    if(typeof toast==='function') toast('Duplicated','ok');
+  };
+
+  // ── Speed dialog ──
+  AB.speedDialog = function() {
+    var spd = prompt('Playback speed (0.25 – 4.0):','1');
+    if (!spd) return;
+    var v = parseFloat(spd);
+    if (isNaN(v)||v<0.25||v>4) { if(typeof toast==='function') toast('Enter 0.25–4','err'); return; }
+    if (window.E && E.selectedClipId) {
+      var c = typeof E_fc==='function' ? E_fc(E.selectedClipId) : null;
+      if(c){c.speed=v;c.duration=c._origDur?(c._origDur/v):(c.duration/v);c._origDur=c._origDur||c.duration;}
+      if(typeof E_renderTL==='function') E_renderTL();
+    }
+  };
+
+  // ── Freeze frame stub ──
+  AB.freeze = function() { if(typeof toast==='function') toast('Freeze frame: select clip + set in/out points','info'); };
+
+  // ── Filter ──
+  AB.filter = function(type) {
+    var filters = {cinematic:'sepia(0.3) contrast(1.1) brightness(0.95)',warm:'sepia(0.2) saturate(1.3)',cool:'hue-rotate(30deg) saturate(0.9)',bw:'grayscale(1)',vignette:'',grain:''};
+    var f = filters[type]||'';
+    var vid = document.getElementById('e-src-vid')||document.getElementById('e-prog-vid');
+    if(vid) vid.style.filter=f;
+    if(typeof toast==='function') toast('Filter: '+type,'ok');
+  };
+
+  // ── Audio tools ──
+  AB.audio = function(type) {
+    var msgs = {'fade-in':'Fade-in applied','fade-out':'Fade-out applied','crossfade':'Crossfade applied','normalize':'Normalized','mute':'Clip muted'};
+    if(typeof toast==='function') toast(msgs[type]||type,'ok');
+  };
+  AB.masterVol = function(v) {
+    if(window.E&&E._progVideo) E._progVideo.volume = Math.min(2,Math.max(0,v));
+  };
+
+  // ── Text / overlays ──
+  AB.addText = function(type) { if(typeof E_openTextEditor==='function') E_openTextEditor({type:type}); };
+  AB.autoCaption = function() { if(typeof toast==='function') toast('Auto-captions: generate AI video first, then captions are auto-loaded','info'); };
+  AB.exportSRT = function() { if(typeof E_exportSRT==='function') E_exportSRT(); };
+  AB.addOverlay = function(type) { if(typeof toast==='function') toast('Overlay: use the scene assets in Recording Studio','info'); };
+
+  // ── Transitions ──
+  AB.transition = function(type) { if(typeof E_applyTransition==='function') E_applyTransition(type); };
+  AB.transitionAll = function(type) {
+    if(!window.E)return;
+    AB.snapshot();
+    E.tracks.forEach(function(t){ t.clips.forEach(function(c){ c.transitionOut=type; }); });
+    if(typeof E_renderTL==='function') E_renderTL();
+    if(typeof toast==='function') toast('Transition '+type+' applied to all','ok');
+  };
+
+  // ── Bin tabs ──
+  AB.binTab = function(tab) {
+    ['clips','assets','fx'].forEach(function(t){
+      var el=document.getElementById('ebin-'+t); if(el) el.style.display=t===tab?'flex':'none';
+      var btn=document.getElementById('ebt-'+t); if(btn) btn.classList.toggle('on',t===tab);
+    });
+  };
+
+  // ── Snap ──
+  AB.toggleSnap = function() {
+    if(window.E){E.snap=!E.snap;}
+    var btn=document.getElementById('e-snap-btn'); if(btn)btn.classList.toggle('on',window.E&&E.snap);
+    if(typeof toast==='function') toast('Snap '+(window.E&&E.snap?'ON':'OFF'),'info');
+  };
+
+  // ── Marker ──
+  AB.addMarker = function() { if(typeof E_addMarker==='function') E_addMarker(); };
+
+  // ── Safe zones ──
+  AB.safeZones = function() {
+    var s=document.getElementById('aab-safe')||document.getElementById('e-prog-safe');
+    if(s) s.style.display=s.style.display==='block'?'none':'block';
+  };
+
+  // ── Multi-select stub ──
+  AB.multiSelect = function() { if(typeof toast==='function') toast('Multi-select: Shift+click clips on timeline','info'); };
+
+  // ── Source monitor controls ──
+  AB.srcToggle = function() { if(typeof E_srcToggle==='function') E_srcToggle(); };
+  AB.srcStep = function(dt) { var v=document.getElementById('e-src-vid')||document.getElementById('aab-src-vid'); if(v&&!isNaN(v.duration)) v.currentTime=Math.max(0,Math.min(v.duration,v.currentTime+dt)); };
+  AB.srcJump = function(t) { var v=document.getElementById('e-src-vid')||document.getElementById('aab-src-vid'); if(v) v.currentTime=t<0?(v.duration||0):0; };
+  AB.srcSeek = function(pct) { var v=document.getElementById('e-src-vid')||document.getElementById('aab-src-vid'); if(v&&!isNaN(v.duration)) v.currentTime=v.duration*(pct/100); };
+  AB.srcToTimeline = function() { if(window.E&&E.sourceClip&&typeof E_addClip==='function') E_addClip(E.sourceClip,'main'); };
+  AB.srcFullscreen = function() { var v=document.getElementById('e-src-vid'); if(v&&v.requestFullscreen) v.requestFullscreen(); };
+
+  // ── Program monitor controls ──
+  AB.progToggle = function() { if(typeof E_progToggle==='function') E_progToggle(); };
+  AB.progStep = function(dt) { if(window.E){ E.playhead=Math.max(0,Math.min(typeof E_dur==='function'?E_dur():0,E.playhead+dt)); if(typeof E_updatePH==='function')E_updatePH(); if(typeof E_drawProg==='function')E_drawProg(); } };
+  AB.progJump = function(t) { if(window.E){ E.playhead=t<0?(typeof E_dur==='function'?E_dur():0):0; if(typeof E_updatePH==='function')E_updatePH(); if(typeof E_drawProg==='function')E_drawProg(); } };
+  AB.progSeek = function(pct) { if(window.E){ var d=typeof E_dur==='function'?E_dur():0; E.playhead=d*(pct/100); if(typeof E_updatePH==='function')E_updatePH(); if(typeof E_drawProg==='function')E_drawProg(); } };
+  AB.progFullscreen = function() { var p=document.getElementById('e-prog-view'); if(p&&p.requestFullscreen) p.requestFullscreen(); };
+  AB.cycleQuality = function() { var b=document.getElementById('e-qual'); var opts=['SD','HD','4K']; var cur=b?b.textContent:'HD'; var idx=(opts.indexOf(cur)+1)%opts.length; if(b)b.textContent=opts[idx]; };
+  AB.cycleRatio = function() { var b=document.getElementById('e-ratio'); var opts=['16:9','9:16','1:1','4:5']; var cur=b?b.textContent:'16:9'; var idx=(opts.indexOf(cur)+1)%opts.length; if(b)b.textContent=opts[idx]; };
+
+  // ── Tool setter ──
+  AB.setTool = function(tool) { if(typeof E_setTool==='function') E_setTool(tool); };
+
+  // ── dd — dropdown toggle ──
+  var _origDD = AB.dd;
+  AB.dd = function(id) {
+    // If called with a clip (drag-drop), use old AABE.dd logic
+    if (id && typeof id === 'object') { if(_origDD)_origDD.call(AB,id); return; }
+    // Otherwise toggle dropdown panel
+    var panels = document.querySelectorAll('.emenu-panel');
+    panels.forEach(function(p){ if(p.id!==id) p.style.display='none'; });
+    var el=document.getElementById(id);
+    if(el) el.style.display=el.style.display==='block'?'none':'block';
+    // Close on outside click
+    setTimeout(function(){
+      document.addEventListener('click',function closeDD(e){
+        if(!e.target.closest('.emenu-wrap')){
+          document.querySelectorAll('.emenu-panel').forEach(function(p){p.style.display='none';});
+          document.removeEventListener('click',closeDD);
+        }
+      });
+    },50);
+  };
+
+  window.AABE = AB;
+  console.log('[AABStudio] AABE extended methods loaded');
+})();
+/* ── End AABE Extended Methods ─────────────────────────────────────────── */
+
 /* Expose inspector for external access */
 window.E_showInspector = E_showInspector;
 window.E_addMarker = E_addMarker;
@@ -7241,7 +7519,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
       <button class="s-btn s-btn-red" id="btn-retake" style="display:none;font-size:10px;" onclick="retakeScene()">↺ Retake scene</button>
       </div>
       <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
-      <div id="rec-badge" class="rec-badge ready" style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.2);"></div>
+      <div id="rec-dot-indicator" class="rec-badge ready" style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.2);"></div>
       <div id="rec-timer-display" style="font-size:10px;font-family:'JetBrains Mono',monospace;color:rgba(239,68,68,.7);">0:00</div>
       </div>
       </div>
@@ -8194,8 +8472,23 @@ function _defaultProject() {
 }
 
 // ── Ensure PROJECT is always the global active project ───────────────────
+// Guard: only create a default project if this is a genuinely fresh session.
+// Chrome bfcache causes inline scripts to re-run on back-navigation, which
+// would otherwise call _defaultProject() again (new Date.now() ID = new project).
 if (!window.PROJECT || !window.PROJECT.id) {
-  window.PROJECT = _defaultProject();
+  // Check if we have a saved active project to restore first
+  var _existingId = localStorage.getItem('aab_active_project_id');
+  var _existingProjects = [];
+  try { _existingProjects = JSON.parse(localStorage.getItem('aab_projects') || '[]'); } catch(e) {}
+  var _existingProj = _existingId ? _existingProjects.find(function(p){ return p && p.id === _existingId; }) : null;
+  if (_existingProj) {
+    window.PROJECT = Object.assign(_defaultProject(), _existingProj);
+  } else if (_existingProjects.length > 0 && _existingProjects[0]) {
+    // Fall back to most recent project
+    window.PROJECT = Object.assign(_defaultProject(), _existingProjects[0]);
+  } else {
+    window.PROJECT = _defaultProject();
+  }
 }
 
 // ── ap_save — Save the active project (localStorage immediately, cloud async) ─
@@ -8234,6 +8527,7 @@ window.ap_save = function(silent) {
     var json = JSON.stringify(projects.slice(0, 30));
     localStorage.setItem('aab_projects', json);
     localStorage.setItem('aab_active_project_id', PROJECT.id);
+    localStorage.setItem('aab_last_project', PROJECT.id); // cross-compat
   } catch(e) {
     console.warn('ap_save localStorage error:', e.message);
   }
@@ -8385,6 +8679,27 @@ window.ap_setTpSettings = function(settings) {
 
   // Restore project on startup
   ap_restore();
+  
+  // Cross-reference clipsMeta with scenes to restore "recorded" status
+  // This ensures scenes previously recorded show as recorded after page reload
+  setTimeout(function() {
+    if (window.PROJECT && window.PROJECT.scenes && window.PROJECT.scenes.length) {
+      var meta = window.PROJECT.clipsMeta || {};
+      var aiMeta = window.PROJECT.aiClipsMeta || {};
+      var changed = false;
+      window.PROJECT.scenes.forEach(function(sc, i) {
+        if (meta[sc.id] && meta[sc.id].recorded && sc.status !== 'recorded') {
+          sc.status = 'recorded';
+          changed = true;
+        }
+        if (aiMeta[sc.id] && sc.status !== 'ai-generated') {
+          sc.apsVideoUrl = aiMeta[sc.id].url || sc.apsVideoUrl;
+          changed = true;
+        }
+      });
+      if (changed && typeof ap_save === 'function') ap_save(true);
+    }
+  }, 500);
 })();
 
 
@@ -8402,7 +8717,11 @@ window.ap_setTpSettings = function(settings) {
     // APP STATE
     // ══════════════════════════════════════════════════════════════════════════════
     var APP = { user: null, credits: 0, plan: 'free' } // plans: free, creator, studio;
-    var PROJECT = { id: null, title: 'My Video', mode: 'studio', script: '', wpm: 150, sceneDuration: 8, scenes: [], assets: [], clips: {} };
+    // NOTE: window.PROJECT is already set by the Active Project System above (with restored data).
+    // We just reference it here as a local alias — do NOT overwrite with a blank object.
+    // var PROJECT was removed to prevent shadowing window.PROJECT with a fresh blank object on every script parse.
+    if (!window.PROJECT || !window.PROJECT.id) { window.PROJECT = window._defaultProject ? window._defaultProject() : { id: 'proj_' + Date.now(), title: 'My Video', mode: 'studio', script: '', wpm: 150, sceneDuration: 8, scenes: [], assets: [], clips: {} }; }
+    var PROJECT = window.PROJECT;
     var STUDIO = { stream: null, mr: null, chunks: [], recording: false, camOn: false, micOn: false, recTimer: null, recSecs: 0, analyser: null, currentScene: 0, tpAuto: false, tpSpeed: 80, adaptive: false, recognition: null, overlayPos: 'pip-right', drawActive: false, drawMode: 'pen', drawColor: '#00d4ff', drawCtx: null, isDrawing: false, sx: 0, sy: 0, snap: null, elapsed: 0, elTimer: null, mirrored: false, focusMode: false };
     var TP = { playing: false, speed: 80, fontSize: 28, mirrored: false, adaptive: false, recognition: null, scrollTimer: null, currentWord: 0, totalWords: 0, theme: 'dark', remoteId: null, remotePoll: null, remoteLastCmd: null };
     var EXPORT_STATE = { ratio: '16:9', platform: 'youtube' };
@@ -8744,6 +9063,27 @@ function renderProjectList() {
     }).join('') + '</div>';
 }
 window.renderProjectList = renderProjectList;
+
+// deleteProjectById — used by project cards in renderProjectGrid
+function deleteProjectById(projectId) {
+  aabConfirm('Delete this project? This cannot be undone.', function() {
+    var saved = [];
+    try { saved = JSON.parse(localStorage.getItem('aab_projects') || '[]'); } catch(e) {}
+    saved = saved.filter(function(p){ return p && p.id !== projectId; });
+    localStorage.setItem('aab_projects', JSON.stringify(saved));
+    // If deleted project was active, clear active
+    if (localStorage.getItem('aab_active_project_id') === projectId) {
+      localStorage.removeItem('aab_active_project_id');
+      if (saved.length > 0) {
+        window.PROJECT = Object.assign(window._defaultProject ? window._defaultProject() : {}, saved[0]);
+        localStorage.setItem('aab_active_project_id', saved[0].id);
+      }
+    }
+    if (typeof loadDashboard === 'function') loadDashboard();
+    if (typeof toast === 'function') toast('Project deleted', 'ok');
+  }, null, { title:'Delete Project', yes:'Delete', danger:true });
+}
+window.deleteProjectById = deleteProjectById;
 
 function openProject(id) {
   var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]').filter(Boolean);
