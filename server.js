@@ -737,15 +737,28 @@ app.post('/api/project/save', async (req, res) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (!token) return res.status(401).json({ error: 'No auth token' });
-    const sb = getSupaAdmin();
-    let user;
+    
+    // Decode JWT locally — avoids WebSocket errors from getUser()
+    let user = null;
     try {
-      const authRes = await sb.auth.getUser(token);
-      user = authRes.data?.user;
-    } catch(authErr) {
-      // WebSocket/realtime error on auth — try without realtime
-      console.warn('project/save auth error (likely WebSocket):', authErr.message);
-      return res.status(401).json({ error: 'Auth check failed — retry' });
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+        // Check expiry
+        if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+          return res.status(401).json({ error: 'Token expired' });
+        }
+        user = { id: payload.sub, email: payload.email, role: payload.role };
+      }
+    } catch(jwtErr) {
+      // Fall back to Supabase getUser
+      try {
+        const sb = getSupaAdmin();
+        const authRes = await sb.auth.getUser(token);
+        user = authRes.data?.user;
+      } catch(authErr) {
+        console.warn('project/save auth error:', authErr.message);
+      }
     }
     if (!user) return res.status(401).json({ error: 'Invalid token' });
     const { project } = req.body;
@@ -772,9 +785,24 @@ app.get('/api/project/list', async (req, res) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (!token) return res.status(401).json({ error: 'No auth token' });
-    const sb = getSupaAdmin();
-    const { data: { user }, error: authErr } = await sb.auth.getUser(token);
-    if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
+    let user = null;
+    try {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+        if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+          return res.status(401).json({ error: 'Token expired' });
+        }
+        user = { id: payload.sub, email: payload.email };
+      }
+    } catch(e) {
+      try {
+        const sb = getSupaAdmin();
+        const authRes = await sb.auth.getUser(token);
+        user = authRes.data?.user;
+      } catch(e2) {}
+    }
+    if (!user) return res.status(401).json({ error: 'Invalid token' });
     
     // Try new projects table first
     try {
@@ -808,9 +836,24 @@ app.delete('/api/project/:id', async (req, res) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (!token) return res.status(401).json({ error: 'No auth token' });
-    const sb = getSupaAdmin();
-    const { data: { user }, error: authErr } = await sb.auth.getUser(token);
-    if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
+    let user = null;
+    try {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+        if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+          return res.status(401).json({ error: 'Token expired' });
+        }
+        user = { id: payload.sub, email: payload.email };
+      }
+    } catch(e) {
+      try {
+        const sb = getSupaAdmin();
+        const authRes = await sb.auth.getUser(token);
+        user = authRes.data?.user;
+      } catch(e2) {}
+    }
+    if (!user) return res.status(401).json({ error: 'Invalid token' });
     const { error } = await sb.from('aab_projects')
       .delete().eq('id', req.params.id).eq('user_id', user.id);
     if (error) throw error;

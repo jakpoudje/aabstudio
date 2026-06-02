@@ -10110,13 +10110,53 @@ function loadDashboard() {
       // Cloud sync — save to Supabase so project loads on any device
       syncProjectToCloud(light);
     }
-    function deleteProject(idx, e) {
-      if (e) e.stopPropagation();
-      aabConfirm('Delete this project? This cannot be undone.', function(){ /* continue */ }, null, {title:'Delete Project', yes:'Delete', danger:true}); return;
+    function deleteProject(id, e) {
+      if (e) { e.stopPropagation(); e.preventDefault(); }
+      // id can be a project ID string or a numeric index (legacy)
       var saved = JSON.parse(localStorage.getItem('aab_projects') || '[]');
-      saved.splice(idx, 1);
-      localStorage.setItem('aab_projects', JSON.stringify(saved));
-      loadDashboard(); toast('Project deleted', 'ok');
+      var proj = null;
+      if (typeof id === 'string' && id.startsWith('proj_')) {
+        proj = saved.find(function(p){ return p && p.id === id; });
+      } else {
+        proj = saved[parseInt(id)] || null;
+      }
+      if (!proj) { toast('Project not found', 'error'); return; }
+      
+      aabConfirm('Delete "' + (proj.title||'Project') + '"? This cannot be undone.', function() {
+        // 1. Remove from localStorage
+        var updated = saved.filter(function(p){ return p && p.id !== proj.id; });
+        try { localStorage.setItem('aab_projects', JSON.stringify(updated)); } catch(e2) {}
+        
+        // 2. Track deleted IDs so they don't come back from cloud
+        var deleted = [];
+        try { deleted = JSON.parse(localStorage.getItem('aab_deleted_ids')||'[]'); } catch(e3) {}
+        if (!deleted.includes(proj.id)) deleted.push(proj.id);
+        try { localStorage.setItem('aab_deleted_ids', JSON.stringify(deleted.slice(-100))); } catch(e4) {}
+        
+        // 3. Delete from Railway DB
+        var session = window._sbSession;
+        if (session && session.access_token && proj.id) {
+          fetch(API + '/api/project/' + encodeURIComponent(proj.id), {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + session.access_token }
+          }).catch(function() {});
+        }
+        
+        // 4. Delete from Supabase user_projects
+        if (window.SUPA_URL && window.SUPA_KEY && session && session.access_token) {
+          fetch(SUPA_URL + '/rest/v1/user_projects?id=eq.' + encodeURIComponent(proj.id), {
+            method: 'DELETE',
+            headers: {
+              'apikey': SUPA_KEY,
+              'Authorization': 'Bearer ' + session.access_token,
+              'Content-Type': 'application/json'
+            }
+          }).catch(function() {});
+        }
+        
+        if (typeof loadDashboard === 'function') loadDashboard();
+        if (typeof toast === 'function') toast('Deleted: ' + (proj.title||'Project'), 'ok');
+      }, null, { title: 'Delete Project', yes: 'Delete', danger: true });
     }
 
     // ══════════════════════════════════════════════════════════════════════════════
@@ -17842,14 +17882,21 @@ function supaLoadProjects(){
     }
     return rows;
   }).then(function(rows){
+    // Get locally deleted project IDs — never restore these
+    var deletedIds = [];
+    try { deletedIds = JSON.parse(localStorage.getItem('aab_deleted_ids')||'[]'); } catch(e) {}
+    
     return (rows||[]).map(function(row){
+      // Skip projects the user has deleted locally
+      if (deletedIds.includes(row.id)) return null;
+      
       if(row.project_data){
         try{
           var p = typeof row.project_data === 'string' ? JSON.parse(row.project_data) : row.project_data;
           if(!p.id) p.id = row.id;
-          // Restore status from DB row if not in data
+          // Skip deleted projects
+          if (deletedIds.includes(p.id)) return null;
           if(!p.status && row.status) p.status = row.status;
-          // Restore AI video URLs from aiClipsMeta
           if(p.aiClipsMeta && !p.aiClips) {
             p.aiClips = {};
             Object.keys(p.aiClipsMeta).forEach(function(k){
