@@ -6018,16 +6018,249 @@ window.copyProject = window.duplicateProject = function(projectId) {
 
 /* ── Studio TP functions — ensure all are defined and wired ──────── */
 window.setTpBg = function(color) {
+  // Studio TP elements
   var panel = document.getElementById('studio-tp-panel');
   if (panel) panel.style.background = color;
-  var body = document.getElementById('tp-body');
-  if (body) body.style.background = color;
+  var tpBody = document.getElementById('tp-body');
+  if (tpBody) tpBody.style.background = color;
   var studioTp = document.querySelector('#studio-tp');
   if (studioTp) studioTp.style.background = color;
-  if (window.PROJECT) { if(!PROJECT.tpSettings)PROJECT.tpSettings={}; PROJECT.tpSettings.bg=color; }
-  if (typeof TP!=='undefined') TP.theme = color;
+  // Standalone TP elements
+  var tpDisplay = document.getElementById('tp-display-screen');
+  if (tpDisplay) tpDisplay.style.background = color;
+  var tpPg = document.getElementById('teleprompter-pg');
+  if (tpPg && tpPg.classList.contains('on')) tpPg.style.background = color;
+  var tpText = document.getElementById('tp-text');
+  if (tpText) tpText.style.background = color;
+  // Update TP state
+  if (window.TP) TP.bg = color;
+  // Save preference
+  if (window.PROJECT) { if(!PROJECT.tpSettings)PROJECT.tpSettings={}; PROJECT.tpSettings.bg=color; if(typeof ap_save==='function')ap_save(true); }
 };
 
+
+/* ══════════════════════════════════════════════════════════════════════
+   MASTER TELEPROMPTER FIX — All TP buttons fully functional
+   ══════════════════════════════════════════════════════════════════════ */
+
+// Helper: get the active TP text container (works for both pages)
+function _getTpContainer() {
+  return document.getElementById('tp-body') ||       // studio TP
+         document.getElementById('tp-text') ||        // standalone TP
+         document.getElementById('tp-display-screen');
+}
+function _getTpPage() {
+  return document.getElementById('teleprompter-pg') ||
+         document.getElementById('studio-tp-panel');
+}
+
+// ── setTpBg — Background colour (studio colour swatches + standalone theme) ──
+window.setTpBg = function(color) {
+  // Studio TP
+  ['studio-tp-panel','tp-body','studio-tp'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) el.style.background = color;
+  });
+  // Standalone TP
+  ['tp-display-screen','tp-text','tp-setup-screen'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) el.style.background = color;
+  });
+  var tpPg = document.getElementById('teleprompter-pg');
+  if (tpPg) tpPg.style.background = color;
+  if (window.TP) TP.bg = color;
+  if (window.PROJECT) { if(!PROJECT.tpSettings)PROJECT.tpSettings={}; PROJECT.tpSettings.bg=color; }
+};
+
+// ── Font size ──────────────────────────────────────────────────────────
+window.increaseTpFont = function() {
+  var cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tp-font-size-px')||'22');
+  cur = Math.min(56, cur + 2);
+  document.documentElement.style.setProperty('--tp-font-size', cur+'px');
+  document.documentElement.style.setProperty('--tp-font-size-px', cur);
+  // Also resize the tp-cur element in studio
+  var tpCur = document.getElementById('tp-cur');
+  if (tpCur) tpCur.style.fontSize = cur + 'px';
+  var tpText = document.getElementById('tp-text');
+  if (tpText) tpText.style.fontSize = cur + 'px';
+  if (window.TP) TP.fontSize = cur;
+};
+window.decreaseTpFont = function() {
+  var cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tp-font-size-px')||'22');
+  cur = Math.max(12, cur - 2);
+  document.documentElement.style.setProperty('--tp-font-size', cur+'px');
+  document.documentElement.style.setProperty('--tp-font-size-px', cur);
+  var tpCur = document.getElementById('tp-cur');
+  if (tpCur) tpCur.style.fontSize = cur + 'px';
+  var tpText = document.getElementById('tp-text');
+  if (tpText) tpText.style.fontSize = cur + 'px';
+  if (window.TP) TP.fontSize = cur;
+};
+
+// ── Mirror ─────────────────────────────────────────────────────────────
+window.toggleMirror = function() {
+  // Mirror ALL TP text containers
+  ['tp-body','tp-cur','tp-text','tp-display-screen'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (!el) return;
+    var isMirrored = el.style.transform === 'scaleX(-1)';
+    el.style.transform = isMirrored ? '' : 'scaleX(-1)';
+  });
+  if (window.TP) TP.mirrored = !TP.mirrored;
+  if (window.STUDIO) STUDIO.mirrored = !STUDIO.mirrored;
+  // Update mirror button label
+  document.querySelectorAll('[onclick*="toggleMirror"]').forEach(function(btn){
+    var txt = btn.textContent || '';
+    if (txt.includes('Mirror')) btn.style.background = (window.TP && TP.mirrored) ? 'rgba(0,212,255,.15)' : '';
+  });
+};
+
+// ── Speed ──────────────────────────────────────────────────────────────
+window.setTpSpd = window.tpSetSpd = function(v) {
+  var val = parseInt(v) || 80;
+  if (window.TP) TP.speed = val;
+  if (window.STUDIO) STUDIO.tpSpeed = val;
+  // Update all speed displays
+  ['tp-spd-val','tp-spd-val2','tp-spd-disp'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) el.textContent = val + 'wpm';
+  });
+  // Update range inputs
+  ['tp-spd-range','tp-spd','tp-speed-slider'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) el.value = val;
+  });
+  // Restart scroll if active with new speed
+  if (window.TP && TP.playing && TP.scrollTimer) {
+    clearInterval(TP.scrollTimer);
+    _startTpAutoScroll();
+  }
+  if (window.STUDIO_TP && STUDIO_TP.running && STUDIO_TP.timer) {
+    clearInterval(STUDIO_TP.timer);
+    _startStudioTpScroll();
+  }
+};
+
+// ── Scroll mode ────────────────────────────────────────────────────────
+window.setTpScrollMode = function(mode) {
+  window._tpMode = mode;
+  window._tpScrollMode = mode;
+  // Sync all mode selects
+  ['tp-scroll-mode','tp-mode-sel'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el && mode) el.value = mode;
+  });
+  if (mode === 'word') {
+    if (typeof tpStartWordByWord === 'function') tpStartWordByWord();
+  } else if (mode === 'manual') {
+    if (typeof tpStopAuto === 'function') tpStopAuto();
+    clearInterval(window._tpAutoTimer);
+  } else if (mode === 'auto') {
+    if (typeof tpStartAuto === 'function') tpStartAuto();
+    else _startTpAutoScroll();
+  }
+};
+
+// ── Reset scroll ────────────────────────────────────────────────────────
+window.resetTpScroll = function() {
+  // Standalone TP
+  var tpText = document.getElementById('tp-text');
+  var tpDisp = document.getElementById('tp-display-screen');
+  if (tpText) tpText.style.transform = 'translateY(0)';
+  if (tpDisp) tpDisp.scrollTop = 0;
+  // Studio TP
+  var studioTp = document.getElementById('tp-body');
+  if (studioTp) studioTp.scrollTop = 0;
+  var tpCur = document.getElementById('tp-cur');
+  if (tpCur) tpCur.textContent = tpCur.dataset.original || tpCur.textContent;
+  // Reset word position
+  if (window._tpWBW) { _tpWBW.currentWord = 0; }
+  if (window.TP) TP.playing = false;
+  // Stop auto scroll
+  clearInterval(window._tpAutoTimer);
+  if (window.STUDIO_TP) { STUDIO_TP.running = false; clearInterval(STUDIO_TP.timer); }
+  // Reset play button
+  var playBtn = document.getElementById('tp-play-btn');
+  if (playBtn) { playBtn.textContent = '▶ Play'; playBtn.classList.remove('active','playing'); }
+  var startBtn = document.getElementById('btn-tp-start');
+  if (startBtn) { startBtn.textContent = '▶ Practice'; startBtn.style.background = ''; }
+};
+
+// ── Auto-scroll helper ──────────────────────────────────────────────────
+function _startTpAutoScroll() {
+  clearInterval(window._tpAutoTimer);
+  var speed = (window.TP && TP.speed) || 80;
+  var container = document.getElementById('tp-display-screen') || document.getElementById('tp-text');
+  if (!container) return;
+  window._tpAutoTimer = setInterval(function() {
+    if (!window.TP || !TP.playing) { clearInterval(window._tpAutoTimer); return; }
+    container.scrollTop += speed / 60;
+  }, 50);
+}
+function _startStudioTpScroll() {
+  clearInterval(window._studioTpTimer);
+  var speed = (window.STUDIO && STUDIO.tpSpeed) || 80;
+  var body = document.getElementById('tp-body');
+  if (!body) return;
+  window.STUDIO_TP = window.STUDIO_TP || {};
+  STUDIO_TP.running = true;
+  window._studioTpTimer = setInterval(function() {
+    if (!STUDIO_TP.running) { clearInterval(window._studioTpTimer); return; }
+    body.scrollTop += speed / 60;
+  }, 50);
+  STUDIO_TP.timer = window._studioTpTimer;
+}
+
+// ── Practice mode (studio) ──────────────────────────────────────────────
+window.startPracticeMode = function() {
+  var btn = document.getElementById('btn-tp-start');
+  window.STUDIO_TP = window.STUDIO_TP || {};
+  if (STUDIO_TP.running) {
+    STUDIO_TP.running = false;
+    clearInterval(STUDIO_TP.timer);
+    clearInterval(window._studioTpTimer);
+    if (btn) { btn.textContent = '▶ Practice'; btn.style.background = ''; }
+  } else {
+    _startStudioTpScroll();
+    if (btn) { btn.textContent = '⏸ Pause'; btn.style.background = 'rgba(0,212,255,.15)'; }
+  }
+};
+
+// ── Adaptive mode (studio) ──────────────────────────────────────────────
+window.toggleAdaptiveTp = function() {
+  var btn = document.getElementById('btn-adaptive');
+  if (window.STUDIO && STUDIO.adaptive) {
+    STUDIO.adaptive = false;
+    if (STUDIO.recognition) { try { STUDIO.recognition.stop(); } catch(e) {} STUDIO.recognition = null; }
+    if (btn) { btn.textContent = '🎤 Adapt'; btn.style.background = ''; }
+    toast('Adaptive mode off', 'info');
+  } else {
+    if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
+      toast('Speech recognition not available in this browser', 'error'); return;
+    }
+    if (window.STUDIO) STUDIO.adaptive = true;
+    if (btn) { btn.textContent = '🎤 Adapt: ON'; btn.style.background = 'rgba(0,212,255,.15)'; }
+    // Start recognition to advance TP on speech
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    var rec = new SR();
+    rec.continuous = true; rec.interimResults = true;
+    rec.onresult = function(e) {
+      for (var i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          // Advance TP by scrolling
+          var body = document.getElementById('tp-body');
+          if (body) body.scrollTop += 80;
+        }
+      }
+    };
+    rec.onerror = function() { STUDIO.adaptive = false; if(btn){btn.textContent='🎤 Adapt';btn.style.background='';} };
+    rec.start();
+    if (window.STUDIO) STUDIO.recognition = rec;
+    toast('Adaptive mode ON — speak to advance', 'ok');
+  }
+};
+
+/* ── End Master TP Fix ─────────────────────────────────────────── */
 window.toggleTpPanel = function() {
   var panel = document.getElementById('studio-tp-panel');
   var btn = document.getElementById('tp-toggle-btn');
@@ -6054,9 +6287,12 @@ if (!window.setTpScrollMode) {
     if(sel1&&mode) sel1.value=mode;
     if(sel2&&mode) sel2.value=mode;
     if (mode === 'word' && typeof tpStartWordByWord === 'function') tpStartWordByWord();
+    else if (mode === 'auto' && typeof tpStartAuto === 'function') tpStartAuto();
     else if (mode === 'manual' && typeof tpStopAuto === 'function') tpStopAuto();
+    // Studio: set the scroll mode select to match
+    var studioSel = document.getElementById('tp-mode-sel');
+    if (studioSel && mode) studioSel.value = mode;
   };
-}
 
 // startPracticeMode — toggle studio teleprompter scroll
 if (!window.startPracticeMode) {
