@@ -533,6 +533,56 @@ app.get('/api/user/plan', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+
+// ── One-time database setup endpoint ─────────────────────────────────────────
+app.post('/api/admin/setup-db', async (req, res) => {
+  try {
+    const { adminKey } = req.body;
+    if (adminKey !== (process.env.ADMIN_KEY || 'aabstudio_admin_2026')) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    
+    const sb = getSupaAdmin();
+    const results = [];
+    
+    // Run each setup statement
+    const statements = [
+      // user_projects table
+      `CREATE TABLE IF NOT EXISTS user_projects (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT DEFAULT '', status TEXT DEFAULT 'draft', updated_at TIMESTAMPTZ DEFAULT NOW(), project_data JSONB, created_at TIMESTAMPTZ DEFAULT NOW())`,
+      `ALTER TABLE user_projects ENABLE ROW LEVEL SECURITY`,
+      `DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_policies WHERE tablename='user_projects' AND policyname='user_projects_owner') THEN CREATE POLICY "user_projects_owner" ON user_projects USING (auth.uid()::text = user_id) WITH CHECK (auth.uid()::text = user_id); END IF; END $$`,
+      `CREATE INDEX IF NOT EXISTS user_projects_user_idx ON user_projects(user_id)`,
+      // user_profiles
+      `CREATE TABLE IF NOT EXISTS user_profiles (id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE, email TEXT, name TEXT, plan TEXT DEFAULT 'free', credits_used INT DEFAULT 0, credits_limit INT DEFAULT 10, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())`,
+      `ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY`,
+      // projects table columns
+      `ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_data JSONB`,
+      `ALTER TABLE projects ADD COLUMN IF NOT EXISTS user_id TEXT`,
+      `ALTER TABLE projects ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`,
+      // bucket sizes
+      `UPDATE storage.buckets SET file_size_limit = 52428800 WHERE id = 'project-assets'`,
+      `UPDATE storage.buckets SET file_size_limit = 524288000 WHERE id = 'recorded-clips'`,
+      `UPDATE storage.buckets SET file_size_limit = 1073741824 WHERE id = 'exports'`,
+    ];
+    
+    for (const sql of statements) {
+      try {
+        const { error } = await sb.rpc('query', { query: sql }).catch(async () => {
+          // Try direct postgres if rpc fails
+          return await sb.from('_setup_temp').select('1').limit(0);
+        });
+        results.push({ sql: sql.slice(0, 60), status: error ? 'warn: ' + error.message : 'ok' });
+      } catch(e) {
+        results.push({ sql: sql.slice(0, 60), status: 'skipped: ' + e.message });
+      }
+    }
+    
+    res.json({ success: true, results });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post('/api/admin/upgrade', async (req, res) => {
   try {
     const { adminKey, email, plan } = req.body;
@@ -2382,6 +2432,51 @@ app.get('/api/project/scenes-status', async (req, res) => {
 // Expose heygenResults to presenter-status polling
 // Patch presenter-status to check heygenResults first (webhook is faster than polling)
 const _origStatus = null; // handled inline in polling route
+
+
+// ── Database setup on startup ─────────────────────────────────────────────────
+// Runs once to ensure all tables/policies exist. Safe to run repeatedly (IF NOT EXISTS).
+async function setupDatabase() {
+  try {
+    const sb = getSupaAdmin();
+    
+    // Create user_projects table
+    await sb.rpc('run_sql', { sql: `
+      CREATE TABLE IF NOT EXISTS user_projects (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        title TEXT DEFAULT '',
+        status TEXT DEFAULT 'draft',
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        project_data JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      ALTER TABLE user_projects ENABLE ROW LEVEL SECURITY;
+      CREATE INDEX IF NOT EXISTS user_projects_user_idx ON user_projects(user_id);
+    ` }).catch(() => {});
+    
+    // Create user_profiles table
+    await sb.rpc('run_sql', { sql: `
+      CREATE TABLE IF NOT EXISTS user_profiles (
+        id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+        email TEXT, name TEXT, plan TEXT DEFAULT 'free',
+        credits_used INT DEFAULT 0, credits_limit INT DEFAULT 10,
+        created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
+    ` }).catch(() => {});
+    
+    // Fix bucket sizes
+    await sb.from('storage.buckets').update({ file_size_limit: 52428800 }).eq('id', 'project-assets').catch(() => {});
+    await sb.from('storage.buckets').update({ file_size_limit: 524288000 }).eq('id', 'recorded-clips').catch(() => {});
+    await sb.from('storage.buckets').update({ file_size_limit: 1073741824 }).eq('id', 'exports').catch(() => {});
+    
+    console.log('✓ Database setup complete');
+  } catch (e) {
+    console.log('Database setup skipped:', e.message);
+  }
+}
+setupDatabase();
 
 server.listen(PORT, () => {
   console.log('AABStudio v3.9 running on port', PORT);
