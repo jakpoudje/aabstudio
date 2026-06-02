@@ -8410,7 +8410,7 @@ window.ap_setTpSettings = function(settings) {
     var _tpAutoTimer = null;
     var _supa = null;
 
-    function getSupa() { if (!_supa && window.supabase) _supa = window.supabase.createClient(SUPA_URL, SUPA_KEY); return _supa; }
+    function getSupa() { if (!_supa && window.supabase) _supa = window.supabase.createClient(SUPA_URL, SUPA_KEY, { auth: { persistSession: true, storage: window.localStorage, storageKey: 'aab-supabase-auth', autoRefreshToken: true, detectSessionInUrl: false } }); return _supa; }
 
     // ══════════════════════════════════════════════════════════════════════════════
     // NAVIGATION
@@ -8450,9 +8450,16 @@ window.ap_setTpSettings = function(settings) {
 
       // Auto-save project before navigating away
       try { if (typeof ap_save === 'function' && typeof APP !== 'undefined' && APP && APP.user) ap_save(true); } catch(e) {}
-      document.querySelectorAll('.pg,.pg-flex,.pg-full').forEach(function (p) { p.classList.remove('on'); });
+      document.querySelectorAll('.pg,.pg-flex,.pg-full').forEach(function (p) {
+        p.classList.remove('on');
+        p.style.display = 'none';
+      });
       var el = document.getElementById(pg);
-      if (el) { el.classList.add('on'); el.style.display = ''; }
+      if (el) {
+        el.classList.add('on');
+        // pg-full pages need flex; regular pg pages need block
+        el.style.display = el.classList.contains('pg-full') ? 'flex' : 'block';
+      }
       var tn = document.getElementById('topnav');
       var studioPages = ['record-pg', 'edit-pg', 'teleprompter-pg', 'remote-pg'];
       if (tn) tn.style.display = studioPages.includes(pg) ? 'none' : 'flex';
@@ -8476,8 +8483,11 @@ window.ap_setTpSettings = function(settings) {
 
     function navFree(pg) {
       // Used internally to bypass auth gate for legitimate free navigation
-      document.querySelectorAll('.pg,.pg-flex,.pg-full').forEach(function (p) { p.classList.remove('on'); });
-      var el = document.getElementById(pg); if (el) { el.classList.add('on'); el.style.display = ''; }
+      document.querySelectorAll('.pg,.pg-flex,.pg-full').forEach(function(p){
+        p.classList.remove('on'); p.style.display='none';
+      });
+      var el = document.getElementById(pg);
+      if (el) { el.classList.add('on'); el.style.display = el.classList.contains('pg-full') ? 'flex' : 'block'; }
       var tn = document.getElementById('topnav');
       var studioPages = ['record-pg', 'edit-pg', 'teleprompter-pg', 'remote-pg'];
       if (tn) tn.style.display = studioPages.includes(pg) ? 'none' : 'flex';
