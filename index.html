@@ -14075,7 +14075,7 @@ window._reapplyNav=function(){
         setStatus('<div style="display:flex;align-items:center;gap:8px;color:var(--muted)"><div class="spin spin-dk"></div>Sending to ' + EXPORT_METHOD + ' for AI video generation…</div>');
         setProgress(10, 'Preparing request…');
         try {
-          var resp = await fetch(API + '/generate-ai-presenter', {
+          var resp = await fetch(API + '/api/presenter', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (SESSION && SESSION.access_token || '') },
             body: JSON.stringify({
@@ -17225,9 +17225,12 @@ window._saveScenesToSupabase = function(proj) {
   if (light.assets) light.assets = light.assets.map(function(a) {
     return { id: a.id, name: a.name, type: a.type, url: a.url || null };
   });
-  fetch(API + '/api/save-project', {
+  fetch(API + '/api/project/save', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + ((window._sbSession && window._sbSession.access_token) || '')
+    },
     body: JSON.stringify({
       userId: window.APP.user.id,
       projectId: light.id,
@@ -17788,7 +17791,8 @@ function supaUpsertProject(proj){
     updated_at:new Date().toISOString(),
     project_data:JSON.stringify(proj)
   };
-  // Try user_projects table silently
+  // Try user_projects table silently — only if we have a valid Supabase URL
+  if(!SUPA_URL||!SUPA_URL.startsWith('http')||!SUPA_KEY)return;
   fetch(SUPA_URL+'/rest/v1/user_projects',{
     method:'POST',
     headers:{
@@ -17867,7 +17871,10 @@ if(typeof window.syncProjectToCloud==='function'&&!window._scHooked){
   window._scHooked=true;
   var _origSync=window.syncProjectToCloud;
   window.syncProjectToCloud=function(proj){
-    supaUpsertProject(proj||window.PROJECT);
+    // Only sync to cloud if user is logged in
+    if(window._sbSession&&window._sbSession.access_token){
+      supaUpsertProject(proj||window.PROJECT);
+    }
     return _origSync.apply(this,arguments);
   };
 }
