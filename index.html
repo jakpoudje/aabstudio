@@ -16156,6 +16156,47 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
 <!-- removed:aab-layout-enforcer -->
 
 <script id="aab-master-script">
+/* ── Missing button handler stubs ───────────────────────────── */
+
+// aps_saveCharacter — alias for aps_saveCharProfile
+window.aps_saveCharacter = function() {
+  if (typeof window.aps_saveCharProfile === 'function') {
+    window.aps_saveCharProfile();
+  } else if (typeof aps_saveCharProfile === 'function') {
+    aps_saveCharProfile();
+  }
+};
+
+// dash_filterAssets — filter assets in dashboard
+window.dash_filterAssets = function(filter, btn) {
+  document.querySelectorAll('.dash-asset-filter').forEach(function(b) { b.classList.remove('on'); });
+  if (btn) btn.classList.add('on');
+  if (typeof dash_loadAssets === 'function') dash_loadAssets(filter);
+};
+
+// deleteProjectById — alias for deleteProject  
+window.deleteProjectById = function(id, ev) {
+  if (typeof window.deleteProject === 'function') {
+    window.deleteProject(id, ev);
+  }
+};
+
+// sidebarTab — switch sidebar tabs in various pages
+window.sidebarTab = function(tabName, el) {
+  // Find all sibling tab buttons and panels
+  var container = el ? el.closest('.sidebar-tabs, [data-tabs]') : null;
+  if (!container) {
+    // Try generic tab switching by data-tab
+    document.querySelectorAll('[data-tab="' + tabName + '"]').forEach(function(p) { p.style.display = 'block'; });
+    document.querySelectorAll('[data-tab]:not([data-tab="' + tabName + '"])').forEach(function(p) { p.style.display = 'none'; });
+  }
+  if (el) {
+    var siblings = el.parentElement ? el.parentElement.querySelectorAll('[onclick*="sidebarTab"]') : [];
+    siblings.forEach(function(b) { b.classList.remove('active', 'on'); });
+    el.classList.add('active', 'on');
+  }
+};
+
 /* ── Direct Supabase scene/project backup ─────────────────────── */
 window._saveScenesToSupabase = function(proj) {
   if (!window.APP || !window.APP.user) return;
