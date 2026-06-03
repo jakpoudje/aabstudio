@@ -804,6 +804,7 @@ app.get('/api/project/list', async (req, res) => {
     }
     if (!user) return res.status(401).json({ error: 'Invalid token' });
     
+    const sb = getSupaAdmin(); // Initialize after auth
     // Try new projects table first
     try {
       const { data: newProjects, error: newErr } = await sb.from('projects')
