@@ -6270,15 +6270,19 @@ window.startPracticeMode = function() {
 // Adaptive mic (studio)
 window.toggleAdaptiveTp = function() {
   var btn=document.getElementById('btn-adaptive');
-  if(window.STUDIO&&STUDIO.adaptive){
-    STUDIO.adaptive=false;
-    if(STUDIO.recognition){try{STUDIO.recognition.stop();}catch(e){}} STUDIO.recognition=null;
+  // Use STUDIO_TP for state (STUDIO.adaptive is legacy)
+  var isOn = (window.STUDIO_TP && STUDIO_TP.adaptive) || (window.STUDIO && STUDIO.adaptive);
+  if(isOn){
+    if(window.STUDIO) STUDIO.adaptive=false;
+    if(window.STUDIO_TP) STUDIO_TP.adaptive=false;
+    if(window.STUDIO && STUDIO.recognition){try{STUDIO.recognition.stop();}catch(e){}} if(window.STUDIO) STUDIO.recognition=null;
     if(btn){btn.textContent='🎤 Adapt';btn.style.background='';}
     if(typeof toast==='function') toast('Adaptive OFF','info');
   } else {
     var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
     if(!SR){if(typeof toast==='function') toast('Speech recognition not supported','error');return;}
     if(window.STUDIO) STUDIO.adaptive=true;
+    if(window.STUDIO_TP) STUDIO_TP.adaptive=true;
     if(btn){btn.textContent='🎤 ON';btn.style.background='rgba(0,212,255,.15)';}
     var rec=new SR(); rec.continuous=true; rec.interimResults=true;
     rec.onresult=function(){ var b=document.getElementById('tp-body'); if(b) b.scrollTop+=80; };
@@ -7756,7 +7760,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
           <!-- teleprompter moved below camera -->
         </div>
         <!-- TP panel sits directly below camera within same column -->
-        <div id="studio-tp-panel" style="flex-shrink:0;background:rgba(0,0,0,.92);border-top:.5px solid rgba(255,255,255,.08);overflow:hidden;max-height:160px;">
+        <div id="studio-tp-panel" style="flex-shrink:0;background:rgba(0,0,0,.92);border-top:.5px solid rgba(255,255,255,.08);overflow:hidden;max-height:200px;min-height:148px;">
           <!-- TP Header -->
           <div style="display:flex;align-items:center;gap:6px;padding:5px 12px;height:32px;border-bottom:.5px solid rgba(255,255,255,.06);overflow-x:auto;flex-shrink:0;">
             <span style="font-size:9px;font-weight:700;color:rgba(255,255,255,.3);letter-spacing:.08em;flex-shrink:0;">TELEPROMPTER</span>
@@ -7786,7 +7790,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
             </div>
           </div>
           <!-- Script display -->
-          <div id="studio-tp" class="studio-tp" style="overflow:hidden;height:113px;">
+          <div id="studio-tp" class="studio-tp" style="overflow:hidden;flex:1;min-height:113px;">
             <div class="tp-body" id="tp-body" style="padding:8px 24px 10px;display:flex;flex-direction:column;gap:3px;height:100%;overflow:auto;scroll-behavior:smooth;scrollbar-width:none;">
               <div class="tp-prev-txt" id="tp-prev" style="font-size:11px;color:rgba(255,255,255,.2);line-height:1.3;flex-shrink:0;height:15px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;"></div>
               <div class="tp-cur-txt"  id="tp-cur"  style="flex:1;overflow:hidden;font-size:clamp(15px,1.7vw,21px);line-height:1.55;color:rgba(255,255,255,.92);"></div>
