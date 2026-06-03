@@ -5638,9 +5638,10 @@ setTimeout(function(){
       if(active&&(active.id==='home'||active.id==='auth-pg')){
         // Only go to dashboard if not already on another page
         var _curPg2 = document.querySelector('.pg.on,.pg-full.on');
-        if (!_curPg2 || _curPg2.id === 'dashboard-pg') {
+        var _curId2 = _curPg2 ? _curPg2.id : '';
+        // Only reload dashboard if user is actually on the dashboard
+        if (!_curId2 || _curId2 === 'dashboard-pg') {
           if(typeof loadDashboard==='function')loadDashboard();
-          nav('dashboard-pg');
         }
         setTimeout(function(){
           var lid=localStorage.getItem('aab_last_project');
@@ -9469,8 +9470,17 @@ window._safeFetch = async function(url, opts, timeoutMs) {
         var user = result.data && result.data.user;
         if (!user) throw new Error('Email not confirmed or account not found. Check your inbox.');
         setUser(user);
-        nav('dashboard-pg');
-      setTimeout(function(){if(typeof renderProjectList==='function')renderProjectList();},300);
+        // Restore saved page from sessionStorage, or go to dashboard
+        var _savedPage = '';
+        try { _savedPage = sessionStorage.getItem('aab_current_page') || ''; } catch(e) {}
+        var _safePgs = ['scenes-pg','record-pg','edit-pg','export-pg','script-pg','dashboard-pg'];
+        if (_savedPage && _safePgs.indexOf(_savedPage) > -1) {
+          nav(_savedPage);
+          if (_savedPage === 'scenes-pg' && typeof renderSceneBoard==='function') setTimeout(renderSceneBoard, 150);
+        } else {
+          nav('dashboard-pg');
+        }
+        setTimeout(function(){if(typeof renderProjectList==='function')renderProjectList();},300);
       } catch (e) {
         showErr('err-in', e.message || 'Sign in failed. Please try again.');
       }
@@ -11789,7 +11799,13 @@ function loadDashboard() {
       }
       var supa = getSupa(); if (!supa) { updateNavState(); return; }
       supa.auth.getSession().then(function (r) {
-        if (r.data && r.data.session) { setUser(r.data.session.user); nav('dashboard-pg');
+        if (r.data && r.data.session) { setUser(r.data.session.user);
+          // Only go to dashboard if currently on home/auth page — don't interrupt other pages
+          var _activePg = document.querySelector('.pg.on,.pg-full.on,.pg-flex.on');
+          var _activePgId = _activePg ? _activePg.id : '';
+          if (!_activePgId || _activePgId === 'auth-pg' || _activePgId === 'landing-pg' || _activePgId === 'home-pg') {
+            nav('dashboard-pg');
+          }
           setTimeout(function(){if(typeof renderProjectList==='function')renderProjectList();},500);
         } else { updateNavState(); navFree('home'); }
       });
@@ -11807,9 +11823,10 @@ function loadDashboard() {
               // Only refresh dashboard if user is already on it — don't interrupt other pages
               var curPg = document.querySelector('.pg.on, .pg-full.on');
               var curId = curPg ? curPg.id : '';
-              if (curId === 'dashboard-pg' || curId === '') {
+              if (curId === 'dashboard-pg' || curId === '' || !curId) {
                 if (typeof loadDashboard === 'function') loadDashboard();
-                nav('dashboard-pg');
+                // Only navigate if already on dashboard (don't interrupt scenes/studio/edit)
+                if (!curId || curId === 'dashboard-pg') nav('dashboard-pg');
                 setTimeout(function(){ if(typeof renderProjectList==='function') renderProjectList(); }, 400);
               }
             });
