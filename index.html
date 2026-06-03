@@ -8897,6 +8897,25 @@ if (window.PROJECT && window.PROJECT.id) {
 // ── ap_save — Save the active project (localStorage immediately, cloud async) ─
 window.ap_save = function(silent) {
   if (!window.PROJECT) return;
+  // Quota cleanup: remove large items that don't belong in localStorage
+  try {
+    ['aps_presenter_photo','aab_assets'].forEach(function(k){
+      var v = localStorage.getItem(k);
+      if (v && v.length > 100000) { // >100KB means it's a base64 image
+        localStorage.removeItem(k);
+        console.log('Quota cleanup: removed', k, Math.round(v.length/1024)+'KB');
+      }
+    });
+    // Remove orphaned edit states and segment caches
+    var orphanKeys = [];
+    for(var ki=0; ki<localStorage.length; ki++){
+      var kk = localStorage.key(ki);
+      if(kk && (kk.startsWith('aab_edit_state_') || kk.startsWith('aab_ps_') || kk.startsWith('aab_seg_'))){
+        orphanKeys.push(kk);
+      }
+    }
+    if(orphanKeys.length > 5) orphanKeys.slice(5).forEach(function(k){ localStorage.removeItem(k); });
+  } catch(e) {}
   // Fix localStorage quota: prune old empty projects first
   try {
     var ps = JSON.parse(localStorage.getItem('aab_projects')||'[]');
@@ -9242,7 +9261,11 @@ window._safeFetch = async function(url, opts, timeoutMs) {
     var _tpAutoTimer = null;
     var _supa = null;
 
-    function getSupa() { if (!_supa && window.supabase) _supa = window.supabase.createClient(SUPA_URL, SUPA_KEY, { auth: { persistSession: true, storage: window.localStorage, storageKey: 'aab-supabase-auth', autoRefreshToken: true, detectSessionInUrl: false } }); return _supa; }
+    function getSupa() { if (!_supa && window.supabase) _supa = window.supabase.createClient(SUPA_URL, SUPA_KEY, { 
+        auth: { persistSession: true, storage: window.localStorage, storageKey: 'aab-supabase-auth', autoRefreshToken: true, detectSessionInUrl: false },
+        realtime: { params: { eventsPerSecond: 0 } }, // Disable realtime to prevent WebSocket SyntaxErrors
+        global: { headers: { 'X-Client-Info': 'aabstudio/1.0' } }
+      }); return _supa; }
 
     // ══════════════════════════════════════════════════════════════════════════════
     // NAVIGATION
@@ -9535,45 +9558,77 @@ function renderProjectList() {
   var grid = document.getElementById('proj-list');
   if (!grid) return;
   var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]').filter(Boolean);
-  // Fix null ids but only assign unique ones
-  var needsSave = false;
-  projects = projects.map(function(p) {
-    if (!p.id) { p.id = 'proj_' + Date.now() + '_' + Math.random().toString(36).slice(2,6); needsSave = true; }
-    return p;
-  });
-  // Remove exact duplicates (same id)
-  var seenIds = {};
-  projects = projects.filter(function(p) {
-    if (seenIds[p.id]) return false;
-    seenIds[p.id] = true;
-    return true;
-  });
-  if (needsSave) localStorage.setItem('aab_projects', JSON.stringify(projects));
+  // Remove duplicates by id
+  var seen = {};
+  projects = projects.filter(function(p){ if(!p.id||seen[p.id]) return false; seen[p.id]=true; return true; });
+  // Remove deleted IDs
+  var deletedIds = [];
+  try { deletedIds = JSON.parse(localStorage.getItem('aab_deleted_ids')||'[]'); } catch(e) {}
+  projects = projects.filter(function(p){ return deletedIds.indexOf(p.id) === -1; });
+
   if (!projects.length) {
-    grid.innerHTML = '<div style="text-align:center;padding:40px;color:#9ca3af;">No projects yet. <a onclick="newProject&&newProject()" style="color:#06b6d4;cursor:pointer;">Create one →</a></div>';
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:60px;color:#9ca3af;"><div style="font-size:48px;margin-bottom:16px;">🎬</div><div style="font-size:16px;font-weight:600;margin-bottom:8px;">No projects yet</div><p style="font-size:14px;">Click + New project to get started</p></div>';
     return;
   }
-  grid.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:20px;">' +
-    projects.map(function(p) {
-      var scenes = (p.scenes || []).length;
-      var recorded = Object.keys(p.clips || {}).length;
-      var aiClips = Object.keys(p.apsVideos || {}).length;
-      var thumb = '<div style="height:140px;background:linear-gradient(135deg,#0f172a,#1e3a5f);display:flex;align-items:center;justify-content:center;font-size:32px;">🎬</div>';
-      var badges = '';
-      if (recorded) badges += '<span style="background:rgba(0,212,255,.15);color:#00d4ff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;">' + recorded + ' recorded</span>';
-      if (aiClips) badges += '<span style="background:rgba(139,92,246,.15);color:#a78bfa;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;">' + aiClips + ' AI clips</span>';
-      return '<div style="background:#fff;border-radius:12px;overflow:visible;box-shadow:0 1px 8px rgba(0,0,0,.08);cursor:pointer;" onclick="openProject(' + JSON.stringify(p.id) + ')">' +
-        thumb +
-        '<div style="padding:12px 14px 14px;">' +
-          '<div style="font-size:14px;font-weight:700;color:#111827;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (p.title || 'Untitled') + '</div>' +
-          '<div style="font-size:12px;color:#6b7280;margin-bottom:8px;">' + scenes + ' scenes · ' + (p.date || '') + '</div>' +
-          '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">' + badges + '</div>' +
-          '<div style="display:flex;gap:6px;margin-top:8px;">' +
-        '<button class="proj-open-btn" data-pid=\''+p.id+'\' style="flex:1;background:#00d4ff;color:#000;border:none;border-radius:6px;padding:7px;font-size:12px;font-weight:700;cursor:pointer;">Open →</button>' +
-        '<button class="proj-del-btn" data-pid=\''+p.id+'\' title="Delete project" style="background:#fee2e2;color:#ef4444;border:1px solid #fca5a5;border-radius:6px;padding:7px 10px;font-size:12px;cursor:pointer;">🗑</button>'+
-        '</div>' +
-        '</div></div>';
-    }).join('') + '</div>';
+
+  // Build cards using DOM (avoids innerHTML escaping issues)
+  grid.innerHTML = '';
+  projects.forEach(function(p) {
+    var scenes = (p.scenes || []).length;
+    var date = '';
+    try { if(p.updatedAt) date = new Date(p.updatedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'}); } catch(e) {}
+
+    var card = document.createElement('div');
+    card.style.cssText = 'background:#fff;border-radius:12px;box-shadow:0 1px 6px rgba(0,0,0,.08);overflow:hidden;cursor:pointer;border:.5px solid #e5e7eb;transition:box-shadow .2s;';
+    card.onmouseenter = function(){ this.style.boxShadow='0 4px 16px rgba(0,0,0,.12)'; };
+    card.onmouseleave = function(){ this.style.boxShadow='0 1px 6px rgba(0,0,0,.08)'; };
+
+    var thumb = document.createElement('div');
+    thumb.style.cssText = 'height:160px;background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 60%,#0e4d6e 100%);display:flex;align-items:center;justify-content:center;position:relative;';
+    thumb.innerHTML = '<div style="font-size:40px;opacity:.4;">🎬</div>';
+    if (scenes > 0) {
+      var badge = document.createElement('div');
+      badge.style.cssText = 'position:absolute;bottom:8px;right:8px;background:rgba(0,212,255,.2);border:.5px solid rgba(0,212,255,.4);color:#00d4ff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;';
+      badge.textContent = scenes + ' scene' + (scenes !== 1 ? 's' : '');
+      thumb.appendChild(badge);
+    }
+
+    var info = document.createElement('div');
+    info.style.cssText = 'padding:12px 14px 14px;';
+
+    var title = document.createElement('div');
+    title.style.cssText = 'font-size:14px;font-weight:700;color:#111827;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    title.title = p.title || 'Untitled';
+    title.textContent = p.title || 'Untitled';
+
+    var meta = document.createElement('div');
+    meta.style.cssText = 'font-size:11px;color:#9ca3af;margin-bottom:12px;';
+    meta.textContent = scenes + ' scene' + (scenes !== 1 ? 's' : '') + (date ? ' · ' + date : '');
+
+    var btns = document.createElement('div');
+    btns.style.cssText = 'display:flex;gap:8px;';
+
+    var openBtn = document.createElement('button');
+    openBtn.style.cssText = 'flex:1;background:#00d4ff;color:#000;border:none;border-radius:6px;padding:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;';
+    openBtn.textContent = 'Open →';
+    openBtn.onclick = (function(pid){ return function(e){ e.stopPropagation(); openProject(pid); }; })(p.id);
+
+    var delBtn = document.createElement('button');
+    delBtn.style.cssText = 'background:#fee2e2;color:#ef4444;border:1px solid #fca5a5;border-radius:6px;padding:8px 12px;font-size:13px;cursor:pointer;font-family:inherit;';
+    delBtn.title = 'Delete project';
+    delBtn.textContent = '🗑';
+    delBtn.onclick = (function(pid){ return function(e){ e.stopPropagation(); deleteProject(pid, e); }; })(p.id);
+
+    btns.appendChild(openBtn);
+    btns.appendChild(delBtn);
+    info.appendChild(title);
+    info.appendChild(meta);
+    info.appendChild(btns);
+    card.appendChild(thumb);
+    card.appendChild(info);
+    card.onclick = (function(pid){ return function(){ openProject(pid); }; })(p.id);
+    grid.appendChild(card);
+  });
 }
 window.renderProjectList = renderProjectList;
 // confirmResegment — warn user before destroying scenes
