@@ -6185,12 +6185,28 @@ window.copyProject = window.duplicateProject = function(projectId) {
 
 // setTpBg — set teleprompter background on BOTH pages
 window.setTpBg = function(color) {
-  ['studio-tp-panel','tp-body','studio-tp','tp-display-screen','tp-text','tp-setup-screen'].forEach(function(id){
+  ['studio-tp-panel','studio-tp','tp-display-screen','tp-text','tp-setup-screen'].forEach(function(id){
     var el = document.getElementById(id); if(el) el.style.background = color;
   });
+  // Don't set bg on tp-body itself (it would cover the text)
   var tpPg = document.getElementById('teleprompter-pg'); if(tpPg) tpPg.style.background = color;
   if(window.TP) TP.bg = color;
   if(window.PROJECT){ if(!PROJECT.tpSettings)PROJECT.tpSettings={}; PROJECT.tpSettings.bg=color; }
+  // Adjust text and active word colour for readability on light backgrounds
+  var isLight = color === '#ffffff' || color === '#fff' || color === 'white' || color === '#f8f8f8';
+  var baseColor = isLight ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.55)';
+  var doneColor = isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.2)';
+  var activeColor = isLight ? '#b45309' : '#f59e0b'; // amber on white, gold on dark
+  // Update CSS custom properties for TP
+  document.documentElement.style.setProperty('--tp-text-color', baseColor);
+  document.documentElement.style.setProperty('--tp-active-color', activeColor);
+  // Update existing word spans
+  document.querySelectorAll('.tp-word').forEach(function(w, i) {
+    var wbwIdx = window._studioWBW ? _studioWBW.idx : -1;
+    if (i < wbwIdx) w.style.color = doneColor;
+    else if (i === wbwIdx) w.style.color = activeColor;
+    else w.style.color = baseColor;
+  });
 };
 
 // Font size — works on both TP pages
@@ -7854,12 +7870,12 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
             <button onclick="decreaseTpFont()" style="background:none;border:.5px solid rgba(255,255,255,.1);border-radius:3px;padding:1px 5px;font-size:9px;color:rgba(255,255,255,.25);cursor:pointer;flex-shrink:0;">A-</button>
             <button onclick="increaseTpFont()" style="background:none;border:.5px solid rgba(255,255,255,.1);border-radius:3px;padding:1px 5px;font-size:9px;color:rgba(255,255,255,.25);cursor:pointer;flex-shrink:0;">A+</button>
             <button onclick="toggleMirror()" style="background:none;border:.5px solid rgba(255,255,255,.08);border-radius:3px;padding:1px 6px;font-size:9px;color:rgba(255,255,255,.25);cursor:pointer;flex-shrink:0;">⇄ Mirror</button>
-            <div style="display:flex;align-items:center;gap:2px;flex-shrink:0;">
-              <span style="font-size:8px;color:rgba(255,255,255,.15);">BG</span>
-              <span onclick="setTpBg('#000000')" style="display:inline-block;width:13px;height:13px;border-radius:2px;background:#000;cursor:pointer;border:1.5px solid rgba(255,255,255,.25);"></span>
-              <span onclick="setTpBg('#111827')" style="display:inline-block;width:13px;height:13px;border-radius:2px;background:#111827;cursor:pointer;border:1.5px solid rgba(255,255,255,.1);"></span>
-              <span onclick="setTpBg('rgba(0,0,0,.75)')" style="display:inline-block;width:13px;height:13px;border-radius:2px;background:rgba(0,0,0,.75);cursor:pointer;border:1.5px solid rgba(255,212,0,.25);"></span>
-              <span onclick="setTpBg('#ffffff')" style="display:inline-block;width:13px;height:13px;border-radius:2px;background:#fff;cursor:pointer;border:1.5px solid rgba(0,212,255,.25);"></span>
+            <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
+              <span style="font-size:8px;color:rgba(255,255,255,.3);letter-spacing:.05em;">BG</span>
+              <span onclick="setTpBg('#000000');this.parentElement.querySelectorAll('span[onclick]').forEach(s=>s.style.outline='');this.style.outline='2px solid #f59e0b';" title="Black" style="display:inline-block;width:16px;height:16px;border-radius:3px;background:#000;cursor:pointer;border:1.5px solid rgba(255,255,255,.4);outline:2px solid #f59e0b;"></span>
+              <span onclick="setTpBg('#111827');this.parentElement.querySelectorAll('span[onclick]').forEach(s=>s.style.outline='');this.style.outline='2px solid #f59e0b';" title="Dark" style="display:inline-block;width:16px;height:16px;border-radius:3px;background:#111827;cursor:pointer;border:1.5px solid rgba(255,255,255,.2);"></span>
+              <span onclick="setTpBg('rgba(0,0,0,.75)');this.parentElement.querySelectorAll('span[onclick]').forEach(s=>s.style.outline='');this.style.outline='2px solid #f59e0b';" title="Transparent" style="display:inline-block;width:16px;height:16px;border-radius:3px;background:repeating-linear-gradient(45deg,#333 0,#333 3px,#555 3px,#555 6px);cursor:pointer;border:1.5px solid rgba(255,212,0,.4);"></span>
+              <span onclick="setTpBg('#ffffff');this.parentElement.querySelectorAll('span[onclick]').forEach(s=>s.style.outline='');this.style.outline='2px solid #00d4ff';" title="White" style="display:inline-block;width:16px;height:16px;border-radius:3px;background:#fff;cursor:pointer;border:1.5px solid rgba(255,255,255,.6);"></span>
             </div>
             <select id="tp-scroll-mode" style="background:rgba(255,255,255,.04);border:.5px solid rgba(255,255,255,.07);color:rgba(255,255,255,.35);border-radius:3px;padding:2px 4px;font-size:9px;flex-shrink:0;" onchange="setTpScrollMode(this.value)">
               <option value="auto">Auto-scroll</option>
@@ -17778,7 +17794,16 @@ function _studioStartWBW() {
         s.style.color = '#f59e0b';
         s.style.fontWeight = '700';
         s.style.textShadow = '0 0 20px rgba(245,158,11,0.8), 0 0 40px rgba(245,158,11,0.4)';
-        s.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        s.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Also scroll the parent container
+        var parent = document.getElementById('tp-body') || document.getElementById('studio-tp-words');
+        if (parent) {
+          var sRect = s.getBoundingClientRect();
+          var pRect = parent.getBoundingClientRect();
+          if (sRect.bottom > pRect.bottom || sRect.top < pRect.top) {
+            parent.scrollTop += sRect.top - pRect.top - parent.offsetHeight / 2;
+          }
+        }
       } else if (i <= _studioWBW.idx + 2) {
         // upcoming — slightly brighter
         s.style.color = 'rgba(255,255,255,0.55)';
