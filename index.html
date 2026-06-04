@@ -7369,7 +7369,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
               <div class="dash-title">My projects</div>
               <div class="dash-sub">Your video productions</div>
             </div>
-            <button class="btn btn-primary" onclick="nav('script-pg')">+ New project</button>
+            <button class="btn btn-primary" onclick="ap_new && ap_new('My Video'); nav('script-pg');">+ New project</button>
           </div>
           <div id="proj-list" style="min-height:200px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px;padding:4px;">
             <div style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;padding:16px 0;">
@@ -10043,6 +10043,10 @@ function loadDashboard() {
         loadProjectsFromCloud().then(function (cloudProjects) {
           if (!cloudProjects || !cloudProjects.length) return;
           // Merge cloud into local
+          // Filter deleted IDs before merging
+          var _delIds = [];
+          try { _delIds = JSON.parse(localStorage.getItem('aab_deleted_ids')||'[]'); } catch(e){}
+          cloudProjects = cloudProjects.filter(function(cp){ return cp && cp.id && _delIds.indexOf(cp.id) === -1; });
           cloudProjects.forEach(function (cp) {
             var idx = projects.findIndex(function (p) { return p.id === cp.id; });
             if (idx > -1) { projects[idx] = cp; } else { projects.unshift(cp); }
@@ -10500,15 +10504,17 @@ function loadDashboard() {
     }
 
     async function startSegmentation() {
-      // GUARD: Never re-segment if project already has scenes
-      if(window.PROJECT && window.PROJECT.scenes && window.PROJECT.scenes.length > 0 && 
-         window.PROJECT.status && ['segmented','recorded','exported'].indexOf(window.PROJECT.status) >= 0) {
-        console.log('[AAB] Skipped re-segmentation - already has ' + PROJECT.scenes.length + ' scenes');
-        if(typeof renderSceneBoard === 'function') renderSceneBoard();
-        return;
-      }
       var title = (document.getElementById('proj-title') || {}).value || 'My Video';
       var script = getScript().trim();
+      // Smart guard: only skip if script is unchanged AND scenes already exist
+      if (window.PROJECT && window.PROJECT.scenes && window.PROJECT.scenes.length > 0 &&
+          window.PROJECT.script && window.PROJECT.script.trim() === script &&
+          window.PROJECT.status && ['segmented','recorded','exported'].indexOf(window.PROJECT.status) >= 0) {
+        // Script unchanged — just go to scenes
+        nav('scenes-pg');
+        if (typeof renderSceneBoard === 'function') setTimeout(renderSceneBoard, 100);
+        return;
+      }
       if (!script || script.length < 20) { toast('Please write or paste your script first.', 'err'); return; }
       PROJECT.id = PROJECT.id || ('p_' + Date.now());
       PROJECT.title = title;
@@ -10557,7 +10563,7 @@ function loadDashboard() {
         clearInterval(stepTimer); clearInterval(factTimer);
         var msg = e.message || 'Unknown error';
         // Always try smart local fallback — works even if API is down
-        toast('AI unavailable — splitting script locally...', 'info');
+        toast('Splitting your script into scenes...', 'info');
         var fallbackScenes = smartSplitScript(script, PROJECT.wpm, PROJECT.sceneDuration);
         if (fallbackScenes.length) {
           PROJECT.scenes = fallbackScenes;
@@ -10569,7 +10575,12 @@ function loadDashboard() {
           setTimeout(function () { nav('scenes-pg'); }, 700);
           return;
         }
-        toast('Segmentation failed: ' + msg, 'err');
+        // Parse msg - it might be JSON
+        var displayMsg = msg;
+        try { var parsed = JSON.parse(msg); displayMsg = parsed.error || parsed.message || parsed.detail || msg; } catch(e2) {}
+        // Strip any remaining JSON artifacts
+        if (displayMsg && displayMsg.length > 100) displayMsg = displayMsg.slice(0, 100) + '…';
+        toast('Could not split script: ' + displayMsg, 'err');
         nav('script-pg');
       }
     }
@@ -18723,16 +18734,7 @@ window.aabOpenTextOverlay = function(type) {
 })();
 
 // ── 8. SCENE PERSISTENCE — guard on nav ───────────────────────────
-var _origStartSeg = window.startSegmentation;
-window.startSegmentation = function() {
-  if(window.PROJECT && window.PROJECT.scenes && window.PROJECT.scenes.length > 0 &&
-     window.PROJECT.status && ['segmented','recorded','exported'].indexOf(window.PROJECT.status)>=0) {
-    if(typeof toast==='function') toast('Scenes already saved — skipping re-segmentation', 'ok');
-    if(typeof renderSceneBoard==='function') renderSceneBoard();
-    return;
-  }
-  if(_origStartSeg) _origStartSeg();
-};
+// Re-segmentation override removed — users can always re-segment
 
 // ── 9. LOAD EXISTING APS VIDEOS INTO TIMELINE ─────────────────────
 // Called when navigating to edit-pg with apsVideos already present
