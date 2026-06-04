@@ -6269,12 +6269,52 @@ window.studioTpSetMode = function(mode) {
   }
 };
 
+
+window.setDrawSize = function(size) {
+  var sizeMap = { 'thin': 2, 'medium': 5, 'thick': 12 };
+  window._drawSize = sizeMap[size] || parseInt(size) || 5;
+  var canvas = document.getElementById('studio-draw-canvas');
+  if (canvas && canvas._ctx) canvas._ctx.lineWidth = window._drawSize;
+};
+window.setDrawMode = window.setDrawMode || function(mode) {
+  window._drawMode = mode; // 'pen' or 'highlight'
+  var canvas = document.getElementById('studio-draw-canvas');
+  if (canvas && canvas._ctx) {
+    canvas._ctx.globalAlpha = mode === 'highlight' ? 0.4 : 1.0;
+  }
+};
+window.setDrawColor = window.setDrawColor || function(color) {
+  window._drawColor = color;
+  var canvas = document.getElementById('studio-draw-canvas');
+  if (canvas && canvas._ctx) canvas._ctx.strokeStyle = color;
+};
 window.setTpScrollMode = function(mode) {
   window._tpMode = mode; window._tpScrollMode = mode;
   ['tp-scroll-mode','tp-mode-sel'].forEach(function(id){ var el=document.getElementById(id); if(el&&mode) el.value=mode; });
-  if(mode==='word' && typeof tpStartWordByWord==='function') tpStartWordByWord();
-  else if(mode==='manual' && typeof tpStopAuto==='function') tpStopAuto();
-  else if(mode==='auto' && window.TP) { TP.playing=true; if(typeof _startTpAutoScroll==='function') _startTpAutoScroll(); }
+  
+  // Stop whatever is running first
+  if (window._studioWBW) { _studioWBW.running=false; clearInterval(_studioWBW.timer); }
+  if (window.STUDIO_TP) { clearInterval(STUDIO_TP.timer); }
+  var practiceBtn = document.getElementById('btn-tp-start');
+  
+  if (mode==='word' || mode==='wbw') {
+    // Gold karaoke WBW — studio mode
+    window._studioWBW = window._studioWBW || {};
+    _studioWBW.running = true;
+    if (typeof _studioStartWBW === 'function') _studioStartWBW();
+    else if (typeof tpStartWordByWord === 'function') tpStartWordByWord();
+    if (practiceBtn) { practiceBtn.textContent='⏸ Stop'; practiceBtn.style.background='rgba(245,158,11,.2)'; practiceBtn.style.color='#f59e0b'; }
+  } else if (mode==='manual') {
+    // Manual — stop all auto
+    if (typeof tpStopAuto === 'function') tpStopAuto();
+    if (practiceBtn) { practiceBtn.textContent='▶ Practice'; practiceBtn.style.background=''; practiceBtn.style.color=''; }
+  } else if (mode==='auto') {
+    // Smooth auto-scroll
+    if (window.TP) { TP.playing=true; }
+    if (typeof _startTpAutoScroll === 'function') _startTpAutoScroll();
+    else if (typeof studioTpStart === 'function') studioTpStart();
+    if (practiceBtn) { practiceBtn.textContent='⏸ Stop'; practiceBtn.style.background='rgba(0,212,255,.15)'; practiceBtn.style.color='#00d4ff'; }
+  }
 };
 
 // Reset scroll
@@ -7948,7 +7988,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
       <button class="s-btn s-btn-gold" id="btn-adaptive" onclick="toggleAdaptiveTp()" style="font-size:11px;padding:6px 10px;" title="Mic listens and advances text to match your speech">🎤 Adapt</button>
       <div style="display:flex;align-items:center;gap:4px;">
       <span style="font-size:9px;color:rgba(245,158,11,.5);">Speed</span>
-      <input type="range" min="20" max="220" value="80" id="tp-spd-range" oninput="setTpSpd(this.value); var v2=document.getElementById('tp-spd-val2'); if(v2) v2.textContent=this.value+'wpm';" style="width:60px;accent-color:var(--gold);">
+      <input type="range" min="20" max="220" value="80" id="tp-spd-range" oninput="setTpSpd(this.value); var v2=document.getElementById('tp-spd-val2'); if(v2) v2.textContent=this.value+'wpm';; if(window.studioTpUpdateSpeed) studioTpUpdateSpeed(+this.value);" style="width:60px;accent-color:var(--gold);">
       <span id="tp-spd-val2" style="font-size:10px;color:var(--gold);min-width:34px;">80wpm</span>
       <span style="font-size:9px;color:rgba(255,255,255,.2);">|</span>
       <select id="tp-mode-sel" onchange="setTpScrollMode(this.value); document.getElementById('tp-scroll-mode') && (document.getElementById('tp-scroll-mode').value=this.value);" title="Scroll mode" style="font-size:9px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.5);border-radius:4px;padding:2px 4px;cursor:pointer;"><option value="auto" selected>📜 Auto-scroll</option><option value="word">💡 Word-by-word</option><option value="manual">✋ Manual</option></select>
@@ -8023,7 +8063,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
       <option value="8">Thick</option>
       <option value="14">Bold</option>
       </select>
-      <input type="color" value="#00d4ff" onchange="setDrawColor(this.value)" style="width:26px;height:26px;border:none;border-radius:5px;cursor:pointer;background:none;" title="Pick colour">
+      <input type="color" value="#00d4ff" onchange="setDrawColor(this.value)" style="width:26px;height:26px;border:none;border-radius:5px;cursor:pointer;background:none;" title="Pick colour" id="draw-color-pick" oninput="setDrawColor(this.value);">
       <button class="s-btn" onclick="setEraserMode()" style="font-size:10px;padding:5px 8px;" title="Eraser">⬜ Erase</button>
       <button class="s-btn" onclick="clearDraw()" style="font-size:10px;padding:5px 8px;" title="Clear all annotations">🗑 Clear</button>
       </div>
@@ -11002,6 +11042,7 @@ function loadDashboard() {
       STUDIO.recording = false;
       clearInterval(STUDIO.recTimer);
       setRecState('STOPPED');
+      setTimeout(window._updateStudioCounters, 500);
       clearAssetTimers();
       if (typeof studioTpStop === 'function') studioTpStop();
 
@@ -11073,10 +11114,42 @@ function loadDashboard() {
       clearInterval(STUDIO.elTimer);
       saveProject(); nav('edit-pg');
     }
-    function studioNext() {
+    
+// ── Scene counter helper — call after any scene navigation or clip save ──
+window._updateStudioCounters = function() {
+  var sc = STUDIO.currentScene || 0;
+  var total = PROJECT && PROJECT.scenes ? PROJECT.scenes.length : 1;
+  // Scene counter "2/10"
+  var scEl = document.getElementById('st-scene-cnt');
+  if (scEl) scEl.textContent = (sc + 1) + '/' + total;
+  // Scene name pill
+  var pill = document.getElementById('st-scene-pill');
+  if (pill) pill.textContent = 'Scene ' + (sc + 1);
+  // Scene name text
+  var nameEl = document.getElementById('st-scene-name');
+  if (nameEl && PROJECT && PROJECT.scenes && PROJECT.scenes[sc]) {
+    nameEl.textContent = (PROJECT.scenes[sc].narration || '').slice(0, 60);
+  }
+  // Sidebar highlight
+  var ql = document.getElementById('studio-q-list');
+  if (ql) {
+    Array.from(ql.querySelectorAll('.studio-q-item')).forEach(function(el, i) {
+      el.classList.toggle('active', i === sc);
+    });
+  }
+  // Clips saved count
+  var clipCount = 0;
+  if (PROJECT && PROJECT.clipsMeta) clipCount = Object.keys(PROJECT.clipsMeta).length;
+  else if (PROJECT && PROJECT.clips) clipCount = Object.values(PROJECT.clips).filter(Boolean).length;
+  var clipsEl = document.getElementById('st-clips-saved');
+  if (clipsEl) clipsEl.textContent = clipCount;
+};
+
+function studioNext() {
       if (STUDIO.currentScene < PROJECT.scenes.length - 1) {
         PROJECT.currentScene = STUDIO.currentScene + 1; // persist position
         var wasRecording = STUDIO.recording;
+        setTimeout(window._updateStudioCounters, 100);
 
         if (wasRecording && STUDIO.mr && STUDIO.mr.state === 'recording') {
           // Stop MediaRecorder for current scene — saves real blob via onstop
@@ -11141,6 +11214,7 @@ function loadDashboard() {
     }
     function studioPrev() {
       if (STUDIO.currentScene > 0) {
+        setTimeout(window._updateStudioCounters, 100);
         STUDIO.currentScene--;
         updateTP();
         var _sc3=document.getElementById('st-scene-cnt');if(_sc3)_sc3.textContent=(STUDIO.currentScene+1)+'/'+(PROJECT.scenes.length||1);
