@@ -4685,7 +4685,7 @@ _css.textContent=""+
 ".aab-track-row.video-row{height:58px;}"+
 ".aab-track-row.audio-row{height:40px;}"+
 ".aab-track-row.text-row{height:32px;}"+
-".aab-track-lbl{flex:0 0 110px;display:flex;align-items:center;padding:0 6px;gap:3px;background:#080c15;border-right:1px solid #111827;position:sticky;left:0;z-index:8;}"+
+".aab-track-lbl{flex:0 0 200px;display:flex;flex-direction:column;justify-content:center;padding:4px 8px;gap:3px;background:#080c15;border-right:1px solid #1f2937;position:sticky;left:0;z-index:8;min-width:180px;}"+
 ".aab-track-name{font-size:10px;font-weight:600;color:#9ca3af;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.01em;}"+
 ".aab-track-btn{background:none;border:none;color:#374151;cursor:pointer;font-size:9px;padding:2px;border-radius:2px;line-height:1;}"+
 ".aab-track-btn:hover{color:#9ca3af;}"+
@@ -4956,7 +4956,7 @@ function _mkTimeline(){
   scroll.appendChild(tw);
   scroll.addEventListener("click",function(e){
     var rect=scroll.getBoundingClientRect();
-    var x=e.clientX-rect.left+scroll.scrollLeft-110;
+    var x=e.clientX-rect.left+scroll.scrollLeft-200;
     if(x<0)return;
     E.playhead=Math.max(0,x/E.pxPerSec);
     E_updatePH();E_drawProg();
@@ -5223,7 +5223,7 @@ function E_renderTL(){
   var ruler=document.getElementById("aab-ruler");
   if(!scroll||!tw||!rows)return;
   var dur=Math.max(E_dur()+10,60);
-  var totalW=Math.max(dur*E.pxPerSec+160,scroll.offsetWidth||600);
+  var totalW=Math.max(dur*E.pxPerSec+220,scroll.offsetWidth||600);
   tw.style.width=totalW+"px";tw.style.minWidth=totalW+"px";
   if(ruler){
     ruler.width=totalW;ruler.style.width=totalW+"px";
@@ -5231,21 +5231,48 @@ function E_renderTL(){
     rc.fillStyle="#0a0d14";rc.fillRect(0,0,totalW,22);
     var step=E.pxPerSec>=80?1:E.pxPerSec>=40?2:E.pxPerSec>=20?5:10;
     for(var s=0;s<=dur+step;s+=step){
-      var x=110+s*E.pxPerSec;
+      var x=200+s*E.pxPerSec;
       rc.strokeStyle=s%5===0?"#2d3748":"#1a202c";rc.lineWidth=1;
       rc.beginPath();rc.moveTo(x,s%5===0?8:14);rc.lineTo(x,22);rc.stroke();
       if(s%5===0){rc.fillStyle="#4b5563";rc.font="9px monospace";rc.textAlign="left";rc.fillText(_ft(s),x+2,11);}
     }
   }
   rows.innerHTML="";  E.tracks.forEach(function(track){
+    if(track.hidden){rows.appendChild(_el("div",""));return;} // skip hidden tracks
     var rowCls="aab-track-row "+(track.type==="video"?"video-row":track.type==="audio"?"audio-row":"text-row");
     var row=_el("div",rowCls);row.style.height=track.h+"px";
     var lbl=_el("div","aab-track-lbl");lbl.style.borderLeft="3px solid "+track.color;
+    // Track name row
     var nm=_el("div","aab-track-name");nm.textContent=track.name;nm.title=track.name;lbl.appendChild(nm);
-    var mb=_el("button","aab-track-btn"+(track.muted?" muted":""));mb.textContent="M";mb.style.color=track.muted?"#ef4444":"#374151";mb.title=track.muted?"Unmute":"Mute";
-    mb.onclick=function(){track.muted=!track.muted;E_renderTL();};lbl.appendChild(mb);
-    var lb=_el("button","aab-track-btn");lb.textContent=track.locked?"🔒":"🔓";lb.title=track.locked?"Unlock":"Lock";
-    lb.onclick=function(){track.locked=!track.locked;E_renderTL();};lbl.appendChild(lb);
+    // Controls row
+    var ctrl=_el("div","aab-track-controls");
+    // Mute button
+    var mb=_el("button","aab-track-btn"+(track.muted?" muted":""));
+    mb.textContent="M";mb.style.cssText="font-size:9px;padding:1px 4px;border-radius:3px;background:"+(track.muted?"rgba(239,68,68,.2)":"rgba(255,255,255,.06)")+";color:"+(track.muted?"#ef4444":"#6b7280")+";border:.5px solid "+(track.muted?"#ef4444":"#374151")+";cursor:pointer;";
+    mb.title=track.muted?"Unmute track":"Mute track";mb.onclick=function(){track.muted=!track.muted;E_renderTL();};ctrl.appendChild(mb);
+    // Lock button
+    var lb=_el("button","aab-track-btn");
+    lb.textContent=track.locked?"🔒":"🔓";lb.style.cssText="font-size:9px;padding:1px 3px;cursor:pointer;opacity:"+(track.locked?1:.5)+";";
+    lb.title=track.locked?"Unlock track":"Lock track";lb.onclick=function(){track.locked=!track.locked;E_renderTL();};ctrl.appendChild(lb);
+    // Hide/show button
+    var hb=_el("button","aab-track-btn");
+    hb.textContent=track.hidden?"👁":"👁";hb.style.cssText="font-size:9px;padding:1px 3px;cursor:pointer;opacity:"+(track.hidden?0.3:0.7)+";";
+    hb.title=track.hidden?"Show track":"Hide track";hb.onclick=function(){track.hidden=!track.hidden;E_renderTL();};ctrl.appendChild(hb);
+    // Volume slider for audio tracks
+    if(track.type==="audio"){
+      var vs=document.createElement("input");vs.type="range";vs.min="0";vs.max="150";vs.value=track.volume!==undefined?track.volume:100;
+      vs.style.cssText="width:48px;accent-color:"+track.color+";height:3px;cursor:pointer;";vs.title="Volume: "+vs.value+"%";
+      vs.oninput=function(){track.volume=+this.value;this.title="Volume: "+this.value+"%";};ctrl.appendChild(vs);
+    }
+    // Add track button
+    var addTrk=_el("button","aab-track-btn");addTrk.textContent="➕";addTrk.style.cssText="font-size:9px;padding:1px 3px;cursor:pointer;opacity:.5;margin-left:auto;";
+    addTrk.title="Add track";addTrk.onclick=function(e){e.stopPropagation();_aabAddTrack(track.type);};ctrl.appendChild(addTrk);
+    // Delete track button (not for main video)
+    if(track.id!=="main"){
+      var delTrk=_el("button","aab-track-btn");delTrk.textContent="🗑";delTrk.style.cssText="font-size:9px;padding:1px 3px;cursor:pointer;opacity:.4;";
+      delTrk.title="Remove track";delTrk.onclick=function(e){e.stopPropagation();if(confirm("Remove "+track.name+"?"))E.tracks=E.tracks.filter(function(t){return t.id!==track.id;});E_renderTL();};ctrl.appendChild(delTrk);
+    }
+    lbl.appendChild(ctrl);
     row.appendChild(lbl);
     var lane=_el("div","aab-lane"+(track.locked?" locked":""));lane.dataset.tid=track.id;
     lane.style.height=track.h+"px";
@@ -5256,7 +5283,7 @@ function E_renderTL(){
       e.preventDefault();this.classList.remove("drop-active");
       var data;try{data=JSON.parse(e.dataTransfer.getData("application/aab"));}catch(err){return;}
       var rect=this.getBoundingClientRect();
-      var startT=Math.max(0,(e.clientX-rect.left)/E.pxPerSec);
+      var startT=Math.max(0,(e.clientX-rect.left-200)/E.pxPerSec);
       if(E.snap)startT=Math.round(startT*10)/10;
       E_addClip({url:data.url,type:data.type,name:data.name,duration:data.duration||5},track.id,startT);
     });    track.clips.forEach(function(clip){
@@ -5322,7 +5349,7 @@ function E_renderTL(){
 
 function E_fit(){var scroll=document.getElementById("aab-tl-scroll");if(!scroll)return;var dur=E_dur()||60;var w=scroll.offsetWidth-120;E.pxPerSec=Math.max(10,Math.floor(w/dur));E_renderTL();}
 
-function E_updatePH(){var ph=document.getElementById("aab-ph");if(ph)ph.style.left=(110+E.playhead*E.pxPerSec)+"px";}
+function E_updatePH(){var ph=document.getElementById("aab-ph");if(ph)ph.style.left=(200+E.playhead*E.pxPerSec)+"px";}
 
 function E_addClip(clipData,trackId,startT){
   var track=E.tracks.find(function(t){return t.id===trackId;})||E.tracks[0];
@@ -6381,7 +6408,16 @@ window.toggleAdaptiveTp = function() {
     if(window.STUDIO_TP) STUDIO_TP.adaptive=true;
     if(btn){btn.textContent='🎤 ON';btn.style.background='rgba(0,212,255,.15)';}
     var rec=new SR(); rec.continuous=true; rec.interimResults=true;
-    rec.onresult=function(){ var b=document.getElementById('tp-body'); if(b) b.scrollTop+=80; };
+    rec.onresult=function(e){
+      // On each speech recognition result, advance to next word in WBW mode
+      if(window._studioWBW && _studioWBW.running && _studioWBW.highlight) {
+        _studioWBW.idx = Math.min((_studioWBW.words||[]).length-1, _studioWBW.idx+1);
+        _studioWBW.highlight();
+      } else {
+        // Fallback: smooth scroll
+        var b=document.getElementById('tp-body'); if(b) b.scrollTop+=40;
+      }
+    };
     rec.onerror=function(){ if(window.STUDIO) STUDIO.adaptive=false; if(btn){btn.textContent='🎤 Adapt';btn.style.background='';} };
     rec.start(); if(window.STUDIO) STUDIO.recognition=rec;
     if(typeof toast==='function') toast('Adaptive ON — speak to advance','ok');
@@ -7771,7 +7807,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
           <button onclick="saveProject();nav('dashboard-pg')" style="background:none;border:.5px solid rgba(255,255,255,.06);border-radius:4px;color:rgba(255,255,255,.3);font-size:9px;cursor:pointer;padding:3px 7px;font-family:inherit;">🏠</button>
           <button onclick="saveProject();nav('script-pg')" style="background:none;border:.5px solid rgba(255,255,255,.06);border-radius:4px;color:rgba(255,255,255,.3);font-size:9px;cursor:pointer;padding:3px 7px;font-family:inherit;">📝</button>
           <button onclick="saveProject();nav('scenes-pg')" style="background:none;border:.5px solid rgba(255,255,255,.06);border-radius:4px;color:rgba(255,255,255,.3);font-size:9px;cursor:pointer;padding:3px 7px;font-family:inherit;">🎬</button>
-          <button onclick="nav('ai-presenter-studio')" style="background:none;border:.5px solid rgba(255,255,255,.06);border-radius:4px;color:rgba(255,255,255,.3);font-size:9px;cursor:pointer;padding:3px 7px;font-family:inherit;">🤖</button>
+          <button onclick="if(typeof openAIPresenterStudio==='function')openAIPresenterStudio();else nav('ai-presenter-studio');" style="background:none;border:.5px solid rgba(255,255,255,.06);border-radius:4px;color:rgba(255,255,255,.3);font-size:9px;cursor:pointer;padding:3px 7px;font-family:inherit;">🤖</button>
           <button onclick="saveProject();nav('edit-pg')" style="background:none;border:.5px solid rgba(255,255,255,.06);border-radius:4px;color:rgba(255,255,255,.3);font-size:9px;cursor:pointer;padding:3px 7px;font-family:inherit;">✂️</button>
         </div>
         <div class="rec-badge ready" id="rec-badge">
@@ -8007,7 +8043,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
       <div class="panel-group grp-tp">
       <div class="panel-group-label">📖 Teleprompter</div>
       <div class="panel-group-body" style="gap:6px;flex-wrap:wrap;">
-      <button class="s-btn s-btn-gold" id="btn-tp-start" onclick="startPracticeMode()" style="font-size:11px;padding:6px 12px;font-weight:600;">▶ Practice</button>
+      <button class="s-btn s-btn-gold" id="btn-tp-start" onclick="if(window._studioWBW&&_studioWBW.running){_studioWBW.running=false;clearInterval(_studioWBW.timer);if(window.STUDIO_TP){STUDIO_TP.running=false;clearInterval(STUDIO_TP.timer);}this.textContent='▶ Practice';this.style.background='';this.style.color='';}else{setTpScrollMode('word');}" style="font-size:11px;padding:6px 12px;font-weight:600;">▶ Practice</button>
       <button class="s-btn s-btn-gold" id="btn-adaptive" onclick="toggleAdaptiveTp()" style="font-size:11px;padding:6px 10px;" title="Mic listens and advances text to match your speech">🎤 Adapt</button>
       <div style="display:flex;align-items:center;gap:4px;">
       <span style="font-size:9px;color:rgba(245,158,11,.5);">Speed</span>
@@ -8164,7 +8200,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
   <button onclick="saveProject();nav('script-pg')" class="enb">📝 Script</button>
   <button onclick="saveProject();nav('scenes-pg')" class="enb">🎬 Scenes</button>
   <button onclick="saveProject();nav('record-pg')" class="enb">🎥 Studio</button>
-  <button onclick="nav('ai-presenter-studio')" class="enb">🤖 AI</button>
+  <button onclick="if(typeof openAIPresenterStudio==='function')openAIPresenterStudio();else nav('ai-presenter-studio');" class="enb">🤖 AI</button>
   <span style="background:rgba(0,212,255,.12);border:.5px solid rgba(0,212,255,.3);border-radius:4px;color:#00d4ff;font-size:9px;padding:2px 6px;margin-right:8px;">✂️ Edit</span>
   <span id="edit-title" style="font-size:11px;font-weight:600;color:rgba(255,255,255,.65);">✂️ Edit Suite</span>
   <span id="edit-save-status" style="font-size:8px;color:rgba(16,185,129,.5);padding:1px 5px;background:rgba(16,185,129,.05);border-radius:3px;border:.5px solid rgba(16,185,129,.12);margin-left:6px;">● Saved</span>
@@ -9253,7 +9289,7 @@ window.ap_open = function(projectId) {
 
 // Override old function names to use new system
 window.openProjectById = window.ap_open;
-window.openProject = window.ap_open;
+// Do NOT override openProject here — the correct version is defined later at line ~9883
 
 // ── ap_addClip — Save a recorded clip to the active project ──────────────
 window.ap_addClip = function(sceneId, clipData) {
@@ -11016,7 +11052,30 @@ function loadDashboard() {
       if (!scene.assets.find(function (a) { return a.id === asset.id; })) scene.assets.push(asset);
       saveProject(); renderSceneBoard(); renderAssetLibrary(); toast('Assigned to Scene ' + (SELECTED_SCENE + 1), 'ok');
     }
-    function openRecordingStudio() { if (!PROJECT.scenes.length) { toast('Add scenes first', 'err'); return; } nav('record-pg'); }
+    function openRecordingStudio() {
+  if (!PROJECT.scenes || !PROJECT.scenes.length) { toast('Add scenes first', 'err'); return; }
+  if (!STUDIO.stream || !STUDIO.stream.active) { startCamera(); }
+  STUDIO.currentScene = STUDIO.currentScene || 0;
+  nav('record-pg');
+  // Init scene counter, TP text, and WBW state
+  setTimeout(function() {
+    // Scene counter
+    var sc = document.getElementById('st-scene-cnt');
+    if (sc) sc.textContent = (STUDIO.currentScene+1) + '/' + PROJECT.scenes.length;
+    // Top bar scene pill  
+    var pill = document.getElementById('st-scene-pill');
+    if (pill) pill.textContent = 'Scene ' + (STUDIO.currentScene+1);
+    // Load TP text for current scene
+    if (typeof _loadStudioTpText === 'function') _loadStudioTpText();
+    // Ensure _studioWBW is initialized
+    if (!window._studioWBW) window._studioWBW = {running:false,idx:0,timer:null,words:[],highlight:null};
+    // Apply saved TP bg preference
+    try {
+      var savedBg = localStorage.getItem('aab_tp_bg');
+      if (savedBg && typeof setTpBg === 'function') setTpBg(savedBg);
+    } catch(e) {}
+  }, 200);
+}
     function exportFullScript() { if (!PROJECT.scenes.length) { toast('No scenes', 'err'); return; } var lines = ['# ' + PROJECT.title, '']; PROJECT.scenes.forEach(function (s, i) { lines.push('== SCENE ' + String(i + 1).padStart(3, '0') + ' [' + s.type + '] ' + s.duration + 's =='); lines.push(s.narration || ''); lines.push(''); }); var blob = new Blob([lines.join('\n')], { type: 'text/plain' }); var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = (PROJECT.title || 'script').replace(/[^a-z0-9]/gi, '-') + '-script.txt'; a.click(); toast('Script downloaded', 'ok'); } function chunkSub(text, max) { if (text.length <= max) return [text]; var words = text.split(' '), chunks = [], cur = ''; words.forEach(function (w) { if ((cur + ' ' + w).length > max) { if (cur) chunks.push(cur.trim()); cur = w; } else cur += (cur ? ' ' : '') + w; }); if (cur) chunks.push(cur.trim()); return chunks; }// ══════════════════════════════════════════════════════════════════════════════
     // RECORDING STUDIO
     // ══════════════════════════════════════════════════════════════════════════════
@@ -11240,6 +11299,12 @@ function studioNext() {
         if (!window._aabTpActive) updateTP(); // don't overwrite TP scroll
         renderStudioQueue();
         var _sc2=document.getElementById('st-scene-cnt');if(_sc2)_sc2.textContent=(STUDIO.currentScene+1)+'/'+(PROJECT.scenes.length||1);
+        var _pill2=document.getElementById('st-scene-pill');if(_pill2)_pill2.textContent='Scene '+(STUDIO.currentScene+1);
+        // Reload TP text for new scene and stop WBW
+        if(window._studioWBW){_studioWBW.running=false;clearInterval(_studioWBW.timer);}
+        if(typeof _loadStudioTpText==='function') setTimeout(_loadStudioTpText,100);
+        // Reset Practice button
+        var _pb=document.getElementById('btn-tp-start');if(_pb){_pb.textContent='▶ Practice';_pb.style.background='';_pb.style.color='';}
         toast('→ Scene ' + (STUDIO.currentScene + 1), 'info');
 
       } else {
@@ -11252,6 +11317,11 @@ function studioNext() {
         STUDIO.currentScene--;
         updateTP();
         var _sc3=document.getElementById('st-scene-cnt');if(_sc3)_sc3.textContent=(STUDIO.currentScene+1)+'/'+(PROJECT.scenes.length||1);
+        var _pill3=document.getElementById('st-scene-pill');if(_pill3)_pill3.textContent='Scene '+(STUDIO.currentScene+1);
+        // Reload TP text for new scene and stop WBW
+        if(window._studioWBW){_studioWBW.running=false;clearInterval(_studioWBW.timer);}
+        if(typeof _loadStudioTpText==='function') setTimeout(_loadStudioTpText,100);
+        var _pb2=document.getElementById('btn-tp-start');if(_pb2){_pb2.textContent='▶ Practice';_pb2.style.background='';_pb2.style.color='';}
         toast('← Scene ' + (STUDIO.currentScene + 1), 'info');
       }
     }
@@ -11954,11 +12024,18 @@ function studioNext() {
       var supa = getSupa(); if (!supa) { updateNavState(); return; }
       supa.auth.getSession().then(function (r) {
         if (r.data && r.data.session) { setUser(r.data.session.user);
-          // Only go to dashboard if currently on home/auth page — don't interrupt other pages
+          // Restore saved page from sessionStorage on refresh
           var _activePg = document.querySelector('.pg.on,.pg-full.on,.pg-flex.on');
           var _activePgId = _activePg ? _activePg.id : '';
+          var _savedPage = '';
+          try { _savedPage = sessionStorage.getItem('aab_current_page') || ''; } catch(e2) {}
+          var _safePages = ['scenes-pg','record-pg','edit-pg','export-pg','script-pg','teleprompter-pg','ai-presenter-studio','dashboard-pg'];
           if (!_activePgId || _activePgId === 'auth-pg' || _activePgId === 'landing-pg' || _activePgId === 'home-pg') {
-            nav('dashboard-pg');
+            if (_savedPage && _safePages.indexOf(_savedPage) > -1) {
+              nav(_savedPage);
+            } else {
+              nav('dashboard-pg');
+            }
           }
           setTimeout(function(){if(typeof renderProjectList==='function')renderProjectList();},500);
         } else { updateNavState(); navFree('home'); }
