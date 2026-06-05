@@ -5599,6 +5599,39 @@ window.E_applyTransition=E_applyTransition;window.E_openExport=E_openExport;
 window.E_doExport=E_doExport;window.E_exportSRT=E_exportSRT;
 window.E_upClip=E_upClip;window.E_upClipText=E_upClipText;window.E_upTS=E_upTS;
 window.E_delClip=E_delClip;window.E_triggerUpload=E_triggerUpload;
+
+// ── Cross-browser project sync via Supabase ───────────────────────────────
+window._initSupabaseSync = function() {
+  var supa = typeof getSupa === 'function' ? getSupa() : null;
+  if (!supa || !window._sbSession) return;
+  // Subscribe to user_projects changes for this user
+  var userId = (window.APP && APP.user && APP.user.id) || null;
+  if (!userId) return;
+  try {
+    var channel = supa.channel('project-sync-' + userId.slice(0,8))
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'user_projects',
+        filter: 'user_id=eq.' + userId
+      }, function(payload) {
+        // Reload projects from Supabase when any change occurs
+        setTimeout(function() {
+          if(typeof loadDashboard === 'function' && document.getElementById('dashboard-pg')) {
+            var dp = document.getElementById('dashboard-pg');
+            if(dp && (dp.classList.contains('on') || dp.style.display !== 'none')) {
+              loadDashboard();
+            }
+          }
+        }, 500);
+      })
+      .subscribe();
+    window._supaChannel = channel;
+  } catch(e) { console.warn('Supabase sync init error:', e); }
+};
+// Init sync when user session is available
+setTimeout(function() {
+  if(window._sbSession && !window._supaChannel) window._initSupabaseSync();
+}, 3000);
+
 window.renderEditClips=function(){if(typeof E_renderTL==="function")E_renderTL();};
 window._loadApsIntoTL=E_loadClips;
 
@@ -6376,17 +6409,13 @@ window.resetTpScroll = function() {
 
 // Practice mode (studio)
 window.startPracticeMode = function() {
-  window.STUDIO_TP = window.STUDIO_TP||{};
-  var btn=document.getElementById('btn-tp-start');
-  if(STUDIO_TP.running){
-    STUDIO_TP.running=false; clearInterval(STUDIO_TP.timer);
-    if(btn){ btn.textContent='▶ Practice'; btn.style.background=''; }
+  var btn = document.getElementById('btn-tp-start');
+  if(window._studioWBW && _studioWBW.running) {
+    _studioWBW.running=false; clearInterval(_studioWBW.timer);
+    if(window.STUDIO_TP){STUDIO_TP.running=false;clearInterval(STUDIO_TP.timer);}
+    if(btn){btn.textContent='▶ Practice';btn.style.background='';btn.style.color='';}
   } else {
-    STUDIO_TP.running=true;
-    var speed=(window.STUDIO&&STUDIO.tpSpeed)||80;
-    var body=document.getElementById('tp-body');
-    STUDIO_TP.timer=setInterval(function(){ if(!STUDIO_TP.running){clearInterval(STUDIO_TP.timer);return;} if(body) body.scrollTop+=speed/60; },50);
-    if(btn){ btn.textContent='⏸ Pause'; btn.style.background='rgba(0,212,255,.15)'; }
+    setTpScrollMode('word');
   }
 };
 
@@ -6429,8 +6458,15 @@ window.toggleTpPanel = function() {
   var panel=document.getElementById('studio-tp-panel');
   if(!panel) return;
   var collapsed=panel.dataset.collapsed==='1';
-  panel.style.maxHeight=collapsed?'160px':'32px';
-  panel.dataset.collapsed=collapsed?'0':'1';
+  if(collapsed) {
+    panel.style.maxHeight='45vh'; panel.style.minHeight='180px';
+    panel.dataset.collapsed='0';
+    document.querySelectorAll('[onclick*="toggleTpPanel"]').forEach(function(b){b.textContent='⌄ Min';});
+  } else {
+    panel.style.maxHeight='42px'; panel.style.minHeight='0';
+    panel.dataset.collapsed='1';
+    document.querySelectorAll('[onclick*="toggleTpPanel"]').forEach(function(b){b.textContent='⌃ Max';});
+  }
 };
 
 // AABE methods (timeline/edit suite buttons)
@@ -9468,6 +9504,19 @@ window._safeFetch = async function(url, opts, timeoutMs) {
       if (pg === 'edit-pg') renderEditSuite();
       if (pg === 'record-pg') {
       initStudio();
+      setTimeout(function() {
+        // Sync scene counter
+        var sc = document.getElementById('st-scene-cnt');
+        var scenes = window.PROJECT && PROJECT.scenes || [];
+        var cur = (window.STUDIO && STUDIO.currentScene) || 0;
+        if(sc && scenes.length) sc.textContent = (cur+1) + '/' + scenes.length;
+        var pill = document.getElementById('st-scene-pill');
+        if(pill) pill.textContent = 'Scene ' + (cur+1);
+        // Load TP text for current scene
+        if(typeof _loadStudioTpText === 'function') _loadStudioTpText();
+        // Init WBW state
+        if(!window._studioWBW) window._studioWBW = {running:false,idx:0,timer:null,words:[],highlight:null};
+      }, 400);
       // Ensure studio-pg is visible
       var spg = document.getElementById('studio-pg');
       if(spg && getComputedStyle(spg).display === 'none') {
@@ -12660,8 +12709,9 @@ function studioNext() {
     try { _bc = new BroadcastChannel('aab_remote'); } catch (e) { }
 
     function tpShowRemote() {
-      if (APP.plan === 'free') {
-        showUpgradeModalPro('Full QR remote control requires Pro Studio plan. Control teleprompter from your phone instantly.');
+      var _notFree = APP.plan && APP.plan !== 'free';
+      if (!_notFree) {
+        if (typeof showUpgradeModalPro === 'function') showUpgradeModalPro('AI Presenter Studio requires Creator or Pro Studio plan.');
         return;
       }
       var modal = document.getElementById('tp-remote-modal');
@@ -14806,7 +14856,8 @@ function aps_loadSavedPhotos() {
         setTimeout(function () { nav('auth-pg'); }, 1500);
         return;
       }
-      if (APP.plan === 'free') {
+      var _notFree = APP.plan && APP.plan !== 'free';
+      if (!_notFree) {
         if (typeof showUpgradeModalPro === 'function') showUpgradeModalPro('AI Presenter Studio requires Creator or Pro Studio plan.');
         return;
       }
