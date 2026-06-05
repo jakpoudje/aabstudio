@@ -2143,19 +2143,25 @@
     }
 
     /* Camera canvas */
+    .studio-cam-row {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background: #000;
+      min-height: 0;
+    }
     .studio-canvas {
-      /* 16:9 ratio: max-height constrains width via aspect-ratio */
+      /* 16:9 — fills the camRow height, width computed from ratio */
       position: relative;
       background: #000;
       overflow: hidden;
       aspect-ratio: 16 / 9;
-      /* Fill available width first */
-      width: 100%;
-      /* Cap height — this forces width to shrink via aspect-ratio */
-      max-height: 100%;
-      /* Height follows aspect-ratio after max-height cap */
-      height: auto;
+      height: 100%;
+      width: auto;
       flex: 0 0 auto;
+      max-width: 100%;
     }
 
     #studio-cam {
@@ -11112,13 +11118,29 @@ function loadDashboard() {
       if (!scene.assets.find(function (a) { return a.id === asset.id; })) scene.assets.push(asset);
       saveProject(); renderSceneBoard(); renderAssetLibrary(); toast('Assigned to Scene ' + (SELECTED_SCENE + 1), 'ok');
     }
-    function openRecordingStudio() {
+    window._fitStudioLayout = function() {
+  var wrap = document.querySelector('.studio-wrap');
+  var ctrl = document.querySelector('.studio-ctrl-v2');
+  var tpPanel = document.getElementById('studio-tp-panel');
+  var bar = document.querySelector('.studio-bar');
+  if(!wrap || !ctrl) return;
+  var totalH = wrap.offsetHeight;
+  var barH = bar ? bar.offsetHeight : 52;
+  var ctrlH = ctrl.offsetHeight;
+  var tpH = tpPanel ? tpPanel.offsetHeight : 160;
+  var camRowH = Math.max(100, totalH - barH - ctrlH - tpH);
+  var camRow = document.getElementById('studio-cam-row');
+  if(camRow) { camRow.style.height = camRowH + 'px'; camRow.style.flex = '0 0 auto'; }
+};
+window.addEventListener('resize', window._fitStudioLayout);
+function openRecordingStudio() {
   if (!PROJECT.scenes || !PROJECT.scenes.length) { toast('Add scenes first', 'err'); return; }
   if (!STUDIO.stream || !STUDIO.stream.active) { startCamera(); }
   STUDIO.currentScene = STUDIO.currentScene || 0;
   nav('record-pg');
   // Init scene counter, TP text, and WBW state
   setTimeout(function() {
+    if(typeof window._fitStudioLayout === 'function') window._fitStudioLayout();
     // Scene counter
     var sc = document.getElementById('st-scene-cnt');
     if (sc) sc.textContent = (STUDIO.currentScene+1) + '/' + PROJECT.scenes.length;
