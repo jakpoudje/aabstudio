@@ -9006,6 +9006,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
         </label>
         <div id="ai-photo-actions" style="display:flex;gap:6px;margin-top:6px;">
           <button onclick="document.getElementById('ai-photo-input')&&document.getElementById('ai-photo-input').click()" style="flex:1;background:rgba(255,255,255,.04);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.5);padding:5px 8px;border-radius:5px;cursor:pointer;font-size:10px;">📁 Upload</button>
+          <button id="aps-save-photo-btn" onclick="if(APS.photoB64)aps_saveReferencePhoto(APS.photoB64);" style="display:none;flex:1;background:rgba(0,212,255,.12);border:.5px solid rgba(0,212,255,.3);color:#00d4ff;padding:5px 8px;border-radius:5px;cursor:pointer;font-size:10px;">💾 Save</button>
           <button onclick="aps_clearPhoto()" style="flex:1;background:rgba(255,255,255,.04);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.3);padding:5px 8px;border-radius:5px;cursor:pointer;font-size:10px;">✕ Clear</button>
         </div>
       </div>
@@ -10108,7 +10109,12 @@ function renderMyVideos() {
   });
   el.innerHTML = allVideos.length ? 
     '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;padding:20px;">' +
-    allVideos.map(function(v){ return '<div style="background:#f1f5f9;border-radius:8px;overflow:hidden;"><video src="'+v.url+'" style="width:100%;height:120px;object-fit:cover;" controls></video><div style="padding:8px;font-size:12px;color:#374151;">'+v.project+'</div></div>'; }).join('') +
+    allVideos.map(function(v, idx){ return '<div style="background:#f1f5f9;border-radius:8px;overflow:hidden;">'+
+      '<video src="'+v.url+'" style="width:100%;height:120px;object-fit:cover;" controls></video>'+
+      '<div style="padding:8px;display:flex;justify-content:space-between;align-items:center;">'+
+        '<div style="font-size:12px;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px;">'+v.project+'</div>'+
+        '<button onclick="deleteMyVideo('+idx+',event)" style="background:#fef2f2;border:1px solid #fecaca;color:#ef4444;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer;">🗑</button>'+
+      '</div></div>'; }).join('') +
     '</div>' :
     '<div style="padding:40px;text-align:center;color:#9ca3af;">No videos yet. Record your first video in the Studio.</div>';
 }
@@ -14755,7 +14761,165 @@ window._reapplyNav=function(){
     // ══════════════════════════════════════════════════════════════════════════════
 
     // State
-    var APS = {
+    
+// ── AI Presenter: Reference Photo Management ─────────────────────────────
+
+
+window.deleteMyVideo = function(idx, e) {
+  if (e) e.stopPropagation();
+  if (!confirm('Delete this video? It will be removed from the platform and database.')) return;
+  
+  // Build the same allVideos array to find the target
+  var projects = JSON.parse(localStorage.getItem('aab_projects')||'[]');
+  var allVideos = [];
+  projects.forEach(function(p) {
+    var clips = p.clips || {};
+    Object.values(clips).forEach(function(c) {
+      if (c && c.url) allVideos.push({ url: c.url, project: p, clipKey: Object.keys(clips).find(function(k){ return clips[k] === c; }) });
+    });
+    if (p.apsVideos) Object.values(p.apsVideos).forEach(function(v) {
+      if (v && v.url) allVideos.push({ url: v.url, project: p, apsKey: Object.keys(p.apsVideos).find(function(k){ return p.apsVideos[k] === v; }) });
+    });
+  });
+  
+  var target = allVideos[idx];
+  if (!target) return;
+  
+  var p = target.project;
+  
+  // Remove from localStorage
+  if (target.clipKey && p.clips) {
+    delete p.clips[target.clipKey];
+  }
+  if (target.apsKey && p.apsVideos) {
+    delete p.apsVideos[target.apsKey];
+  }
+  
+  // Save updated project back
+  var updatedProjects = projects.map(function(proj) { return proj.id === p.id ? p : proj; });
+  localStorage.setItem('aab_projects', JSON.stringify(updatedProjects));
+  
+  // Delete from Supabase storage (if it's a Supabase URL)
+  var url = target.url;
+  if (url && url.includes('supabase.co')) {
+    var supa = typeof getSupa === 'function' ? getSupa() : null;
+    if (supa && window._sbSession) {
+      // Extract path from URL
+      var pathMatch = url.match(/storage\/v1\/object\/public\/([^/]+)\/(.+)/);
+      if (pathMatch) {
+        var bucket = pathMatch[1];
+        var path = pathMatch[2];
+        supa.storage.from(bucket).remove([path])
+          .then(function() { console.log('Deleted from Supabase:', path); })
+          .catch(function(e) { console.warn('Supabase delete failed:', e); });
+      }
+    }
+  }
+  
+  // Delete from Railway API
+  if (window._sbSession && _sbSession.access_token) {
+    fetch((window.API || '') + '/api/clip/' + encodeURIComponent(url), {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + _sbSession.access_token }
+    }).catch(function() {});
+  }
+  
+  toast('Video deleted', 'ok');
+  // Reload the My Videos section
+  if (typeof loadMyVideos === 'function') loadMyVideos();
+  else if (typeof renderMyVideos === 'function') renderMyVideos();
+};
+
+window.aps_saveReferencePhoto = function(b64, name) {
+  // Save photo to Supabase user metadata for reuse across sessions
+  name = name || ('photo_' + Date.now());
+  var supa = typeof getSupa === 'function' ? getSupa() : null;
+  if (!supa || !window._sbSession) {
+    // Fallback: save to localStorage
+    var saved = JSON.parse(localStorage.getItem('aab_ref_photos') || '[]');
+    saved.unshift({ name: name, b64: b64, ts: Date.now() });
+    saved = saved.slice(0, 10); // keep last 10
+    localStorage.setItem('aab_ref_photos', JSON.stringify(saved));
+    toast('Photo saved locally', 'ok');
+    aps_loadSavedPhotos();
+    return;
+  }
+  // Save to Supabase storage
+  var supa2 = supa;
+  var filename = 'presenter_photos/' + (window.APP && APP.user ? APP.user.id : 'user') + '/' + name + '.jpg';
+  // Convert b64 to blob
+  var byteStr = atob(b64.split(',')[1] || b64);
+  var bytes = new Uint8Array(byteStr.length);
+  for (var i = 0; i < byteStr.length; i++) bytes[i] = byteStr.charCodeAt(i);
+  var blob = new Blob([bytes], { type: 'image/jpeg' });
+  supa2.storage.from('project-assets').upload(filename, blob, { upsert: true })
+    .then(function(r) {
+      if (r.error) { toast('Save failed: ' + r.error.message, 'error'); return; }
+      toast('📸 Photo saved — available next session', 'ok');
+      aps_loadSavedPhotos();
+    })
+    .catch(function(e) { toast('Save failed', 'error'); });
+};
+
+window.aps_deleteReferencePhoto = function(name, idx) {
+  if (!confirm('Delete this saved photo?')) return;
+  var supa = typeof getSupa === 'function' ? getSupa() : null;
+  if (supa && window._sbSession) {
+    var filename = 'presenter_photos/' + (window.APP && APP.user ? APP.user.id : 'user') + '/' + name + '.jpg';
+    supa.storage.from('project-assets').remove([filename])
+      .then(function() { toast('Photo deleted', 'ok'); aps_loadSavedPhotos(); })
+      .catch(function() { toast('Delete failed', 'error'); });
+  } else {
+    var saved = JSON.parse(localStorage.getItem('aab_ref_photos') || '[]');
+    saved.splice(idx, 1);
+    localStorage.setItem('aab_ref_photos', JSON.stringify(saved));
+    toast('Photo deleted', 'ok');
+    aps_loadSavedPhotos();
+  }
+};
+
+window.aps_selectReferencePhoto = function(b64, thumbEl) {
+  // Select a saved photo as the active presenter photo
+  APS.photoB64 = b64;
+  // Update UI
+  var preview = document.getElementById('aps-photo-preview');
+  if (preview) { preview.src = b64; preview.style.display = 'block'; }
+  var lbl = document.getElementById('ai-photo-lbl');
+  if (lbl) lbl.textContent = '✅ Photo selected';
+  // Highlight selected
+  document.querySelectorAll('.aps-saved-photo').forEach(function(el) { el.style.border = '.5px solid rgba(0,212,255,.3)'; });
+  if (thumbEl) thumbEl.style.border = '2px solid #00d4ff';
+  toast('Presenter photo selected', 'ok');
+};
+
+window.aps_loadPhoto = function(input) {
+  if (!input.files || !input.files[0]) return;
+  var file = input.files[0];
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    APS.photoB64 = e.target.result;
+    var preview = document.getElementById('aps-photo-preview');
+    if (preview) { preview.src = e.target.result; preview.style.display = 'block'; }
+    var lbl = document.getElementById('ai-photo-lbl');
+    if (lbl) lbl.textContent = '✅ ' + file.name;
+    // Ask to save for next time
+    var saveBtn = document.getElementById('aps-save-photo-btn');
+    if (saveBtn) saveBtn.style.display = 'inline-block';
+  };
+  reader.readAsDataURL(file);
+};
+
+window.aps_clearPhoto = function() {
+  APS.photoB64 = null;
+  var preview = document.getElementById('aps-photo-preview');
+  if (preview) { preview.src = ''; preview.style.display = 'none'; }
+  var lbl = document.getElementById('ai-photo-lbl');
+  if (lbl) lbl.textContent = '📸 Upload presenter photo';
+  var saveBtn = document.getElementById('aps-save-photo-btn');
+  if (saveBtn) saveBtn.style.display = 'none';
+};
+
+var APS = {
       scenes: [],           // all scenes with status
       currentIdx: 0,        // currently selected scene index
       photoB64: null,       // presenter photo base64
@@ -14889,8 +15053,8 @@ function aps_loadSavedPhotos() {
       }
 
       if (!scenes.length) {
-        toast('No scenes found. Split your script into scenes first.', 'error');
-        return;
+        // Allow opening AI Presenter even without scenes — show empty state
+        scenes = [{ id: 'demo_1', num: 1, total: 1, narration: 'Add scenes by splitting your script first.', duration: 8, type: 'MAIN', status: 'ready' }];
       }
 
       // Init APS state
@@ -14913,9 +15077,21 @@ function aps_loadSavedPhotos() {
       APS.generating = false;
       APS.stopRequested = false;
 
-      // Open the studio page
+      // Open the studio page — hide all pages first, then show aps
+      document.querySelectorAll('.pg,.pg-flex,.pg-full').forEach(function(p) {
+        p.classList.remove('on'); p.style.display = 'none';
+      });
       var studio = document.getElementById('ai-presenter-studio');
-      studio.classList.add('on');
+      if (studio) {
+        studio.classList.add('on');
+        studio.style.display = 'flex';
+        studio.style.flexDirection = 'column';
+      }
+      // Save for refresh restoration
+      try { sessionStorage.setItem('aab_pg','ai-presenter-studio'); } catch(e) {}
+      try { localStorage.setItem('aab_last_pg','ai-presenter-studio'); } catch(e) {}
+      // Hide topnav (studio page)
+      var tn = document.getElementById('topnav'); if(tn) tn.style.display = 'none';
 
       // Set project name
       var nameEl = document.getElementById('aps-project-name');
@@ -14942,8 +15118,17 @@ function aps_loadSavedPhotos() {
 
     function closeAIPresenterStudio() {
       var studio = document.getElementById('ai-presenter-studio');
-      if (studio) studio.classList.remove('on');
+      if (studio) { studio.classList.remove('on'); studio.style.display = 'none'; }
       APS.stopRequested = true;
+      // Restore topnav
+      var tn = document.getElementById('topnav'); if(tn) tn.style.display = 'flex';
+      // Go back to dashboard
+      document.querySelectorAll('.pg,.pg-flex,.pg-full').forEach(function(p) {
+        p.classList.remove('on'); p.style.display = 'none';
+      });
+      var dash = document.getElementById('dashboard-pg');
+      if(dash) { dash.classList.add('on'); dash.style.display = 'block'; }
+      if(typeof loadDashboard === 'function') setTimeout(loadDashboard, 100);
     }
     window.closeAIPresenterStudio = closeAIPresenterStudio;
 
