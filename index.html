@@ -2144,24 +2144,24 @@
 
     /* Camera canvas */
     .studio-cam-row {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      background: #000;
-      min-height: 0;
+      /* Height set by _fitStudioLayout via --cam-h CSS variable */
+      flex: 0 0 var(--cam-h, 330px) !important;
+      height: var(--cam-h, 330px) !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      overflow: hidden !important;
+      background: #000 !important;
     }
     .studio-canvas {
-      /* 16:9 — fills the camRow height, width computed from ratio */
-      position: relative;
-      background: #000;
-      overflow: hidden;
-      aspect-ratio: 16 / 9;
-      height: 100%;
-      width: auto;
-      flex: 0 0 auto;
-      max-width: 100%;
+      /* Exact 16:9 pixel dimensions via CSS variables — overrides all !important rules */
+      position: relative !important;
+      background: #000 !important;
+      overflow: hidden !important;
+      flex: 0 0 auto !important;
+      width: var(--cam-w, 588px) !important;
+      height: var(--cam-h, 330px) !important;
+      max-width: none !important;
     }
 
     #studio-cam {
@@ -11128,24 +11128,11 @@ function loadDashboard() {
   var barH = bar ? bar.offsetHeight : 52;
   var ctrlH = ctrl.offsetHeight;
   var tpH = tpPanel ? tpPanel.offsetHeight : 160;
-  var camRowH = Math.max(100, totalH - barH - ctrlH - tpH);
-  var camRow = document.getElementById('studio-cam-row');
-  if(camRow) { 
-    camRow.style.height = camRowH + 'px'; 
-    camRow.style.flex = '0 0 auto';
-    camRow.style.display = 'flex';
-    camRow.style.alignItems = 'center';
-    camRow.style.justifyContent = 'center';
-    camRow.style.overflow = 'hidden';
-    camRow.style.background = '#000';
-  }
-  // Set canvas to explicit 16:9 pixel dimensions
-  var canvas = document.getElementById('studio-canvas');
-  if(canvas) {
-    var targetW = Math.round(camRowH * 16/9);
-    canvas.style.cssText = 'position:relative!important;background:#000!important;overflow:hidden!important;' +
-      'width:' + targetW + 'px!important;height:' + camRowH + 'px!important;flex:0 0 auto!important;';
-  }
+  var camRowH = Math.max(150, totalH - barH - ctrlH - tpH);
+  var camW = Math.round(camRowH * 16/9);
+  // Set CSS variables — these control camera dimensions via !important CSS rules
+  document.documentElement.style.setProperty('--cam-h', camRowH + 'px');
+  document.documentElement.style.setProperty('--cam-w', camW + 'px');
 };
 window.addEventListener('resize', window._fitStudioLayout);
 function openRecordingStudio() {
