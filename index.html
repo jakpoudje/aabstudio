@@ -2143,25 +2143,22 @@
     }
 
     /* Camera canvas */
-    .studio-cam-row {
-      /* Height set by _fitStudioLayout via --cam-h CSS variable */
-      flex: 0 0 var(--cam-h, 330px) !important;
-      height: var(--cam-h, 330px) !important;
-      display: flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      overflow: hidden !important;
-      background: #000 !important;
-    }
     .studio-canvas {
-      /* Exact 16:9 pixel dimensions via CSS variables — overrides all !important rules */
-      position: relative !important;
-      background: #000 !important;
-      overflow: hidden !important;
-      flex: 0 0 auto !important;
-      width: var(--cam-w, 588px) !important;
-      height: var(--cam-h, 330px) !important;
-      max-width: none !important;
+      /* Enforce 16:9 aspect ratio — no more stretching */
+      position: relative;
+      background: #000;
+      overflow: hidden;
+      aspect-ratio: 16 / 9;
+      /* Centre in flex container, never stretch beyond proper ratio */
+      align-self: center;
+      /* Limit width so it doesn't go beyond what 16:9 at current height allows */
+      max-width: 100%;
+      /* Let height drive width via aspect-ratio */
+      width: auto;
+      height: 100%;
+      flex: 0 0 auto;
+      /* If the container is wider than 16:9 at this height, cap width */
+      max-height: 100%;
     }
 
     #studio-cam {
@@ -4468,7 +4465,7 @@
 .panel-group { flex-shrink: 0; min-width: 0; }
 .panel-group-body { padding: 3px 8px !important; gap: 4px !important; }
 .panel-group-label { padding: 2px 8px !important; }
-.grp-bg .panel-group-body { flex-wrap: nowrap; }
+.grp-bg .panel-group-body { max-width: 280px; flex-wrap: wrap; }
 .s-btn { font-size: 9px !important; padding: 3px 6px !important; }
 
 /* ── STUDIO LAYOUT FIX — camera never covers bottom panel ── */
@@ -4480,7 +4477,7 @@
 .panel-group { flex-shrink: 0 !important; }
 .panel-group-body { padding: 3px 8px !important; gap: 4px !important; }
 .panel-group-label { padding: 2px 8px !important; }
-.grp-bg .panel-group-body { flex-wrap: nowrap; }
+.grp-bg .panel-group-body { max-width: 280px !important; flex-wrap: wrap !important; }
 .s-btn { font-size: 9px !important; padding: 3px 6px !important; }
 </style>
 <!-- removed:tp-smooth-css -->
@@ -6819,10 +6816,10 @@ body{max-width:100vw;overflow-x:hidden}
 /* ── Word-by-word TP word spans ── */
 .tp-word {
   display: inline;
-  margin-right: 0.25em;
-  transition: color 0.1s, font-weight 0.1s, text-shadow 0.1s;
+  margin-right: 0.3em;
+  transition: color .1s, font-weight .1s, text-shadow .1s;
   cursor: pointer;
-  white-space: nowrap;
+  white-space: nowrap; /* keep each word on one piece */
 }
 .tp-word.active {
   color: #f59e0b !important;
@@ -7895,9 +7892,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
         </div>
         <!-- Camera canvas -->
         <!-- Canvas + TP column: takes camera horizontal space, stacks TP below -->
-        <div style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden;background:#000;min-width:0;">
-        <!-- Camera row: centres the 16:9 canvas with black side bars -->
-        <div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#000;min-height:0;">
+        <div style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden;align-items:center;background:#000;">
         <div class="studio-canvas" id="studio-canvas">
           <!-- Layer 1: Background (image, video, gradient, or custom) -->
           <div id="studio-bg-layer" style="position:absolute;inset:0;z-index:1;overflow:hidden;pointer-events:none;">
@@ -7949,9 +7944,8 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
           </div>
           <!-- teleprompter moved below camera -->
         </div>
-        </div><!-- end camera-row centering wrapper -->
         <!-- TP panel sits directly below camera within same column -->
-        <div id="studio-tp-panel" style="width:100%;flex-shrink:0;position:relative;background:#000;border-top:.5px solid rgba(255,255,255,.06);overflow:hidden;min-height:160px;max-height:220px;">
+        <div id="studio-tp-panel" style="width:100%;align-self:stretch;flex-shrink:0;position:relative;background:#000;border-top:.5px solid rgba(255,255,255,.06);overflow:hidden;min-height:160px;max-height:220px;">
           <!-- TP Header -->
           <div style="display:flex;align-items:center;gap:6px;padding:5px 12px;height:32px;border-bottom:.5px solid rgba(255,255,255,.06);overflow-x:auto;flex-shrink:0;">
             <span style="font-size:9px;font-weight:700;color:rgba(255,255,255,.3);letter-spacing:.08em;flex-shrink:0;">TELEPROMPTER</span>
@@ -7982,7 +7976,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
           </div>
           <!-- Script display -->
           <div id="studio-tp" class="studio-tp" style="overflow:hidden;position:relative;flex:1;min-height:113px;height:113px;">
-            <div class="tp-body" id="tp-body" style="padding:8px 24px 10px;display:block;height:100%;overflow-y:auto;overflow-x:hidden;scroll-behavior:smooth;scrollbar-width:none;width:100%;box-sizing:border-box;">
+            <div class="tp-body" id="tp-body" style="padding:8px 24px 10px;display:flex;flex-direction:column;gap:3px;height:100%;overflow:auto;scroll-behavior:smooth;scrollbar-width:none;">
               <div class="tp-prev-txt" id="tp-prev" style="font-size:11px;color:rgba(255,255,255,.2);line-height:1.3;flex-shrink:0;height:15px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;"></div>
               <div class="tp-cur-txt"  id="tp-cur"  style="flex:1;overflow:hidden;font-size:clamp(18px,2vw,28px);line-height:1.6;color:rgba(255,255,255,.92);"></div>
               <div class="tp-next-txt" id="tp-next" style="font-size:11px;color:rgba(255,255,255,.15);line-height:1.3;flex-shrink:0;height:15px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;"></div>
@@ -8046,150 +8040,155 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
         </div>
       </div>
       <!-- Controls Bar — full width across studio -->
-<div class="studio-ctrl-v2" style="flex-shrink:0;z-index:50;overflow-x:hidden;overflow-y:visible;min-height:150px;max-height:200px;">
+<div class="studio-ctrl-v2" style="flex-shrink:0;z-index:50;overflow-x:auto;overflow-y:visible;min-height:120px;max-height:200px;">
 
-      <!-- ── ROW 1: INPUT · RECORD · SCENE · TELEPROMPTER · SESSION ── -->
-      <div class="studio-ctrl-row" style="display:flex;flex-direction:row;width:100%;height:75px;align-items:stretch;">
+      <!-- ROW 1: PRIMARY — Input · Record · Scene · Teleprompter · Session -->
+      <div class="studio-ctrl-row">
 
-      <!-- INPUT — flex:1 -->
-      <div class="panel-group grp-input" style="flex:1;min-width:0;">
+      <!-- INPUT -->
+      <div class="panel-group grp-input">
       <div class="panel-group-label">📷 Input</div>
-      <div class="panel-group-body" style="gap:5px;flex-wrap:nowrap;align-items:center;">
-      <button class="s-btn s-btn-blue" id="btn-cam" onclick="toggleCamera()" style="font-size:11px;padding:5px 10px;white-space:nowrap;">📷 Cam</button>
-      <button class="s-btn s-btn-blue" id="btn-mic" onclick="toggleMic()" style="font-size:11px;padding:5px 10px;white-space:nowrap;">🎙 Mic</button>
-      <select id="cam-select" onchange="switchCamera(this.value)" style="display:none;font-size:9px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);color:rgba(255,255,255,.5);border-radius:4px;padding:2px 4px;max-width:90px;"></select>
-      <select id="mic-select" onchange="switchMic(this.value)" style="font-size:9px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);color:rgba(255,255,255,.5);border-radius:4px;padding:2px 4px;max-width:110px;font-family:inherit;"></select>
+      <div class="panel-group-body">
+      <button class="s-btn s-btn-blue" id="btn-cam" onclick="toggleCamera()" style="font-size:12px;padding:6px 12px;">📷 Cam</button>
+      <button class="s-btn s-btn-blue" id="btn-mic" onclick="toggleMic()" style="font-size:12px;padding:6px 12px;">🎙 Mic</button>
+      <div class="mic-level-wrap" style="position:relative;"><div class="mic-level-fill" id="mic-level-fill"></div></div>
+      <select id="cam-select" onchange="switchCamera(this.value)" style="display:none;font-size:9px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);color:rgba(255,255,255,.5);border-radius:4px;padding:2px 4px;font-family:'Sora',sans-serif;max-width:90px;"></select>
+      <select id="mic-select" onchange="switchMic(this.value)" style="display:none;font-size:9px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);color:rgba(255,255,255,.5);border-radius:4px;padding:2px 4px;font-family:'Sora',sans-serif;max-width:90px;"></select>
       </div>
       </div>
 
-      <!-- RECORD — flex:1.2 (slightly wider for the big REC button) -->
-      <div class="panel-group grp-rec" style="flex:1.2;min-width:0;">
+      <!-- RECORD -->
+      <div class="panel-group grp-rec">
       <div class="panel-group-label">⏺ Record</div>
-      <div class="panel-group-body" style="gap:6px;align-items:center;flex-wrap:nowrap;">
+      <div class="panel-group-body" style="gap:8px;">
       <button class="btn-rec-main" id="btn-rec" onclick="toggleRecording()">⏺ REC</button>
-      <button class="btn-sync-rec" id="btn-auto" onclick="startSyncRecord()" title="Start camera + teleprompter together" style="white-space:nowrap;">⏱ Sync REC</button>
-      <button class="s-btn s-btn-red" id="btn-retake" style="font-size:10px;white-space:nowrap;padding:5px 8px;" onclick="retakeScene()">↺ Retake</button>
-      <div style="display:flex;flex-direction:column;align-items:center;gap:2px;margin-left:2px;">
-      <div id="rec-dot-indicator" style="width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.15);"></div>
+      <div style="display:flex;flex-direction:column;gap:4px;">
+      <button class="btn-sync-rec" id="btn-auto" onclick="startSyncRecord()" title="Start camera + teleprompter together">⏱ Sync REC</button>
+      <button class="s-btn s-btn-red" id="btn-retake" style="display:none;font-size:10px;" onclick="retakeScene()">↺ Retake scene</button>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+      <div id="rec-dot-indicator" class="rec-badge ready" style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.2);"></div>
       <div id="rec-timer-display" style="font-size:10px;font-family:'JetBrains Mono',monospace;color:rgba(239,68,68,.7);">0:00</div>
       </div>
       </div>
       </div>
 
-      <!-- SCENE — flex:1 -->
-      <div class="panel-group grp-scene" style="flex:1;min-width:0;">
+      <!-- SCENE NAV -->
+      <div class="panel-group grp-scene">
       <div class="panel-group-label">🎬 Scene</div>
-      <div class="panel-group-body" style="gap:5px;align-items:center;flex-wrap:nowrap;">
-      <button class="s-btn s-btn-purple" onclick="studioPrev()" style="font-size:12px;padding:5px 12px;">← Prev</button>
-      <div style="text-align:center;min-width:50px;">
-        <div id="studio-scene-counter" style="font-size:13px;font-weight:700;color:rgba(139,92,246,.9);">1/1</div>
-        <div id="studio-scene-name-mini" style="font-size:8px;color:rgba(255,255,255,.3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70px;"></div>
+      <div class="panel-group-body" style="gap:6px;">
+      <button class="s-btn s-btn-purple" onclick="studioPrev()" style="font-size:12px;padding:6px 12px;">← Prev</button>
+      <div style="font-size:12px;font-weight:700;color:rgba(139,92,246,.9);min-width:44px;text-align:center;line-height:1.3;">
+      <div id="studio-scene-counter">1/1</div>
+      <div id="studio-scene-name-mini" style="font-size:9px;font-weight:400;color:rgba(255,255,255,.3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px;"></div>
       </div>
-      <button class="s-btn s-btn-purple" onclick="studioNext()" style="font-size:12px;padding:5px 12px;">Next →</button>
+      <button class="s-btn s-btn-purple" onclick="studioNext()" style="font-size:12px;padding:6px 12px;">Next →</button>
       </div>
       </div>
 
-      <!-- TELEPROMPTER — flex:2.5 (widest — most controls) -->
-      <div class="panel-group grp-tp" style="flex:2.5;min-width:0;">
+      <!-- TELEPROMPTER -->
+      <div class="panel-group grp-tp">
       <div class="panel-group-label">📖 Teleprompter</div>
-      <div class="panel-group-body" style="gap:5px;align-items:center;flex-wrap:nowrap;">
-      <button class="s-btn s-btn-gold" id="btn-tp-start" onclick="if(window._studioWBW&&_studioWBW.running){_studioWBW.running=false;clearInterval(_studioWBW.timer);if(window.STUDIO_TP){STUDIO_TP.running=false;clearInterval(STUDIO_TP.timer);}this.textContent='▶ Practice';this.style.background='';this.style.color='';}else{setTpScrollMode('word');}" style="font-size:11px;padding:5px 12px;font-weight:600;white-space:nowrap;">▶ Practice</button>
-      <button class="s-btn s-btn-gold" id="btn-adaptive" onclick="toggleAdaptiveTp()" style="font-size:11px;padding:5px 10px;white-space:nowrap;" title="Mic listens and advances text to match your speech">🎤 Adapt</button>
-      <div style="display:flex;align-items:center;gap:3px;">
-        <span style="font-size:8px;color:rgba(245,158,11,.4);">Speed</span>
-        <input type="range" min="20" max="220" value="80" id="tp-spd-range" oninput="setTpSpd(this.value);var v2=document.getElementById('tp-spd-val2');if(v2)v2.textContent=this.value+'wpm';if(window.studioTpUpdateSpeed)studioTpUpdateSpeed(+this.value);" style="width:55px;accent-color:var(--gold);">
-        <span id="tp-spd-val2" style="font-size:9px;color:var(--gold);min-width:30px;">80wpm</span>
+      <div class="panel-group-body" style="gap:6px;flex-wrap:wrap;">
+      <button class="s-btn s-btn-gold" id="btn-tp-start" onclick="if(window._studioWBW&&_studioWBW.running){_studioWBW.running=false;clearInterval(_studioWBW.timer);if(window.STUDIO_TP){STUDIO_TP.running=false;clearInterval(STUDIO_TP.timer);}this.textContent='▶ Practice';this.style.background='';this.style.color='';}else{setTpScrollMode('word');}" style="font-size:11px;padding:6px 12px;font-weight:600;">▶ Practice</button>
+      <button class="s-btn s-btn-gold" id="btn-adaptive" onclick="toggleAdaptiveTp()" style="font-size:11px;padding:6px 10px;" title="Mic listens and advances text to match your speech">🎤 Adapt</button>
+      <div style="display:flex;align-items:center;gap:4px;">
+      <span style="font-size:9px;color:rgba(245,158,11,.5);">Speed</span>
+      <input type="range" min="20" max="220" value="80" id="tp-spd-range" oninput="setTpSpd(this.value); var v2=document.getElementById('tp-spd-val2'); if(v2) v2.textContent=this.value+'wpm';; if(window.studioTpUpdateSpeed) studioTpUpdateSpeed(+this.value);" style="width:60px;accent-color:var(--gold);">
+      <span id="tp-spd-val2" style="font-size:10px;color:var(--gold);min-width:34px;">80wpm</span>
+      <span style="font-size:9px;color:rgba(255,255,255,.2);">|</span>
+      <select id="tp-mode-sel" onchange="setTpScrollMode(this.value); document.getElementById('tp-scroll-mode') && (document.getElementById('tp-scroll-mode').value=this.value);" title="Scroll mode" style="font-size:9px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.5);border-radius:4px;padding:2px 4px;cursor:pointer;"><option value="auto" selected>📜 Auto-scroll</option><option value="word">💡 Word-by-word</option><option value="manual">✋ Manual</option></select>
       </div>
-      <select id="tp-mode-sel" onchange="setTpScrollMode(this.value);" title="Scroll mode" style="font-size:9px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.6);border-radius:4px;padding:3px 5px;cursor:pointer;font-family:inherit;">
-        <option value="auto">📜 Auto</option>
-        <option value="word">💡 Word-by-word</option>
-        <option value="manual">✋ Manual</option>
-      </select>
-      <button class="s-btn" onclick="resetTpScroll()" style="font-size:10px;padding:4px 7px;" title="Reset to top">↺</button>
+      <button class="s-btn" onclick="resetTpScroll()" style="font-size:10px;padding:4px 8px;" title="Reset scroll to top">↺</button>
+      <div style="display:flex;align-items:center;gap:3px;">
       <button class="s-btn" onclick="decreaseTpFont()" style="font-size:10px;padding:4px 7px;">A-</button>
       <button class="s-btn" onclick="increaseTpFont()" style="font-size:10px;padding:4px 7px;">A+</button>
-      <button class="s-btn" onclick="toggleMirror()" style="font-size:10px;padding:4px 8px;" title="Mirror teleprompter">⇄</button>
+      </div>
       </div>
       </div>
 
-      <!-- SESSION — flex:0.8 (compact timer + saved count) -->
-      <div class="panel-group grp-session" style="flex:0.8;min-width:0;">
-      <div class="panel-group-label">✅ Session</div>
-      <div class="panel-group-body" style="gap:8px;align-items:center;justify-content:center;">
-        <div style="text-align:center;">
-          <div id="st-rec-time" style="font-size:17px;font-weight:700;color:#10b981;font-family:'JetBrains Mono',monospace;">0:00</div>
-          <div style="font-size:8px;color:rgba(255,255,255,.25);">elapsed</div>
-        </div>
-        <div style="text-align:center;padding-left:6px;border-left:.5px solid rgba(255,255,255,.08);">
-          <div style="font-size:15px;font-weight:700;color:#10b981;" id="st-clips-saved">0</div>
-          <div style="font-size:8px;color:rgba(255,255,255,.25);">saved</div>
+      <!-- SESSION -->
+      <!-- SESSION — recording info + saved count -->
+      <div class="panel-group grp-session" style="margin-left:auto;">
+      <div class="panel-group-label">✅ SESSION</div>
+      <div class="panel-group-body" style="gap:6px;align-items:center;padding:4px 8px;">
+        <div id="st-rec-time" style="font-size:16px;font-weight:700;color:#10b981;font-family:'JetBrains Mono',monospace;">0:00</div>
+        <div style="font-size:9px;color:rgba(255,255,255,.35);padding-left:6px;border-left:.5px solid rgba(255,255,255,.08);">
+          <span style="color:#10b981;font-weight:600;" id="st-clips-saved">0</span><br><span style="color:rgba(255,255,255,.2);">saved</span>
         </div>
       </div>
       </div>
+      </div>
 
-      </div><!-- end row 1 -->
+      <!-- ROW 2: SECONDARY — Background · Lighting · Annotate · View -->
+      <div class="studio-ctrl-row" style="background:rgba(0,0,0,.15);">
 
-      <!-- ── ROW 2: BACKGROUND · LIGHTING · ANNOTATE · VIEW ── -->
-      <div class="studio-ctrl-row" style="display:flex;flex-direction:row;width:100%;height:62px;align-items:stretch;background:rgba(0,0,0,.18);">
-
-      <!-- BACKGROUND — flex:2 -->
-      <div class="panel-group grp-bg" style="flex:2;min-width:0;">
+      <!-- BACKGROUND -->
+      <div class="panel-group grp-bg">
       <div class="panel-group-label">🎬 Background</div>
-      <div class="panel-group-body" style="gap:3px;flex-wrap:nowrap;align-items:center;">
-      <button class="bg-btn s-btn on" data-bg="none" onclick="setBg(this)" style="font-size:9px;padding:3px 7px;">Live</button>
-      <button class="bg-btn s-btn" data-bg="blur" onclick="setBg(this)" style="font-size:9px;padding:3px 7px;">Blur</button>
-      <button class="bg-btn s-btn" data-bg="dark" onclick="setBg(this)" style="font-size:9px;padding:3px 7px;">Dark</button>
-      <button class="bg-btn s-btn" data-bg="news" onclick="setBg(this)" style="font-size:9px;padding:3px 7px;">📺 News</button>
-      <button class="bg-btn s-btn" data-bg="office" onclick="setBg(this)" style="font-size:9px;padding:3px 7px;">💼 Office</button>
-      <button class="bg-btn s-btn" data-bg="library" onclick="setBg(this)" style="font-size:9px;padding:3px 7px;">📚 Library</button>
-      <button class="bg-btn s-btn" data-bg="green" onclick="setBg(this)" style="font-size:9px;padding:3px 7px;">🟩 Green</button>
-      <label class="s-btn" style="cursor:pointer;font-size:9px;padding:3px 7px;" title="Upload image or video background">📁 Custom<input type="file" style="display:none;" accept="image/*,video/*" onchange="uploadCustomBg(this)"></label>
-      <button class="s-btn s-btn-teal" onclick="openBgDesigner()" style="font-size:9px;padding:3px 7px;">🎨 Design</button>
+      <div class="panel-group-body" style="gap:3px;flex-wrap:wrap;max-width:280px;">
+      <button class="bg-btn s-btn on" data-bg="none" onclick="setBg(this)" style="font-size:9px;padding:3px 6px;">Live</button>
+      <button class="bg-btn s-btn" data-bg="blur" onclick="setBg(this)" style="font-size:9px;padding:3px 6px;">Blur</button>
+      <button class="bg-btn s-btn" data-bg="dark" onclick="setBg(this)" style="font-size:9px;padding:3px 6px;">Dark</button>
+      <button class="bg-btn s-btn" data-bg="news" onclick="setBg(this)" style="font-size:9px;padding:3px 6px;">📺 News</button>
+      <button class="bg-btn s-btn" data-bg="office" onclick="setBg(this)" style="font-size:9px;padding:3px 6px;">💼 Office</button>
+      <button class="bg-btn s-btn" data-bg="library" onclick="setBg(this)" style="font-size:9px;padding:3px 6px;">📚 Library</button>
+      <button class="bg-btn s-btn" data-bg="green" onclick="setBg(this)" style="font-size:9px;padding:3px 6px;">🟩 Green</button>
+      <label class="s-btn s-btn-teal" style="cursor:pointer;font-size:10px;" title="Upload image or video background">📁 Custom<input type="file" style="display:none;" accept="image/*,video/*" onchange="uploadCustomBg(this)"></label>
+      <button class="s-btn s-btn-teal" onclick="openBgDesigner()" style="font-size:10px;" title="Background style designer">🎨 Design</button>
       </div>
       </div>
 
-      <!-- LIGHTING — flex:1.2 -->
-      <div class="panel-group grp-light" style="flex:1.2;min-width:0;">
+      <!-- LIGHTING -->
+      <div class="panel-group grp-light">
       <div class="panel-group-label">💡 Lighting</div>
-      <div class="panel-group-body" style="gap:4px;flex-wrap:nowrap;align-items:center;">
-      <button class="bg-btn s-btn on" data-light="none" onclick="setLighting('none',this)" style="font-size:10px;padding:3px 8px;">Off</button>
-      <button class="bg-btn s-btn" data-light="natural" onclick="setLighting('natural',this)" style="font-size:10px;padding:3px 8px;">Natural</button>
-      <button class="bg-btn s-btn" data-light="warm" onclick="setLighting('warm',this)" style="font-size:10px;padding:3px 8px;">🟡 Warm</button>
-      <button class="bg-btn s-btn" data-light="cool" onclick="setLighting('cool',this)" style="font-size:10px;padding:3px 8px;">🔵 Cool</button>
-      <button class="bg-btn s-btn" data-light="dramatic" onclick="setLighting('dramatic',this)" style="font-size:10px;padding:3px 8px;">🎭 Drama</button>
+      <div class="panel-group-body" style="gap:4px;">
+      <button class="bg-btn s-btn on" data-light="none" onclick="setLighting('none',this)" style="font-size:10px;">Off</button>
+      <button class="bg-btn s-btn" data-light="natural" onclick="setLighting('natural',this)" style="font-size:10px;">Natural</button>
+      <button class="bg-btn s-btn" data-light="warm" onclick="setLighting('warm',this)" style="font-size:10px;">🟡 Warm</button>
+      <button class="bg-btn s-btn" data-light="cool" onclick="setLighting('cool',this)" style="font-size:10px;">🔵 Cool</button>
+      <button class="bg-btn s-btn" data-light="dramatic" onclick="setLighting('dramatic',this)" style="font-size:10px;">🎭 Drama</button>
       </div>
       </div>
 
-      <!-- ANNOTATE — flex:1.8 -->
-      <div class="panel-group grp-draw" style="flex:1.8;min-width:0;">
+      <!-- ANNOTATE -->
+      <div class="panel-group grp-draw">
       <div class="panel-group-label">✏️ Annotate</div>
-      <div class="panel-group-body" style="gap:4px;flex-wrap:nowrap;align-items:center;">
-      <button class="s-btn" id="btn-draw" onclick="toggleDraw()" style="font-size:10px;padding:3px 8px;" title="Draw on screen">✏️ Draw</button>
-      <select id="draw-mode-sel" onchange="setDrawMode(this.value)" style="font-size:9px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);color:rgba(255,255,255,.6);border-radius:4px;padding:3px 5px;font-family:inherit;">
-        <option value="pen">Pen</option><option value="highlight">Highlight</option><option value="arrow">Arrow</option><option value="circle">Circle</option><option value="rect">Rect</option>
+      <div class="panel-group-body" style="gap:4px;">
+      <button class="s-btn" id="btn-draw" onclick="toggleDraw()" style="font-size:11px;padding:5px 10px;" title="Draw on screen">✏️ Draw</button>
+      <select id="draw-mode-sel" onchange="setDrawMode(this.value)" style="font-size:10px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);color:rgba(255,255,255,.6);border-radius:5px;padding:4px 6px;font-family:'Sora',sans-serif;">
+      <option value="pen">Pen</option>
+      <option value="highlight">Highlight</option>
+      <option value="arrow">Arrow</option>
+      <option value="circle">Circle</option>
+      <option value="rect">Rect</option>
       </select>
-      <select onchange="STUDIO.drawLineWidth=parseInt(this.value)" style="font-size:9px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);color:rgba(255,255,255,.6);border-radius:4px;padding:3px 5px;font-family:inherit;" title="Stroke size">
-        <option value="2">Thin</option><option value="4" selected>Med</option><option value="8">Thick</option><option value="14">Bold</option>
+      <select onchange="STUDIO.drawLineWidth=parseInt(this.value)" style="font-size:10px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);color:rgba(255,255,255,.6);border-radius:5px;padding:4px 6px;font-family:'Sora',sans-serif;" title="Stroke size">
+      <option value="2">Thin</option>
+      <option value="4" selected>Medium</option>
+      <option value="8">Thick</option>
+      <option value="14">Bold</option>
       </select>
-      <input type="color" value="#00d4ff" onchange="setDrawColor(this.value)" oninput="setDrawColor(this.value);" id="draw-color-pick" style="width:26px;height:26px;border:none;border-radius:4px;cursor:pointer;background:none;" title="Pick colour">
-      <button class="s-btn" onclick="setEraserMode()" style="font-size:10px;padding:3px 8px;" title="Eraser">⬜ Erase</button>
-      <button class="s-btn" onclick="clearDraw()" style="font-size:10px;padding:3px 8px;" title="Clear all">🗑 Clear</button>
+      <input type="color" value="#00d4ff" onchange="setDrawColor(this.value)" style="width:26px;height:26px;border:none;border-radius:5px;cursor:pointer;background:none;" title="Pick colour" id="draw-color-pick" oninput="setDrawColor(this.value);">
+      <button class="s-btn" onclick="setEraserMode()" style="font-size:10px;padding:5px 8px;" title="Eraser">⬜ Erase</button>
+      <button class="s-btn" onclick="clearDraw()" style="font-size:10px;padding:5px 8px;" title="Clear all annotations">🗑 Clear</button>
       </div>
       </div>
 
-      <!-- VIEW — flex:1 -->
-      <div class="panel-group grp-view" style="flex:1;min-width:0;">
+      <!-- VIEW -->
+      <div class="panel-group grp-view">
       <div class="panel-group-label">👁 View</div>
-      <div class="panel-group-body" style="gap:4px;flex-wrap:nowrap;align-items:center;">
-      <button class="s-btn" id="btn-pip" onclick="setPipMode(!STUDIO._pipMode)" style="font-size:10px;padding:3px 8px;" title="Picture-in-picture">📷 PiP</button>
-      <button class="s-btn" onclick="toggleMirror()" style="font-size:10px;padding:3px 8px;" title="Mirror camera">↔ Mirror</button>
-      <button class="s-btn s-btn-teal" onclick="openStudioSettings()" style="font-size:10px;padding:3px 8px;" title="Studio settings">⚙ Settings</button>
+      <div class="panel-group-body" style="gap:4px;">
+      <button class="s-btn" id="btn-pip" onclick="setPipMode(!STUDIO._pipMode)" style="font-size:10px;padding:5px 9px;" title="Picture-in-picture camera">📷 PiP</button>
+      <button class="s-btn" onclick="toggleMirror()" style="font-size:10px;padding:5px 9px;" title="Mirror camera">↔ Mirror</button>
+      <button class="s-btn s-btn-teal" onclick="openStudioSettings()" style="font-size:10px;padding:5px 9px;" title="Studio settings — camera, mic, font size">⚙ Settings</button>
       </div>
       </div>
 
-      </div><!-- end row 2 -->
+      </div>
 
       </div>
+
 
       <!-- ══ TELEPROMPTER PANEL — below camera, full width ══ -->
 
@@ -9782,7 +9781,7 @@ function renderProjectList() {
   // Remove deleted IDs
   var deletedIds = [];
   try { deletedIds = JSON.parse(localStorage.getItem('aab_deleted_ids')||'[]'); } catch(e) {}
-  projects = projects.filter(function(p){ return deletedIds.indexOf(p.id) === -1; });
+  projects = projects.filter(function(p){ return p && p.id && deletedIds.indexOf(p.id) === -1 && p.scenes && p.scenes.length > 0; });
 
   if (!projects.length) {
     grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:60px;color:#9ca3af;"><div style="font-size:48px;margin-bottom:16px;">🎬</div><div style="font-size:16px;font-weight:600;margin-bottom:8px;">No projects yet</div><p style="font-size:14px;">Click + New project to get started</p></div>';
@@ -10152,7 +10151,11 @@ function loadDashboard() {
       if (!grid) return;
 
       // Show local projects IMMEDIATELY — no waiting for cloud
-      var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
+      var projects = JSON.parse(localStorage.getItem('aab_projects') || '[]').filter(Boolean);
+      // Filter deleted and ghost projects (no scenes)
+      var _delIdsNow = [];
+      try { _delIdsNow = JSON.parse(localStorage.getItem('aab_deleted_ids')||'[]'); } catch(e){}
+      projects = projects.filter(function(p){ return p && p.id && _delIdsNow.indexOf(p.id) === -1 && p.scenes && p.scenes.length > 0; });
       renderProjectGrid(projects);
 
       // Then silently sync cloud in background and refresh if more found
@@ -10183,7 +10186,7 @@ function loadDashboard() {
       // Filter out deleted IDs
       var deletedIds = [];
       try { deletedIds = JSON.parse(localStorage.getItem('aab_deleted_ids')||'[]'); } catch(e) {}
-      if (projects) projects = projects.filter(function(p){ return p && p.id && deletedIds.indexOf(p.id) === -1; });
+      if (projects) projects = projects.filter(function(p){ return p && p.id && deletedIds.indexOf(p.id) === -1 && p.scenes && p.scenes.length > 0; });
 
       grid.innerHTML = '';
       // Ensure grid layout is correct regardless of any CSS overrides
@@ -11115,31 +11118,13 @@ function loadDashboard() {
       if (!scene.assets.find(function (a) { return a.id === asset.id; })) scene.assets.push(asset);
       saveProject(); renderSceneBoard(); renderAssetLibrary(); toast('Assigned to Scene ' + (SELECTED_SCENE + 1), 'ok');
     }
-    window._fitStudioLayout = function() {
-  var wrap = document.querySelector('.studio-wrap');
-  var ctrl = document.querySelector('.studio-ctrl-v2');
-  var tpPanel = document.getElementById('studio-tp-panel');
-  var bar = document.querySelector('.studio-bar');
-  if(!wrap || !ctrl) return;
-  var totalH = wrap.offsetHeight;
-  var barH = bar ? bar.offsetHeight : 52;
-  var ctrlH = ctrl.offsetHeight;
-  var tpH = tpPanel ? tpPanel.offsetHeight : 160;
-  var camRowH = Math.max(150, totalH - barH - ctrlH - tpH);
-  var camW = Math.round(camRowH * 16/9);
-  // Set CSS variables — these control camera dimensions via !important CSS rules
-  document.documentElement.style.setProperty('--cam-h', camRowH + 'px');
-  document.documentElement.style.setProperty('--cam-w', camW + 'px');
-};
-window.addEventListener('resize', window._fitStudioLayout);
-function openRecordingStudio() {
+    function openRecordingStudio() {
   if (!PROJECT.scenes || !PROJECT.scenes.length) { toast('Add scenes first', 'err'); return; }
   if (!STUDIO.stream || !STUDIO.stream.active) { startCamera(); }
   STUDIO.currentScene = STUDIO.currentScene || 0;
   nav('record-pg');
   // Init scene counter, TP text, and WBW state
   setTimeout(function() {
-    if(typeof window._fitStudioLayout === 'function') window._fitStudioLayout();
     // Scene counter
     var sc = document.getElementById('st-scene-cnt');
     if (sc) sc.textContent = (STUDIO.currentScene+1) + '/' + PROJECT.scenes.length;
@@ -15888,7 +15873,7 @@ window.aps_clearPhoto = aps_clearPhoto;
   #edit-media-bin { width: 160px !important; }
   #edit-inspector { width: 180px !important; }
   #timeline-panel { height: 200px !important; }
-  .studio-q { width: 165px !important; }
+  .studio-q { width: 140px !important; }
   .studio-panel { width: 200px !important; }
   .panel-group-body { flex-wrap: wrap; gap: 4px; }
 }
@@ -15944,14 +15929,14 @@ window.aps_clearPhoto = aps_clearPhoto;
     .studio-main { flex:1 !important; display:flex !important; flex-direction:column !important; min-height:0 !important; overflow:hidden !important; }
     /* Camera row fills all available space */
     .studio-main > div:first-child { flex:1 !important; display:flex !important; min-height:0 !important; overflow:hidden !important; }
-    .studio-canvas { position:relative !important; overflow:hidden !important; background:#000 !important; min-height:0 !important; }
+    .studio-canvas { flex:1 !important; position:relative !important; overflow:hidden !important; background:#000 !important; min-height:0 !important; }
     /* TP panel — compact strip, never expands */
     #studio-tp-panel { flex-shrink:0 !important; overflow:hidden !important; }
     #studio-tp       { overflow:hidden !important; }
     /* [removed rogue overflow:visible] */
     /* Controls — compact two rows */
     .studio-ctrl-v2  { flex-shrink:0 !important; overflow:visible !important; }
-    .studio-q        { flex-shrink:0; width:165px; overflow:hidden; display:flex; flex-direction:column; }
+    .studio-q        { flex-shrink:0; width:160px; overflow:hidden; display:flex; flex-direction:column; }
     .studio-panel    { flex-shrink:0; width:220px; overflow:hidden; display:flex; flex-direction:column; }
 
 
