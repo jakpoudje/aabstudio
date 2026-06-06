@@ -2144,21 +2144,21 @@
 
     /* Camera canvas */
     .studio-canvas {
-      /* Enforce 16:9 aspect ratio — no more stretching */
       position: relative;
       background: #000;
       overflow: hidden;
-      aspect-ratio: 16 / 9;
-      /* Centre in flex container, never stretch beyond proper ratio */
-      align-self: center;
-      /* Limit width so it doesn't go beyond what 16:9 at current height allows */
-      max-width: 100%;
-      /* Let height drive width via aspect-ratio */
-      width: auto;
-      height: 100%;
+      width: var(--cam-w, 588px);
+      height: var(--cam-h, 330px);
       flex: 0 0 auto;
-      /* If the container is wider than 16:9 at this height, cap width */
-      max-height: 100%;
+    }
+    .studio-cam-row {
+      height: var(--cam-h, 330px);
+      flex: 0 0 var(--cam-h, 330px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background: #000;
     }
 
     #studio-cam {
@@ -6908,6 +6908,8 @@ body{max-width:100vw;overflow-x:hidden}
   overflow: hidden !important;
   padding-top: 0 !important;
 }
+    #e-main { display: none !important; }
+    #e-timeline { display: none !important; }
 #edit-pg #e-main, #edit-pg #e-timeline { display: none !important; }
 #edit-pg.on .aab-edit-body {
   flex: 1 1 0 !important;
@@ -7893,6 +7895,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
         <!-- Camera canvas -->
         <!-- Canvas + TP column: takes camera horizontal space, stacks TP below -->
         <div style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden;align-items:center;background:#000;">
+        <div id="studio-cam-row">
         <div class="studio-canvas" id="studio-canvas">
           <!-- Layer 1: Background (image, video, gradient, or custom) -->
           <div id="studio-bg-layer" style="position:absolute;inset:0;z-index:1;overflow:hidden;pointer-events:none;">
@@ -7945,7 +7948,8 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
           <!-- teleprompter moved below camera -->
         </div>
         <!-- TP panel sits directly below camera within same column -->
-        <div id="studio-tp-panel" style="width:100%;align-self:stretch;flex-shrink:0;position:relative;background:#000;border-top:.5px solid rgba(255,255,255,.06);overflow:hidden;min-height:160px;max-height:220px;">
+      </div><!-- end studio-cam-row -->
+          <div id="studio-tp-panel" style="width:100%;align-self:stretch;flex-shrink:0;position:relative;background:#000;border-top:.5px solid rgba(255,255,255,.06);overflow:hidden;min-height:160px;max-height:220px;">
           <!-- TP Header -->
           <div style="display:flex;align-items:center;gap:6px;padding:5px 12px;height:32px;border-bottom:.5px solid rgba(255,255,255,.06);overflow-x:auto;flex-shrink:0;">
             <span style="font-size:9px;font-weight:700;color:rgba(255,255,255,.3);letter-spacing:.08em;flex-shrink:0;">TELEPROMPTER</span>
@@ -11122,11 +11126,35 @@ function loadDashboard() {
       if (!scene.assets.find(function (a) { return a.id === asset.id; })) scene.assets.push(asset);
       saveProject(); renderSceneBoard(); renderAssetLibrary(); toast('Assigned to Scene ' + (SELECTED_SCENE + 1), 'ok');
     }
-    function openRecordingStudio() {
+    
+window._fitStudioLayout = function() {
+  var wrap = document.querySelector('.studio-wrap');
+  var ctrl = document.querySelector('.studio-ctrl-v2');
+  var tpPanel = document.getElementById('studio-tp-panel');
+  var bar = document.querySelector('.studio-bar');
+  if(!wrap) return;
+  var totalH = wrap.offsetHeight;
+  var barH = bar ? bar.offsetHeight : 52;
+  var ctrlH = ctrl ? ctrl.offsetHeight : 150;
+  var tpH = tpPanel ? tpPanel.offsetHeight : 160;
+  var camH = Math.max(150, totalH - barH - ctrlH - tpH);
+  var camW = Math.round(camH * 16/9);
+  document.documentElement.style.setProperty('--cam-h', camH + 'px');
+  document.documentElement.style.setProperty('--cam-w', camW + 'px');
+};
+window.addEventListener('resize', function() { if(typeof _fitStudioLayout==='function') _fitStudioLayout(); });
+
+function openRecordingStudio() {
   if (!PROJECT.scenes || !PROJECT.scenes.length) { toast('Add scenes first', 'err'); return; }
   if (!STUDIO.stream || !STUDIO.stream.active) { startCamera(); }
   STUDIO.currentScene = STUDIO.currentScene || 0;
   nav('record-pg');
+  setTimeout(function() {
+    if(typeof _fitStudioLayout==='function') _fitStudioLayout();
+    var sc=document.getElementById('st-scene-cnt'); if(sc) sc.textContent=(STUDIO.currentScene+1)+'/'+PROJECT.scenes.length;
+    if(typeof _loadStudioTpText==='function') _loadStudioTpText();
+    if(!window._studioWBW) window._studioWBW={running:false,idx:0,timer:null,words:[],highlight:null};
+  }, 300);
   // Init scene counter, TP text, and WBW state
   setTimeout(function() {
     // Scene counter
@@ -16112,7 +16140,7 @@ window.aps_clearPhoto = aps_clearPhoto;
     .studio-main { flex:1 !important; display:flex !important; flex-direction:column !important; min-height:0 !important; overflow:hidden !important; }
     /* Camera row fills all available space */
     .studio-main > div:first-child { flex:1 !important; display:flex !important; min-height:0 !important; overflow:hidden !important; }
-    .studio-canvas { flex:1 !important; position:relative !important; overflow:hidden !important; background:#000 !important; min-height:0 !important; }
+    .studio-canvas { position:relative !important; overflow:hidden !important; background:#000 !important; min-height:0 !important; }
     /* TP panel — compact strip, never expands */
     #studio-tp-panel { flex-shrink:0 !important; overflow:hidden !important; }
     #studio-tp       { overflow:hidden !important; }
