@@ -20296,5 +20296,305 @@ console.log('[AAB] Master script loaded');
 
 
 </script>
+
+<script id="aab-ui-fixes">
+(function() {
+
+// ── 1. PAGE REFRESH RESTORATION ──────────────────────────────────
+// Intercept nav() to save current page
+(function() {
+  var _checkInterval = setInterval(function() {
+    if(typeof window.nav !== 'function') return;
+    var _origNav = window.nav;
+    window.nav = function(pg, opts) {
+      var skip = ['auth-pg','home-pg','home','landing-pg',''];
+      if(pg && skip.indexOf(pg) === -1) {
+        try { sessionStorage.setItem('aab_pg', pg); localStorage.setItem('aab_last_pg', pg); } catch(e){}
+      }
+      return _origNav(pg, opts);
+    };
+    clearInterval(_checkInterval);
+  }, 300);
+})();
+
+// Restore page after auth — intercept setUser
+(function() {
+  var _checkSU = setInterval(function() {
+    if(typeof window.setUser !== 'function') return;
+    var _origSU = window.setUser;
+    window.setUser = function(user) {
+      _origSU(user);
+      setTimeout(function() {
+        try {
+          var pg = sessionStorage.getItem('aab_pg') || localStorage.getItem('aab_last_pg');
+          var skip = ['auth-pg','home-pg','home','landing-pg'];
+          if(pg && skip.indexOf(pg) === -1 && typeof window.nav === 'function') {
+            nav(pg);
+          } else if(typeof loadDashboard === 'function') {
+            nav('dashboard-pg'); loadDashboard();
+          }
+        } catch(e) {}
+      }, 700);
+    };
+    clearInterval(_checkSU);
+  }, 300);
+})();
+
+// ── 2. GHOST PROJECT PURGE on every dashboard load ────────────────
+(function() {
+  var _checkLD = setInterval(function() {
+    if(typeof window.loadDashboard !== 'function') return;
+    var _origLD = window.loadDashboard;
+    window.loadDashboard = function() {
+      // Purge ghosts first
+      try {
+        var projs = JSON.parse(localStorage.getItem('aab_projects')||'[]').filter(Boolean);
+        var delIds = JSON.parse(localStorage.getItem('aab_deleted_ids')||'[]');
+        var clean = projs.filter(function(p){ return p&&p.id&&delIds.indexOf(p.id)===-1&&p.scenes&&p.scenes.length>0; });
+        if(clean.length < projs.length) {
+          localStorage.setItem('aab_projects', JSON.stringify(clean));
+        }
+        // Purge delIds older than 30 days
+        var cutoff = Date.now() - 30*24*3600*1000;
+        var freshDelIds = delIds.filter(function(id){ return !id.startsWith('old_'); });
+        localStorage.setItem('aab_deleted_ids', JSON.stringify(freshDelIds));
+      } catch(e) {}
+      return _origLD();
+    };
+    clearInterval(_checkLD);
+  }, 300);
+})();
+
+// ── 3. APS PHOTO UPLOAD — wire label to file input ────────────────
+(function() {
+  var _checkAPS = setInterval(function() {
+    var input = document.getElementById('aps-photo-input');
+    if(!input) return;
+    // Find any label near the input that isn't wired
+    var container = input.closest('.aps-photo-wrap') || input.closest('.sp-section') || input.parentElement;
+    if(container) {
+      var labels = container.querySelectorAll('label');
+      labels.forEach(function(lbl) {
+        if(!lbl.getAttribute('for') && (lbl.textContent.includes('Upload') || lbl.textContent.includes('photo'))) {
+          lbl.setAttribute('for', 'aps-photo-input');
+          lbl.style.cursor = 'pointer';
+        }
+      });
+    }
+    clearInterval(_checkAPS);
+  }, 500);
+})();
+
+// ── 4. RECORDINGS PANEL — show recorded clips in studio ───────────
+window._renderStudioRecordings = function() {
+  var panel = document.getElementById('sp-clips');
+  if(!panel) return;
+  var clips = window.PROJECT && window.PROJECT.clips ? Object.values(PROJECT.clips) : [];
+  if(!clips.length) {
+    panel.innerHTML = '<div style="color:#9ca3af;font-size:11px;text-align:center;padding:12px;">No clips yet<br><span style="font-size:9px;">Record scenes to add clips</span></div>';
+    return;
+  }
+  panel.innerHTML = '';
+  clips.forEach(function(clip) {
+    var div = document.createElement('div');
+    div.style.cssText = 'background:rgba(255,255,255,.04);border-radius:6px;margin-bottom:6px;overflow:hidden;cursor:pointer;';
+    // Thumbnail area
+    var thumb = document.createElement('div');
+    thumb.style.cssText = 'width:100%;height:64px;background:#1f2937;display:flex;align-items:center;justify-content:center;position:relative;';
+    if(clip.url) {
+      var vid = document.createElement('video');
+      vid.src = clip.url; vid.muted = true; vid.preload = 'metadata';
+      vid.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+      thumb.appendChild(vid);
+    } else {
+      thumb.innerHTML = '<span style="color:#6b7280;font-size:24px;">&#127902;</span>';
+    }
+    // Info
+    var info = document.createElement('div');
+    info.style.cssText = 'padding:6px 8px;';
+    info.innerHTML = '<div style="font-size:10px;font-weight:600;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Scene '+(clip.sceneNum||'?')+'</div>' +
+      '<div style="font-size:9px;color:#6b7280;display:flex;justify-content:space-between;align-items:center;">' +
+      '<span>'+(clip.duration?clip.duration.toFixed(1)+'s':'?s')+'</span>' +
+      '<button onclick="event.stopPropagation();addClipToTimeline&&addClipToTimeline({name:'Scene '+(clip.sceneNum||'')+(clip.duration?(' '+clip.duration.toFixed(1)+'s'):'')+'',url:''+(clip.url||'')+'',duration:'+(clip.duration||8)+',type:'video'})" style="background:#00d4ff;color:#000;border:none;border-radius:3px;padding:2px 6px;cursor:pointer;font-size:8px;font-weight:700;">+TL</button>' +
+      '</div>';
+    div.appendChild(thumb);
+    div.appendChild(info);
+    // Click to preview in source monitor
+    div.onclick = function() {
+      if(clip.url && typeof E_loadSrc === 'function') E_loadSrc(clip.url);
+    };
+    panel.appendChild(div);
+  });
+};
+
+// Auto-refresh recordings when studio opens
+(function() {
+  var _checkRecNav = setInterval(function() {
+    if(typeof window.nav !== 'function') return;
+    clearInterval(_checkRecNav);
+    // Watch for when record-pg becomes active
+    var observer = new MutationObserver(function() {
+      var recPg = document.getElementById('record-pg');
+      if(recPg && (recPg.classList.contains('on') || recPg.style.display !== 'none')) {
+        setTimeout(window._renderStudioRecordings, 500);
+      }
+    });
+    var body = document.body;
+    if(body) observer.observe(body, {childList:true, subtree:false, attributes:true, attributeFilter:['class']});
+  }, 400);
+})();
+
+// ── 5. TIMELINE THUMBNAILS — generate video frame thumbnails ───────
+window._generateClipThumbnails = function() {
+  if(!window.AABE || !AABE.tracks) return;
+  AABE.tracks.forEach(function(track) {
+    (track.clips||[]).forEach(function(clip) {
+      if(clip.url && clip.type === 'video' && !clip._thumbGenerated) {
+        clip._thumbGenerated = true;
+        // Generate thumbnail from video
+        var vid = document.createElement('video');
+        vid.crossOrigin = 'anonymous'; vid.muted = true; vid.preload = 'metadata';
+        vid.onloadeddata = function() { vid.currentTime = 0.5; };
+        vid.onseeked = function() {
+          try {
+            var canvas = document.createElement('canvas');
+            canvas.width = 120; canvas.height = 68;
+            canvas.getContext('2d').drawImage(vid, 0, 0, 120, 68);
+            clip.thumbnail = canvas.toDataURL('image/jpeg', 0.6);
+            // Update clip element if visible
+            var clipEl = document.querySelector('[data-clip-id="'+clip.id+'"]');
+            if(clipEl) {
+              clipEl.style.backgroundImage = 'url('+clip.thumbnail+')';
+              clipEl.style.backgroundSize = 'cover';
+              clipEl.style.backgroundPosition = 'center';
+            }
+          } catch(e) { clip.thumbnail = null; }
+          vid.remove();
+        };
+        vid.onerror = function() { vid.remove(); };
+        vid.src = clip.url;
+      }
+    });
+  });
+};
+
+// ── 6. MEDIA BIN — show recorded scenes not just AI clips ─────────
+(function() {
+  var _checkBin = setInterval(function() {
+    if(typeof window.E_renderBin !== 'function') return;
+    var _origBin = window.E_renderBin;
+    window.E_renderBin = function() {
+      _origBin();
+      // Also add recorded clips to bin
+      setTimeout(function() {
+        var binEl = document.querySelector('.aab-bin-list') || document.getElementById('aab-bin-clips');
+        if(!binEl || !window.PROJECT) return;
+        var clips = Object.values(PROJECT.clips||{});
+        if(!clips.length) return;
+        // Check if already added
+        if(binEl.querySelector('[data-source="recording"]')) return;
+        clips.forEach(function(clip) {
+          var item = document.createElement('div');
+          item.setAttribute('data-source', 'recording');
+          item.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:5px;cursor:pointer;border:.5px solid rgba(255,255,255,.06);margin-bottom:3px;';
+          item.innerHTML = '<div style="width:36px;height:24px;background:#10b981;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#000;flex-shrink:0;">REC</div>' +
+            '<div style="flex:1;min-width:0;"><div style="font-size:10px;font-weight:600;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Scene '+(clip.sceneNum||'?')+'</div>' +
+            '<div style="font-size:9px;color:#6b7280;">'+(clip.duration||0).toFixed(1)+'s &bull; recording</div></div>' +
+            '<button onclick="event.stopPropagation();window.addClipToTimeline&&addClipToTimeline({name:'Rec Scene '+(clip.sceneNum||'')+'',url:''+(clip.url||'')+'',duration:'+(clip.duration||8)+',type:'video'})" style="background:#00d4ff;color:#000;border:none;border-radius:3px;padding:2px 6px;font-size:9px;font-weight:700;cursor:pointer;">+TL</button>';
+          item.onclick = function(e) {
+            if(e.target.tagName==='BUTTON') return;
+            if(clip.url && typeof E_loadSrc==='function') E_loadSrc(clip.url);
+          };
+          binEl.insertBefore(item, binEl.firstChild);
+        });
+      }, 300);
+    };
+    clearInterval(_checkBin);
+  }, 500);
+})();
+
+// ── 7. SCROLL FIX — ensure timeline tracks area scrolls ───────────
+(function() {
+  var style = document.createElement('style');
+  style.id = 'aab-scroll-fix';
+  style.textContent = [
+    '.pg { overflow-y: auto; }',
+    '#ai-presenter-studio { overflow-y: auto; }',
+    '.studio-ctrl-v2 { flex-shrink: 0 !important; }',
+    '.aab-tl-tracks-wrap, .aab-tracks-area { overflow-y: auto !important; min-height: 120px; }',
+    '.aab-bin { overflow-y: auto; max-height: 300px; }',
+    '#sp-clips { overflow-y: auto; max-height: 350px; }',
+    '.studio-scenes-list { overflow-y: auto; }',
+    '.aps-scenes-panel { overflow-y: auto; max-height: calc(100vh - 120px); }'
+  ].join('
+');
+  document.head.appendChild(style);
+})();
+
+// ── 8. DISTINCT TOOL ICONS ─────────────────────────────────────────
+(function() {
+  var toolMap = {
+    'select': { icon: '↖', label: 'Select (V) — Move clips', color: '#3b82f6' },
+    'cut':    { icon: '✂', label: 'Cut (C) — Split at playhead', color: '#ef4444' },
+    'trim':   { icon: '⊣', label: 'Trim (T) — Shorten from edge', color: '#f97316' },
+    'slip':   { icon: '↔', label: 'Slip (S) — Shift content', color: '#8b5cf6' },
+    'pan':    { icon: '⊞', label: 'Pan (P) — Reframe & crop', color: '#10b981' }
+  };
+  
+  function applyToolIcons() {
+    Object.keys(toolMap).forEach(function(mode) {
+      var tool = toolMap[mode];
+      var btns = document.querySelectorAll('[onclick*="selectMode(\'' + mode + '\')"],' +
+                                           '[onclick*="setTool(\'' + mode + '\')"],' +
+                                           '[onclick*="E_setTool(\'' + mode + '\')"]');
+      btns.forEach(function(btn) {
+        if(!btn.getAttribute('title')) {
+          btn.setAttribute('title', tool.label);
+          btn.style.position = 'relative';
+        }
+        // Only update if button doesn't have distinct content yet
+        var txt = btn.textContent.trim();
+        if(txt.length <= 3 || txt === mode) {
+          btn.textContent = tool.icon;
+          btn.style.fontSize = '14px';
+          btn.title = tool.label;
+        }
+      });
+    });
+  }
+  
+  // Apply after page loads
+  setTimeout(applyToolIcons, 1500);
+  setTimeout(applyToolIcons, 3000);
+})();
+
+// ── 9. APS CHARACTER LIBRARY ──────────────────────────────────────
+// Define aps_saveCharacter if not already defined
+if(typeof window.aps_saveCharacter === 'undefined') {
+  window.aps_saveCharacter = function(name, photoB64, options) {
+    if(typeof window.charLib === 'undefined') {
+      // Fallback local storage
+      var key = 'aab_chars_' + ((window.APP&&APP.user&&APP.user.id)||'guest');
+      var chars = JSON.parse(localStorage.getItem(key)||'[]');
+      var char = {
+        id: 'char_'+Date.now(), name: name||'Character',
+        images: photoB64 ? [photoB64] : [],
+        voice: (window.APS&&APS.voice)||'ElevenLabs',
+        framing: (window.APS&&APS.framing)||'Medium shot',
+        createdAt: new Date().toISOString()
+      };
+      chars.unshift(char);
+      localStorage.setItem(key, JSON.stringify(chars));
+      typeof toast==='function'&&toast('Character saved','ok');
+      return char;
+    }
+    return window.charLib.add({name:name, images:photoB64?[photoB64]:[], ...(options||{})});
+  };
+}
+
+console.log('[AAB UI Fixes] All UI patches applied');
+})();
+</script>
+
 </body>
 </html>
