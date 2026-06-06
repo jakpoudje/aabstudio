@@ -7139,6 +7139,51 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
     #tp-cur:empty::after { content: 'Open a project with scenes to see your script here'; color: rgba(255,255,255,.2); font-size: 14px; }
     </style>
 <body>
+<script id="aab-early-guard">
+// Early guard — hides old editor before any other scripts run
+(function() {
+  var HIDE_IDS = ['e-main', 'e-timeline', 'e-nav-bar', 'e-tools-bar'];
+  
+  function applyHide() {
+    HIDE_IDS.forEach(function(id) {
+      var el = document.getElementById(id);
+      if(el) { el.style.cssText = 'display:none!important;height:0!important;overflow:hidden!important;pointer-events:none!important;'; }
+    });
+  }
+  
+  // Run on DOMContentLoaded
+  document.addEventListener('DOMContentLoaded', function() {
+    applyHide();
+    // Watch for any re-shows
+    var body = document.body;
+    if(body && window.MutationObserver) {
+      new MutationObserver(function() { applyHide(); })
+        .observe(body, { childList: true, subtree: false, attributes: true, attributeFilter: ['style'] });
+      // Also watch each element individually
+      HIDE_IDS.forEach(function(id) {
+        var el = document.getElementById(id);
+        if(el) {
+          new MutationObserver(function(muts) {
+            muts.forEach(function(m) {
+              if(m.type === 'attributes' && m.attributeName === 'style') {
+                var t = m.target;
+                if(t.style.display !== 'none') {
+                  t.style.setProperty('display', 'none', 'important');
+                  t.style.setProperty('height', '0', 'important');
+                }
+              }
+            });
+          }).observe(el, { attributes: true, attributeFilter: ['style'] });
+        }
+      });
+    }
+  });
+  
+  // Also run immediately in case DOM is already ready
+  if(document.readyState !== 'loading') applyHide();
+})();
+</script>
+
   <!-- TOASTS -->
   <div id="toasts"></div>
 
@@ -13798,41 +13843,16 @@ window._reapplyNav=function(){
 };
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
-    function renderEditSuite() { if(window._editEngineV1) return;
-      var t = document.getElementById('edit-title');
-      if (t) t.textContent = 'Edit — ' + PROJECT.title;
-
-      // Build tracks from project clips
-      tl_buildTracksFromProject();
-      tl_generateSubtitleBlocks();
-      setTimeout(function () {
-        tl_fitToWindow();  // auto-fit after layout
-        renderEditClips();
-        if(typeof window._loadApsIntoTL==='function')window._loadApsIntoTL();
-      }, 50);
-
-      var clips = Object.values(PROJECT.clips || {}).filter(function (c) { return c.url; });
-      var noClips = document.getElementById('edit-no-clips');
-      var vid = document.getElementById('edit-video');
-      if (noClips) noClips.style.display = clips.length ? 'none' : 'block';
-      if (vid) {
-        if (clips.length) {
-          vid.style.display = 'block';
-        } else {
-          vid.style.display = 'none';
-          vid.removeAttribute('src'); // prevent homepage URL as src
-          vid.load();
-        }
-      }
-
-      if (clips.length) {
-        var firstId = Object.keys(PROJECT.clips).find(function (k) { return PROJECT.clips[k].url; });
-        if (firstId) { var _sc = typeof selectClip==='function' ? selectClip : (typeof edit_selectClip==='function' ? edit_selectClip : null); if(_sc) _sc(firstId); }
-      }
-
-      // Generate subtitles from script
-      tl_generateSubtitleBlocks();
-    }
+    function renderEditSuite() {
+  // Always use AABE editor - never show old e-main/e-timeline
+  var ids = ['e-main', 'e-timeline', 'e-nav-bar', 'e-tools-bar'];
+  ids.forEach(function(id) {
+    var el = document.getElementById(id);
+    if(el) { el.style.cssText = 'display:none!important;height:0!important;overflow:hidden!important;'; }
+  });
+  // Build AABE editor
+  if(typeof E_build === 'function') setTimeout(E_build, 50);
+}
 
     function tl_buildTracksFromProject() {
       if (!window.TL || !window.PROJECT) return;
