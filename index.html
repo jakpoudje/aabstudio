@@ -4522,6 +4522,24 @@
     .credit-package .pkg-price { font-size:18px;font-weight:800;color:#00d4ff; }
     .credit-package .pkg-bonus { font-size:10px;color:#10b981;font-weight:600; }
 
+  
+    /* Done→Edit always accessible */
+    .topnav-edit-btn { 
+      display: inline-flex !important; 
+      align-items: center; 
+      gap: 5px;
+      background: rgba(0,212,255,.12); 
+      color: #00d4ff; 
+      border: .5px solid rgba(0,212,255,.3); 
+      border-radius: 8px; 
+      padding: 6px 14px; 
+      font-size: 12px; 
+      font-weight: 700; 
+      cursor: pointer; 
+      text-decoration: none;
+    }
+    .topnav-edit-btn:hover { background: rgba(0,212,255,.22); }
+
   </style>
 <!-- removed:tp-smooth-css -->
 
@@ -19798,6 +19816,311 @@ console.log('[AAB] Master script loaded');
   setTimeout(function() { clearInterval(authCheckInterval); }, 15000);
 
   console.log('[AABStudio Platform v2] Module loaded');
+
+
+
+  // ── EDIT SUITE: Missing functions implemented ─────────────────────────
+
+  // Playback controls (wired to AABE engine)
+  window.E_play = function() {
+    if(!window.AABE) return;
+    AABE.playing = true;
+    var tlWrap = document.querySelector('.aab-tl-wrap');
+    if(tlWrap) tlWrap.classList.add('playing');
+    // Advance playhead
+    if(window.AABE._playInterval) clearInterval(AABE._playInterval);
+    AABE._playInterval = setInterval(function() {
+      if(!AABE.playing) { clearInterval(AABE._playInterval); return; }
+      AABE.ph = (AABE.ph || 0) + 0.1;
+      if(typeof E_updatePH === 'function') E_updatePH();
+      if(typeof E_drawProg === 'function') E_drawProg();
+    }, 100);
+  };
+
+  window.E_pause = function() {
+    if(!window.AABE) return;
+    AABE.playing = false;
+    if(AABE._playInterval) { clearInterval(AABE._playInterval); AABE._playInterval = null; }
+    var tlWrap = document.querySelector('.aab-tl-wrap');
+    if(tlWrap) tlWrap.classList.remove('playing');
+  };
+
+  window.E_seek = function(t) {
+    if(!window.AABE) return;
+    AABE.ph = parseFloat(t) || 0;
+    if(typeof E_updatePH === 'function') E_updatePH();
+    if(typeof E_drawProg === 'function') E_drawProg();
+  };
+
+  // Mark in / Mark out (set in/out points for region editing)
+  window.E_markIn = function() {
+    if(!window.AABE) return;
+    AABE.inPoint = AABE.ph || 0;
+    var inBtn = document.querySelector('[onclick*="markIn"],[onclick*="E_markIn"],.aab-mark-in');
+    if(inBtn) inBtn.style.color = '#00d4ff';
+    if(typeof toast === 'function') toast('In point: ' + AABE.inPoint.toFixed(2) + 's', 'info');
+  };
+
+  window.E_markOut = function() {
+    if(!window.AABE) return;
+    AABE.outPoint = AABE.ph || 0;
+    var outBtn = document.querySelector('[onclick*="markOut"],[onclick*="E_markOut"],.aab-mark-out');
+    if(outBtn) outBtn.style.color = '#00d4ff';
+    if(typeof toast === 'function') toast('Out point: ' + AABE.outPoint.toFixed(2) + 's', 'info');
+  };
+
+  // Track management
+  window.E_addTrack = function(type) {
+    if(!window.AABE) return;
+    type = type || 'video';
+    var id = type + '_' + Date.now();
+    var colors = { video:'#3b82f6', audio:'#10b981', text:'#f97316', image:'#8b5cf6' };
+    var icons = { video:'▶', audio:'♪', text:'T', image:'🖼' };
+    AABE.tracks.push({
+      id: id,
+      name: icons[type] + ' New ' + type.charAt(0).toUpperCase() + type.slice(1),
+      type: type,
+      clips: [],
+      muted: false,
+      locked: false,
+      color: colors[type] || '#6b7280'
+    });
+    if(typeof E_renderTL === 'function') E_renderTL();
+    if(typeof toast === 'function') toast('Track added', 'info');
+  };
+
+  window.E_deleteTrack = function(trackId) {
+    if(!window.AABE) return;
+    if(!confirm('Delete this track and all its clips?')) return;
+    AABE.tracks = AABE.tracks.filter(function(t) { return t.id !== trackId; });
+    if(typeof E_renderTL === 'function') E_renderTL();
+  };
+
+  window.E_muteTrack = function(trackId) {
+    if(!window.AABE) return;
+    var t = AABE.tracks.find(function(t) { return t.id === trackId; });
+    if(t) { t.muted = !t.muted; if(typeof E_renderTL === 'function') E_renderTL(); }
+  };
+
+  window.E_lockTrack = function(trackId) {
+    if(!window.AABE) return;
+    var t = AABE.tracks.find(function(t) { return t.id === trackId; });
+    if(t) { t.locked = !t.locked; if(typeof E_renderTL === 'function') E_renderTL(); }
+  };
+
+  // Add media to timeline
+  window.E_addVideo = function() {
+    var input = document.createElement('input');
+    input.type = 'file'; input.accept = 'video/*';
+    input.onchange = function(e) {
+      if(!e.target.files[0]) return;
+      var file = e.target.files[0];
+      var url = URL.createObjectURL(file);
+      var track = AABE && AABE.tracks.find(function(t){ return t.id==='broll'; });
+      if(!track && AABE) track = AABE.tracks[0];
+      if(!track) return;
+      var start = track.clips.reduce(function(max,c){ return Math.max(max, (c.start||0)+(c.duration||0)); }, 0);
+      var clip = { id:'vid_'+Date.now(), name:file.name, type:'video', url:url, start:start, duration:10, color:'#8b5cf6' };
+      track.clips.push(clip);
+      if(typeof E_renderTL==='function') E_renderTL();
+      if(typeof toast==='function') toast('Video added to timeline','ok');
+    };
+    input.click();
+  };
+
+  window.E_addAudio = function() {
+    var input = document.createElement('input');
+    input.type = 'file'; input.accept = 'audio/*';
+    input.onchange = function(e) {
+      if(!e.target.files[0]) return;
+      var file = e.target.files[0];
+      var url = URL.createObjectURL(file);
+      var track = AABE && AABE.tracks.find(function(t){ return t.type==='audio'; });
+      if(!track && AABE) track = AABE.tracks.find(function(t){ return t.id==='music'; });
+      if(!track) return;
+      var start = track.clips.reduce(function(max,c){ return Math.max(max,(c.start||0)+(c.duration||0));},0);
+      track.clips.push({ id:'aud_'+Date.now(), name:file.name, type:'audio', url:url, start:start, duration:30, color:'#10b981' });
+      if(typeof E_renderTL==='function') E_renderTL();
+      if(typeof toast==='function') toast('Audio added to timeline','ok');
+    };
+    input.click();
+  };
+
+  window.E_addImage = function() {
+    var input = document.createElement('input');
+    input.type = 'file'; input.accept = 'image/*';
+    input.onchange = function(e) {
+      if(!e.target.files[0]) return;
+      var file = e.target.files[0];
+      var url = URL.createObjectURL(file);
+      var track = AABE && AABE.tracks.find(function(t){ return t.id==='broll'; });
+      if(!track && AABE) track = AABE.tracks[0];
+      if(!track) return;
+      var start = track.clips.reduce(function(max,c){ return Math.max(max,(c.start||0)+(c.duration||0));},0);
+      track.clips.push({ id:'img_'+Date.now(), name:file.name, type:'image', url:url, start:start, duration:5, color:'#f97316' });
+      if(typeof E_renderTL==='function') E_renderTL();
+      if(typeof toast==='function') toast('Image added to timeline','ok');
+    };
+    input.click();
+  };
+
+  window.E_addText = function() {
+    var track = AABE && AABE.tracks.find(function(t){ return t.id==='overlays'||t.type==='text'; });
+    if(!track && AABE) { E_addTrack('text'); track = AABE.tracks[AABE.tracks.length-1]; }
+    if(!track) return;
+    var start = AABE.ph || 0;
+    var clip = { id:'txt_'+Date.now(), name:'Text Overlay', type:'text', text:'Your text here', start:start, duration:5, color:'#f472b6', font:'sans-serif', size:32, x:50, y:50 };
+    track.clips.push(clip);
+    if(typeof E_renderTL==='function') E_renderTL();
+    if(typeof E_showInspector==='function') E_showInspector(clip, track);
+    if(typeof toast==='function') toast('Text overlay added','ok');
+  };
+
+  window.E_addTransition = function(type) {
+    if(!AABE || !AABE.selectedClip) { if(typeof toast==='function') toast('Select a clip first','info'); return; }
+    if(typeof E_applyTransition==='function') E_applyTransition(AABE.selectedClip.id, type||'fade');
+    else if(typeof toast==='function') toast('Transition: '+( type||'fade'),'ok');
+  };
+
+  // Export
+  window.E_export = function() {
+    if(typeof E_openExport==='function') E_openExport();
+    else if(typeof pickExportMethod==='function') pickExportMethod();
+    else nav('export-pg');
+  };
+
+  // Undo / Redo
+  window.E_undo = function() {
+    if(!AABE) return;
+    if(!AABE._history) AABE._history = [];
+    if(!AABE._historyIdx) AABE._historyIdx = 0;
+    if(AABE._historyIdx > 0) {
+      AABE._historyIdx--;
+      var state = AABE._history[AABE._historyIdx];
+      if(state) { AABE.tracks = JSON.parse(state); if(typeof E_renderTL==='function') E_renderTL(); }
+    }
+    if(typeof toast==='function') toast('Undone','info');
+  };
+
+  window.E_redo = function() {
+    if(!AABE) return;
+    if(!AABE._history) AABE._history = [];
+    if(!AABE._historyIdx) AABE._historyIdx = 0;
+    if(AABE._historyIdx < AABE._history.length-1) {
+      AABE._historyIdx++;
+      var state = AABE._history[AABE._historyIdx];
+      if(state) { AABE.tracks = JSON.parse(state); if(typeof E_renderTL==='function') E_renderTL(); }
+    }
+    if(typeof toast==='function') toast('Redone','info');
+  };
+
+  // Save history snapshot for undo
+  window.E_saveHistory = function() {
+    if(!AABE) return;
+    if(!AABE._history) { AABE._history = []; AABE._historyIdx = -1; }
+    AABE._history = AABE._history.slice(0, AABE._historyIdx+1);
+    AABE._history.push(JSON.stringify(AABE.tracks));
+    AABE._historyIdx++;
+    if(AABE._history.length > 50) { AABE._history.shift(); AABE._historyIdx--; }
+  };
+
+  // Snap toggle
+  window.E_snap = function() {
+    if(!AABE) return;
+    AABE.snap = !AABE.snap;
+    var btn = document.querySelector('[onclick*="E_snap"],[onclick*="snap"]');
+    if(btn) btn.style.background = AABE.snap ? 'rgba(0,212,255,.2)' : '';
+    if(typeof toast==='function') toast('Snap ' + (AABE.snap?'ON':'OFF'), 'info');
+  };
+
+  // ── "Done → Edit" always active in top nav ───────────────────────────
+  // Override nav to ensure Edit Suite button is always visible
+  (function() {
+    var _nav0 = window.nav;
+    window.nav = function(pg, opts) {
+      var r = typeof _nav0==='function' ? _nav0(pg,opts) : null;
+      // Always show Edit Suite button in top bar
+      setTimeout(function() {
+        var editBtn = document.querySelector('.btn-done-edit, [onclick*="edit-pg"]');
+        if(editBtn) {
+          editBtn.style.display = 'inline-flex';
+          editBtn.style.opacity = '1';
+          editBtn.style.pointerEvents = 'auto';
+        }
+        // Save page for refresh restore
+        var skip = ['auth-pg','home-pg','landing-pg'];
+        if(pg && skip.indexOf(pg)===-1) {
+          try { sessionStorage.setItem('aab_pg',pg); localStorage.setItem('aab_last_pg',pg); } catch(e){}
+        }
+      }, 100);
+      return r;
+    };
+  })();
+
+  // ── My Videos → Timeline transfer ────────────────────────────────────
+  window.addClipToTimeline = function(clipData) {
+    if(!window.AABE) { if(typeof toast==='function') toast('Open Edit Suite first','info'); return; }
+    var type = clipData.type || 'video';
+    var track = AABE.tracks.find(function(t) {
+      if(type==='audio') return t.type==='audio' && t.id!=='subs';
+      if(type==='image') return t.id==='broll';
+      return t.id==='main' || t.type==='video';
+    });
+    if(!track) track = AABE.tracks[0];
+    if(!track) return;
+    var start = track.clips.reduce(function(max,c){ return Math.max(max,(c.start||0)+(c.duration||0));},0);
+    var clip = {
+      id: 'imported_'+Date.now(),
+      name: clipData.name || 'Imported Clip',
+      type: type,
+      url: clipData.url || '',
+      start: start,
+      duration: clipData.duration || 8,
+      color: type==='audio' ? '#10b981' : type==='image' ? '#f97316' : '#3b82f6',
+      sceneId: clipData.sceneId
+    };
+    track.clips.push(clip);
+    E_saveHistory && E_saveHistory();
+    if(typeof E_renderTL==='function') E_renderTL();
+    if(typeof toast==='function') toast('Clip added to timeline','ok');
+    nav('edit-pg');
+  };
+
+  // Load clips from My Videos page into timeline
+  window.loadMyVideosToTimeline = function() {
+    var projs = JSON.parse(localStorage.getItem('aab_projects')||'[]').filter(Boolean);
+    var modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);';
+    var items = [];
+    projs.forEach(function(p) {
+      (p.scenes||[]).forEach(function(s,i) {
+        items.push({name:'Scene '+(i+1)+' — '+p.title, duration:s.duration||8, type:'video', sceneId:s.id, project:p.title});
+      });
+      Object.values(p.clips||{}).forEach(function(c) {
+        items.push({name:'Recording: '+p.title+' S'+(c.sceneNum||'?'), duration:c.duration||8, type:'video', url:c.url||'', project:p.title});
+      });
+    });
+    var itemsHtml = items.slice(0,50).map(function(item,i) {
+      return '<div style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:6px;cursor:pointer;border:.5px solid rgba(255,255,255,.06);margin-bottom:4px;" onclick="window._addToTL('+i+')" onmouseenter="this.style.background='rgba(255,255,255,.05)'" onmouseleave="this.style.background=''">' +
+        '<div style="width:36px;height:24px;border-radius:3px;background:#3b82f6;display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0;">'+item.type.slice(0,3).toUpperCase()+'</div>' +
+        '<div style="flex:1;min-width:0;"><div style="font-size:11px;font-weight:600;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+item.name+'</div>' +
+        '<div style="font-size:9px;color:#6b7280;">'+item.duration+'s &middot; '+item.project+'</div></div>' +
+        '<button onclick="event.stopPropagation();window._addToTL('+i+')" style="background:#00d4ff;color:#000;border:none;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:10px;font-weight:700;">+ Add</button>' +
+        '</div>';
+    }).join('') || '<div style="padding:20px;color:#6b7280;text-align:center;">No clips found. Record scenes or generate AI clips first.</div>';
+
+    modal.innerHTML = '<div style="background:#0f1724;border:.5px solid rgba(255,255,255,.1);border-radius:14px;padding:24px;max-width:520px;width:90%;max-height:80vh;overflow-y:auto;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
+      '<div style="font-size:16px;font-weight:700;color:#e2e8f0;">Add to Timeline</div>' +
+      '<button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;color:#9ca3af;font-size:20px;cursor:pointer;">&#x2715;</button>' +
+      '</div>' + itemsHtml + '</div>';
+
+    window._addToTL = function(idx) { addClipToTimeline(items[idx]); modal.remove(); };
+    document.body.appendChild(modal);
+  };
+
+  console.log('[AABStudio Platform v2] All functions loaded OK');
+
 
 }());
 
