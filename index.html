@@ -19722,55 +19722,108 @@ console.log('[AAB] Master script loaded');
   };
 
   window.showCostEstimate = function(operation, count, callback) {
-    var cost = Math.ceil((window.CREDIT_COSTS[operation] || 5) * count * 1.5);
-    var bal = window._userCredits && window._userCredits.credits || 0;
-    var can = bal >= cost;
-    var modal = document.createElement('div');
-    modal.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.75);';
-    modal.innerHTML = '<div style="background:#0f1724;border:.5px solid rgba(255,255,255,.1);border-radius:12px;padding:24px;max-width:380px;width:90%;color:#e2e8f0;">' +
-      '<div style="font-size:15px;font-weight:700;margin-bottom:16px;">Generation Cost</div>' +
-      '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:.5px solid rgba(255,255,255,.06);font-size:12px;"><span>Scenes</span><span>' + count + '</span></div>' +
-      '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:.5px solid rgba(255,255,255,.06);font-size:12px;"><span>Your balance</span><span style="color:' + (can ? '#10b981' : '#ef4444') + '">' + bal + ' credits</span></div>' +
-      '<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:14px;font-weight:700;color:#00d4ff;"><span>Total cost</span><span>' + cost + ' credits</span></div>' +
-      (can
-        ? '<div style="display:flex;gap:10px;margin-top:14px;"><button id="ce-confirm" style="flex:1;background:#00d4ff;color:#000;border:none;border-radius:8px;padding:10px;font-weight:700;cursor:pointer;font-size:13px;">Generate (' + cost + ' credits)</button><button onclick="this.closest('div').parentNode.remove()" style="background:rgba(255,255,255,.06);color:#9ca3af;border:none;border-radius:8px;padding:10px 14px;cursor:pointer;">Cancel</button></div>'
-        : '<div style="background:rgba(239,68,68,.1);border:.5px solid rgba(239,68,68,.3);border-radius:6px;padding:10px;margin-top:10px;font-size:11px;color:#ef4444;">Need ' + (cost-bal) + ' more credits</div><div style="display:flex;gap:10px;margin-top:10px;"><button onclick="this.closest('div').parentNode.remove();window.showBuyCredits&&showBuyCredits()" style="flex:1;background:#10b981;color:#fff;border:none;border-radius:8px;padding:10px;font-weight:700;cursor:pointer;">Buy Credits</button><button onclick="this.closest('div').parentNode.remove()" style="background:rgba(255,255,255,.06);color:#9ca3af;border:none;border-radius:8px;padding:10px 14px;cursor:pointer;">Cancel</button></div>'
-      ) + '</div>';
-    document.body.appendChild(modal);
-    if (can) {
-      var btn = document.getElementById('ce-confirm');
-      if (btn) btn.onclick = function() { modal.remove(); if (typeof callback === 'function') callback(); };
-    }
-  };
+  var cost=Math.ceil((window.CREDIT_COSTS&&CREDIT_COSTS[operation]||5)*(count||1)*1.5);
+  var bal=(window._userCredits&&_userCredits.credits)||0;
+  var can=bal>=cost;
+  var old=document.getElementById("cost-modal");if(old)old.remove();
+  var modal=document.createElement("div");modal.id="cost-modal";
+  modal.style.cssText="position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.8);";
+  var box=document.createElement("div");
+  box.style.cssText="background:#0f1724;border-radius:12px;padding:24px;max-width:360px;width:90%;color:#e2e8f0;";
+  var ttl=document.createElement("div");ttl.textContent="Generation Cost";ttl.style.cssText="font-size:15px;font-weight:700;margin-bottom:16px;";
+  box.appendChild(ttl);
+  function row(label,value,color){
+    var r=document.createElement("div");r.style.cssText="display:flex;justify-content:space-between;padding:6px 0;border-bottom:.5px solid rgba(255,255,255,.06);font-size:12px;";
+    var l=document.createElement("span");l.textContent=label;
+    var v=document.createElement("span");v.textContent=value;if(color)v.style.color=color;
+    r.appendChild(l);r.appendChild(v);box.appendChild(r);
+  }
+  row("Scenes",count||1,null);
+  row("Your balance",bal+" credits",can?"#10b981":"#ef4444");
+  var totR=document.createElement("div");totR.style.cssText="display:flex;justify-content:space-between;padding:8px 0;font-size:14px;font-weight:700;color:#00d4ff;";
+  var tl=document.createElement("span");tl.textContent="Total cost";
+  var tv=document.createElement("span");tv.textContent=cost+" credits";
+  totR.appendChild(tl);totR.appendChild(tv);box.appendChild(totR);
+  var btnRow=document.createElement("div");btnRow.style.cssText="display:flex;gap:10px;margin-top:14px;";
+  if(can){
+    var ok=document.createElement("button");ok.textContent="Generate ("+cost+" credits)";
+    ok.style.cssText="flex:1;background:#00d4ff;color:#000;border:none;border-radius:8px;padding:10px;font-weight:700;cursor:pointer;font-size:13px;";
+    ok.onclick=function(){modal.remove();if(typeof callback==="function")callback();};
+    btnRow.appendChild(ok);
+  }else{
+    var info=document.createElement("div");
+    info.style.cssText="background:rgba(239,68,68,.1);border-radius:6px;padding:10px;margin-top:10px;font-size:11px;color:#ef4444;";
+    info.textContent="Need "+(cost-bal)+" more credits.";
+    box.appendChild(info);
+    var buy=document.createElement("button");buy.textContent="Buy Credits";
+    buy.style.cssText="flex:1;background:#10b981;color:#fff;border:none;border-radius:8px;padding:10px;font-weight:700;cursor:pointer;";
+    buy.onclick=function(){modal.remove();if(window.showBuyCredits)showBuyCredits();};
+    btnRow.appendChild(buy);
+  }
+  var cancel=document.createElement("button");cancel.textContent="Cancel";
+  cancel.style.cssText="background:rgba(255,255,255,.06);color:#9ca3af;border:none;border-radius:8px;padding:10px 14px;cursor:pointer;";
+  cancel.onclick=function(){modal.remove();};
+  btnRow.appendChild(cancel);
+  box.appendChild(btnRow);modal.appendChild(box);document.body.appendChild(modal);
+};
 
   window.showBuyCredits = function() {
-    var pkgs = [
-      { credits: 100, price: '4.99', label: 'Starter' },
-      { credits: 500, price: '19.99', label: 'Creator', note: '20% bonus' },
-      { credits: 1500, price: '49.99', label: 'Pro', note: '50% bonus' },
-      { credits: 5000, price: '149.99', label: 'Studio', note: '100% bonus' }
-    ];
-    var modal = document.createElement('div');
-    modal.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);';
-    var pkgHtml = pkgs.map(function(p, i) {
-      return '<div onclick="window._selPkg=' + i + ';document.querySelectorAll(\'.bc-pkg\').forEach(e=>e.style.borderColor=\'rgba(255,255,255,.1)\');this.style.borderColor=\'#00d4ff\';" class="bc-pkg" style="border:.5px solid rgba(255,255,255,.1);border-radius:8px;padding:14px;margin-bottom:8px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">' +
-        '<div><div style="font-size:15px;font-weight:700;">' + p.credits + ' credits</div>' +
-        '<div style="font-size:10px;color:#6b7280;">' + p.label + (p.note ? ' · <span style=\"color:#10b981;\">' + p.note + '</span>' : '') + '</div></div>' +
-        '<div style="font-size:18px;font-weight:800;color:#00d4ff;">$' + p.price + '</div></div>';
-    }).join('');
-    modal.innerHTML = '<div style="background:#0f1724;border:.5px solid rgba(255,255,255,.1);border-radius:14px;padding:24px;max-width:440px;width:90%;color:#e2e8f0;">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">' +
-      '<div style="font-size:18px;font-weight:700;">Buy Credits</div>' +
-      '<button onclick="this.closest('div').parentNode.remove()" style="background:none;border:none;color:#9ca3af;font-size:20px;cursor:pointer;">x</button>' +
-      '</div>' + pkgHtml +
-      '<button onclick="window._processCreditPurchase(window._selPkg||0)" style="width:100%;background:#00d4ff;color:#000;border:none;border-radius:10px;padding:14px;font-size:14px;font-weight:700;cursor:pointer;margin-top:8px;">Purchase Credits</button>' +
-      '<div style="font-size:10px;color:#6b7280;text-align:center;margin-top:10px;">Secure payment via Stripe</div>' +
-      '</div>';
-    document.body.appendChild(modal);
-    window._selPkg = 0;
-    var firstPkg = modal.querySelector('.bc-pkg');
-    if (firstPkg) firstPkg.style.borderColor = '#00d4ff';
+  var pkgs=[
+    {credits:100,price:"4.99",label:"Starter",priceId:"price_credits_100"},
+    {credits:500,price:"19.99",label:"Creator",note:"20% bonus",priceId:"price_credits_500"},
+    {credits:1500,price:"49.99",label:"Pro",note:"50% bonus",priceId:"price_credits_1500"},
+    {credits:5000,price:"149.99",label:"Studio",note:"100% bonus",priceId:"price_credits_5000"}
+  ];
+  var selIdx=0;
+  var old=document.getElementById("buy-credits-modal");if(old)old.remove();
+  var modal=document.createElement("div");modal.id="buy-credits-modal";
+  modal.style.cssText="position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);";
+  var box=document.createElement("div");
+  box.style.cssText="background:#0f1724;border-radius:14px;padding:24px;max-width:440px;width:90%;color:#e2e8f0;";
+  var hdr=document.createElement("div");hdr.style.cssText="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;";
+  var ttl=document.createElement("div");ttl.textContent="Buy Credits";ttl.style.cssText="font-size:18px;font-weight:700;";
+  var cls=document.createElement("button");cls.textContent="x";
+  cls.style.cssText="background:none;border:none;color:#9ca3af;font-size:20px;cursor:pointer;";
+  cls.onclick=function(){modal.remove();};
+  hdr.appendChild(ttl);hdr.appendChild(cls);box.appendChild(hdr);
+  var cards=[];
+  pkgs.forEach(function(p,i){
+    var card=document.createElement("div");
+    card.style.cssText="border:.5px solid rgba(255,255,255,.1);border-radius:8px;padding:14px;margin-bottom:8px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;";
+    var info=document.createElement("div");
+    var nm=document.createElement("div");nm.textContent=p.credits+" credits";nm.style.cssText="font-size:15px;font-weight:700;";
+    var sub=document.createElement("div");sub.textContent=p.label+(p.note?" - "+p.note:"");sub.style.cssText="font-size:10px;color:#6b7280;";
+    info.appendChild(nm);info.appendChild(sub);
+    var pr=document.createElement("div");pr.textContent="$"+p.price;pr.style.cssText="font-size:18px;font-weight:800;color:#00d4ff;";
+    card.appendChild(info);card.appendChild(pr);
+    card.onclick=function(){
+      cards.forEach(function(c){c.style.borderColor="rgba(255,255,255,.1)";});
+      card.style.borderColor="#00d4ff";
+      selIdx=i;
+    };
+    box.appendChild(card);cards.push(card);
+  });
+  if(cards[0])cards[0].style.borderColor="#00d4ff";
+  var purchBtn=document.createElement("button");
+  purchBtn.textContent="Purchase Credits";
+  purchBtn.style.cssText="width:100%;background:#00d4ff;color:#000;border:none;border-radius:10px;padding:14px;font-size:14px;font-weight:700;cursor:pointer;margin-top:6px;";
+  purchBtn.onclick=function(){
+    var pkg=pkgs[selIdx];
+    var token=window._sbSession&&_sbSession.access_token;
+    fetch("https://aabstudio-production.up.railway.app/api/stripe/checkout",{
+      method:"POST",
+      headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json"},
+      body:JSON.stringify({priceId:pkg.priceId,successUrl:location.href+"?credits_ok=1",cancelUrl:location.href})
+    }).then(function(r){return r.json();}).then(function(d){
+      if(d.url||d.checkoutUrl)location.href=d.url||d.checkoutUrl;
+      else typeof toast==="function"&&toast("Payment error","error");
+    }).catch(function(e){typeof toast==="function"&&toast("Error: "+e.message,"error");});
   };
+  box.appendChild(purchBtn);
+  var note=document.createElement("div");note.textContent="Secure payment via Stripe";
+  note.style.cssText="font-size:10px;color:#6b7280;text-align:center;margin-top:10px;";
+  box.appendChild(note);modal.appendChild(box);document.body.appendChild(modal);
+};
 
   window._processCreditPurchase = function(idx) {
     var priceIds = ['price_credits_100','price_credits_500','price_credits_1500','price_credits_5000'];
@@ -20330,79 +20383,13 @@ window.charLib = {
 // ─── 4. COST ESTIMATE + BUY CREDITS ──────────────────────────────────────
 window.CREDIT_COSTS = {ai_video_scene:10, ai_voice_scene:2, ai_script:3, export_720p:5, export_1080p:10};
 
-window.showCostEstimate = function(operation, count, callback) {
-  var cost = Math.ceil((window.CREDIT_COSTS[operation] || 5) * (count || 1) * 1.5);
-  var bal = (window._userCredits && window._userCredits.credits) || 0;
-  var can = bal >= cost;
-  var modal = document.createElement('div');
-  modal.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.8);';
-  modal.innerHTML = '<div style="background:#0f1724;border:.5px solid rgba(255,255,255,.1);border-radius:12px;padding:24px;max-width:360px;width:90%;color:#e2e8f0;">' +
-    '<div style="font-size:15px;font-weight:700;margin-bottom:16px;">Generation Cost</div>' +
-    '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:.5px solid rgba(255,255,255,.06);font-size:12px;"><span>Scenes</span><span>' + (count||1) + '</span></div>' +
-    '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:.5px solid rgba(255,255,255,.06);font-size:12px;"><span>Your balance</span><span style="color:' + (can?'#10b981':'#ef4444') + '">' + bal + ' credits</span></div>' +
-    '<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:14px;font-weight:700;color:#00d4ff;"><span>Total cost</span><span>' + cost + ' credits</span></div>' +
-    (can
-      ? '<div style="display:flex;gap:10px;margin-top:14px;"><button id="_ce_ok" style="flex:1;background:#00d4ff;color:#000;border:none;border-radius:8px;padding:10px;font-weight:700;cursor:pointer;font-size:13px;">Generate (' + cost + ' credits)</button><button id="_ce_cancel" style="background:rgba(255,255,255,.06);color:#9ca3af;border:none;border-radius:8px;padding:10px 14px;cursor:pointer;">Cancel</button></div>'
-      : '<div style="background:rgba(239,68,68,.1);border:.5px solid rgba(239,68,68,.3);border-radius:6px;padding:10px;margin-top:10px;font-size:11px;color:#ef4444;">Insufficient credits. Need ' + (cost-bal) + ' more.</div>' +
-        '<div style="display:flex;gap:10px;margin-top:10px;"><button id="_ce_buy" style="flex:1;background:#10b981;color:#fff;border:none;border-radius:8px;padding:10px;font-weight:700;cursor:pointer;">Buy Credits</button><button id="_ce_cancel" style="background:rgba(255,255,255,.06);color:#9ca3af;border:none;border-radius:8px;padding:10px 14px;cursor:pointer;">Cancel</button></div>'
-    ) + '</div>';
-  document.body.appendChild(modal);
-  var cancelBtn = modal.querySelector('#_ce_cancel');
-  if(cancelBtn) cancelBtn.onclick = function(){ modal.remove(); };
-  var okBtn = modal.querySelector('#_ce_ok');
-  if(okBtn) okBtn.onclick = function(){ modal.remove(); if(typeof callback==='function') callback(); };
-  var buyBtn = modal.querySelector('#_ce_buy');
-  if(buyBtn) buyBtn.onclick = function(){ modal.remove(); window.showBuyCredits && showBuyCredits(); };
-};
 
-window.showBuyCredits = function() {
-  var pkgs = [
-    {credits:100, price:'4.99', label:'Starter', priceId:'price_credits_100'},
-    {credits:500, price:'19.99', label:'Creator', note:'20% bonus', priceId:'price_credits_500'},
-    {credits:1500, price:'49.99', label:'Pro', note:'50% bonus', priceId:'price_credits_1500'},
-    {credits:5000, price:'149.99', label:'Studio', note:'100% bonus', priceId:'price_credits_5000'}
-  ];
-  window._selPkg = 0;
-  var modal = document.createElement('div');
-  modal.id = 'buy-credits-modal';
-  modal.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);';
-  var pkgHtml = '';
-  pkgs.forEach(function(p, i) {
-    pkgHtml += '<div class="bc-pkg" data-i="'+i+'" style="border:.5px solid rgba(255,255,255,.1);border-radius:8px;padding:14px;margin-bottom:8px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">' +
-      '<div><div style="font-size:15px;font-weight:700;color:#e2e8f0;">' + p.credits + ' credits</div>' +
-      '<div style="font-size:10px;color:#6b7280;">' + p.label + (p.note ? ' &bull; <span style="color:#10b981;">' + p.note + '</span>' : '') + '</div></div>' +
-      '<div style="font-size:18px;font-weight:800;color:#00d4ff;">$' + p.price + '</div></div>';
-  });
-  modal.innerHTML = '<div style="background:#0f1724;border:.5px solid rgba(255,255,255,.1);border-radius:14px;padding:24px;max-width:440px;width:90%;color:#e2e8f0;">' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">' +
-    '<div style="font-size:18px;font-weight:700;">Buy Credits</div>' +
-    '<button id="bc-close" style="background:none;border:none;color:#9ca3af;font-size:20px;cursor:pointer;">x</button>' +
-    '</div>' + pkgHtml +
-    '<button id="bc-purchase" style="width:100%;background:#00d4ff;color:#000;border:none;border-radius:10px;padding:14px;font-size:14px;font-weight:700;cursor:pointer;margin-top:6px;">Purchase Credits</button>' +
-    '<div style="font-size:10px;color:#6b7280;text-align:center;margin-top:10px;">Secure payment via Stripe</div></div>';
-  document.body.appendChild(modal);
-  modal.querySelector('#bc-close').onclick = function(){ modal.remove(); };
-  modal.querySelectorAll('.bc-pkg').forEach(function(el) {
-    el.onclick = function() {
-      modal.querySelectorAll('.bc-pkg').forEach(function(e){ e.style.borderColor='rgba(255,255,255,.1)'; });
-      el.style.borderColor = '#00d4ff';
-      window._selPkg = parseInt(el.getAttribute('data-i'));
-    };
-  });
-  modal.querySelectorAll('.bc-pkg')[0].style.borderColor = '#00d4ff';
-  modal.querySelector('#bc-purchase').onclick = function() {
-    var pkg = pkgs[window._selPkg || 0];
-    var token = window._sbSession && _sbSession.access_token;
-    fetch('https://aabstudio-production.up.railway.app/api/stripe/checkout', {
-      method:'POST',
-      headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
-      body: JSON.stringify({priceId:pkg.priceId, successUrl:location.href+'?credits_ok=1', cancelUrl:location.href})
-    }).then(function(r){return r.json();}).then(function(d){
-      if(d.url||d.checkoutUrl) location.href = d.url||d.checkoutUrl;
-      else { typeof toast==='function'&&toast('Payment setup error','error'); }
-    }).catch(function(e){ typeof toast==='function'&&toast('Error: '+e.message,'error'); });
-  };
-};
+// showCostEstimate defined in AABPlatform
+;
+
+
+// showBuyCredits defined in AABPlatform
+;
 
 // ─── 5. CREDITS LOADING ──────────────────────────────────────────────────
 window._loadUserCredits = function() {
