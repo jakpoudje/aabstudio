@@ -20296,5 +20296,416 @@ console.log('[AAB] Master script loaded');
 
 
 </script>
+<script id="aab-complete-module">
+(function AABComplete() {
+
+// ─── 1. PAGE REFRESH: nav() saves page, auth restores it ──────────────────
+var _navOrig = null;
+var _suOrig = null;
+
+function _initNavSave() {
+  if(!window.nav || window.nav._savesPg) return;
+  _navOrig = window.nav;
+  window.nav = function(pg, opts) {
+    var skip = ['auth-pg','home-pg','home','landing-pg'];
+    if(pg && skip.indexOf(pg) === -1) {
+      try { sessionStorage.setItem('aab_pg', pg); localStorage.setItem('aab_last_pg', pg); } catch(e) {}
+    }
+    return _navOrig(pg, opts);
+  };
+  window.nav._savesPg = true;
+}
+
+function _initAuthRestore() {
+  if(!window.setUser || window.setUser._restores) return;
+  _suOrig = window.setUser;
+  window.setUser = function(user) {
+    _suOrig(user);
+    setTimeout(function() {
+      try {
+        var pg = sessionStorage.getItem('aab_pg') || localStorage.getItem('aab_last_pg');
+        var skip = ['auth-pg','home-pg','home','landing-pg'];
+        if(pg && skip.indexOf(pg) === -1 && typeof window.nav === 'function') {
+          window.nav(pg);
+        } else {
+          if(typeof window.nav === 'function') window.nav('dashboard-pg');
+          if(typeof loadDashboard === 'function') loadDashboard();
+        }
+      } catch(e) {}
+    }, 700);
+  };
+  window.setUser._restores = true;
+}
+
+// ─── 2. GHOST PURGE: clean on every dashboard load ───────────────────────
+function _initGhostPurge() {
+  if(!window.loadDashboard || window.loadDashboard._purges) return;
+  var _ldOrig = window.loadDashboard;
+  window.loadDashboard = function() {
+    try {
+      var projs = JSON.parse(localStorage.getItem('aab_projects') || '[]').filter(Boolean);
+      var delIds = JSON.parse(localStorage.getItem('aab_deleted_ids') || '[]');
+      var clean = projs.filter(function(p) {
+        return p && p.id && delIds.indexOf(p.id) === -1 && p.scenes && p.scenes.length > 0;
+      });
+      if(clean.length < projs.length) localStorage.setItem('aab_projects', JSON.stringify(clean));
+    } catch(e) {}
+    return _ldOrig();
+  };
+  window.loadDashboard._purges = true;
+}
+
+// ─── 3. CHARACTER LIBRARY ─────────────────────────────────────────────────
+function _getCharKey() {
+  var uid = (window.APP && APP.user && APP.user.id) ? APP.user.id : 'guest';
+  return 'aab_chars_' + uid;
+}
+
+window.charLib = {
+  load: function() { try { return JSON.parse(localStorage.getItem(_getCharKey()) || '[]'); } catch(e) { return []; } },
+  save: function(chars) {
+    try { localStorage.setItem(_getCharKey(), JSON.stringify(chars)); } catch(e) {}
+    var supa = typeof getSupa === 'function' ? getSupa() : null;
+    if(supa && window._sbSession) {
+      var uid = (window.APP && APP.user) ? APP.user.id : null;
+      if(uid) supa.from('characters').upsert({user_id: uid, library: JSON.stringify(chars)}, {onConflict: 'user_id'}).catch(function(){});
+    }
+  },
+  add: function(char) {
+    var chars = this.load();
+    char.id = char.id || ('char_' + Date.now());
+    char.updatedAt = new Date().toISOString();
+    char.createdAt = char.createdAt || char.updatedAt;
+    var idx = -1;
+    for(var i=0;i<chars.length;i++){if(chars[i].id===char.id){idx=i;break;}}
+    if(idx > -1) chars[idx] = char; else chars.unshift(char);
+    this.save(chars);
+    return char;
+  },
+  remove: function(id) { this.save(this.load().filter(function(c){return c.id!==id;})); },
+  get: function(id) { var c=this.load(); for(var i=0;i<c.length;i++){if(c[i].id===id)return c[i];} return null; }
+};
+
+// ─── 4. COST ESTIMATE + BUY CREDITS ──────────────────────────────────────
+window.CREDIT_COSTS = {ai_video_scene:10, ai_voice_scene:2, ai_script:3, export_720p:5, export_1080p:10};
+
+window.showCostEstimate = function(operation, count, callback) {
+  var cost = Math.ceil((window.CREDIT_COSTS[operation] || 5) * (count || 1) * 1.5);
+  var bal = (window._userCredits && window._userCredits.credits) || 0;
+  var can = bal >= cost;
+  var modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.8);';
+  modal.innerHTML = '<div style="background:#0f1724;border:.5px solid rgba(255,255,255,.1);border-radius:12px;padding:24px;max-width:360px;width:90%;color:#e2e8f0;">' +
+    '<div style="font-size:15px;font-weight:700;margin-bottom:16px;">Generation Cost</div>' +
+    '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:.5px solid rgba(255,255,255,.06);font-size:12px;"><span>Scenes</span><span>' + (count||1) + '</span></div>' +
+    '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:.5px solid rgba(255,255,255,.06);font-size:12px;"><span>Your balance</span><span style="color:' + (can?'#10b981':'#ef4444') + '">' + bal + ' credits</span></div>' +
+    '<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:14px;font-weight:700;color:#00d4ff;"><span>Total cost</span><span>' + cost + ' credits</span></div>' +
+    (can
+      ? '<div style="display:flex;gap:10px;margin-top:14px;"><button id="_ce_ok" style="flex:1;background:#00d4ff;color:#000;border:none;border-radius:8px;padding:10px;font-weight:700;cursor:pointer;font-size:13px;">Generate (' + cost + ' credits)</button><button id="_ce_cancel" style="background:rgba(255,255,255,.06);color:#9ca3af;border:none;border-radius:8px;padding:10px 14px;cursor:pointer;">Cancel</button></div>'
+      : '<div style="background:rgba(239,68,68,.1);border:.5px solid rgba(239,68,68,.3);border-radius:6px;padding:10px;margin-top:10px;font-size:11px;color:#ef4444;">Insufficient credits. Need ' + (cost-bal) + ' more.</div>' +
+        '<div style="display:flex;gap:10px;margin-top:10px;"><button id="_ce_buy" style="flex:1;background:#10b981;color:#fff;border:none;border-radius:8px;padding:10px;font-weight:700;cursor:pointer;">Buy Credits</button><button id="_ce_cancel" style="background:rgba(255,255,255,.06);color:#9ca3af;border:none;border-radius:8px;padding:10px 14px;cursor:pointer;">Cancel</button></div>'
+    ) + '</div>';
+  document.body.appendChild(modal);
+  var cancelBtn = modal.querySelector('#_ce_cancel');
+  if(cancelBtn) cancelBtn.onclick = function(){ modal.remove(); };
+  var okBtn = modal.querySelector('#_ce_ok');
+  if(okBtn) okBtn.onclick = function(){ modal.remove(); if(typeof callback==='function') callback(); };
+  var buyBtn = modal.querySelector('#_ce_buy');
+  if(buyBtn) buyBtn.onclick = function(){ modal.remove(); window.showBuyCredits && showBuyCredits(); };
+};
+
+window.showBuyCredits = function() {
+  var pkgs = [
+    {credits:100, price:'4.99', label:'Starter', priceId:'price_credits_100'},
+    {credits:500, price:'19.99', label:'Creator', note:'20% bonus', priceId:'price_credits_500'},
+    {credits:1500, price:'49.99', label:'Pro', note:'50% bonus', priceId:'price_credits_1500'},
+    {credits:5000, price:'149.99', label:'Studio', note:'100% bonus', priceId:'price_credits_5000'}
+  ];
+  window._selPkg = 0;
+  var modal = document.createElement('div');
+  modal.id = 'buy-credits-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);';
+  var pkgHtml = '';
+  pkgs.forEach(function(p, i) {
+    pkgHtml += '<div class="bc-pkg" data-i="'+i+'" style="border:.5px solid rgba(255,255,255,.1);border-radius:8px;padding:14px;margin-bottom:8px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">' +
+      '<div><div style="font-size:15px;font-weight:700;color:#e2e8f0;">' + p.credits + ' credits</div>' +
+      '<div style="font-size:10px;color:#6b7280;">' + p.label + (p.note ? ' &bull; <span style="color:#10b981;">' + p.note + '</span>' : '') + '</div></div>' +
+      '<div style="font-size:18px;font-weight:800;color:#00d4ff;">$' + p.price + '</div></div>';
+  });
+  modal.innerHTML = '<div style="background:#0f1724;border:.5px solid rgba(255,255,255,.1);border-radius:14px;padding:24px;max-width:440px;width:90%;color:#e2e8f0;">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">' +
+    '<div style="font-size:18px;font-weight:700;">Buy Credits</div>' +
+    '<button id="bc-close" style="background:none;border:none;color:#9ca3af;font-size:20px;cursor:pointer;">&#x2715;</button>' +
+    '</div>' + pkgHtml +
+    '<button id="bc-purchase" style="width:100%;background:#00d4ff;color:#000;border:none;border-radius:10px;padding:14px;font-size:14px;font-weight:700;cursor:pointer;margin-top:6px;">Purchase Credits</button>' +
+    '<div style="font-size:10px;color:#6b7280;text-align:center;margin-top:10px;">Secure payment via Stripe</div></div>';
+  document.body.appendChild(modal);
+  modal.querySelector('#bc-close').onclick = function(){ modal.remove(); };
+  modal.querySelectorAll('.bc-pkg').forEach(function(el) {
+    el.onclick = function() {
+      modal.querySelectorAll('.bc-pkg').forEach(function(e){ e.style.borderColor='rgba(255,255,255,.1)'; });
+      el.style.borderColor = '#00d4ff';
+      window._selPkg = parseInt(el.getAttribute('data-i'));
+    };
+  });
+  modal.querySelectorAll('.bc-pkg')[0].style.borderColor = '#00d4ff';
+  modal.querySelector('#bc-purchase').onclick = function() {
+    var pkg = pkgs[window._selPkg || 0];
+    var token = window._sbSession && _sbSession.access_token;
+    fetch('https://aabstudio-production.up.railway.app/api/stripe/checkout', {
+      method:'POST',
+      headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+      body: JSON.stringify({priceId:pkg.priceId, successUrl:location.href+'?credits_ok=1', cancelUrl:location.href})
+    }).then(function(r){return r.json();}).then(function(d){
+      if(d.url||d.checkoutUrl) location.href = d.url||d.checkoutUrl;
+      else { typeof toast==='function'&&toast('Payment setup error','error'); }
+    }).catch(function(e){ typeof toast==='function'&&toast('Error: '+e.message,'error'); });
+  };
+};
+
+// ─── 5. CREDITS LOADING ──────────────────────────────────────────────────
+window._loadUserCredits = function() {
+  var token = window._sbSession && _sbSession.access_token;
+  if(!token) return;
+  fetch('https://aabstudio-production.up.railway.app/api/user/credits', {
+    headers:{'Authorization':'Bearer '+token}
+  }).then(function(r){return r.json();})
+  .then(function(d){
+    window._userCredits = d;
+    document.querySelectorAll('.credit-balance').forEach(function(el){
+      if(d.credits !== undefined) el.textContent = d.credits;
+    });
+  }).catch(function(){});
+};
+
+// ─── 6. PROJECT PERSISTENCE ──────────────────────────────────────────────
+window._saveProjectFull = function(project) {
+  if(!project) project = window.PROJECT;
+  if(!project || !project.id) return;
+  project.updatedAt = new Date().toISOString();
+  try {
+    var projs = JSON.parse(localStorage.getItem('aab_projects') || '[]').filter(Boolean);
+    var idx = -1;
+    for(var i=0;i<projs.length;i++){if(projs[i].id===project.id){idx=i;break;}}
+    if(idx > -1) projs[idx] = project; else projs.unshift(project);
+    localStorage.setItem('aab_projects', JSON.stringify(projs));
+  } catch(e) {}
+  var supa = typeof getSupa==='function' ? getSupa() : null;
+  if(!supa || !window._sbSession) return;
+  var uid = (window.APP && APP.user) ? APP.user.id : null;
+  if(!uid) return;
+  supa.from('user_projects').upsert(
+    {project_id:project.id, user_id:uid, title:project.title, project_data:project, updated_at:project.updatedAt},
+    {onConflict:'project_id'}
+  ).catch(function(){});
+};
+
+// ─── 7. RECORDING UPLOAD ─────────────────────────────────────────────────
+window._uploadRecordingBlob = function(blob, clipKey, projectId) {
+  if(!blob || !window._sbSession) return Promise.resolve(null);
+  var supa = getSupa();
+  var uid = (window.APP && APP.user) ? APP.user.id : 'user';
+  var filename = uid + '/' + projectId + '/' + clipKey + '_' + Date.now() + '.webm';
+  return supa.storage.from('recorded-clips').upload(filename, blob, {contentType:'video/webm', upsert:true})
+    .then(function(r){
+      if(r.error) return null;
+      return 'https://phjlxkyloafogznhyyig.supabase.co/storage/v1/object/authenticated/recorded-clips/' + filename;
+    }).catch(function(){ return null; });
+};
+
+// ─── 8. EDIT SUITE FUNCTIONS ─────────────────────────────────────────────
+window.E_play = function() {
+  if(!window.AABE) return;
+  AABE.playing = true;
+  if(AABE._playInterval) clearInterval(AABE._playInterval);
+  AABE._playInterval = setInterval(function(){
+    if(!AABE.playing){clearInterval(AABE._playInterval);return;}
+    AABE.ph = (AABE.ph||0) + 0.1;
+    if(typeof E_updatePH==='function') E_updatePH();
+  }, 100);
+};
+window.E_pause = function() {
+  if(!window.AABE) return;
+  AABE.playing = false;
+  if(AABE._playInterval){ clearInterval(AABE._playInterval); AABE._playInterval=null; }
+};
+window.E_seek = function(t) {
+  if(window.AABE){ AABE.ph=parseFloat(t)||0; if(typeof E_updatePH==='function') E_updatePH(); }
+};
+window.E_markIn = function() {
+  if(window.AABE){ AABE.inPoint=AABE.ph||0; typeof toast==='function'&&toast('In: '+(AABE.inPoint).toFixed(2)+'s','info'); }
+};
+window.E_markOut = function() {
+  if(window.AABE){ AABE.outPoint=AABE.ph||0; typeof toast==='function'&&toast('Out: '+(AABE.outPoint).toFixed(2)+'s','info'); }
+};
+window.E_addTrack = function(type) {
+  if(!window.AABE) return;
+  type = type || 'video';
+  var icons = {video:'Main Video', audio:'Audio', text:'Text', image:'Images'};
+  var colors = {video:'#3b82f6', audio:'#10b981', text:'#f97316', image:'#8b5cf6'};
+  AABE.tracks.push({id:type+'_'+Date.now(), name:icons[type]||type, type:type, clips:[], muted:false, locked:false, color:colors[type]||'#6b7280'});
+  if(typeof E_renderTL==='function') E_renderTL();
+  typeof toast==='function'&&toast('Track added','info');
+};
+window.E_deleteTrack = function(id) {
+  if(!window.AABE||!confirm('Delete track?')) return;
+  AABE.tracks = AABE.tracks.filter(function(t){return t.id!==id;});
+  if(typeof E_renderTL==='function') E_renderTL();
+};
+window.E_muteTrack = function(id) {
+  if(!window.AABE) return;
+  for(var i=0;i<AABE.tracks.length;i++){if(AABE.tracks[i].id===id){AABE.tracks[i].muted=!AABE.tracks[i].muted;break;}}
+  if(typeof E_renderTL==='function') E_renderTL();
+};
+window.E_lockTrack = function(id) {
+  if(!window.AABE) return;
+  for(var i=0;i<AABE.tracks.length;i++){if(AABE.tracks[i].id===id){AABE.tracks[i].locked=!AABE.tracks[i].locked;break;}}
+  if(typeof E_renderTL==='function') E_renderTL();
+};
+function _addFileToTrack(accept, trackId, type, color) {
+  var inp = document.createElement('input');
+  inp.type='file'; inp.accept=accept;
+  inp.onchange = function(e) {
+    if(!e.target.files[0]||!window.AABE) return;
+    var f=e.target.files[0], url=URL.createObjectURL(f);
+    var track=null;
+    for(var i=0;i<AABE.tracks.length;i++){if(AABE.tracks[i].id===trackId){track=AABE.tracks[i];break;}}
+    if(!track) track=AABE.tracks[0];
+    if(!track) return;
+    var start=0;
+    for(var j=0;j<track.clips.length;j++){var c=track.clips[j];start=Math.max(start,(c.start||0)+(c.duration||0));}
+    track.clips.push({id:type+'_'+Date.now(), name:f.name, type:type, url:url, start:start, duration:type==='image'?5:type==='audio'?30:10, color:color||'#6b7280'});
+    if(typeof E_renderTL==='function') E_renderTL();
+    if(typeof E_saveHistory==='function') E_saveHistory();
+    typeof toast==='function'&&toast(f.name+' added','ok');
+  };
+  inp.click();
+}
+window.E_addVideo = function(){ _addFileToTrack('video/*','broll','video','#8b5cf6'); };
+window.E_addAudio = function(){ _addFileToTrack('audio/*','music','audio','#10b981'); };
+window.E_addImage = function(){ _addFileToTrack('image/*','broll','image','#f97316'); };
+window.E_addText = function() {
+  if(!window.AABE) return;
+  var label = prompt('Enter text overlay:');
+  if(!label) return;
+  var track=null;
+  for(var i=0;i<AABE.tracks.length;i++){if(AABE.tracks[i].type==='text'){track=AABE.tracks[i];break;}}
+  if(!track){ window.E_addTrack('text'); track=AABE.tracks[AABE.tracks.length-1]; }
+  var clip={id:'txt_'+Date.now(), name:label, type:'text', text:label, start:AABE.ph||0, duration:5, color:'#f472b6'};
+  track.clips.push(clip);
+  if(typeof E_renderTL==='function') E_renderTL();
+  if(typeof E_showInspector==='function') E_showInspector(clip, track);
+  if(typeof E_saveHistory==='function') E_saveHistory();
+  typeof toast==='function'&&toast('Text overlay added','ok');
+};
+window.E_addTransition = function(type) {
+  if(typeof E_applyTransition==='function' && AABE && AABE.selectedClip)
+    E_applyTransition(AABE.selectedClip.id, type||'fade');
+  else typeof toast==='function'&&toast('Select a clip first','info');
+};
+window.E_export = function(){ if(typeof E_openExport==='function') E_openExport(); else nav('export-pg'); };
+window.E_saveHistory = function() {
+  if(!window.AABE) return;
+  if(!AABE._history){ AABE._history=[]; AABE._historyIdx=-1; }
+  AABE._history = AABE._history.slice(0, AABE._historyIdx+1);
+  AABE._history.push(JSON.stringify(AABE.tracks));
+  AABE._historyIdx++;
+  if(AABE._history.length>50){ AABE._history.shift(); AABE._historyIdx--; }
+};
+window.E_undo = function() {
+  if(!window.AABE||!AABE._history||AABE._historyIdx<=0){ typeof toast==='function'&&toast('Nothing to undo','info'); return; }
+  AABE._historyIdx--;
+  try { AABE.tracks=JSON.parse(AABE._history[AABE._historyIdx]); } catch(e){}
+  if(typeof E_renderTL==='function') E_renderTL();
+  typeof toast==='function'&&toast('Undone','info');
+};
+window.E_redo = function() {
+  if(!window.AABE||!AABE._history||AABE._historyIdx>=AABE._history.length-1){ typeof toast==='function'&&toast('Nothing to redo','info'); return; }
+  AABE._historyIdx++;
+  try { AABE.tracks=JSON.parse(AABE._history[AABE._historyIdx]); } catch(e){}
+  if(typeof E_renderTL==='function') E_renderTL();
+  typeof toast==='function'&&toast('Redone','info');
+};
+window.E_snap = function() {
+  if(!window.AABE) return;
+  AABE.snap = !AABE.snap;
+  typeof toast==='function'&&toast('Snap '+(AABE.snap?'ON':'OFF'),'info');
+};
+
+// ─── 9. ADD CLIP TO TIMELINE ─────────────────────────────────────────────
+window.addClipToTimeline = function(clipData) {
+  if(!window.AABE){ typeof toast==='function'&&toast('Open Edit Suite first','info'); return; }
+  var type = clipData.type||'video';
+  var track = null;
+  for(var i=0;i<AABE.tracks.length;i++){
+    var t=AABE.tracks[i];
+    if(type==='audio'&&t.type==='audio'&&t.id!=='subs'){track=t;break;}
+    if(type!=='audio'&&(t.id==='main'||t.type==='video')){track=t;break;}
+  }
+  if(!track) track=AABE.tracks[0];
+  if(!track) return;
+  var start=0;
+  for(var j=0;j<track.clips.length;j++){var c=track.clips[j];start=Math.max(start,(c.start||0)+(c.duration||0));}
+  track.clips.push({id:'imp_'+Date.now(), name:clipData.name||'Clip', type:type, url:clipData.url||'', start:start, duration:clipData.duration||8, color:'#3b82f6', sceneId:clipData.sceneId});
+  if(typeof E_saveHistory==='function') E_saveHistory();
+  if(typeof E_renderTL==='function') E_renderTL();
+  typeof toast==='function'&&toast('Added to timeline','ok');
+  if(typeof nav==='function') nav('edit-pg');
+};
+
+// ─── 10. SCROLL/LAYOUT CSS ───────────────────────────────────────────────
+(function() {
+  var st = document.createElement('style');
+  st.id = 'aab-complete-css';
+  st.textContent = [
+    '.pg { overflow-y: auto; }',
+    '#ai-presenter-studio { overflow-y: auto; }',
+    '.studio-ctrl-v2 { flex-shrink: 0 !important; }',
+    '.aab-tl-tracks-wrap { overflow-y: auto !important; }',
+    '.aab-bin { overflow-y: auto; }',
+    '#sp-clips { overflow-y: auto; max-height: 350px; }',
+    '.aab-track-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 600; }',
+    'body { overflow-x: hidden; max-width: 100vw; }'
+  ].join('
+');
+  if(!document.getElementById('aab-complete-css')) document.head.appendChild(st);
+})();
+
+// ─── 11. APS PHOTO UPLOAD FIX ────────────────────────────────────────────
+function _fixApsUpload() {
+  var input = document.getElementById('aps-photo-input');
+  if(!input) return;
+  var container = input.closest('.sp-section') || input.parentElement;
+  if(!container) return;
+  var labels = container.querySelectorAll('label');
+  for(var i=0;i<labels.length;i++) {
+    var lbl = labels[i];
+    if(!lbl.htmlFor && (lbl.textContent.indexOf('Upload') > -1 || lbl.textContent.indexOf('photo') > -1)) {
+      lbl.htmlFor = 'aps-photo-input';
+      lbl.style.cursor = 'pointer';
+    }
+  }
+}
+
+// ─── 12. INIT (wait for page ready) ─────────────────────────────────────
+var _initTimer = setInterval(function() {
+  var ready = typeof window.nav === 'function' && typeof window.setUser === 'function';
+  if(!ready) return;
+  clearInterval(_initTimer);
+  _initNavSave();
+  _initAuthRestore();
+  _initGhostPurge();
+  _fixApsUpload();
+  setTimeout(_loadUserCredits, 2000);
+  // Auto-save project every 30 seconds
+  setInterval(function(){ if(window.PROJECT && PROJECT.id) window._saveProjectFull(PROJECT); }, 30000);
+  console.log('[AABComplete] All platform functions loaded OK');
+}, 200);
+
+// Max wait 20s
+setTimeout(function(){ clearInterval(_initTimer); }, 20000);
+
+})();
+</script>
 </body>
 </html>
