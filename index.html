@@ -20757,5 +20757,416 @@ setTimeout(function(){ clearInterval(_initTimer); }, 20000);
 
 })();
 </script>
+<script id="aab-fixes-v3">
+(function(){
+
+// ─── 1. TELEPROMPTER SCROLLING ────────────────────────────────────
+// Override startPracticeMode to actually scroll the TP
+window.startPracticeMode = function() {
+  var tpBody = document.getElementById('tp-body');
+  if(!tpBody) return;
+  
+  // Stop if already running
+  if(window._tpInterval) {
+    clearInterval(window._tpInterval);
+    window._tpInterval = null;
+    window._tpRunning = false;
+    var btn = document.getElementById('btn-tp-start');
+    if(btn) btn.textContent = '\u25B6 Practice';
+    return;
+  }
+  
+  // Start scrolling
+  window._tpRunning = true;
+  var speed = parseInt((document.getElementById('tp-speed-val')||{}).textContent||'80');
+  // Speed 1-200 maps to px/sec 20-400
+  var pxPerSec = speed * 2;
+  var lastTime = null;
+  
+  window._tpInterval = setInterval(function() {
+    if(!window._tpRunning) { clearInterval(window._tpInterval); return; }
+    tpBody.scrollTop += pxPerSec / 30; // 30fps
+    // Stop at bottom
+    if(tpBody.scrollTop >= tpBody.scrollHeight - tpBody.clientHeight) {
+      clearInterval(window._tpInterval);
+      window._tpInterval = null;
+      window._tpRunning = false;
+      var btn = document.getElementById('btn-tp-start');
+      if(btn) btn.textContent = '\u25B6 Practice';
+    }
+  }, 1000/30);
+  
+  var btn = document.getElementById('btn-tp-start');
+  if(btn) btn.textContent = '\u23F8 Stop';
+};
+
+// Also fix the TP speed slider
+window.setTpSpeed = function(val) {
+  window._tpSpeed = parseInt(val);
+  var el = document.getElementById('tp-speed-val');
+  if(el) el.textContent = val;
+};
+
+// Wire Practice button if not already wired
+setTimeout(function() {
+  var btn = document.getElementById('btn-tp-start');
+  if(btn && btn.onclick && btn.onclick.toString().indexOf('startPracticeMode') === -1) {
+    btn.onclick = function() { startPracticeMode(); };
+  }
+}, 500);
+
+// ─── 2. SCENE NAVIGATION IN STUDIO (Prev/Next) ────────────────────
+window.studioPrev = function() {
+  var current = window.STUDIO_SCENE || 1;
+  var target = Math.max(1, current - 1);
+  window.studioGoTo(target);
+};
+
+window.studioNext = function() {
+  var current = window.STUDIO_SCENE || 1;
+  var scenes = PROJECT && PROJECT.scenes ? PROJECT.scenes.length : 9;
+  var target = Math.min(scenes, current + 1);
+  window.studioGoTo(target);
+};
+
+window.studioGoTo = function(n) {
+  window.STUDIO_SCENE = n;
+  // Update scene indicator
+  var indicator = document.querySelector('.scene-num, [class*="scene-num"]');
+  var total = PROJECT && PROJECT.scenes ? PROJECT.scenes.length : 9;
+  if(indicator) indicator.textContent = n + '/' + total;
+  
+  // Update TP text for this scene
+  var scene = PROJECT && PROJECT.scenes && PROJECT.scenes[n-1];
+  if(scene) {
+    var tpBody = document.getElementById('tp-body');
+    if(tpBody) {
+      tpBody.textContent = scene.narration || scene.text || scene.content || '';
+      tpBody.scrollTop = 0;
+    }
+    // Update scene name display
+    var sceneLabel = document.querySelector('.current-scene-name, #current-scene');
+    if(sceneLabel) sceneLabel.textContent = 'Scene ' + n;
+  }
+  
+  // Highlight in sidebar
+  document.querySelectorAll('.scene-item, [class*="studio-scene"]').forEach(function(el, i) {
+    el.classList.toggle('active', i === n-1);
+    el.style.background = i === n-1 ? 'rgba(0,212,255,.15)' : '';
+  });
+};
+
+// ─── 3. CLIP NAME FIX — "AI Scene undefined" ──────────────────────
+// Override E_loadClips to fix clip names
+(function() {
+  var _origLoadClips = window.E_loadClips;
+  window.E_loadClips = function(project) {
+    if(typeof _origLoadClips === 'function') _origLoadClips(project);
+    // Fix clip names in AABE tracks
+    if(window.AABE && AABE.tracks) {
+      AABE.tracks.forEach(function(track) {
+        (track.clips || []).forEach(function(clip, i) {
+          // Fix "undefined" names
+          if(!clip.name || clip.name.indexOf('undefined') > -1) {
+            if(clip.sceneIdx !== undefined) clip.name = 'Scene ' + (clip.sceneIdx + 1);
+            else if(clip.url && clip.url.indexOf('heygen') > -1) clip.name = 'AI Scene ' + (i+1);
+            else clip.name = 'Clip ' + (i+1);
+          }
+        });
+      });
+      if(typeof E_renderTL === 'function') E_renderTL();
+    }
+  };
+})();
+
+// ─── 4. VIDEO THUMBNAILS ON TIMELINE CLIPS ────────────────────────
+window._generateAllThumbs = function() {
+  if(!window.AABE || !AABE.tracks) return;
+  AABE.tracks.forEach(function(track) {
+    (track.clips || []).forEach(function(clip) {
+      if(clip.url && clip.type !== 'audio' && !clip.thumbnail && !clip._thumbPending) {
+        clip._thumbPending = true;
+        var vid = document.createElement('video');
+        vid.crossOrigin = 'anonymous'; vid.muted = true; vid.preload = 'metadata';
+        vid.onloadeddata = function() { vid.currentTime = 0.5; };
+        vid.onseeked = function() {
+          try {
+            var canvas = document.createElement('canvas');
+            canvas.width = 120; canvas.height = 68;
+            canvas.getContext('2d').drawImage(vid, 0, 0, 120, 68);
+            clip.thumbnail = canvas.toDataURL('image/jpeg', 0.6);
+            clip._thumbPending = false;
+            // Update any visible clip element
+            document.querySelectorAll('[data-clip-id="'+clip.id+'"]').forEach(function(el) {
+              el.style.backgroundImage = 'url('+clip.thumbnail+')';
+              el.style.backgroundSize = 'cover';
+              el.style.backgroundPosition = 'center';
+            });
+          } catch(e) { clip._thumbPending = false; }
+          vid.remove();
+        };
+        vid.onerror = function() { clip._thumbPending = false; vid.remove(); };
+        vid.src = clip.url;
+      }
+    });
+  });
+};
+
+// Auto-generate thumbnails whenever timeline renders
+(function() {
+  var _origRenderTL = window.E_renderTL;
+  if(typeof _origRenderTL === 'function') {
+    window.E_renderTL = function() {
+      var r = _origRenderTL();
+      setTimeout(window._generateAllThumbs, 300);
+      return r;
+    };
+  }
+})();
+
+// ─── 5. APS PHOTO UPLOAD — FIX CONFLICTING LOGIC ─────────────────
+// Single source of truth: unify both photo inputs
+window.aps_loadPhoto = function(input) {
+  var file = input && input.files && input.files[0];
+  if(!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var dataUrl = e.target.result;
+    // Store in APS state
+    if(!window.APS) window.APS = {};
+    APS.photo = dataUrl;
+    
+    // Update ALL preview elements
+    ['aps-photo-preview', 'ai-photo-preview'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if(el) { if(el.tagName === 'IMG') el.src = dataUrl; else el.style.backgroundImage = 'url('+dataUrl+')'; }
+    });
+    
+    // Update the avatar placeholder
+    var avatars = document.querySelectorAll('.aps-avatar, .aps-presenter-preview, [class*="presenter-placeholder"]');
+    avatars.forEach(function(av) {
+      av.innerHTML = '';
+      var img = document.createElement('img');
+      img.src = dataUrl;
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%;';
+      av.appendChild(img);
+    });
+    
+    // Show the "Change photo" button
+    var changeBtn = document.querySelector('[onclick*="aps-photo-input"],[onclick*="ai-photo-input"]');
+    if(changeBtn) changeBtn.style.display = 'block';
+    
+    typeof toast === 'function' && toast('Photo uploaded', 'ok');
+  };
+  reader.readAsDataURL(file);
+};
+
+// Wire BOTH inputs to same handler
+['aps-photo-input', 'ai-photo-input'].forEach(function(id) {
+  var inp = document.getElementById(id);
+  if(inp) inp.onchange = function() { window.aps_loadPhoto(this); };
+});
+
+// Fix the upload label
+setTimeout(function() {
+  ['aps-upload-label', 'ai-photo-label'].forEach(function(id) {
+    var lbl = document.getElementById(id);
+    var inp = lbl && lbl.querySelector('input[type="file"]');
+    if(lbl && inp) {
+      lbl.style.cursor = 'pointer';
+      if(!lbl.onclick) lbl.onclick = function() { inp.click(); };
+    }
+  });
+}, 500);
+
+// ─── 6. CHARACTER LIBRARY ACCESS BUTTON ───────────────────────────
+// Add a visible "My Characters" button to APS right panel
+setTimeout(function() {
+  var savedCharsSection = document.querySelector('.aps-saved-chars, [class*="saved-char"], .sp-section');
+  if(savedCharsSection) {
+    var existing = document.getElementById('open-char-lib-btn');
+    if(!existing) {
+      var btn = document.createElement('button');
+      btn.id = 'open-char-lib-btn';
+      btn.textContent = 'My Characters';
+      btn.style.cssText = 'width:100%;background:rgba(0,212,255,.1);color:#00d4ff;border:.5px solid rgba(0,212,255,.3);border-radius:6px;padding:8px;font-size:11px;font-weight:700;cursor:pointer;margin-bottom:8px;';
+      btn.onclick = function() { if(window.openCharacterLibrary) openCharacterLibrary(); };
+      savedCharsSection.insertBefore(btn, savedCharsSection.firstChild);
+    }
+  }
+}, 800);
+
+// ─── 7. APS — FIX TWO SAVE BUTTONS CONFUSION ─────────────────────
+// The two Save buttons: one saves the character NAME to APS state,
+// the other saves the full character to the library.
+// Unify them: "Save Character" = save to library with name+photo
+window.aps_saveCharacter = function() {
+  var name = '';
+  ['aps-char-name', 'ai-char-name'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if(el && el.value.trim()) name = el.value.trim();
+  });
+  if(!name) {
+    typeof toast === 'function' && toast('Enter a character name first', 'info');
+    return;
+  }
+  var photo = window.APS && APS.photo;
+  if(window.charLib) {
+    window.charLib.save = function(chars) {
+      try { localStorage.setItem('aab_chars_'+((window.APP&&APP.user&&APP.user.id)||'guest'), JSON.stringify(chars)); } catch(e) {}
+      var supa = typeof getSupa === 'function' ? getSupa() : null;
+      if(supa && window._sbSession) {
+        var uid = window.APP&&APP.user ? APP.user.id : null;
+        if(uid) supa.from('characters').upsert({user_id:uid,library:JSON.stringify(chars)},{onConflict:'user_id'}).then(function(){}).catch(function(){});
+      }
+    };
+    charLib.add({name:name, images:photo?[photo]:[], framing:(APS&&APS.framing)||'Medium shot', voice:(APS&&APS.voice)||'ElevenLabs'});
+  }
+  if(window.APS) APS.charName = name;
+  typeof toast === 'function' && toast('Character "'+name+'" saved', 'ok');
+};
+
+// ─── 8. EXPORT FIX — Creatomate full timeline stitch ──────────────
+window.exportTimeline = function(options) {
+  if(!window.AABE || !AABE.tracks) { typeof toast==='function'&&toast('No timeline to export','info'); return; }
+  
+  var token = window._sbSession && _sbSession.access_token;
+  if(!token) { typeof toast==='function'&&toast('Please sign in to export','info'); return; }
+  
+  // Build ordered clip list from main track
+  var mainTrack = AABE.tracks.find(function(t){ return t.id==='main'||t.type==='video'; });
+  if(!mainTrack || !mainTrack.clips.length) { typeof toast==='function'&&toast('Add clips to timeline first','info'); return; }
+  
+  var sortedClips = mainTrack.clips.slice().sort(function(a,b){ return (a.start||0)-(b.start||0); });
+  var videoUrls = sortedClips.map(function(c){ return c.url; }).filter(Boolean);
+  
+  if(!videoUrls.length) { typeof toast==='function'&&toast('No video URLs found on timeline','info'); return; }
+  
+  typeof toast==='function'&&toast('Stitching '+videoUrls.length+' clips...','info');
+  
+  // Call Railway stitching endpoint
+  fetch('https://aabstudio-production.up.railway.app/api/export/stitch', {
+    method: 'POST',
+    headers: {'Authorization':'Bearer '+token, 'Content-Type':'application/json'},
+    body: JSON.stringify({
+      clips: videoUrls,
+      format: (options&&options.format)||'mp4',
+      resolution: (options&&options.resolution)||'1080p',
+      projectId: PROJECT && PROJECT.id
+    })
+  }).then(function(r){ return r.json(); }).then(function(d) {
+    if(d.url || d.outputUrl) {
+      var a = document.createElement('a');
+      a.href = d.url||d.outputUrl; a.download = (PROJECT&&PROJECT.title||'export')+'.mp4';
+      a.click();
+      typeof toast==='function'&&toast('Export ready — downloading!','ok');
+    } else if(d.taskId || d.renderId) {
+      // Poll for completion
+      typeof toast==='function'&&toast('Rendering... we will notify when done','ok');
+      window._pollExport(d.taskId||d.renderId, token);
+    } else {
+      typeof toast==='function'&&toast('Export started: '+(d.message||'check your email'),'ok');
+    }
+  }).catch(function(e){ typeof toast==='function'&&toast('Export error: '+e.message,'error'); });
+};
+
+window._pollExport = function(taskId, token) {
+  var attempts = 0;
+  var poll = setInterval(function() {
+    attempts++;
+    if(attempts > 60) { clearInterval(poll); return; }
+    fetch('https://aabstudio-production.up.railway.app/api/export/status?taskId='+taskId, {
+      headers:{'Authorization':'Bearer '+token}
+    }).then(function(r){ return r.json(); }).then(function(d) {
+      if(d.status === 'done' || d.url) {
+        clearInterval(poll);
+        var a = document.createElement('a');
+        a.href = d.url; a.download = 'export.mp4'; a.click();
+        typeof toast==='function'&&toast('Export complete!','ok');
+      }
+    }).catch(function(){});
+  }, 5000);
+};
+
+// ─── 9. TRACK SELECTION IN EDIT SUITE ─────────────────────────────
+window._selectedClip = null;
+window._selectedTrack = null;
+
+// Override E_renderTL to make clips clickable
+(function(){
+  var _checkRender = setInterval(function() {
+    if(typeof window.E_renderTL !== 'function') return;
+    clearInterval(_checkRender);
+    var _origRender = window.E_renderTL;
+    window.E_renderTL = function() {
+      _origRender();
+      setTimeout(function() {
+        // Make all timeline clips selectable
+        document.querySelectorAll('.aab-clip,[class*="tl-clip"],[class*="timeline-clip"]').forEach(function(el) {
+          if(el.dataset.wired) return;
+          el.dataset.wired = '1';
+          el.style.cursor = 'pointer';
+          el.onclick = function(e) {
+            // Deselect all
+            document.querySelectorAll('.aab-clip,[class*="tl-clip"]').forEach(function(c){ c.classList.remove('selected'); c.style.outline=''; });
+            // Select this
+            el.classList.add('selected');
+            el.style.outline = '2px solid #00d4ff';
+            // Find clip data
+            var clipId = el.dataset.clipId || el.getAttribute('data-clip-id');
+            if(clipId && window.AABE) {
+              AABE.tracks.forEach(function(track) {
+                (track.clips||[]).forEach(function(clip) {
+                  if(clip.id === clipId) {
+                    window._selectedClip = clip;
+                    window._selectedTrack = track;
+                    AABE.selectedClip = clip;
+                    AABE.selectedTrack = track;
+                    if(typeof E_showInspector === 'function') E_showInspector(clip, track);
+                  }
+                });
+              });
+            }
+            e.stopPropagation();
+          };
+        });
+      }, 200);
+      setTimeout(window._generateAllThumbs, 400);
+    };
+  }, 300);
+})();
+
+// ─── 10. CSS FIXES — cuts off, overflow ───────────────────────────
+(function() {
+  var st = document.getElementById('aab-fix-v3-css');
+  if(st) st.remove();
+  var s = document.createElement('style');
+  s.id = 'aab-fix-v3-css';
+  s.textContent = [
+    // Generated clips bar — don't cut off
+    '#aps-clips-bar { overflow-x: auto !important; min-height: 80px !important; flex-shrink: 0 !important; }',
+    '.aps-clip-thumb { min-width: 80px !important; flex-shrink: 0 !important; }',
+    // Timeline clip thumbnails
+    '.aab-clip { background-size: cover !important; background-position: center !important; position: relative !important; overflow: hidden !important; }',
+    '.aab-clip .aab-clip-label { background: rgba(0,0,0,.5) !important; padding: 2px 4px !important; font-size: 9px !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; max-width: 100% !important; position: absolute !important; bottom: 0 !important; left: 0 !important; right: 0 !important; }',
+    // Track selection highlight
+    '.aab-clip.selected { outline: 2px solid #00d4ff !important; z-index: 2 !important; }',
+    // Audio waveform placeholder
+    '.aab-clip[data-type="audio"] { background: linear-gradient(90deg, #10b981 0%, #059669 50%, #10b981 100%) !important; }',
+    // TP body scroll
+    '#tp-body { overflow-y: auto !important; scroll-behavior: smooth !important; }',
+    // Studio bottom bar never clips
+    '.studio-ctrl-v2 { flex-shrink: 0 !important; overflow: visible !important; }',
+    // APS clips — never cut off text
+    '.aps-clip-thumb span, .aps-clip-thumb div { overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; font-size: 9px !important; }',
+    // Character lib button visible
+    '#open-char-lib-btn { display: block !important; }'
+  ].join('\n');
+  document.head.appendChild(s);
+})();
+
+console.log('[AABFix-v3] All fixes applied');
+})();
+</script>
 </body>
 </html>
