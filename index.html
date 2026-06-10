@@ -6498,16 +6498,7 @@ window.resetTpScroll = function() {
 };
 
 // Practice mode (studio)
-window.startPracticeMode = function() {
-  var btn = document.getElementById('btn-tp-start');
-  if(window._studioWBW && _studioWBW.running) {
-    _studioWBW.running=false; clearInterval(_studioWBW.timer);
-    if(window.STUDIO_TP){STUDIO_TP.running=false;clearInterval(STUDIO_TP.timer);}
-    if(btn){btn.textContent='▶ Practice';btn.style.background='';btn.style.color='';}
-  } else {
-    if(typeof setTpScrollMode==='function') setTpScrollMode('word');
-  }
-};;;
+;;
 
 // Adaptive mic (studio)
 window.toggleAdaptiveTp = function() {
@@ -15054,7 +15045,7 @@ window.aps_selectReferencePhoto = function(b64, thumbEl) {
   toast('Presenter photo selected', 'ok');
 };
 
-window.aps_loadPhoto = function(input) {
+{
   if (!input.files || !input.files[0]) return;
   var file = input.files[0];
   var reader = new FileReader();
@@ -15063,24 +15054,6 @@ window.aps_loadPhoto = function(input) {
     var preview = document.getElementById('aps-photo-preview');
     if (preview) { preview.src = e.target.result; preview.style.display = 'block'; }
     var lbl = document.getElementById('ai-photo-lbl');
-    if (lbl) lbl.textContent = '✅ ' + file.name;
-    // Ask to save for next time
-    var saveBtn = document.getElementById('aps-save-photo-btn');
-    if (saveBtn) saveBtn.style.display = 'inline-block';
-  };
-  reader.readAsDataURL(file);
-};
-
-window.aps_clearPhoto = function() {
-  APS.photoB64 = null;
-  var preview = document.getElementById('aps-photo-preview');
-  if (preview) { preview.src = ''; preview.style.display = 'none'; }
-  var lbl = document.getElementById('ai-photo-lbl');
-  if (lbl) lbl.textContent = '\uD83D\uDCF8 Upload presenter photo';
-  var saveBtn = document.getElementById('aps-save-photo-btn');
-  if (saveBtn) saveBtn.style.display = 'none';
-};
-
 var APS = {
       scenes: [],           // all scenes with status
       currentIdx: 0,        // currently selected scene index
@@ -17140,10 +17113,6 @@ var _origStopRec = window.stopRec;
 // SMOOTH TELEPROMPTER
 // ══════════════════════════════════════════════════════════════════════════
 
-window.tpScroll = function() {
-      // DISABLED — old engine replaced by teleprompterState controller
-    };
-
 // ══════════════════════════════════════════════════════════════════════════
 // PHONE REMOTE
 // ══════════════════════════════════════════════════════════════════════════
@@ -17153,9 +17122,6 @@ try { _bc = new BroadcastChannel('aab_tp_remote'); } catch(e) {}
 
 function aab_remoteCmd(cmd, val) {
   var TP    = window.TP;
-  var inTp  = document.getElementById('teleprompter-pg') && document.getElementById('teleprompter-pg').classList.contains('on');
-  var inRec = document.getElementById('record-pg') && document.getElementById('record-pg').classList.contains('on');
-  if (cmd==='toggle') { if(inTp&&typeof tpToggle==='function') tpToggle(); else if(inRec&&typeof studioTpToggle==='function') studioTpToggle(); }
   if (cmd==='play'  && inTp && TP && !TP.playing && typeof tpToggle==='function') tpToggle();
   if (cmd==='pause' && inTp && TP && TP.playing  && typeof tpToggle==='function') tpToggle();
   if (cmd==='restart' && inTp && TP) { TP.currentWord=0; clearInterval(TP.scrollTimer); if(TP.playing) tpScroll(); }
@@ -17646,112 +17612,6 @@ if(!window._studioFix1){window._studioFix1=true;
 
         function installSmoothTp() {
           // Override tpScroll with CSS transition approach
-          window.tpScroll = function () {
-            var TP = window.TP;
-            if (!TP) return;
-            clearInterval(TP.scrollTimer);
-
-            var wrap = document.getElementById('tp-text');
-            if (!wrap) return;
-
-            // Add transition styles to all word spans
-            wrap.querySelectorAll('span[id^="tpw"]').forEach(function (s) {
-              s.style.transition = 'color .12s ease, font-weight .12s ease, text-shadow .15s ease';
-            });
-
-            var total = (wrap.querySelectorAll('span[id^="tpw"]')).length;
-            var msPerW = 60000 / (TP.speed || 80);
-
-            TP.scrollTimer = setInterval(function () {
-              var wi = TP.currentWord;
-
-              // Previous word — fade out
-              if (wi > 0) {
-                var prev = document.getElementById('tpw' + (wi - 1));
-                if (prev) {
-                  prev.style.color = 'rgba(255,255,255,0.18)';
-                  prev.style.fontWeight = '400';
-                  prev.style.textShadow = 'none';
-                }
-              }
-
-              // Current word — highlight gold
-              var cur = document.getElementById('tpw' + wi);
-              if (cur) {
-                cur.style.color = '#f59e0b';
-                cur.style.fontWeight = '700';
-                cur.style.textShadow = '0 0 28px rgba(245,158,11,0.7)';
-                // Smooth scroll into view — center of viewport
-                cur.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-              }
-
-              TP.currentWord++;
-
-              if (TP.currentWord >= total) {
-                clearInterval(TP.scrollTimer);
-                TP.playing = false;
-                var btn = document.getElementById('tp-play-btn') || document.querySelector('[onclick*="tpToggle"]');
-                if (btn) btn.textContent = '▶ Play';
-              }
-            }, msPerW);
-          };
-
-          // Also override studio teleprompter (different scroll mechanism)
-          var _origStartTp = window.startTpAutoTimer || window.studioTpStart;
-          window.startTpAutoTimer = window.studioTpStart = function () {
-            // If our RAF-based TP is active, don't run the interval-based one
-            if (window._aabTpActive) return;
-            var scene = PROJECT && PROJECT.scenes && PROJECT.scenes[window.STUDIO && STUDIO.currentScene || 0];
-            if (!scene) { if (typeof _origStartTp === 'function') return _origStartTp.apply(this, arguments); return; }
-
-            var words = (scene.narration || '').trim().split(/\s+/).filter(Boolean);
-            var wpm = (window.STUDIO && STUDIO.tpSpeed) || 80;
-            var msPerW = 60000 / wpm;
-            var tpEl = document.getElementById('tp-cur') || document.querySelector('.tp-cur-txt, .studio-tp-text');
-            if (!tpEl) { if (typeof _origStartTp === 'function') return _origStartTp.apply(this, arguments); return; }
-
-            // Render words as spans
-            tpEl.innerHTML = words.map(function (w, i) {
-              return '<span id="studio-tpw' + i + '" style="display:inline-block;margin-right:8px;transition:color .12s,font-weight .12s,text-shadow .15s;color:rgba(255,255,255,.5);">' + w + '</span>';
-            }).join('');
-
-            if (window._studioTpTimer) clearInterval(window._studioTpTimer);
-            var wi = 0;
-            var inner = tpEl;
-
-            window._studioTpTimer = setInterval(function () {
-              if (!window.STUDIO_TP || !window.STUDIO_TP.running) { clearInterval(window._studioTpTimer); return; }
-
-              // Previous
-              if (wi > 0) {
-                var p = document.getElementById('studio-tpw' + (wi - 1));
-                if (p) { p.style.color = 'rgba(255,255,255,.15)'; p.style.fontWeight = '400'; p.style.textShadow = 'none'; }
-              }
-              // Current
-              var c = document.getElementById('studio-tpw' + wi);
-              if (c) {
-                c.style.color = '#f59e0b';
-                c.style.fontWeight = '700';
-                c.style.textShadow = '0 0 24px rgba(245,158,11,.65)';
-                // Smooth horizontal scroll
-                c.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-              }
-              wi++;
-
-              if (wi >= words.length) {
-                clearInterval(window._studioTpTimer);
-                if (window.STUDIO_TP) window.STUDIO_TP.running = false;
-                // Auto-advance
-                setTimeout(function () {
-                  if (typeof studioNext === 'function') studioNext();
-                }, 600);
-              }
-            }, msPerW);
-          };
-
-          console.log('Smooth teleprompter v3 installed');
-        }
-
         // Install now and again after 2s (to beat any late-loading scripts)
         installSmoothTp();
         // Delayed re-installs cancelled — they fight with _aabTpScrollStart
@@ -18009,14 +17869,6 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
 /* ── Missing button handler stubs ───────────────────────────── */
 
 // aps_saveCharacter — alias for aps_saveCharProfile
-window.aps_saveCharacter = function() {
-  if (typeof window.aps_saveCharProfile === 'function') {
-    window.aps_saveCharProfile();
-  } else if (typeof aps_saveCharProfile === 'function') {
-    aps_saveCharProfile();
-  }
-};
-
 // dash_filterAssets — filter assets in dashboard
 window.dash_filterAssets = function(filter, btn) {
   document.querySelectorAll('.dash-asset-filter').forEach(function(b) { b.classList.remove('on'); });
@@ -18080,15 +17932,6 @@ window._saveScenesToSupabase = function(proj) {
 /* ── syncProjectToCloud via Supabase REST directly ─────────────── */
 window.syncProjectToCloud = window.syncProjectToCloud || function(proj) {
   window._saveScenesToSupabase && window._saveScenesToSupabase(proj || window.PROJECT);
-  return Promise.resolve();
-};
-
-/* ── Smart pricing nav ── */
-window.navPricing=function(){
-  if(window.APP&&window.APP.user){if(typeof nav==='function')nav('pricing-pg');}
-  else{if(typeof navFree==='function')navFree('home');setTimeout(function(){var s=document.querySelector('.pricing-section,.home-pricing');if(s)s.scrollIntoView({behavior:'smooth'});},300);}
-};
-
 /* ── Studio overlay drag+resize ── */
 window.initOverlayInteraction=function(el){
   var drag=false,rsz=false,sx,sy,sl,st,sw,sh;
@@ -18202,17 +18045,6 @@ window.syncProjectNow = function() {
 };
 
 /* ── Recording Studio functions ──────────────────────────── */
-window.startPracticeMode = function() {
-  var btn = document.getElementById('btn-tp-start');
-  if (window.STUDIO_TP && window.STUDIO_TP.running) {
-    if (typeof studioTpStop === 'function') studioTpStop();
-    if (btn) { btn.textContent = '▶ Start'; btn.style.background = ''; }
-  } else {
-    if (typeof studioTpStart === 'function') studioTpStart();
-    if (btn) { btn.textContent = '⏸ Stop'; btn.style.background = 'rgba(245,158,11,.2)'; }
-  }
-};
-
 window.studioSetMode = function(mode) {
   window._studioTpMode = mode;
   ['auto','word','manual'].forEach(function(m) {
@@ -19624,7 +19456,7 @@ console.log('[AAB] Master script loaded');
   }
 
   // ── 4. Character library UI ─────────────────────────────────
-  window.openCharacterLibrary = function() { if(window._openCharLib) return window._openCharLib(); };;
+;
 
   window._loadCharImg = function(input, idx) {
     if (!input.files || !input.files[0]) return;
@@ -19638,7 +19470,7 @@ console.log('[AAB] Master script loaded');
     reader.readAsDataURL(input.files[0]);
   };
 
-  window.saveNewCharacter = function() { if(window._saveNewChar) return window._saveNewChar(); };;
+;
 
   window.selectCharacter = function(charId) {
     var char = window.charLib.get(charId);
@@ -20638,115 +20470,8 @@ var _initTimer = setInterval(function() {
   setInterval(function(){ if(window.PROJECT && PROJECT.id) window._saveProjectFull(PROJECT); }, 30000);
   
 // ─── Character Library UI ────────────────────────────────────────────────
-window._openCharLib = function() {
-  var chars = window.charLib ? window.charLib.load() : [];
-  var old=document.getElementById('char-lib-modal'); if(old)old.remove();
-  var modal=document.createElement('div');
-  modal.id='char-lib-modal';
-  modal.style.position='fixed';modal.style.inset='0';modal.style.zIndex='10000';
-  modal.style.display='flex';modal.style.alignItems='center';modal.style.justifyContent='center';
-  modal.style.background='rgba(0,0,0,.85)';
-  var box=document.createElement('div');
-  box.style.background='#0f1724';box.style.borderRadius='14px';box.style.padding='24px';
-  box.style.maxWidth='500px';box.style.width='90%';box.style.maxHeight='80vh';
-  box.style.overflowY='auto';box.style.color='#e2e8f0';
-  var hdr=document.createElement('div');
-  hdr.style.display='flex';hdr.style.justifyContent='space-between';
-  hdr.style.alignItems='center';hdr.style.marginBottom='16px';
-  var ttl=document.createElement('div');ttl.textContent='Character Library';
-  ttl.style.fontSize='16px';ttl.style.fontWeight='700';
-  var cls=document.createElement('button');cls.textContent='x';
-  cls.style.background='none';cls.style.border='none';cls.style.color='#9ca3af';
-  cls.style.fontSize='20px';cls.style.cursor='pointer';
-  cls.onclick=function(){modal.remove();};
-  hdr.appendChild(ttl);hdr.appendChild(cls);box.appendChild(hdr);
-  var list=document.createElement('div');
-  if(chars.length){
-    chars.forEach(function(c){
-      var card=document.createElement('div');
-      card.style.display='flex';card.style.alignItems='center';card.style.gap='10px';
-      card.style.padding='12px';card.style.background='rgba(255,255,255,.04)';
-      card.style.borderRadius='8px';card.style.cursor='pointer';card.style.marginBottom='8px';
-      card.onclick=function(){if(window.selectCharacter)selectCharacter(c.id);};
-      var av=document.createElement('div');
-      av.style.width='48px';av.style.height='48px';av.style.borderRadius='50%';
-      av.style.overflow='hidden';av.style.flexShrink='0';av.style.background='#1f2937';
-      av.style.display='flex';av.style.alignItems='center';av.style.justifyContent='center';
-      if(c.images&&c.images[0]){
-        var img=document.createElement('img');img.src=c.images[0];
-        img.style.width='100%';img.style.height='100%';img.style.objectFit='cover';
-        av.appendChild(img);
-      }else{av.textContent='?';av.style.fontSize='20px';}
-      var inf=document.createElement('div');inf.style.flex='1';
-      var nm=document.createElement('div');nm.textContent=c.name||'Character';
-      nm.style.fontSize='12px';nm.style.fontWeight='600';
-      var mt=document.createElement('div');mt.textContent=((c.images||[]).length)+' photo(s)';
-      mt.style.fontSize='10px';mt.style.color='#6b7280';
-      inf.appendChild(nm);inf.appendChild(mt);
-      var del=document.createElement('button');del.textContent='x';
-      del.style.background='rgba(239,68,68,.1)';del.style.color='#ef4444';
-      del.style.border='none';del.style.borderRadius='4px';del.style.padding='4px 8px';
-      del.style.cursor='pointer';del.style.fontSize='10px';
-      del.onclick=function(e){e.stopPropagation();if(window.charLib)charLib.remove(c.id);modal.remove();window._openCharLib();};
-      card.appendChild(av);card.appendChild(inf);card.appendChild(del);
-      list.appendChild(card);
-    });
-  }else{
-    var emp=document.createElement('div');emp.textContent='No characters yet. Create one below.';
-    emp.style.padding='24px';emp.style.textAlign='center';emp.style.color='#6b7280';
-    list.appendChild(emp);
-  }
-  box.appendChild(list);
-  var dvd=document.createElement('div');
-  dvd.style.borderTop='.5px solid rgba(255,255,255,.08)';dvd.style.paddingTop='16px';dvd.style.marginTop='8px';
-  var sub=document.createElement('div');sub.textContent='+ New Character';
-  sub.style.fontSize='12px';sub.style.fontWeight='600';sub.style.marginBottom='12px';
-  dvd.appendChild(sub);
-  var ni=document.createElement('input');ni.id='new-char-name';ni.placeholder='Character name';
-  ni.style.width='100%';ni.style.background='#111827';ni.style.color='#e2e8f0';
-  ni.style.border='.5px solid #374151';ni.style.borderRadius='6px';
-  ni.style.padding='8px 10px';ni.style.fontSize='12px';ni.style.marginBottom='10px';
-  ni.style.boxSizing='border-box';dvd.appendChild(ni);
-  var pr=document.createElement('div');pr.style.display='flex';pr.style.gap='8px';pr.style.marginBottom='10px';
-  window._newCharImages=[null,null,null];
-  [0,1,2].forEach(function(idx){
-    var lbl=document.createElement('label');lbl.style.flex='1';
-    lbl.style.background='rgba(255,255,255,.04)';lbl.style.borderRadius='6px';
-    lbl.style.padding='10px';lbl.style.textAlign='center';lbl.style.cursor='pointer';
-    lbl.style.fontSize='11px';lbl.style.color='#9ca3af';
-    lbl.textContent='Photo '+(idx+1);
-    var inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.style.display='none';
-    inp.onchange=(function(i){return function(e){
-      var reader=new FileReader();
-      reader.onload=function(ev){
-        window._newCharImages[i]=ev.target.result;
-        lbl.textContent='Photo '+(i+1)+' ok';lbl.style.color='#10b981';
-      };
-      reader.readAsDataURL(e.target.files[0]);
-    };})(idx);
-    lbl.appendChild(inp);pr.appendChild(lbl);
-  });
-  dvd.appendChild(pr);
-  var sav=document.createElement('button');sav.textContent='Save Character';
-  sav.style.width='100%';sav.style.background='#00d4ff';sav.style.color='#000';
-  sav.style.border='none';sav.style.borderRadius='8px';sav.style.padding='10px';
-  sav.style.fontSize='13px';sav.style.fontWeight='700';sav.style.cursor='pointer';
-  sav.onclick=function(){if(window._saveNewChar)window._saveNewChar();};
-  dvd.appendChild(sav);box.appendChild(dvd);modal.appendChild(box);document.body.appendChild(modal);
-  var nameField=document.getElementById('new-char-name');if(nameField)nameField.focus();
-};
 window.openCharacterLibrary=window._openCharLib;
 
-window._saveNewChar = function() {
-  var name=(document.getElementById('new-char-name')||{}).value||'';
-  if(!name.trim()){alert('Please enter a character name');return;}
-  var images=(window._newCharImages||[]).filter(Boolean);
-  var char=window.charLib?window.charLib.add({name:name,images:images}):{id:'c'+Date.now(),name:name,images:images};
-  window.saveNewCharacter=window._saveNewChar;
-  if(typeof toast==='function')toast('Character saved: '+name,'ok');
-  var modal=document.getElementById('char-lib-modal');if(modal)modal.remove();
-  window._openCharLib();
-};
 window.saveNewCharacter=window._saveNewChar;
 
 console.log('[AABComplete] All platform functions loaded OK');
@@ -20757,416 +20482,631 @@ setTimeout(function(){ clearInterval(_initTimer); }, 20000);
 
 })();
 </script>
-<script id="aab-fixes-v3">
-(function(){
 
-// ─── 1. TELEPROMPTER SCROLLING ────────────────────────────────────
-// Override startPracticeMode to actually scroll the TP
-window.startPracticeMode = function() {
+
+<script id="aab-platform-clean">
+/* AABStudio Clean Platform Module — single source of truth for all fixed functions */
+(function(){
+'use strict';
+
+// ═══════════════════════════════════════════════════════
+// 1. TELEPROMPTER — setTpScrollMode + all modes
+// ═══════════════════════════════════════════════════════
+window.STUDIO_TP = window.STUDIO_TP || {running:false, timer:null, speed:80};
+window._studioWBW = window._studioWBW || {timer:null,idx:0,running:false,words:[],highlight:null};
+
+window.setTpScrollMode = function(modeOverride) {
   var tpBody = document.getElementById('tp-body');
   if(!tpBody) return;
-  
-  // Stop if already running
-  if(window._tpInterval) {
-    clearInterval(window._tpInterval);
-    window._tpInterval = null;
-    window._tpRunning = false;
-    var btn = document.getElementById('btn-tp-start');
-    if(btn) btn.textContent = '\u25B6 Practice';
-    return;
-  }
-  
-  // Start scrolling
-  window._tpRunning = true;
-  var speed = parseInt((document.getElementById('tp-speed-val')||{}).textContent||'80');
-  // Speed 1-200 maps to px/sec 20-400
-  var pxPerSec = speed * 2;
-  var lastTime = null;
-  
-  window._tpInterval = setInterval(function() {
-    if(!window._tpRunning) { clearInterval(window._tpInterval); return; }
-    tpBody.scrollTop += pxPerSec / 30; // 30fps
-    // Stop at bottom
-    if(tpBody.scrollTop >= tpBody.scrollHeight - tpBody.clientHeight) {
-      clearInterval(window._tpInterval);
-      window._tpInterval = null;
-      window._tpRunning = false;
-      var btn = document.getElementById('btn-tp-start');
-      if(btn) btn.textContent = '\u25B6 Practice';
-    }
-  }, 1000/30);
-  
+  var modeEl = document.getElementById('tp-scroll-mode') || document.querySelector('.tp-mode-select, [class*="tp-mode"] select, select[class*="tp"]');
+  var mode = modeOverride || (modeEl ? modeEl.value : 'auto') || 'auto';
+
+  // Stop everything first
+  if(STUDIO_TP.timer){clearInterval(STUDIO_TP.timer);STUDIO_TP.timer=null;}
+  if(_studioWBW.timer){clearInterval(_studioWBW.timer);_studioWBW.timer=null;}
+  STUDIO_TP.running=false; _studioWBW.running=false;
+
   var btn = document.getElementById('btn-tp-start');
-  if(btn) btn.textContent = '\u23F8 Stop';
-};
 
-// Also fix the TP speed slider
-window.setTpSpeed = function(val) {
-  window._tpSpeed = parseInt(val);
-  var el = document.getElementById('tp-speed-val');
-  if(el) el.textContent = val;
-};
-
-// Wire Practice button if not already wired
-setTimeout(function() {
-  var btn = document.getElementById('btn-tp-start');
-  if(btn && btn.onclick && btn.onclick.toString().indexOf('startPracticeMode') === -1) {
-    btn.onclick = function() { startPracticeMode(); };
-  }
-}, 500);
-
-// ─── 2. SCENE NAVIGATION IN STUDIO (Prev/Next) ────────────────────
-window.studioPrev = function() {
-  var current = window.STUDIO_SCENE || 1;
-  var target = Math.max(1, current - 1);
-  window.studioGoTo(target);
-};
-
-window.studioNext = function() {
-  var current = window.STUDIO_SCENE || 1;
-  var scenes = PROJECT && PROJECT.scenes ? PROJECT.scenes.length : 9;
-  var target = Math.min(scenes, current + 1);
-  window.studioGoTo(target);
-};
-
-window.studioGoTo = function(n) {
-  window.STUDIO_SCENE = n;
-  // Update scene indicator
-  var indicator = document.querySelector('.scene-num, [class*="scene-num"]');
-  var total = PROJECT && PROJECT.scenes ? PROJECT.scenes.length : 9;
-  if(indicator) indicator.textContent = n + '/' + total;
-  
-  // Update TP text for this scene
-  var scene = PROJECT && PROJECT.scenes && PROJECT.scenes[n-1];
-  if(scene) {
-    var tpBody = document.getElementById('tp-body');
-    if(tpBody) {
-      tpBody.textContent = scene.narration || scene.text || scene.content || '';
-      tpBody.scrollTop = 0;
+  if(mode==='auto' || mode==='Auto-scroll' || mode==='autoscroll'){
+    if(STUDIO_TP.running){
+      // Was running — stop
+      if(btn){btn.innerHTML='&#9654; Practice';btn.style.background='';}
+      return;
     }
-    // Update scene name display
-    var sceneLabel = document.querySelector('.current-scene-name, #current-scene');
-    if(sceneLabel) sceneLabel.textContent = 'Scene ' + n;
-  }
-  
-  // Highlight in sidebar
-  document.querySelectorAll('.scene-item, [class*="studio-scene"]').forEach(function(el, i) {
-    el.classList.toggle('active', i === n-1);
-    el.style.background = i === n-1 ? 'rgba(0,212,255,.15)' : '';
-  });
-};
-
-// ─── 3. CLIP NAME FIX — "AI Scene undefined" ──────────────────────
-// Override E_loadClips to fix clip names
-(function() {
-  var _origLoadClips = window.E_loadClips;
-  window.E_loadClips = function(project) {
-    if(typeof _origLoadClips === 'function') _origLoadClips(project);
-    // Fix clip names in AABE tracks
-    if(window.AABE && AABE.tracks) {
-      AABE.tracks.forEach(function(track) {
-        (track.clips || []).forEach(function(clip, i) {
-          // Fix "undefined" names
-          if(!clip.name || clip.name.indexOf('undefined') > -1) {
-            if(clip.sceneIdx !== undefined) clip.name = 'Scene ' + (clip.sceneIdx + 1);
-            else if(clip.url && clip.url.indexOf('heygen') > -1) clip.name = 'AI Scene ' + (i+1);
-            else clip.name = 'Clip ' + (i+1);
-          }
-        });
-      });
-      if(typeof E_renderTL === 'function') E_renderTL();
-    }
-  };
-})();
-
-// ─── 4. VIDEO THUMBNAILS ON TIMELINE CLIPS ────────────────────────
-window._generateAllThumbs = function() {
-  if(!window.AABE || !AABE.tracks) return;
-  AABE.tracks.forEach(function(track) {
-    (track.clips || []).forEach(function(clip) {
-      if(clip.url && clip.type !== 'audio' && !clip.thumbnail && !clip._thumbPending) {
-        clip._thumbPending = true;
-        var vid = document.createElement('video');
-        vid.crossOrigin = 'anonymous'; vid.muted = true; vid.preload = 'metadata';
-        vid.onloadeddata = function() { vid.currentTime = 0.5; };
-        vid.onseeked = function() {
-          try {
-            var canvas = document.createElement('canvas');
-            canvas.width = 120; canvas.height = 68;
-            canvas.getContext('2d').drawImage(vid, 0, 0, 120, 68);
-            clip.thumbnail = canvas.toDataURL('image/jpeg', 0.6);
-            clip._thumbPending = false;
-            // Update any visible clip element
-            document.querySelectorAll('[data-clip-id="'+clip.id+'"]').forEach(function(el) {
-              el.style.backgroundImage = 'url('+clip.thumbnail+')';
-              el.style.backgroundSize = 'cover';
-              el.style.backgroundPosition = 'center';
-            });
-          } catch(e) { clip._thumbPending = false; }
-          vid.remove();
-        };
-        vid.onerror = function() { clip._thumbPending = false; vid.remove(); };
-        vid.src = clip.url;
+    STUDIO_TP.running=true;
+    var speedEl=document.getElementById('tp-speed');
+    var speed=speedEl?parseInt(speedEl.value):80;
+    var pxPerTick=(speed/80)*3; // pixels per 50ms tick
+    tpBody.style.fontSize=''; // restore natural size
+    STUDIO_TP.timer=setInterval(function(){
+      if(!STUDIO_TP.running){clearInterval(STUDIO_TP.timer);return;}
+      tpBody.scrollTop+=pxPerTick;
+      if(tpBody.scrollTop>=tpBody.scrollHeight-tpBody.clientHeight-2){
+        clearInterval(STUDIO_TP.timer);STUDIO_TP.running=false;
+        if(btn){btn.innerHTML='&#9654; Practice';btn.style.background='';}
       }
-    });
-  });
+    },50);
+    if(btn){btn.innerHTML='&#9646;&#9646; Stop';btn.style.background='#ef4444';}
+
+  } else if(mode==='word' || mode==='Word-by-word' || mode==='wbw'){
+    _studioWBW.running=true;
+    _studioWBW.idx=0;
+    _studioWBW.words=tpBody.textContent.trim().split(/s+/).filter(Boolean);
+    if(!_studioWBW.words.length)return;
+    var speedEl2=document.getElementById('tp-speed');
+    var wpm=speedEl2?parseInt(speedEl2.value):80;
+    var msPerWord=Math.round(60000/Math.max(20,wpm));
+    tpBody.innerHTML='';
+    var wordEl=document.createElement('div');
+    wordEl.style.cssText='font-size:72px;font-weight:700;color:#fff;text-align:center;padding:20px;line-height:1.1;';
+    tpBody.style.cssText='display:flex;align-items:center;justify-content:center;overflow:hidden;';
+    tpBody.appendChild(wordEl);
+    wordEl.textContent=_studioWBW.words[0];
+    _studioWBW.timer=setInterval(function(){
+      if(!_studioWBW.running){clearInterval(_studioWBW.timer);return;}
+      _studioWBW.idx++;
+      if(_studioWBW.idx>=_studioWBW.words.length){
+        clearInterval(_studioWBW.timer);_studioWBW.running=false;
+        if(btn){btn.innerHTML='&#9654; Practice';btn.style.background='';}
+        return;
+      }
+      wordEl.textContent=_studioWBW.words[_studioWBW.idx];
+    },msPerWord);
+    if(btn){btn.innerHTML='&#9646;&#9646; Stop';btn.style.background='#ef4444';}
+
+  } else if(mode==='sentence' || mode==='Sentence'){
+    _studioWBW.running=true;
+    _studioWBW.idx=0;
+    var sentences=tpBody.textContent.trim().split(/[.!?]+/).map(function(s){return s.trim();}).filter(Boolean);
+    _studioWBW.words=sentences;
+    if(!sentences.length)return;
+    tpBody.innerHTML='';
+    var sentEl=document.createElement('div');
+    sentEl.style.cssText='font-size:36px;font-weight:600;color:#fff;text-align:center;padding:20px;line-height:1.3;';
+    tpBody.style.cssText='display:flex;align-items:center;justify-content:center;overflow:hidden;';
+    tpBody.appendChild(sentEl);
+    sentEl.textContent=sentences[0];
+    _studioWBW.timer=setInterval(function(){
+      if(!_studioWBW.running){clearInterval(_studioWBW.timer);return;}
+      _studioWBW.idx++;
+      if(_studioWBW.idx>=sentences.length){clearInterval(_studioWBW.timer);_studioWBW.running=false;if(btn){btn.innerHTML='&#9654; Practice';btn.style.background='';}return;}
+      sentEl.textContent=sentences[_studioWBW.idx];
+    },3000);
+    if(btn){btn.innerHTML='&#9646;&#9646; Stop';btn.style.background='#ef4444';}
+  }
 };
 
-// Auto-generate thumbnails whenever timeline renders
-(function() {
-  var _origRenderTL = window.E_renderTL;
-  if(typeof _origRenderTL === 'function') {
-    window.E_renderTL = function() {
-      var r = _origRenderTL();
-      setTimeout(window._generateAllThumbs, 300);
-      return r;
+// Practice button wireup (runs after DOM ready)
+setTimeout(function(){
+  var btn=document.getElementById('btn-tp-start');
+  if(btn){
+    btn.onclick=function(){
+      var modeEl=document.querySelector('#tp-scroll-mode,.tp-mode-select,[class*="tp-mode"] select');
+      setTpScrollMode(modeEl?modeEl.value:'auto');
     };
   }
-})();
+  // Wire the mode dropdown
+  var modeEl=document.querySelector('#tp-scroll-mode,.tp-mode-select,[class*="tp-mode"] select');
+  if(modeEl){
+    modeEl.onchange=function(){
+      if(STUDIO_TP.running||_studioWBW.running) setTpScrollMode(this.value);
+    };
+  }
+},1000);
 
-// ─── 5. APS PHOTO UPLOAD — FIX CONFLICTING LOGIC ─────────────────
-// Single source of truth: unify both photo inputs
-window.aps_loadPhoto = function(input) {
-  var file = input && input.files && input.files[0];
+// ═══════════════════════════════════════════════════════
+// 2. SCENE NAVIGATION  
+// ═══════════════════════════════════════════════════════
+window.studioGoTo = function(n) {
+  var proj = window.PROJECT;
+  if(!proj||!proj.scenes) return;
+  var total = proj.scenes.length;
+  n = Math.max(1, Math.min(total, n));
+  window.STUDIO_SCENE = n;
+  var scene = proj.scenes[n-1];
+  if(!scene) return;
+
+  // Update TP body with scene text
+  var tpBody = document.getElementById('tp-body');
+  if(tpBody){
+    // Stop any running scroll first
+    if(STUDIO_TP.timer){clearInterval(STUDIO_TP.timer);STUDIO_TP.timer=null;STUDIO_TP.running=false;}
+    if(_studioWBW.timer){clearInterval(_studioWBW.timer);_studioWBW.timer=null;_studioWBW.running=false;}
+    var txt = scene.narration||scene.text||scene.content||scene.script||'';
+    tpBody.style.cssText='overflow-y:auto;scroll-behavior:smooth;font-size:inherit;display:block;align-items:unset;justify-content:unset;';
+    tpBody.textContent=txt;
+    tpBody.scrollTop=0;
+    var btn=document.getElementById('btn-tp-start');
+    if(btn){btn.innerHTML='&#9654; Practice';btn.style.background='';}
+  }
+
+  // Update scene counter
+  var ctr=document.querySelector('.studio-scene-num,[class*="scene-num"],#studio-scene-num');
+  if(ctr) ctr.textContent=n+'/'+total;
+
+  // Update top bar label
+  var topLabel=document.querySelector('.studio-topbar-scene,[class*="topbar"] .scene-label,#studio-current-scene-label');
+  if(topLabel) topLabel.textContent='Scene '+n;
+
+  // Highlight sidebar item
+  document.querySelectorAll('.studio-scene-item,[class*="studio-scene-item"]').forEach(function(el,i){
+    el.classList.toggle('active',i===n-1);
+    el.style.background=i===n-1?'rgba(0,212,255,.15)':'';
+    el.style.borderLeft=i===n-1?'2px solid #00d4ff':'';
+  });
+};
+
+window.studioPrev = function(){studioGoTo((window.STUDIO_SCENE||1)-1);};
+window.studioNext = function(){studioGoTo((window.STUDIO_SCENE||1)+1);};
+
+// ═══════════════════════════════════════════════════════
+// 3. APS PHOTO UPLOAD — single unified handler
+// ═══════════════════════════════════════════════════════
+window.aps_loadPhoto = function(inputEl) {
+  var file = inputEl&&inputEl.files&&inputEl.files[0];
   if(!file) return;
+  if(!file.type.startsWith('image/')) return;
   var reader = new FileReader();
   reader.onload = function(e) {
-    var dataUrl = e.target.result;
-    // Store in APS state
-    if(!window.APS) window.APS = {};
-    APS.photo = dataUrl;
-    
-    // Update ALL preview elements
-    ['aps-photo-preview', 'ai-photo-preview'].forEach(function(id) {
-      var el = document.getElementById(id);
-      if(el) { if(el.tagName === 'IMG') el.src = dataUrl; else el.style.backgroundImage = 'url('+dataUrl+')'; }
+    var url = e.target.result;
+    if(!window.APS) window.APS={};
+    APS.photo = url;
+
+    // Update the presenter avatar placeholder
+    var placeholders = document.querySelectorAll(
+      '#aps-presenter-photo,#aps-photo-preview,.aps-avatar-placeholder,.aps-presenter-placeholder,[class*="presenter-avatar"],[class*="aps-avatar"],[class*="aps-photo"]'
+    );
+    placeholders.forEach(function(el){
+      if(el.tagName==='IMG'){el.src=url;}
+      else{
+        el.innerHTML='';
+        var img=document.createElement('img');
+        img.src=url;img.alt='Presenter';
+        img.style.cssText='width:100%;height:100%;object-fit:cover;border-radius:inherit;';
+        el.appendChild(img);
+      }
     });
-    
-    // Update the avatar placeholder
-    var avatars = document.querySelectorAll('.aps-avatar, .aps-presenter-preview, [class*="presenter-placeholder"]');
-    avatars.forEach(function(av) {
-      av.innerHTML = '';
-      var img = document.createElement('img');
-      img.src = dataUrl;
-      img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%;';
-      av.appendChild(img);
-    });
-    
-    // Show the "Change photo" button
-    var changeBtn = document.querySelector('[onclick*="aps-photo-input"],[onclick*="ai-photo-input"]');
-    if(changeBtn) changeBtn.style.display = 'block';
-    
-    typeof toast === 'function' && toast('Photo uploaded', 'ok');
+
+    // Also update the center preview canvas area  
+    var centerPreview=document.querySelector('.aps-center-preview,.aps-stage,.aps-video-preview,[class*="aps-preview"]');
+    if(centerPreview&&!centerPreview.querySelector('video')){
+      var prevImg=centerPreview.querySelector('img')||document.createElement('img');
+      prevImg.src=url;prevImg.style.cssText='max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;';
+      if(!prevImg.parentElement)centerPreview.appendChild(prevImg);
+    }
+
+    // Upload label feedback
+    var lbl=inputEl.parentElement;
+    if(lbl&&lbl.tagName==='LABEL'){lbl.style.outline='2px solid #10b981';}
+    typeof toast==='function'&&toast('Photo loaded — enter a name and save','ok');
   };
   reader.readAsDataURL(file);
 };
 
-// Wire BOTH inputs to same handler
-['aps-photo-input', 'ai-photo-input'].forEach(function(id) {
-  var inp = document.getElementById(id);
-  if(inp) inp.onchange = function() { window.aps_loadPhoto(this); };
+// Wire BOTH inputs to the same handler, removing any conflicting listener
+['aps-photo-input','ai-photo-input'].forEach(function(id){
+  var inp=document.getElementById(id);
+  if(!inp) return;
+  // Clone to remove old listeners
+  var fresh=inp.cloneNode(true);
+  fresh.onchange=function(){window.aps_loadPhoto(this);};
+  inp.parentNode.replaceChild(fresh,inp);
 });
 
-// Fix the upload label
-setTimeout(function() {
-  ['aps-upload-label', 'ai-photo-label'].forEach(function(id) {
-    var lbl = document.getElementById(id);
-    var inp = lbl && lbl.querySelector('input[type="file"]');
-    if(lbl && inp) {
-      lbl.style.cursor = 'pointer';
-      if(!lbl.onclick) lbl.onclick = function() { inp.click(); };
-    }
-  });
-}, 500);
-
-// ─── 6. CHARACTER LIBRARY ACCESS BUTTON ───────────────────────────
-// Add a visible "My Characters" button to APS right panel
-setTimeout(function() {
-  var savedCharsSection = document.querySelector('.aps-saved-chars, [class*="saved-char"], .sp-section');
-  if(savedCharsSection) {
-    var existing = document.getElementById('open-char-lib-btn');
-    if(!existing) {
-      var btn = document.createElement('button');
-      btn.id = 'open-char-lib-btn';
-      btn.textContent = 'My Characters';
-      btn.style.cssText = 'width:100%;background:rgba(0,212,255,.1);color:#00d4ff;border:.5px solid rgba(0,212,255,.3);border-radius:6px;padding:8px;font-size:11px;font-weight:700;cursor:pointer;margin-bottom:8px;';
-      btn.onclick = function() { if(window.openCharacterLibrary) openCharacterLibrary(); };
-      savedCharsSection.insertBefore(btn, savedCharsSection.firstChild);
-    }
-  }
-}, 800);
-
-// ─── 7. APS — FIX TWO SAVE BUTTONS CONFUSION ─────────────────────
-// The two Save buttons: one saves the character NAME to APS state,
-// the other saves the full character to the library.
-// Unify them: "Save Character" = save to library with name+photo
+// ═══════════════════════════════════════════════════════
+// 4. APS SAVE CHARACTER — single unified handler
+// ═══════════════════════════════════════════════════════
 window.aps_saveCharacter = function() {
-  var name = '';
-  ['aps-char-name', 'ai-char-name'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if(el && el.value.trim()) name = el.value.trim();
+  var nameEl=document.getElementById('aps-char-name')||document.querySelector('input[placeholder*="John Anchor"],input[placeholder*="name"]');
+  var name=nameEl?nameEl.value.trim():'';
+  if(!name){typeof toast==='function'&&toast('Enter a character name first','info');return;}
+  var photo=window.APS&&APS.photo;
+  
+  // Fix charLib.save to not use .catch()
+  if(window.charLib){
+    charLib.save=function(chars){
+      try{localStorage.setItem('aab_chars_'+((window.APP&&APP.user&&APP.user.id)||'guest'),JSON.stringify(chars));}catch(e){}
+      var supa=typeof getSupa==='function'?getSupa():null;
+      if(supa&&window._sbSession){
+        var uid=APP&&APP.user?APP.user.id:null;
+        if(uid)supa.from('characters').upsert({user_id:uid,library:JSON.stringify(chars)},{onConflict:'user_id'}).then(function(){}).catch(function(){});
+      }
+    };
+    charLib.add({name:name,images:photo?[photo]:[],framing:(APS&&APS.framing)||'Medium shot',voice:(APS&&APS.voice)||'ElevenLabs'});
+  }
+  if(window.APS){APS.charName=name;APS.photo=photo;}
+  typeof toast==='function'&&toast('Character "'+name+'" saved','ok');
+  
+  // Refresh saved characters list
+  if(typeof _aps_renderSavedChars==='function')_aps_renderSavedChars();
+};
+
+// Render saved characters in APS panel
+window._aps_renderSavedChars=function(){
+  var chars=window.charLib?charLib.load():[];
+  var container=document.getElementById('aps-saved-chars-list')||document.querySelector('.aps-saved-chars,[class*="saved-chars"]');
+  if(!container)return;
+  container.innerHTML='';
+  if(!chars.length){container.innerHTML='<div style="color:#6b7280;font-size:11px;padding:8px;">No saved characters yet</div>';return;}
+  chars.forEach(function(c){
+    var card=document.createElement('div');
+    card.style.cssText='display:flex;align-items:center;gap:8px;padding:8px;background:rgba(255,255,255,.04);border-radius:6px;cursor:pointer;margin-bottom:6px;';
+    var av=document.createElement('div');
+    av.style.cssText='width:36px;height:36px;border-radius:50%;overflow:hidden;flex-shrink:0;background:#374151;';
+    if(c.images&&c.images[0]){var img=document.createElement('img');img.src=c.images[0];img.style.cssText='width:100%;height:100%;object-fit:cover;';av.appendChild(img);}
+    var nm=document.createElement('span');nm.textContent=c.name;nm.style.cssText='font-size:11px;font-weight:600;color:#e2e8f0;flex:1;';
+    card.appendChild(av);card.appendChild(nm);
+    card.onclick=function(){
+      if(!window.APS)APS={};
+      APS.charName=c.name;APS.photo=(c.images&&c.images[0])||null;
+      if(nameEl)nameEl.value=c.name;
+      if(APS.photo){window.aps_loadPhoto({files:[_dataURLtoFile(APS.photo,'photo.jpg')]});}
+      typeof toast==='function'&&toast('Loaded: '+c.name,'ok');
+    };
+    container.appendChild(card);
   });
-  if(!name) {
-    typeof toast === 'function' && toast('Enter a character name first', 'info');
-    return;
+};
+function _dataURLtoFile(dataUrl,filename){var arr=dataUrl.split(','),mime=arr[0].match(/:(.*?);/)[1],bstr=atob(arr[1]),n=bstr.length,u8arr=new Uint8Array(n);while(n--){u8arr[n]=bstr.charCodeAt(n);}return new File([u8arr],filename,{type:mime});}
+
+// ═══════════════════════════════════════════════════════
+// 5. CHARACTER LIBRARY MODAL
+// ═══════════════════════════════════════════════════════
+window.openCharacterLibrary=window._openCharLib=function(){
+  var old=document.getElementById('char-lib-modal');if(old)old.remove();
+  var chars=window.charLib?charLib.load():[];
+  var modal=document.createElement('div');modal.id='char-lib-modal';
+  modal.style.cssText='position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);';
+  var box=document.createElement('div');
+  box.style.cssText='background:#0f1724;border-radius:14px;padding:24px;max-width:500px;width:90%;max-height:80vh;overflow-y:auto;color:#e2e8f0;';
+  var hdr=document.createElement('div');hdr.style.cssText='display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
+  var ttl=document.createElement('div');ttl.textContent='Character Library';ttl.style.cssText='font-size:16px;font-weight:700;';
+  var cls=document.createElement('button');cls.textContent='×';cls.style.cssText='background:none;border:none;color:#9ca3af;font-size:22px;cursor:pointer;';
+  cls.onclick=function(){modal.remove();};
+  hdr.appendChild(ttl);hdr.appendChild(cls);box.appendChild(hdr);
+  if(chars.length){
+    chars.forEach(function(c){
+      var row=document.createElement('div');
+      row.style.cssText='display:flex;align-items:center;gap:10px;padding:10px;background:rgba(255,255,255,.04);border-radius:8px;margin-bottom:6px;cursor:pointer;';
+      var av=document.createElement('div');av.style.cssText='width:44px;height:44px;border-radius:50%;overflow:hidden;flex-shrink:0;background:#374151;display:flex;align-items:center;justify-content:center;';
+      if(c.images&&c.images[0]){var img=document.createElement('img');img.src=c.images[0];img.style.cssText='width:100%;height:100%;object-fit:cover;';av.appendChild(img);}else{av.textContent='?';av.style.fontSize='18px';}
+      var info=document.createElement('div');info.style.flex='1';
+      var nm=document.createElement('div');nm.textContent=c.name;nm.style.cssText='font-size:12px;font-weight:600;';
+      var mt=document.createElement('div');mt.textContent=((c.images||[]).length)+' photo(s)';mt.style.cssText='font-size:10px;color:#6b7280;';
+      info.appendChild(nm);info.appendChild(mt);
+      var del=document.createElement('button');del.textContent='✕';del.style.cssText='background:rgba(239,68,68,.1);color:#ef4444;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;font-size:11px;';
+      del.onclick=function(e){e.stopPropagation();if(window.charLib){charLib.remove(c.id);}row.remove();};
+      row.onclick=function(){if(window.selectCharacter)selectCharacter(c.id);modal.remove();};
+      row.appendChild(av);row.appendChild(info);row.appendChild(del);box.appendChild(row);
+    });
+  } else {
+    var emp=document.createElement('div');emp.textContent='No characters yet. Create one below.';emp.style.cssText='padding:20px;text-align:center;color:#6b7280;font-size:12px;';
+    box.appendChild(emp);
   }
-  var photo = window.APS && APS.photo;
-  if(window.charLib) {
-    window.charLib.save = function(chars) {
-      try { localStorage.setItem('aab_chars_'+((window.APP&&APP.user&&APP.user.id)||'guest'), JSON.stringify(chars)); } catch(e) {}
-      var supa = typeof getSupa === 'function' ? getSupa() : null;
-      if(supa && window._sbSession) {
-        var uid = window.APP&&APP.user ? APP.user.id : null;
-        if(uid) supa.from('characters').upsert({user_id:uid,library:JSON.stringify(chars)},{onConflict:'user_id'}).then(function(){}).catch(function(){});
-      }
-    };
-    charLib.add({name:name, images:photo?[photo]:[], framing:(APS&&APS.framing)||'Medium shot', voice:(APS&&APS.voice)||'ElevenLabs'});
-  }
-  if(window.APS) APS.charName = name;
-  typeof toast === 'function' && toast('Character "'+name+'" saved', 'ok');
+  // New character form
+  var dvd=document.createElement('div');dvd.style.cssText='border-top:.5px solid rgba(255,255,255,.08);padding-top:14px;margin-top:10px;';
+  var sub=document.createElement('div');sub.textContent='+ New Character';sub.style.cssText='font-size:12px;font-weight:700;margin-bottom:10px;';dvd.appendChild(sub);
+  var ni=document.createElement('input');ni.id='new-char-name-modal';ni.placeholder='Character name';
+  ni.style.cssText='width:100%;background:#111827;color:#e2e8f0;border:.5px solid #374151;border-radius:6px;padding:8px 10px;font-size:12px;margin-bottom:10px;box-sizing:border-box;';
+  dvd.appendChild(ni);
+  var photoRow=document.createElement('div');photoRow.style.cssText='display:flex;gap:8px;margin-bottom:10px;';
+  window._newCharImgs=[null,null,null];
+  [0,1,2].forEach(function(i){
+    var lbl=document.createElement('label');lbl.style.cssText='flex:1;background:rgba(255,255,255,.05);border:.5px solid rgba(255,255,255,.1);border-radius:6px;padding:10px;text-align:center;cursor:pointer;font-size:10px;color:#9ca3af;';
+    lbl.textContent='Photo '+(i+1);
+    var inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.style.display='none';
+    inp.onchange=(function(idx,l){return function(e){
+      var r=new FileReader();r.onload=function(ev){window._newCharImgs[idx]=ev.target.result;l.textContent='Photo '+(idx+1)+' ✓';l.style.color='#10b981';};
+      r.readAsDataURL(e.target.files[0]);
+    };})(i,lbl);
+    lbl.appendChild(inp);photoRow.appendChild(lbl);
+  });
+  dvd.appendChild(photoRow);
+  var savBtn=document.createElement('button');savBtn.textContent='Save Character';
+  savBtn.style.cssText='width:100%;background:#00d4ff;color:#000;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;';
+  savBtn.onclick=function(){
+    var name=ni.value.trim();
+    if(!name){alert('Enter a name');return;}
+    var imgs=(window._newCharImgs||[]).filter(Boolean);
+    if(window.charLib){charLib.save=charLib.save||function(){};charLib.add({name:name,images:imgs});}
+    typeof toast==='function'&&toast('Saved: '+name,'ok');
+    modal.remove();window.openCharacterLibrary();
+  };
+  dvd.appendChild(savBtn);box.appendChild(dvd);modal.appendChild(box);document.body.appendChild(modal);
+  setTimeout(function(){ni.focus();},100);
 };
 
-// ─── 8. EXPORT FIX — Creatomate full timeline stitch ──────────────
-window.exportTimeline = function(options) {
-  if(!window.AABE || !AABE.tracks) { typeof toast==='function'&&toast('No timeline to export','info'); return; }
+window.saveNewCharacter=function(){window.openCharacterLibrary();};
+
+// ═══════════════════════════════════════════════════════
+// 6. STUDIO ASSET UPLOAD — show image in panel after upload
+// ═══════════════════════════════════════════════════════
+window.uploadStudioAssets=function(){
+  var inp=document.querySelector('#studio-asset-input,[class*="sp-upload"] input[type="file"],input[accept*="image/*"][accept*="video"]');
+  if(!inp){
+    inp=document.createElement('input');inp.type='file';inp.accept='image/*,video/*';
+    inp.style.display='none';document.body.appendChild(inp);
+  }
+  inp.onchange=function(){
+    var files=Array.from(inp.files||[]);
+    files.forEach(function(file){
+      var reader=new FileReader();
+      reader.onload=function(e){
+        var url=e.target.result;
+        var name=file.name;
+        var type=file.type.startsWith('image/')?'image':'video';
+        // Store in PROJECT
+        if(!window.PROJECT)window.PROJECT={assets:[]};
+        if(!PROJECT.assets)PROJECT.assets=[];
+        PROJECT.assets.push({name:name,url:url,type:type,id:'asset_'+Date.now()});
+        // Render to asset panel
+        _renderStudioAsset({name:name,url:url,type:type});
+        typeof toast==='function'&&toast('Asset added: '+name,'ok');
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+  inp.click();
+};
+
+window._renderStudioAsset=function(asset){
+  var panel=document.querySelector('.sp-assets-list,.studio-asset-list,[class*="asset-list"],[class*="sp-assets"]');
+  if(!panel)return;
+  var item=document.createElement('div');
+  item.style.cssText='margin-bottom:8px;cursor:pointer;border-radius:6px;overflow:hidden;border:.5px solid rgba(255,255,255,.1);';
+  if(asset.type==='image'){
+    var img=document.createElement('img');img.src=asset.url;
+    img.style.cssText='width:100%;height:80px;object-fit:cover;display:block;';
+    item.appendChild(img);
+  } else {
+    var vid=document.createElement('video');vid.src=asset.url;vid.style.cssText='width:100%;height:80px;object-fit:cover;display:block;';
+    item.appendChild(vid);
+  }
+  var lbl=document.createElement('div');lbl.textContent=asset.name.slice(0,20);
+  lbl.style.cssText='font-size:9px;color:#9ca3af;padding:3px 5px;background:rgba(0,0,0,.4);text-overflow:ellipsis;overflow:hidden;white-space:nowrap;';
+  item.appendChild(lbl);
+  item.onclick=function(){
+    // Assign to selected scene or add to timeline
+    if(typeof addClipToTimeline==='function')addClipToTimeline({name:asset.name,url:asset.url,type:asset.type,duration:5,id:'asset_'+Date.now()});
+  };
+  // Remove "No assets" placeholder
+  var placeholder=panel.querySelector('[class*="placeholder"],p,div[style*="color:#6b7280"]');
+  if(placeholder&&placeholder.textContent.indexOf('No')>-1)placeholder.remove();
+  panel.insertBefore(item,panel.firstChild);
+};
+
+// ═══════════════════════════════════════════════════════
+// 7. EDIT SUITE — professional track selection + waveforms + thumbnails + export
+// ═══════════════════════════════════════════════════════
+
+// Track/clip selection with inspector
+window._selectedClipId=null;
+
+window.E_selectClip=function(clipId,trackId){
+  window._selectedClipId=clipId;
+  // Deselect all
+  document.querySelectorAll('.aab-clip').forEach(function(el){
+    el.classList.remove('selected');
+    el.style.outline='';el.style.zIndex='';
+  });
+  // Select target
+  var el=document.querySelector('.aab-clip[data-id="'+clipId+'"]');
+  if(el){el.classList.add('selected');el.style.outline='2px solid #00d4ff';el.style.zIndex='5';}
+  // Find clip data in AABE
+  if(!window.AABE)return;
+  var clip=null,track=null;
+  (AABE.tracks||[]).forEach(function(t){
+    (t.clips||[]).forEach(function(c){if(c.id===clipId){clip=c;track=t;}});
+  });
+  if(clip&&typeof E_showInspector==='function')E_showInspector(clip,track);
+};
+
+// Generate video thumbnail
+window._genVideoThumb=function(clip,callback){
+  if(!clip.url||clip.type==='audio')return;
+  var v=document.createElement('video');
+  v.crossOrigin='anonymous';v.preload='metadata';v.muted=true;
+  v.onloadeddata=function(){v.currentTime=0.5;};
+  v.onseeked=function(){
+    try{
+      var c=document.createElement('canvas');c.width=120;c.height=68;
+      c.getContext('2d').drawImage(v,0,0,120,68);
+      clip.thumbnail=c.toDataURL('image/jpeg',0.7);
+      if(callback)callback(clip.thumbnail);
+    }catch(e){}
+    v.remove();
+  };
+  v.onerror=function(){v.remove();};
+  v.src=clip.url;
+};
+
+// Generate audio waveform (visual bars)
+window._genAudioWaveform=function(clip,callback){
+  if(!clip.url)return;
+  var bars=[];
+  for(var i=0;i<40;i++)bars.push(Math.random()*0.7+0.1);
+  clip.waveform=bars;
+  if(callback)callback(bars);
+};
+
+// Full timeline render with thumbnails, waveforms, track selection
+window.E_renderTL=function(){
+  var tlArea=document.getElementById('aab-tl-area')||document.querySelector('.aab-tl-area,[class*="timeline-area"]');
+  if(!tlArea||!window.AABE)return;
+  var scroll=tlArea.scrollLeft;
   
-  var token = window._sbSession && _sbSession.access_token;
-  if(!token) { typeof toast==='function'&&toast('Please sign in to export','info'); return; }
+  // Clear and rebuild tracks
+  var tracksContainer=tlArea.querySelector('.aab-tracks')||tlArea;
   
-  // Build ordered clip list from main track
-  var mainTrack = AABE.tracks.find(function(t){ return t.id==='main'||t.type==='video'; });
-  if(!mainTrack || !mainTrack.clips.length) { typeof toast==='function'&&toast('Add clips to timeline first','info'); return; }
+  (AABE.tracks||[]).forEach(function(track){
+    var trackEl=document.querySelector('.aab-track[data-track-id="'+track.id+'"]');
+    if(!trackEl)return;
+    var clipsEl=trackEl.querySelector('.aab-track-clips,.aab-clips-row');
+    if(!clipsEl)return;
+    
+    // Clear old clips
+    clipsEl.innerHTML='';
+    
+    // Render each clip
+    (track.clips||[]).forEach(function(clip){
+      var el=document.createElement('div');
+      el.className='aab-clip';
+      el.setAttribute('data-id',clip.id||('clip_'+Math.random()));
+      el.setAttribute('data-track-id',track.id);
+      
+      // Position and size
+      var pxPerSec=AABE.pxPerSec||50;
+      var left=((clip.start||0)*pxPerSec);
+      var width=Math.max(30,((clip.duration||5)*pxPerSec));
+      el.style.cssText='position:absolute;left:'+left+'px;width:'+width+'px;height:100%;border-radius:4px;overflow:hidden;cursor:pointer;border:.5px solid rgba(255,255,255,.2);user-select:none;';
+      
+      // Track type styling
+      if(track.type==='audio'||track.id==='voice'){
+        el.style.background='#065f46';
+        // Render waveform
+        if(clip.waveform){
+          var waveDiv=document.createElement('div');
+          waveDiv.style.cssText='position:absolute;inset:0;display:flex;align-items:center;gap:1px;padding:0 4px;';
+          clip.waveform.forEach(function(h){
+            var bar=document.createElement('div');
+            bar.style.cssText='flex-shrink:0;width:2px;background:rgba(16,185,129,.8);border-radius:1px;height:'+(h*100)+'%;';
+            waveDiv.appendChild(bar);
+          });
+          el.appendChild(waveDiv);
+        } else {
+          el.style.background='linear-gradient(135deg,#065f46,#064e3b)';
+          // Generate async
+          _genAudioWaveform(clip,function(){E_renderTL();});
+        }
+      } else {
+        // Video track — show thumbnail
+        if(clip.thumbnail){
+          el.style.backgroundImage='url('+clip.thumbnail+')';
+          el.style.backgroundSize='cover';
+          el.style.backgroundPosition='center';
+        } else {
+          el.style.background='linear-gradient(135deg,#1e3a5f,#1e293b)';
+          _genVideoThumb(clip,function(){E_renderTL();});
+        }
+      }
+      
+      // Label
+      var lbl=document.createElement('div');
+      lbl.textContent=(clip.name||'Clip').slice(0,20);
+      lbl.style.cssText='position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.6);color:#fff;font-size:9px;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;';
+      el.appendChild(lbl);
+      
+      // Duration label
+      var dur=document.createElement('div');
+      dur.textContent=(clip.duration||0).toFixed(1)+'s';
+      dur.style.cssText='position:absolute;top:2px;right:4px;font-size:8px;color:rgba(255,255,255,.7);pointer-events:none;';
+      el.appendChild(dur);
+      
+      // Click to select
+      el.onclick=function(e){
+        e.stopPropagation();
+        E_selectClip(el.getAttribute('data-id'),track.id);
+      };
+      
+      // Drag to reorder (basic)
+      el.draggable=true;
+      el.ondragstart=function(e){e.dataTransfer.setData('clipId',el.getAttribute('data-id'));e.dataTransfer.setData('trackId',track.id);};
+      
+      clipsEl.appendChild(el);
+    });
+  });
   
-  var sortedClips = mainTrack.clips.slice().sort(function(a,b){ return (a.start||0)-(b.start||0); });
-  var videoUrls = sortedClips.map(function(c){ return c.url; }).filter(Boolean);
+  tlArea.scrollLeft=scroll;
   
-  if(!videoUrls.length) { typeof toast==='function'&&toast('No video URLs found on timeline','info'); return; }
+  // Update inspector if clip selected
+  if(window._selectedClipId){E_selectClip(window._selectedClipId);}
+};
+
+// Export — full timeline stitch via Creatomate
+window.E_doExport=function(){
+  if(!window.AABE||!AABE.tracks){typeof toast==='function'&&toast('Nothing to export','info');return;}
+  var token=window._sbSession&&_sbSession.access_token;
+  if(!token){typeof toast==='function'&&toast('Please sign in','info');return;}
   
-  typeof toast==='function'&&toast('Stitching '+videoUrls.length+' clips...','info');
+  var mainTrack=AABE.tracks.find(function(t){return t.type==='video'||t.id==='main';});
+  if(!mainTrack||!mainTrack.clips.length){typeof toast==='function'&&toast('Add clips to the main video track','info');return;}
   
-  // Call Railway stitching endpoint
-  fetch('https://aabstudio-production.up.railway.app/api/export/stitch', {
-    method: 'POST',
-    headers: {'Authorization':'Bearer '+token, 'Content-Type':'application/json'},
-    body: JSON.stringify({
-      clips: videoUrls,
-      format: (options&&options.format)||'mp4',
-      resolution: (options&&options.resolution)||'1080p',
-      projectId: PROJECT && PROJECT.id
-    })
-  }).then(function(r){ return r.json(); }).then(function(d) {
-    if(d.url || d.outputUrl) {
-      var a = document.createElement('a');
-      a.href = d.url||d.outputUrl; a.download = (PROJECT&&PROJECT.title||'export')+'.mp4';
-      a.click();
-      typeof toast==='function'&&toast('Export ready — downloading!','ok');
-    } else if(d.taskId || d.renderId) {
-      // Poll for completion
-      typeof toast==='function'&&toast('Rendering... we will notify when done','ok');
-      window._pollExport(d.taskId||d.renderId, token);
+  var clips=mainTrack.clips.slice().sort(function(a,b){return (a.start||0)-(b.start||0);});
+  var videoUrls=clips.map(function(c){return c.url;}).filter(Boolean);
+  
+  if(!videoUrls.length){typeof toast==='function'&&toast('No video URLs found — generate AI scenes first','info');return;}
+  
+  typeof toast==='function'&&toast('Exporting '+videoUrls.length+' clips via Creatomate...','info');
+  
+  fetch('https://aabstudio-production.up.railway.app/api/export/stitch',{
+    method:'POST',
+    headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+    body:JSON.stringify({clips:videoUrls,format:'mp4',resolution:'1080p',projectId:PROJECT&&PROJECT.id})
+  }).then(function(r){return r.json();}).then(function(d){
+    if(d.url||d.outputUrl){
+      var a=document.createElement('a');a.href=d.url||d.outputUrl;a.download=(PROJECT&&PROJECT.title||'export')+'.mp4';a.click();
+      typeof toast==='function'&&toast('Download started!','ok');
+    } else if(d.taskId||d.renderId){
+      window._pollExportId=d.taskId||d.renderId;
+      typeof toast==='function'&&toast('Rendering… will notify when ready','ok');
+      _pollExportStatus(window._pollExportId,token);
     } else {
-      typeof toast==='function'&&toast('Export started: '+(d.message||'check your email'),'ok');
+      typeof toast==='function'&&toast('Export queued: '+(d.message||JSON.stringify(d)),'ok');
     }
-  }).catch(function(e){ typeof toast==='function'&&toast('Export error: '+e.message,'error'); });
+  }).catch(function(e){typeof toast==='function'&&toast('Export error: '+e.message,'error');});
 };
 
-window._pollExport = function(taskId, token) {
-  var attempts = 0;
-  var poll = setInterval(function() {
-    attempts++;
-    if(attempts > 60) { clearInterval(poll); return; }
-    fetch('https://aabstudio-production.up.railway.app/api/export/status?taskId='+taskId, {
-      headers:{'Authorization':'Bearer '+token}
-    }).then(function(r){ return r.json(); }).then(function(d) {
-      if(d.status === 'done' || d.url) {
-        clearInterval(poll);
-        var a = document.createElement('a');
-        a.href = d.url; a.download = 'export.mp4'; a.click();
-        typeof toast==='function'&&toast('Export complete!','ok');
-      }
-    }).catch(function(){});
-  }, 5000);
+window._pollExportStatus=function(taskId,token){
+  var n=0;
+  var poll=setInterval(function(){
+    n++;if(n>60){clearInterval(poll);return;}
+    fetch('https://aabstudio-production.up.railway.app/api/export/status?taskId='+taskId,{headers:{'Authorization':'Bearer '+token}})
+      .then(function(r){return r.json();}).then(function(d){
+        if(d.url||d.status==='done'){
+          clearInterval(poll);
+          var a=document.createElement('a');a.href=d.url||d.outputUrl;a.download='export.mp4';a.click();
+          typeof toast==='function'&&toast('Export complete!','ok');
+        }
+      }).catch(function(){});
+  },5000);
 };
 
-// ─── 9. TRACK SELECTION IN EDIT SUITE ─────────────────────────────
-window._selectedClip = null;
-window._selectedTrack = null;
-
-// Override E_renderTL to make clips clickable
+// ═══════════════════════════════════════════════════════
+// 8. CLIPS BAR CSS FIX
+// ═══════════════════════════════════════════════════════
 (function(){
-  var _checkRender = setInterval(function() {
-    if(typeof window.E_renderTL !== 'function') return;
-    clearInterval(_checkRender);
-    var _origRender = window.E_renderTL;
-    window.E_renderTL = function() {
-      _origRender();
-      setTimeout(function() {
-        // Make all timeline clips selectable
-        document.querySelectorAll('.aab-clip,[class*="tl-clip"],[class*="timeline-clip"]').forEach(function(el) {
-          if(el.dataset.wired) return;
-          el.dataset.wired = '1';
-          el.style.cursor = 'pointer';
-          el.onclick = function(e) {
-            // Deselect all
-            document.querySelectorAll('.aab-clip,[class*="tl-clip"]').forEach(function(c){ c.classList.remove('selected'); c.style.outline=''; });
-            // Select this
-            el.classList.add('selected');
-            el.style.outline = '2px solid #00d4ff';
-            // Find clip data
-            var clipId = el.dataset.clipId || el.getAttribute('data-clip-id');
-            if(clipId && window.AABE) {
-              AABE.tracks.forEach(function(track) {
-                (track.clips||[]).forEach(function(clip) {
-                  if(clip.id === clipId) {
-                    window._selectedClip = clip;
-                    window._selectedTrack = track;
-                    AABE.selectedClip = clip;
-                    AABE.selectedTrack = track;
-                    if(typeof E_showInspector === 'function') E_showInspector(clip, track);
-                  }
-                });
-              });
-            }
-            e.stopPropagation();
-          };
-        });
-      }, 200);
-      setTimeout(window._generateAllThumbs, 400);
-    };
-  }, 300);
-})();
-
-// ─── 10. CSS FIXES — cuts off, overflow ───────────────────────────
-(function() {
-  var st = document.getElementById('aab-fix-v3-css');
-  if(st) st.remove();
-  var s = document.createElement('style');
-  s.id = 'aab-fix-v3-css';
-  s.textContent = [
-    // Generated clips bar — don't cut off
-    '#aps-clips-bar { overflow-x: auto !important; min-height: 80px !important; flex-shrink: 0 !important; }',
-    '.aps-clip-thumb { min-width: 80px !important; flex-shrink: 0 !important; }',
-    // Timeline clip thumbnails
-    '.aab-clip { background-size: cover !important; background-position: center !important; position: relative !important; overflow: hidden !important; }',
-    '.aab-clip .aab-clip-label { background: rgba(0,0,0,.5) !important; padding: 2px 4px !important; font-size: 9px !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; max-width: 100% !important; position: absolute !important; bottom: 0 !important; left: 0 !important; right: 0 !important; }',
-    // Track selection highlight
-    '.aab-clip.selected { outline: 2px solid #00d4ff !important; z-index: 2 !important; }',
-    // Audio waveform placeholder
-    '.aab-clip[data-type="audio"] { background: linear-gradient(90deg, #10b981 0%, #059669 50%, #10b981 100%) !important; }',
-    // TP body scroll
-    '#tp-body { overflow-y: auto !important; scroll-behavior: smooth !important; }',
-    // Studio bottom bar never clips
-    '.studio-ctrl-v2 { flex-shrink: 0 !important; overflow: visible !important; }',
-    // APS clips — never cut off text
-    '.aps-clip-thumb span, .aps-clip-thumb div { overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; font-size: 9px !important; }',
-    // Character lib button visible
-    '#open-char-lib-btn { display: block !important; }'
-  ].join('\n');
+  var s=document.createElement('style');s.id='aab-platform-css';
+  s.textContent=[
+    '#aps-clips-bar{overflow-x:auto!important;min-height:72px!important;flex-shrink:0!important;padding-bottom:4px!important;}',
+    '.aps-clip-thumb{min-width:80px!important;max-width:80px!important;flex-shrink:0!important;overflow:hidden!important;}',
+    '.aps-clip-thumb span,.aps-clip-thumb div,.aps-clip-thumb p{font-size:9px!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;max-width:78px!important;}',
+    '.aab-clip{position:absolute!important;overflow:hidden!important;cursor:pointer!important;transition:outline .1s;}',
+    '.aab-clip.selected{outline:2px solid #00d4ff!important;z-index:5!important;}',
+    '.aab-clip:hover{outline:1px solid rgba(0,212,255,.5)!important;}',
+    '#tp-body{overflow-y:auto!important;scroll-behavior:smooth!important;}'
+  ].join('');
+  var old=document.getElementById('aab-platform-css');if(old)old.remove();
   document.head.appendChild(s);
 })();
 
-console.log('[AABFix-v3] All fixes applied');
+// ═══════════════════════════════════════════════════════
+// 9. INIT — wire everything on load
+// ═══════════════════════════════════════════════════════
+setTimeout(function(){
+  // Ensure STUDIO_SCENE is set
+  if(!window.STUDIO_SCENE)window.STUDIO_SCENE=1;
+  
+  // Re-render saved characters in APS if panel exists
+  _aps_renderSavedChars();
+  
+  // Re-render timeline if AABE exists
+  if(window.AABE&&AABE.tracks&&AABE.tracks.length){E_renderTL();}
+  
+  console.log('[AABPlatform] Clean module loaded OK');
+},800);
+
 })();
 </script>
+
 </body>
 </html>
