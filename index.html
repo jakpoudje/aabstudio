@@ -18439,17 +18439,20 @@ window.setTpScrollMode=function(modeArg){
   STUDIO_TP.running=false;_studioWBW.running=false;
   var btn=document.getElementById('btn-tp-start');
   var lc=mode.toLowerCase();
-  // Always reset to scrollable block mode first
-  tpBody.style.cssText='display:block!important;overflow-y:auto!important;scroll-behavior:smooth!important;';
-  // Restore text if it was replaced by word/sentence mode
-  var stored=tpBody._storedText;
-  if(tpBody.children.length===1&&tpBody.children[0].style&&(tpBody.children[0].style.fontSize==='72px'||tpBody.children[0].style.fontSize==='34px')){
-    tpBody.innerHTML='';if(stored)tpBody.textContent=stored;
-  }
+  // Always reset body to scrollable state
+  tpBody.style.cssText='height:100%!important;overflow-y:auto!important;scroll-behavior:smooth!important;display:block!important;';
+  // Restore stored text if word/sentence mode was active
+  if(tpBody._storedText&&tpBody.children.length>0){tpBody.innerHTML='';tpBody.textContent=tpBody._storedText;}
   if(lc==='auto'||lc.indexOf('scroll')>-1){
+    // Load ALL scene text so teleprompter has long content to scroll
+    var p2=window.PROJECT;
+    var allText='';
+    if(p2&&p2.scenes&&p2.scenes.length>0){
+      allText=p2.scenes.map(function(s){return s.narration||s.text||s.content||s.script||'';}).filter(Boolean).join(' ');
+    }
+    if(allText.length>20){tpBody._storedText=tpBody.textContent.trim();tpBody.textContent=allText;}
+    tpBody.style.fontSize='24px';tpBody.style.lineHeight='1.7';tpBody.scrollTop=0;
     if(!tpBody.textContent.trim())return;
-    // Force font large enough to overflow
-    tpBody.style.fontSize='22px';tpBody.style.lineHeight='1.7';tpBody.scrollTop=0;
     STUDIO_TP.running=true;
     var spEl=document.getElementById('tp-spd-range')||document.getElementById('tp-speed-slider');
     var wpm=spEl?parseInt(spEl.value):80;var px=Math.max(1,Math.round(wpm/30));
@@ -18478,7 +18481,7 @@ window.setTpScrollMode=function(modeArg){
       _studioWBW.idx++;
       if(_studioWBW.idx>=words.length){
         clearInterval(_studioWBW.timer);_studioWBW.running=false;
-        tpBody.style.cssText='display:block!important;overflow-y:auto!important;';
+        tpBody.style.cssText='height:100%!important;overflow-y:auto!important;display:block!important;';
         tpBody.textContent=tpBody._storedText||words.join(' ');
         if(btn){btn.innerHTML='&#9654; Practice';btn.style.background='';}return;
       }
@@ -18498,7 +18501,7 @@ window.setTpScrollMode=function(modeArg){
       _studioWBW.idx++;
       if(_studioWBW.idx>=sents.length){
         clearInterval(_studioWBW.timer);_studioWBW.running=false;
-        tpBody.style.cssText='display:block!important;overflow-y:auto!important;';
+        tpBody.style.cssText='height:100%!important;overflow-y:auto!important;display:block!important;';
         tpBody.textContent=tpBody._storedText||sents.join('. ');
         if(btn){btn.innerHTML='&#9654; Practice';btn.style.background='';}return;
       }
@@ -18506,7 +18509,7 @@ window.setTpScrollMode=function(modeArg){
     },3000);
     if(btn){btn.innerHTML='&#9646;&#9646; Stop';btn.style.background='#ef4444';}
   }
-};
+};;
 
 (function(){
   function _wireTP(){
