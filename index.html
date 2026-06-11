@@ -7144,7 +7144,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
     /* removed ctrl rule */
     .studio-ctrl-row { flex-wrap: wrap; overflow: visible; }
     /* TP body - ensure visible */
-    .tp-body { display: flex !important; flex-direction: column; min-height: 80px; }
+    .tp-body { display: block !important; overflow-y: auto !important; min-height: 80px !important; scroll-behavior: smooth !important; }
     #tp-cur:empty::after { content: 'Open a project with scenes to see your script here'; color: rgba(255,255,255,.2); font-size: 14px; }
     </style>
 <body>
@@ -18439,49 +18439,69 @@ window.setTpScrollMode=function(modeArg){
   STUDIO_TP.running=false;_studioWBW.running=false;
   var btn=document.getElementById('btn-tp-start');
   var lc=mode.toLowerCase();
+  // Always reset to scrollable block mode first
+  tpBody.style.cssText='display:block!important;overflow-y:auto!important;scroll-behavior:smooth!important;';
+  // Restore text if it was replaced by word/sentence mode
+  var stored=tpBody._storedText;
+  if(tpBody.children.length===1&&tpBody.children[0].style&&(tpBody.children[0].style.fontSize==='72px'||tpBody.children[0].style.fontSize==='34px')){
+    tpBody.innerHTML='';if(stored)tpBody.textContent=stored;
+  }
   if(lc==='auto'||lc.indexOf('scroll')>-1){
     if(!tpBody.textContent.trim())return;
+    // Force font large enough to overflow
+    tpBody.style.fontSize='22px';tpBody.style.lineHeight='1.7';tpBody.scrollTop=0;
     STUDIO_TP.running=true;
     var spEl=document.getElementById('tp-spd-range')||document.getElementById('tp-speed-slider');
-    var px=((spEl?parseInt(spEl.value):80)/80)*3;
+    var wpm=spEl?parseInt(spEl.value):80;var px=Math.max(1,Math.round(wpm/30));
     STUDIO_TP.timer=setInterval(function(){
       if(!STUDIO_TP.running){clearInterval(STUDIO_TP.timer);return;}
       tpBody.scrollTop+=px;
       if(tpBody.scrollTop>=tpBody.scrollHeight-tpBody.clientHeight-1){
         clearInterval(STUDIO_TP.timer);STUDIO_TP.running=false;
+        tpBody.style.fontSize='';tpBody.style.lineHeight='';
         if(btn){btn.innerHTML='&#9654; Practice';btn.style.background='';}
       }
     },50);
     if(btn){btn.innerHTML='&#9646;&#9646; Stop';btn.style.background='#ef4444';}
-  } else if(lc.indexOf('word')>-1){
-    _studioWBW.words=tpBody.textContent.trim().split(/\s+/).filter(Boolean);
-    if(!_studioWBW.words.length)return;
-    _studioWBW.running=true;_studioWBW.idx=0;
+  }else if(lc.indexOf('word')>-1){
+    tpBody._storedText=tpBody.textContent.trim();
+    var words=tpBody.textContent.trim().split(/\s+/).filter(Boolean);if(!words.length)return;
+    _studioWBW.words=words;_studioWBW.running=true;_studioWBW.idx=0;
     var sp2=document.getElementById('tp-spd-range')||document.getElementById('tp-speed-slider');
     var ms=Math.round(60000/Math.max(20,sp2?parseInt(sp2.value):80));
     tpBody.innerHTML='';
     var wd=document.createElement('div');
-    wd.style.cssText='font-size:72px;font-weight:700;color:#fff;text-align:center;padding:20px;height:100%;display:flex;align-items:center;justify-content:center;';
-    tpBody.style.cssText='display:flex;align-items:center;justify-content:center;overflow:hidden;';
-    wd.textContent=_studioWBW.words[0];tpBody.appendChild(wd);
+    wd.style.cssText='font-size:72px;font-weight:700;color:#fff;text-align:center;line-height:1.1;';
+    tpBody.style.cssText='display:flex!important;align-items:center!important;justify-content:center!important;overflow:hidden!important;';
+    wd.textContent=words[0];tpBody.appendChild(wd);
     _studioWBW.timer=setInterval(function(){
       _studioWBW.idx++;
-      if(_studioWBW.idx>=_studioWBW.words.length){clearInterval(_studioWBW.timer);_studioWBW.running=false;if(btn){btn.innerHTML='&#9654; Practice';btn.style.background='';}return;}
-      wd.textContent=_studioWBW.words[_studioWBW.idx];
+      if(_studioWBW.idx>=words.length){
+        clearInterval(_studioWBW.timer);_studioWBW.running=false;
+        tpBody.style.cssText='display:block!important;overflow-y:auto!important;';
+        tpBody.textContent=tpBody._storedText||words.join(' ');
+        if(btn){btn.innerHTML='&#9654; Practice';btn.style.background='';}return;
+      }
+      wd.textContent=words[_studioWBW.idx];
     },ms);
     if(btn){btn.innerHTML='&#9646;&#9646; Stop';btn.style.background='#ef4444';}
-  } else {
-    var sents=tpBody.textContent.trim().split(/[.!?]+/).map(function(s){return s.trim();}).filter(Boolean);
-    if(!sents.length)return;
+  }else{
+    tpBody._storedText=tpBody.textContent.trim();
+    var sents=tpBody.textContent.trim().split(/[.!?]+/).map(function(s){return s.trim();}).filter(Boolean);if(!sents.length)return;
     _studioWBW.words=sents;_studioWBW.running=true;_studioWBW.idx=0;
     tpBody.innerHTML='';
     var sd=document.createElement('div');
-    sd.style.cssText='font-size:38px;font-weight:600;color:#fff;text-align:center;padding:20px;height:100%;display:flex;align-items:center;justify-content:center;';
-    tpBody.style.cssText='display:flex;align-items:center;justify-content:center;overflow:hidden;';
+    sd.style.cssText='font-size:34px;font-weight:600;color:#fff;text-align:center;line-height:1.4;';
+    tpBody.style.cssText='display:flex!important;align-items:center!important;justify-content:center!important;overflow:hidden!important;';
     sd.textContent=sents[0];tpBody.appendChild(sd);
     _studioWBW.timer=setInterval(function(){
       _studioWBW.idx++;
-      if(_studioWBW.idx>=sents.length){clearInterval(_studioWBW.timer);_studioWBW.running=false;if(btn){btn.innerHTML='&#9654; Practice';btn.style.background='';}return;}
+      if(_studioWBW.idx>=sents.length){
+        clearInterval(_studioWBW.timer);_studioWBW.running=false;
+        tpBody.style.cssText='display:block!important;overflow-y:auto!important;';
+        tpBody.textContent=tpBody._storedText||sents.join('. ');
+        if(btn){btn.innerHTML='&#9654; Practice';btn.style.background='';}return;
+      }
       sd.textContent=sents[_studioWBW.idx];
     },3000);
     if(btn){btn.innerHTML='&#9646;&#9646; Stop';btn.style.background='#ef4444';}
