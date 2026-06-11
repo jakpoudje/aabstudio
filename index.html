@@ -18827,11 +18827,261 @@ window._fitStudioLayout = function() {
   document.documentElement.style.setProperty('--cam-h', camH + 'px');
 };
 
+
+// ══════════════════════════════════════════════════════════════════
+// 15. ASSET UPLOAD + PiP OVERLAY — full pipeline
+// ══════════════════════════════════════════════════════════════════
+
+// Upload an image/video file and show it as a PiP overlay on the canvas
+window.uploadStudioAsset = function() {
+  var inp = document.getElementById('studio-asset-file-input');
+  if(!inp){
+    inp = document.createElement('input');
+    inp.type='file'; inp.id='studio-asset-file-input';
+    inp.accept='image/*,video/*'; inp.style.display='none';
+    document.body.appendChild(inp);
+  }
+  inp.onchange = function(){
+    var file = inp.files[0]; if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(e){
+      var url = e.target.result;
+      var asset = {name:file.name, url:url, type:file.type.startsWith('video/')? 'video':'image', id:'asset_'+Date.now()};
+      // Store in PROJECT
+      if(!window.PROJECT) window.PROJECT={assets:[]};
+      if(!window.PROJECT.assets) window.PROJECT.assets=[];
+      window.PROJECT.assets.push(asset);
+      // Render in asset panel
+      window._renderStudioAsset(asset);
+      // Auto-show as overlay
+      window.showAsset(asset);
+      typeof toast==='function'&&toast('Asset loaded: '+file.name,'ok');
+    };
+    reader.readAsDataURL(file);
+  };
+  inp.click();
+};
+
+// Show asset as PiP overlay on the studio canvas
+window.showAsset = function(asset) {
+  var canvas = document.getElementById('studio-canvas');
+  if(!canvas) return;
+  var overlay = document.getElementById('studio-asset-overlay');
+  if(!overlay){
+    overlay = document.createElement('div');
+    overlay.id='studio-asset-overlay';
+    overlay.style.cssText='position:absolute;z-index:10;cursor:move;user-select:none;border:2px solid rgba(0,212,255,.6);border-radius:4px;overflow:hidden;';
+    canvas.style.position='relative';
+    canvas.appendChild(overlay);
+  }
+  overlay.innerHTML='';
+  if(asset.type==='video'){
+    var vid=document.createElement('video');
+    vid.src=asset.url; vid.autoplay=true; vid.loop=true; vid.muted=true;
+    vid.style.cssText='width:100%;height:100%;object-fit:cover;';
+    overlay.appendChild(vid);
+  } else {
+    var img=document.createElement('img');
+    img.src=asset.url; img.style.cssText='width:100%;height:100%;object-fit:cover;';
+    overlay.appendChild(img);
+  }
+  // Default PiP position: top-right 30% width
+  var pos = window.STUDIO&&STUDIO._overlayPos || 'pip-right';
+  window._applyOverlayPos(overlay, pos, canvas);
+  window._currentOverlayAsset = asset;
+  overlay.style.display='block';
+  // Make it draggable + resizable
+  window._makeOverlayDraggable(overlay, canvas);
+};
+
+// Apply named position to overlay
+window._applyOverlayPos = function(overlay, pos, canvas) {
+  var cw = canvas.offsetWidth, ch = canvas.offsetHeight;
+  var w = Math.round(cw * 0.3), h = Math.round(w * 9/16);
+  var styles = {
+    'pip-right':  {left:'auto',right:'8px', top:'8px',   bottom:'auto', width:w+'px',height:h+'px'},
+    'pip-left':   {left:'8px', right:'auto',top:'8px',   bottom:'auto', width:w+'px',height:h+'px'},
+    'fullscreen': {left:'0',   right:'0',   top:'0',     bottom:'0',    width:'100%',height:'100%'},
+    'lower-third':{left:'0',   right:'0',   top:'auto',  bottom:'0',    width:'100%',height:Math.round(ch*0.33)+'px'},
+    'center':     {left:'50%', right:'auto',top:'50%',   bottom:'auto', width:w+'px',height:h+'px',transform:'translate(-50%,-50%)'}
+  };
+  var s = styles[pos] || styles['pip-right'];
+  Object.assign(overlay.style, s);
+};
+
+// Make overlay draggable AND resizable
+window._makeOverlayDraggable = function(overlay, container) {
+  // Remove existing listeners
+  overlay._dragSetup=true;
+  var startX,startY,origLeft,origTop,origW,origH;
+  var isDragging=false, isResizing=false;
+
+  // Resize handle (bottom-right corner)
+  var handle = overlay.querySelector('.overlay-resize-handle');
+  if(!handle){
+    handle = document.createElement('div');
+    handle.className='overlay-resize-handle';
+    handle.style.cssText='position:absolute;bottom:0;right:0;width:16px;height:16px;background:rgba(0,212,255,.8);cursor:se-resize;border-radius:0 0 3px 0;z-index:20;display:flex;align-items:center;justify-content:center;font-size:8px;color:#000;';
+    handle.textContent='⤡';
+    overlay.appendChild(handle);
+  }
+
+  // Close button
+  var closeBtn = overlay.querySelector('.overlay-close-btn');
+  if(!closeBtn){
+    closeBtn = document.createElement('div');
+    closeBtn.className='overlay-close-btn';
+    closeBtn.style.cssText='position:absolute;top:2px;right:2px;width:16px;height:16px;background:rgba(239,68,68,.9);cursor:pointer;border-radius:50%;z-index:21;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:700;';
+    closeBtn.textContent='×';
+    closeBtn.onclick=function(e){e.stopPropagation();overlay.style.display='none';window._currentOverlayAsset=null;};
+    overlay.appendChild(closeBtn);
+  }
+
+  // Drag on overlay (not on handle or close btn)
+  overlay.onmousedown = function(e){
+    if(e.target===handle||e.target===closeBtn) return;
+    isDragging=true;
+    startX=e.clientX; startY=e.clientY;
+    origLeft=overlay.offsetLeft; origTop=overlay.offsetTop;
+    overlay.style.transition='none';
+    e.preventDefault();
+  };
+
+  handle.onmousedown = function(e){
+    isResizing=true;
+    startX=e.clientX; startY=e.clientY;
+    origW=overlay.offsetWidth; origH=overlay.offsetHeight;
+    e.preventDefault(); e.stopPropagation();
+  };
+
+  document.onmousemove = (function(){
+    var existing = document.onmousemove;
+    return function(e){
+      if(isDragging){
+        var dx=e.clientX-startX, dy=e.clientY-startY;
+        var newL=origLeft+dx, newT=origTop+dy;
+        // Clamp within container
+        newL=Math.max(0,Math.min(container.offsetWidth-overlay.offsetWidth,newL));
+        newT=Math.max(0,Math.min(container.offsetHeight-overlay.offsetHeight,newT));
+        overlay.style.left=newL+'px'; overlay.style.top=newT+'px';
+        overlay.style.right='auto'; overlay.style.bottom='auto';
+      }
+      if(isResizing){
+        var dx2=e.clientX-startX, dy2=e.clientY-startY;
+        var newW=Math.max(80,origW+dx2);
+        var newH=Math.max(45,newW*9/16); // maintain 16:9
+        overlay.style.width=newW+'px'; overlay.style.height=newH+'px';
+      }
+    };
+  })();
+
+  document.onmouseup = function(){isDragging=false;isResizing=false;};
+};
+
+// Wire setOverlayPos to update live overlay
+var _origSetOverlayPos = window.setOverlayPos;
+window.setOverlayPos = function(btn){
+  if(typeof _origSetOverlayPos==='function') _origSetOverlayPos(btn);
+  var overlay = document.getElementById('studio-asset-overlay');
+  var canvas  = document.getElementById('studio-canvas');
+  if(overlay&&canvas){
+    var posMap={'PiP right':'pip-right','PiP left':'pip-left','Full screen':'fullscreen','Lower ⅓':'lower-third'};
+    var pos = posMap[btn.textContent.replace(/[◱◰⛶▬\n\s]+/g,'').trim()] || 'pip-right';
+    window._applyOverlayPos(overlay, pos, canvas);
+  }
+};
+
+// ══════════════════════════════════════════════════════════════════
+// 16. ASSIGN ASSET TO SCENE (scenes page)
+// ══════════════════════════════════════════════════════════════════
+window.assignAssetToScene = function(sceneIdx, assetUrl, assetName) {
+  var p = window.PROJECT; if(!p||!p.scenes) return;
+  var scene = p.scenes[sceneIdx]; if(!scene) return;
+  if(!scene.assets) scene.assets=[];
+  scene.assets.push({url:assetUrl, name:assetName||'Asset', id:'sa_'+Date.now()});
+  // Save
+  if(typeof _saveProjectFull==='function') _saveProjectFull(p);
+  typeof toast==='function'&&toast('Asset assigned to Scene '+(sceneIdx+1),'ok');
+  // Re-render scene list
+  if(typeof _renderSceneAsset==='function') _renderSceneAsset(sceneIdx);
+};
+
+// Upload and assign to a specific scene
+window.uploadAssetToScene = function(sceneIdx) {
+  var inp = document.createElement('input');
+  inp.type='file'; inp.accept='image/*,video/*'; inp.style.display='none';
+  document.body.appendChild(inp);
+  inp.onchange = function(){
+    var file=inp.files[0]; if(!file) return;
+    var reader=new FileReader();
+    reader.onload=function(e){
+      assignAssetToScene(sceneIdx, e.target.result, file.name);
+      inp.remove();
+    };
+    reader.readAsDataURL(file);
+  };
+  inp.click();
+};
+
+// ══════════════════════════════════════════════════════════════════
+// 17. TP SENTENCE MODE — add to mode selector
+// ══════════════════════════════════════════════════════════════════
+setTimeout(function(){
+  var modeSelect = document.getElementById('tp-mode-sel') || document.getElementById('tp-scroll-mode');
+  if(modeSelect){
+    var hasSentence = Array.from(modeSelect.options).some(function(o){return o.value==='sentence';});
+    if(!hasSentence){
+      var opt=document.createElement('option');
+      opt.value='sentence'; opt.textContent='✋ Sentence-by-sentence';
+      modeSelect.appendChild(opt);
+    }
+  }
+  // Wire the speed slider properly
+  var spdRange = document.getElementById('tp-spd-range');
+  var spdDisplay = document.querySelector('#tp-spd-display,.tp-spd-val,[id*="tp-spd"]');
+  if(spdRange){
+    spdRange.oninput = function(){
+      if(spdDisplay) spdDisplay.textContent=this.value+'wpm';
+      if(window.STUDIO_TP&&STUDIO_TP.running){
+        if(STUDIO_TP.timer){clearInterval(STUDIO_TP.timer);STUDIO_TP.timer=null;}
+        setTpScrollMode('auto');
+      }
+    };
+  }
+  // Wire Upload asset button in studio right panel
+  var uploadBtn = document.querySelector('[onclick*="uploadStudioAssets"],[class*="sp-upload-btn"]');
+  if(uploadBtn){
+    uploadBtn.onclick = function(){ window.uploadStudioAsset(); };
+  }
+  // Add upload buttons to scenes page asset panel if on scenes page
+  _addSceneAssetUploadButtons();
+}, 1500);
+
+// Add "Upload to scene" buttons on scenes page
+window._addSceneAssetUploadButtons = function(){
+  var scenesPage = document.getElementById('scenes-pg') || document.querySelector('.scenes-pg');
+  if(!scenesPage||getComputedStyle(scenesPage).display==='none') return;
+  var uploadTab = scenesPage.querySelector('[onclick*="scriptTab('upload'"],.tab-upload');
+  // Inject per-scene upload if not already there
+  var sceneRows = scenesPage.querySelectorAll('.scene-row,[class*="scene-row"]');
+  sceneRows.forEach(function(row, i){
+    if(row.querySelector('.scene-asset-upload-btn')) return; // already added
+    var btn = document.createElement('button');
+    btn.className='scene-asset-upload-btn s-btn';
+    btn.textContent='📎 Add file';
+    btn.style.cssText='font-size:10px;padding:2px 6px;margin-left:6px;';
+    btn.onclick = function(e){e.stopPropagation(); uploadAssetToScene(i);};
+    var actionsArea = row.querySelector('.scene-actions,.scene-row-actions') || row;
+    actionsArea.appendChild(btn);
+  });
+};
+
 // ── 11. INIT ──────────────────────────────────────────────────────
 setTimeout(function(){
   if(!window.STUDIO_SCENE)window.STUDIO_SCENE=1;
   if(typeof _fitStudioLayout==="function")_fitStudioLayout();
   if(window.AABE&&AABE.tracks&&AABE.tracks.length){window._fixClipNames&&_fixClipNames();E_renderTL();}
+  _addSceneAssetUploadButtons();
   console.log('[AABPlatform] Clean module v2 loaded OK');
 },1200);
 
