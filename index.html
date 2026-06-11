@@ -18496,22 +18496,28 @@ window.setTpScrollMode=function(modeArg){
 };
 
 // Wire Practice button
-setTimeout(function(){
-  var btn=document.getElementById('btn-tp-start');
-  if(btn){
-    btn.onclick=function(){
-      var m=document.querySelector('#tp-scroll-mode,.tp-mode-select,select[class*="tp-mode"]');
-      window.setTpScrollMode(m?m.value:'auto');
-    };
+(function(){
+  function _wireTP(){
+    var btn=document.getElementById('btn-tp-start');
+    if(btn&&!btn._tw){
+      btn._tw=true;
+      btn.onclick=function(){
+        var m=document.querySelector('#tp-scroll-mode,.tp-mode-select,select[class*="tp-mode"],.tp-scroll-select');
+        window.setTpScrollMode(m?m.value:'auto');
+      };
+    }
+    var modeEl=document.querySelector('#tp-scroll-mode,.tp-mode-select,select[class*="tp-mode"],.tp-scroll-select');
+    if(modeEl&&!modeEl._tw){
+      modeEl._tw=true;
+      modeEl.onchange=function(){
+        if(STUDIO_TP.running||_studioWBW.running)window.setTpScrollMode(this.value);
+      };
+    }
   }
-  // Wire mode dropdown to auto-restart
-  var modeEl=document.querySelector('#tp-scroll-mode,.tp-mode-select,select[class*="tp-mode"]');
-  if(modeEl){
-    modeEl.onchange=function(){
-      if(STUDIO_TP.running||_studioWBW.running)window.setTpScrollMode(this.value);
-    };
-  }
-},1500);
+  _wireTP();
+  [500,1500,3000,6000].forEach(function(t){setTimeout(_wireTP,t);});
+  new MutationObserver(function(){_wireTP();}).observe(document.body,{childList:true,subtree:true});
+})();
 
 // ── 2. SCENE NAVIGATION ────────────────────────────────────────────
 window.studioGoTo=function(n){
