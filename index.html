@@ -18430,6 +18430,8 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
 
 
 
+
+
 <script id="aab-platform-clean">
 (function(){
 'use strict';
@@ -19015,47 +19017,42 @@ setTimeout(function(){
     typeof toast==='function'&&toast(track.muted?'CC off':'CC on','ok');
   };
 
-  // Track selection — clicking track label selects it
-  AB.selectTrack = AB.selectTrack || function(trackId){
-    window._selectedTrackId = trackId;
-    document.querySelectorAll('.aab-track').forEach(function(el){
-      var tid = el.getAttribute('data-track-id');
-      var label = el.querySelector('.aab-track-label');
-      if(label){
-        label.style.background = tid===trackId?'rgba(0,212,255,.15)':'';
-        label.style.borderLeft = tid===trackId?'2px solid #00d4ff':'2px solid transparent';
-        label.style.fontWeight = '700';
+  // Track selection — uses actual DOM structure (.aab-track-row / .aab-track-lbl / .aab-track-name)
+  var _trackMap={'main':'Main Video','broll':'B-Roll','voice':'Voice Over','music':'Music','sfx':'Sound FX','subs':'Subtitles','subtitle':'Subtitles','overlays':'Text Overlays'};
+  AB.selectTrack = function(trackId){
+    window._selectedTrackId=trackId;
+    document.querySelectorAll('.aab-track-lbl').forEach(function(l){l.classList.remove('selected');l.style.background='';l.style.borderLeft='';});
+    var targetName=_trackMap[trackId]||trackId;
+    document.querySelectorAll('.aab-track-row').forEach(function(row){
+      var nameEl=row.querySelector('.aab-track-name');
+      if(nameEl&&nameEl.textContent.indexOf(targetName)>-1){
+        var lbl=row.querySelector('.aab-track-lbl');
+        if(lbl){lbl.classList.add('selected');lbl.style.background='rgba(0,212,255,.15)';lbl.style.borderLeft='2px solid #00d4ff';}
       }
     });
   };
-
   // Wire track label clicks
-  document.querySelectorAll('.aab-track').forEach(function(el){
-    var label = el.querySelector('.aab-track-label');
-    var tid = el.getAttribute('data-track-id');
-    if(label&&tid&&!label._trackClickWired){
-      label._trackClickWired=true;
-      label.style.cursor='pointer';
-      label.style.fontWeight='700';
-      label.onclick=function(){AB.selectTrack(tid);};
-    }
-  });
-
+  function _wireTrackClicks(){
+    document.querySelectorAll('.aab-track-row').forEach(function(row){
+      var lbl=row.querySelector('.aab-track-lbl');
+      var nameEl=row.querySelector('.aab-track-name');
+      if(lbl&&nameEl&&!lbl._trackClickWired){
+        lbl._trackClickWired=true;lbl.style.cursor='pointer';
+        lbl.onclick=function(){
+          var text=nameEl.textContent;
+          var key=Object.keys(_trackMap).find(function(k){return text.indexOf(_trackMap[k])>-1;});
+          if(key)AB.selectTrack(key);
+          typeof toast==='function'&&toast(text.trim()+' selected','ok');
+        };
+      }
+    });
+  }
+  _wireTrackClicks();
   // Re-wire after TL renders
-  var origRenderTL = window.E_renderTL;
-  window.E_renderTL = function(){
-    if(typeof origRenderTL==='function') origRenderTL();
-    // Re-wire track labels after render
-    setTimeout(function(){
-      document.querySelectorAll('.aab-track').forEach(function(el){
-        var label=el.querySelector('.aab-track-label');
-        var tid=el.getAttribute('data-track-id');
-        if(label&&tid&&!label._trackClickWired){
-          label._trackClickWired=true;label.style.cursor='pointer';label.style.fontWeight='700';
-          label.onclick=function(){AB.selectTrack(tid);};
-        }
-      });
-    },100);
+  var origRenderTL=window.E_renderTL;
+  window.E_renderTL=function(){
+    if(typeof origRenderTL==='function')origRenderTL();
+    setTimeout(_wireTrackClicks,100);
   };
 
   // Full export with audio — override E_doExport in our module
