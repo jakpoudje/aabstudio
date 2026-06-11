@@ -18802,9 +18802,35 @@ window._fixClipNames=function(){
   });
 };
 
+// ── 14. _fitStudioLayout — full-width camera ─────────────────────
+window._fitStudioLayout = function() {
+  var wrap = document.querySelector('.studio-wrap');
+  var ctrl = document.querySelector('.studio-ctrl-v2');
+  var tpPanel = document.getElementById('studio-tp-panel');
+  if(!wrap) return;
+  var totalH = wrap.offsetHeight;
+  var barH   = ctrl    ? ctrl.offsetHeight    : 0;
+  var tpH    = tpPanel ? tpPanel.offsetHeight : 0;
+  var camAvail = totalH - barH - tpH;
+  // Width-based: fill the column
+  var colW       = tpPanel ? tpPanel.offsetWidth : wrap.offsetWidth;
+  var camWbyW    = Math.round(colW * 0.99);
+  var camHbyW    = Math.round(camWbyW * 9 / 16);
+  // Height-based: original 16:9 from available height
+  var camWbyH    = Math.round(camAvail * (16/9) * 0.98);
+  var camHbyH    = Math.round(camAvail * 0.98);
+  // Use width-based if it fits vertically, otherwise height-based
+  var camW, camH;
+  if (camHbyW <= camAvail) { camW = camWbyW; camH = camHbyW; }
+  else                      { camW = camWbyH; camH = camHbyH; }
+  document.documentElement.style.setProperty('--cam-w', camW + 'px');
+  document.documentElement.style.setProperty('--cam-h', camH + 'px');
+};
+
 // ── 11. INIT ──────────────────────────────────────────────────────
 setTimeout(function(){
   if(!window.STUDIO_SCENE)window.STUDIO_SCENE=1;
+  if(typeof _fitStudioLayout==="function")_fitStudioLayout();
   if(window.AABE&&AABE.tracks&&AABE.tracks.length){window._fixClipNames&&_fixClipNames();E_renderTL();}
   console.log('[AABPlatform] Clean module v2 loaded OK');
 },1200);
