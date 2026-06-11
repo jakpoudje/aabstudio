@@ -18777,10 +18777,35 @@ setTimeout(function(){
   document.head.appendChild(s);
 })();
 
+
+// ── 12. openAIPresenterStudio stub ─────────────────────────────────
+if(typeof window.openAIPresenterStudio!=='function'){
+  window.openAIPresenterStudio=function(){
+    var apsEl=document.getElementById('ai-presenter-studio');
+    if(apsEl){
+      document.querySelectorAll('.pg-wrapper,[id$="-pg"]').forEach(function(el){el.style.display='none';});
+      apsEl.style.display='flex';apsEl.style.flexDirection='column';
+    }else if(typeof nav==='function')nav('aps-pg');
+  };
+}
+
+// ── 13. Fix clip names on load ──────────────────────────────────────
+window._fixClipNames=function(){
+  if(!window.AABE||!AABE.tracks)return;
+  AABE.tracks.forEach(function(track){
+    (track.clips||[]).forEach(function(clip,i){
+      if(!clip.name||clip.name.indexOf('undefined')>-1){
+        clip.name=clip.sceneIdx!=null?'Scene '+(clip.sceneIdx+1):
+          ((clip.provider||'Clip')+' '+(i+1));
+      }
+    });
+  });
+};
+
 // ── 11. INIT ──────────────────────────────────────────────────────
 setTimeout(function(){
   if(!window.STUDIO_SCENE)window.STUDIO_SCENE=1;
-  if(window.AABE&&AABE.tracks&&AABE.tracks.length)E_renderTL();
+  if(window.AABE&&AABE.tracks&&AABE.tracks.length){window._fixClipNames&&_fixClipNames();E_renderTL();}
   console.log('[AABPlatform] Clean module v2 loaded OK');
 },1200);
 
