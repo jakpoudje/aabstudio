@@ -18432,6 +18432,8 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
 
 
 
+
+
 <script id="aab-platform-clean">
 (function(){
 'use strict';
@@ -18736,29 +18738,208 @@ window.openAIPresenterStudio=function(){
   },150);
 };
 
-// Standalone APS scene renderer (no closure dependency)
+// APS scene renderer — uses aps_selectScene from closure so generate works
 window._aabRenderAPSScenes=function(container){
   if(!container||!window.PROJECT||!window.PROJECT.scenes)return;
   container.innerHTML='';
   window.PROJECT.scenes.forEach(function(sc,i){
     var row=document.createElement('div');
+    // Use aps-scene-row class so aps_selectScene highlights it
     row.className='aps-scene-item';
+    row.setAttribute('data-scene-idx',i);
     row.style.cssText='padding:8px 10px;border-bottom:.5px solid rgba(255,255,255,.06);cursor:pointer;transition:background .15s;';
-    var num=document.createElement('div');num.style.cssText='font-size:9px;color:#6b7280;font-weight:700;margin-bottom:2px;';num.textContent='SCENE '+(i+1);
-    var txt=document.createElement('div');txt.style.cssText='font-size:11px;color:#cbd5e1;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;';
-    txt.textContent=sc.narration||sc.text||sc.content||sc.script||'(no text)';
+    var num=document.createElement('div');
+    num.style.cssText='font-size:9px;color:#6b7280;font-weight:700;margin-bottom:2px;';
+    num.textContent='SCENE '+(i+1);
+    var txt=document.createElement('div');
+    txt.style.cssText='font-size:11px;color:#cbd5e1;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;';
+    txt.textContent=sc.narration||sc.text||sc.content||sc.script||'(no script)';
     row.appendChild(num);row.appendChild(txt);
-    row.onclick=function(){
-      container.querySelectorAll('.aps-scene-item').forEach(function(r){r.style.background='';});
+    row.onclick=(function(idx){return function(){
+      container.querySelectorAll('.aps-scene-item').forEach(function(r){r.style.background='';r.style.borderLeft='';});
       row.style.background='rgba(0,212,255,.1)';
-      // Update center preview text
-      var previewText=document.getElementById('aps-scene-narration')||document.querySelector('.aps-preview-text,[class*="narration"]');
-      if(previewText)previewText.textContent=sc.narration||sc.text||'';
-    };
+      row.style.borderLeft='2px solid #00d4ff';
+      window._apsSelectScene(idx);
+    };})(i);
     container.appendChild(row);
   });
-  // Auto-select first
+  // Auto-select first scene
   if(container.firstChild)container.firstChild.click();
+};
+
+/* ── APS: Full generate implementation (closure functions unavailable) ── */
+window._apsState = window._apsState || {currentIdx:0, scenes:[], generating:false};
+
+// Called when user clicks scene in our list
+window._apsSelectScene = function(idx){
+  var p = window.PROJECT;
+  if(!p||!p.scenes||!p.scenes[idx]) return;
+  window._apsState.currentIdx = idx;
+  var sc = p.scenes[idx];
+  
+  // Update center preview area
+  var scriptEl = document.getElementById('aps-preview-script');
+  var numEl = document.getElementById('aps-preview-scene-num');
+  var durEl = document.getElementById('aps-preview-duration');
+  if(scriptEl){scriptEl.textContent=sc.narration||sc.text||sc.content||sc.script||'';scriptEl.style.display='block';}
+  if(numEl)numEl.textContent='Scene '+String(idx+1).padStart(2,'0')+' / '+p.scenes.length+' — '+(sc.type||'MAIN');
+  if(durEl){var wc=(sc.narration||'').trim().split(/\s+/).filter(Boolean).length;durEl.textContent=(sc.duration||8)+'s · '+wc+' words';}
+  
+  // Also try calling the real aps_selectScene if it exists
+  if(typeof aps_selectScene==='function'){try{aps_selectScene(idx);}catch(e){}}
+};
+
+// Generate current scene — calls Railway API directly
+window.aps_generateCurrent = window.aps_generateCurrent || function(){
+  var p = window.PROJECT;
+  if(!p||!p.scenes) return;
+  var idx = window._apsState.currentIdx||0;
+  var sc = p.scenes[idx];
+  if(!sc){typeof toast==='function'&&toast('No scene selected','info');return;}
+  window._apsGenerateScene(idx, sc);
+};
+
+// Generate specific scene
+window._apsGenerateScene = function(idx, sc){
+  if(window._apsState.generating){typeof toast==='function'&&toast('Generation in progress','info');return;}
+  var narration = sc.narration||sc.text||sc.content||sc.script||'';
+  if(!narration.trim()){typeof toast==='function'&&toast('Scene '+(idx+1)+' has no script text','error');return;}
+  
+  var token = window._sbSession&&window._sbSession.access_token;
+  if(!token){typeof toast==='function'&&toast('Sign in required','info');return;}
+  
+  // Get settings from UI
+  var providerEl = document.getElementById('aps-provider');
+  var voiceEl = document.getElementById('aps-voice-sel');
+  var framingEl = document.getElementById('aps-framing');
+  var gestureEl = document.getElementById('aps-gesture');
+  var bgEl = document.getElementById('aps-shot');
+  var ratioEl = document.getElementById('aps-ratio');
+  
+  var provider = providerEl ? providerEl.value : 'did';
+  var voiceId = voiceEl ? voiceEl.value : 'EXAVITQu4vr4xnSDxMaL';
+  
+  typeof toast==='function'&&toast('Generating Scene '+(idx+1)+'...','info');
+  window._apsState.generating = true;
+  
+  // Update the generate button
+  var genBtn = document.getElementById('aps-gen-one-btn')||document.querySelector('[onclick*="aps_generateCurrent"]');
+  if(genBtn){genBtn.disabled=true;genBtn.textContent='Generating...';}
+  
+  // Step 1: Voice
+  fetch('https://aabstudio-production.up.railway.app/api/voice',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+    body:JSON.stringify({text:narration,voiceId:voiceId,stability:0.5,similarityBoost:0.75})
+  }).then(function(r){return r.json();}).then(function(voiceD){
+    if(!voiceD.audio)throw new Error('Voice failed: '+(voiceD.error||'no audio'));
+    typeof toast==='function'&&toast('Voice ready ✓','ok');
+    
+    // Step 2: Video
+    return fetch('https://aabstudio-production.up.railway.app/api/presenter',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+      body:JSON.stringify({
+        audioBase64: voiceD.audio,
+        referenceImageBase64: window.APS&&APS.photoB64 || null,
+        referenceImageMimeType: window.APS&&APS.photoMimeType || 'image/jpeg',
+        studioType: bgEl?bgEl.value:'news-studio',
+        framingStyle: framingEl?framingEl.value:'medium',
+        gestureStyle: gestureEl?gestureEl.value:'professional',
+        ratio: ratioEl?ratioEl.value:'16:9',
+        sceneText: narration,
+        provider: provider,
+        sceneIdx: idx
+      })
+    });
+  }).then(function(r){return r.json();}).then(function(vidD){
+    if(vidD.error)throw new Error(vidD.error);
+    window._apsState.generating=false;
+    if(genBtn){genBtn.disabled=false;genBtn.textContent='▶ Generate this scene';}
+    
+    var taskId = vidD.taskId||vidD.renderId;
+    if(!taskId&&(vidD.videoUrl||vidD.url)){
+      // Immediate result
+      _apsSceneDone(idx, sc, vidD.videoUrl||vidD.url);
+      return;
+    }
+    // Poll for completion
+    typeof toast==='function'&&toast('Rendering... (~1-3 min)','ok');
+    var pollCount=0;
+    var pollTimer=setInterval(function(){
+      pollCount++;
+      if(pollCount>60){clearInterval(pollTimer);typeof toast==='function'&&toast('Timeout — check later','error');return;}
+      fetch('https://aabstudio-production.up.railway.app/api/presenter-status?taskId='+taskId,{
+        headers:{'Authorization':'Bearer '+token}
+      }).then(function(r){return r.json();}).then(function(s){
+        if(s.done||s.status==='completed'||s.videoUrl){
+          clearInterval(pollTimer);
+          _apsSceneDone(idx, sc, s.videoUrl||s.url);
+        } else if(s.error){
+          clearInterval(pollTimer);
+          typeof toast==='function'&&toast('Error: '+s.error,'error');
+        }
+      }).catch(function(){clearInterval(pollTimer);});
+    },5000);
+  }).catch(function(e){
+    window._apsState.generating=false;
+    if(genBtn){genBtn.disabled=false;genBtn.textContent='▶ Generate this scene';}
+    typeof toast==='function'&&toast('Error: '+e.message,'error');
+  });
+};
+
+// Scene generation complete
+window._apsSceneDone = function(idx, sc, videoUrl){
+  if(!videoUrl)return;
+  // Save to project
+  if(window.PROJECT&&window.PROJECT.scenes[idx]){
+    window.PROJECT.scenes[idx].apsVideoUrl=videoUrl;
+    if(!window.PROJECT.apsVideos)window.PROJECT.apsVideos={};
+    window.PROJECT.apsVideos[sc.id||('s'+idx)]={url:videoUrl,sceneNum:idx+1,narration:sc.narration||'',duration:sc.duration||8};
+    if(typeof _saveProjectFull==='function')_saveProjectFull(window.PROJECT);
+  }
+  typeof toast==='function'&&toast('Scene '+(idx+1)+' generated! ✓','ok');
+  // Show thumbnail in generated clips bar
+  var clipsBar=document.getElementById('aps-clips-bar')||document.querySelector('.aps-clips-bar,[class*="clips-bar"]');
+  if(clipsBar){
+    var thumb=document.createElement('div');
+    thumb.style.cssText='display:inline-block;width:90px;margin:4px;cursor:pointer;border-radius:6px;overflow:hidden;border:.5px solid rgba(0,212,255,.4);flex-shrink:0;';
+    var vid=document.createElement('video');vid.src=videoUrl;vid.style.cssText='width:90px;height:54px;object-fit:cover;display:block;';
+    var lbl=document.createElement('div');lbl.textContent='Scene '+(idx+1);lbl.style.cssText='font-size:9px;color:#9ca3af;padding:2px 4px;background:rgba(0,0,0,.6);';
+    thumb.appendChild(vid);thumb.appendChild(lbl);
+    thumb.onclick=function(){if(window.open)window.open(videoUrl,'_blank');};
+    clipsBar.appendChild(thumb);
+  }
+  // Update scene item status
+  var items=document.querySelectorAll('.aps-scene-item');
+  if(items[idx])items[idx].style.borderLeft='2px solid #10b981';
+};
+
+// Generate all scenes
+window.aps_generateAll = window.aps_generateAll || function(){
+  var p=window.PROJECT;
+  if(!p||!p.scenes){typeof toast==='function'&&toast('No scenes to generate','info');return;}
+  typeof toast==='function'&&toast('Generating all '+p.scenes.length+' scenes...','info');
+  var i=0;
+  function next(){
+    if(i>=p.scenes.length)return;
+    var idx=i++;
+    window._apsGenerateScene(idx,p.scenes[idx]);
+    // Chain with delay to avoid overwhelming the API
+    setTimeout(next, 3000);
+  }
+  next();
+};
+
+// Generate selected scenes
+window.aps_generateSelected = window.aps_generateSelected || function(){
+  var checked=Array.from(document.querySelectorAll('.aps-scene-item[data-selected="true"],.aps-scene-item.selected'));
+  if(!checked.length){typeof toast==='function'&&toast('No scenes selected','info');return;}
+  checked.forEach(function(el){
+    var idx=parseInt(el.getAttribute('data-scene-idx')||'0');
+    var sc=window.PROJECT&&window.PROJECT.scenes[idx];
+    if(sc)setTimeout(function(){window._apsGenerateScene(idx,sc);},idx*2000);
+  });
 };
 
 /* ── APS photo handling ── */
