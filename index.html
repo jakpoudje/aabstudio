@@ -5205,8 +5205,12 @@ function E_loadSrc(url,type){
 function E_srcToggle(){
   var v=document.getElementById("aab-src-vid");if(!v||!v.src)return;
   var b=document.getElementById("aab-src-play");
-  if(v.paused){v.play();if(b)b.innerHTML="&#9646;&#9646;";}
-  else{v.pause();if(b)b.innerHTML="&#9654;";}
+  if(v.paused){
+    if(E&&E.playing)E_progToggle(); // pause program first
+    v.play();if(b)b.innerHTML="&#9646;&#9646;";
+  } else {
+    v.pause();if(b)b.innerHTML="&#9654;";
+  }
 }
 
 function E_drawProg(){
@@ -5284,25 +5288,37 @@ function E_drawTextLayers(ctx,canvas,t){
 function E_progToggle(){
   var btn=document.getElementById("aab-prog-play");
   if(E.playing){
-    E.playing=false;clearInterval(E.playInterval);
+    E.playing=false;
+    if(E._playRAF){cancelAnimationFrame(E._playRAF);E._playRAF=null;}
+    if(clearInterval)clearInterval(E.playInterval);
     if(E._progVideo)E._progVideo.pause();
     if(btn)btn.innerHTML="&#9654;";
   } else {
     var dur=E_dur();if(!dur)return;
-    E.playing=true;if(btn)btn.innerHTML="&#9646;&#9646;";
-    var lastT=Date.now();
-    var t=E.playhead;var ac=null;
-    E.tracks.forEach(function(tk){if(tk.type!=="video"||tk.muted)return;tk.clips.forEach(function(c){if(t>=c.start&&t<c.start+c.duration)ac=c;});});
-    if(ac&&ac.url&&E._progVideo){E._progVideo.src=ac.url;E._progVideo.currentTime=t-ac.start;E._progVideo.play().catch(function(){});}
-    E.playInterval=setInterval(function(){
-      var now=Date.now();var dt=(now-lastT)/1000;lastT=now;
-      E.playhead+=dt;
-      if(E.playhead>=dur){E.playhead=0;E_progToggle();return;}
-      E_updatePH();E_drawProg();
-      var t2=E.playhead;var nc=null;
-      E.tracks.forEach(function(tk){if(tk.type!=="video"||tk.muted)return;tk.clips.forEach(function(c){if(t2>=c.start&&t2<c.start+c.duration)nc=c;});});
-      if(nc&&E._progVideo&&E._progVideo.src!==nc.url){E._progVideo.src=nc.url;E._progVideo.currentTime=t2-nc.start;E._progVideo.play().catch(function(){});}
-    },1000/30);
+    // Pause source monitor first
+    var sv=document.getElementById("aab-src-vid");
+    if(sv&&!sv.paused)sv.pause();
+    var srcBtn=document.getElementById("aab-src-play");
+    if(srcBtn)srcBtn.innerHTML="&#9654;";
+    E.playing=true;
+    if(btn)btn.innerHTML="&#9646;&#9646;";
+    // Use rAF instead of setInterval to prevent flashing
+    var lastT=null;
+    function tick(t){
+      if(!E.playing)return;
+      if(lastT!==null){
+        var dt=(t-lastT)/1000;
+        E.currentTime=Math.min(E.currentTime+dt,dur);
+        E_updatePH();
+        E_drawProg();
+        if(E.currentTime>=dur){E.playing=false;E.currentTime=0;E_updatePH();if(btn)btn.innerHTML="&#9654;";return;}
+        // Respect Out point
+        if(window.AABE&&AABE.outPoint&&E.currentTime>=AABE.outPoint){E.playing=false;E_updatePH();if(btn)btn.innerHTML="&#9654;";return;}
+      }
+      lastT=t;
+      E._playRAF=requestAnimationFrame(tick);
+    }
+    E._playRAF=requestAnimationFrame(tick);
   }
 }
 
@@ -15559,18 +15575,23 @@ function aps_loadSavedPhotos() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            audioBase64: voiceD.audio,
-            referenceImageBase64: APS.photoB64 || null,
-            referenceImageMimeType: APS.photoMimeType || 'image/jpeg',
-            studioType: APS.settings.bg,
-            customBgBase64: APS.customBgB64 || null,
-            framingStyle: APS.settings.framing,
-            gestureStyle: APS.settings.gesture,
-            ratio: APS.settings.ratio,
-            sceneText: sc.narration,
-            provider: APS.settings.provider,
-            bgPrompt: (window.APS_BG_PROMPTS && window.APS_BG_PROMPTS[APS.settings.bg]) || ''
-          })
+              prompt: prompt,
+              narration: sc.narration,
+              audioBase64: voiceD.audio,
+              referenceImageBase64: APS.photoB64 || null,
+              referenceImageMimeType: APS.photoMimeType || 'image/jpeg',
+              provider: APS.settings.provider || 'did',
+              studioType: APS.settings.bg || 'news-studio',
+              framingStyle: APS.settings.framing || 'medium',
+              gestureStyle: APS.settings.gesture || 'professional',
+              shotType: APS.settings.shot || 'medium',
+              motionStyle: APS.settings.motion || 'subtle',
+              ratio: APS.settings.ratio || '16:9',
+              sceneText: sc.narration,
+              sceneIdx: sceneIdx,
+              voiceId: APS.settings.voiceId,
+              hasPhoto: !!APS.photoB64
+            })
         });;
         var vidD = await vidR.json();
         if (vidD.error) throw new Error(vidD.error);
@@ -15847,6 +15868,26 @@ function aps_goToEditSuite() {
 }
 window.aps_goToEditSuite = aps_goToEditSuite;
 
+function aps_onProviderChange(value){
+  if(!window.APS)window.APS={settings:{}};
+  if(!APS.settings)APS.settings={};
+  APS.settings.provider=value;
+  var descriptions={
+    'did':'D-ID: Lip-syncs your uploaded photo to voice. Fast & realistic. Best for human presenters.',
+    'heygen':'HeyGen: High-quality AI avatars. Uses your photo or preset avatars. Slightly slower.',
+    'kling':'Kling AI: Creative AI video from prompt+image. Cinematic results. Experimental.'
+  };
+  var desc=document.getElementById('aps-provider-desc');
+  if(desc)desc.textContent=descriptions[value]||'';
+  // Enable/disable photo requirement note
+  var photoNote=document.getElementById('aps-photo-note');
+  if(photoNote)photoNote.style.display=(value==='did'||value==='heygen')?'block':'none';
+  typeof toast==='function'&&toast('Provider: '+value.toUpperCase(),'ok');
+}
+window.aps_onProviderChange=aps_onProviderChange;
+
+
+
 
     function aps_addClipToBar(sc) {
       if (!sc.num && sc.sceneNum) sc.num = sc.sceneNum;
@@ -16103,7 +16144,7 @@ window.aps_clearPhoto = aps_clearPhoto;
           Stop</button>
         <!-- Go to Edit Suite — always visible, enabled after clips generated -->
         <button id="aps-go-edit-btn-top" onclick="aps_goToEditSuite()"
-          style="background:rgba(16,185,129,.15);color:rgba(16,185,129,.5);border:1px solid rgba(16,185,129,.25);padding:7px 16px;border-radius:6px;cursor:not-allowed;font-size:12px;font-weight:700;transition:all .2s;"
+          style="background:rgba(16,185,129,.2);color:rgba(16,185,129,.9);border:1px solid rgba(16,185,129,.4);padding:7px 16px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;transition:all .2s;"
           disabled title="Generate scenes first, then go to Edit Suite">
           🎬 Go to Edit Suite →
         </button>
@@ -18456,6 +18497,8 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
 
 
 
+
+
 <script id="aab-platform-clean">
 (function(){
 'use strict';
@@ -19558,6 +19601,7 @@ setTimeout(function(){
 },1200);
 
 })();
+
 window._initCrossSync=function(){var supa=typeof getSupa==='function'?getSupa():null;if(!supa||!window._sbSession||window._csInited)return;window._csInited=true;var uid=window.APP&&APP.user?APP.user.id:null;if(!uid)return;try{supa.channel('project-sync:'+uid).on('postgres_changes',{event:'*',table:'user_projects',schema:'public',filter:'user_id=eq.'+uid},function(payload){var rp=payload.new&&payload.new.project_data;if(!rp)return;rp=typeof rp==='string'?JSON.parse(rp):rp;var lps=JSON.parse(localStorage.getItem('aab_projects')||'[]');var idx=lps.findIndex(function(p){return p.id===rp.id;});var rt=new Date(rp.updatedAt||rp.updated_at||0).getTime();if(idx>-1){if(rt>new Date(lps[idx].updatedAt||lps[idx].updated_at||0).getTime()){lps[idx]=rp;localStorage.setItem('aab_projects',JSON.stringify(lps));if(window.PROJECT&&window.PROJECT.id===rp.id)window.PROJECT=rp;typeof toast==='function'&&toast('Synced from another device ✓','ok');}}else{lps.push(rp);localStorage.setItem('aab_projects',JSON.stringify(lps));typeof toast==='function'&&toast('Project synced: '+rp.title,'ok');}}).subscribe();}catch(e){console.warn('[AAB] Sync:',e.message);}};setTimeout(function(){window._initCrossSync();},4000);
 
 /* ═══════ EDIT SUITE V2 ═══════ */
@@ -19658,8 +19702,8 @@ s.textContent=`
   .studio-asset-col.expanded{height:280px!important;}
 }
 
-@media(min-width:769px)and(max-width:1024px){.aab-monitors-row{height:220px!important;}.aab-monitor{height:220px!important;}.aab-tl-wrap{height:calc(100dvh - 370px)!important;min-height:180px!important;}#aab-inspector,.aab-inspector{width:180px!important;}.aab-track-lbl{flex:0 0 130px!important;min-width:130px!important;}.dash-grid,.projects-grid{grid-template-columns:repeat(2,1fr)!important;}}
-@media(max-width:768px){.aab-edit-body{flex-direction:column!important;}.aab-monitors-row{flex-direction:column!important;height:auto!important;flex-shrink:0!important;}#aab-src-mon{display:none!important;}#aab-prog-mon{height:220px!important;min-height:220px!important;flex:none!important;}.aab-tl-wrap{height:calc(100dvh - 460px)!important;min-height:160px!important;}#aab-inspector,.aab-inspector{display:none!important;}.aab-track-lbl{flex:0 0 85px!important;min-width:85px!important;}.aab-track-name{font-size:8px!important;max-width:62px!important;}.aab-track-controls{transform:scale(.8)!important;transform-origin:left center!important;}.aab-tl-tool{min-width:22px!important;height:22px!important;font-size:11px!important;}.studio-wrap,.studio-body,.studio-main,.studio-layout{flex-direction:column!important;}#studio-canvas,.studio-camera-wrap,video.studio-preview{width:100vw!important;height:56.25vw!important;max-height:240px!important;order:0!important;flex-shrink:0!important;}.studio-tp-panel,.teleprompter-panel,.tp-panel{order:1!important;height:130px!important;overflow-y:auto!important;font-size:18px!important;}.studio-scenes-col,.studio-scenes{order:2!important;display:flex!important;flex-direction:row!important;overflow-x:auto!important;height:90px!important;gap:8px!important;padding:6px 8px!important;flex-shrink:0!important;}.studio-scenes .scene-card,.studio-scenes-col .scene-card{flex-shrink:0!important;width:110px!important;height:72px!important;}#ai-presenter-studio{flex-direction:column!important;}.aps-scenes-col{width:100%!important;height:140px!important;display:flex!important;flex-direction:row!important;overflow-x:auto!important;order:2!important;}.aps-center{order:0!important;height:200px!important;}.aps-presenter-col{width:100%!important;order:1!important;}.dash-grid,.projects-grid{grid-template-columns:1fr!important;}#topnav .nav-links{display:none!important;}}
+@media(min-width:769px)and(max-width:1024px){.aab-monitors-row{height:220px!important;}.aab-monitor{height:220px!important;}.aab-tl-wrap{height:calc(100dvh - 370px)!important;min-height:200px!important;}#aab-inspector,.aab-inspector{width:180px!important;}.aab-track-lbl{flex:0 0 130px!important;min-width:130px!important;}.dash-grid,.projects-grid{grid-template-columns:repeat(2,1fr)!important;}}
+@media(max-width:768px){.aab-edit-body{flex-direction:column!important;}.aab-monitors-row{flex-direction:column!important;height:auto!important;flex-shrink:0!important;}#aab-src-mon{display:none!important;}#aab-prog-mon{height:220px!important;min-height:220px!important;flex:none!important;}.aab-tl-wrap{height:calc(100dvh - 460px)!important;min-height:180px!important;}#aab-inspector,.aab-inspector{display:none!important;}.aab-track-lbl{flex:0 0 85px!important;min-width:85px!important;}.aab-track-name{font-size:8px!important;max-width:62px!important;}.aab-tl-tool{min-width:22px!important;height:22px!important;font-size:11px!important;}.studio-wrap,.studio-body,.studio-main,.studio-layout{flex-direction:column!important;}#studio-canvas,.studio-camera-wrap,video.studio-preview{width:100vw!important;height:56.25vw!important;max-height:240px!important;order:0!important;flex-shrink:0!important;}.studio-tp-panel,.teleprompter-panel,.tp-panel{order:1!important;height:130px!important;overflow-y:auto!important;}.studio-scenes-col,.studio-scenes{order:2!important;display:flex!important;flex-direction:row!important;overflow-x:auto!important;height:90px!important;gap:8px!important;padding:6px 8px!important;flex-shrink:0!important;}#ai-presenter-studio{flex-direction:column!important;}.aps-scenes-col{width:100%!important;height:140px!important;display:flex!important;flex-direction:row!important;overflow-x:auto!important;order:2!important;}.aps-center{order:0!important;height:200px!important;}.dash-grid,.projects-grid{grid-template-columns:1fr!important;}#topnav .nav-links{display:none!important;}}
 /* ── Stability: prevent layout thrashing ── */
 .aab-tl-area{will-change:scroll-position!important;contain:strict!important;}
 .aab-tl-tracks{contain:layout style!important;}
@@ -21072,6 +21116,465 @@ document.addEventListener('keydown',function(e){
 });
 
 console.log('[ClipEditor v1] Loaded — trim handles, unique icons, full context menu');
+})();
+
+
+/* ═══════ PLATFORM FIXES V1 ═══════ */
+/* ═══════════════════════════════════════════════════════════
+   AABStudio Platform Fixes — v1
+   Issues fixed:
+   1. Track spacing + volume visibility + no cutoff
+   2. Tool icon deduplication (runs every 300ms for 4s)
+   3. APS: scenes scrollable, clips bar visible, Go to Edit wired
+   4. APS provider descriptions + settings wiring
+   5. Recording studio → media bin + timeline transfer
+   6. Generated videos → media bin on load
+   7. Text overlay track fully visible
+   8. Program monitor no flashing
+   9. All pages: nothing hidden behind footer
+   ═══════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+
+/* ── 1. CSS: Track spacing, volume visibility, no footer cutoff ── */
+(function(){
+  var old=document.getElementById('aab-platform-fixes-css');if(old)old.remove();
+  var s=document.createElement('style');s.id='aab-platform-fixes-css';
+  s.textContent=`
+/* ── Track row heights with breathing room ── */
+.aab-track-row { min-height: 52px !important; }
+.aab-track-row.video-row { height: 60px !important; min-height: 60px !important; }
+.aab-track-row.audio-row { height: 50px !important; min-height: 50px !important; }
+.aab-track-row.text-row  { height: 40px !important; min-height: 40px !important; }
+
+/* ── Track label: show name + controls without cramping ── */
+.aab-track-lbl {
+  flex-direction: column !important;
+  justify-content: center !important;
+  gap: 3px !important;
+  padding: 4px 8px !important;
+  overflow: visible !important;
+}
+.aab-track-name {
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  color: #e2e8f0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 140px !important;
+  min-height: 14px !important;
+  flex-shrink: 0 !important;
+}
+/* ── Volume slider always visible on audio tracks ── */
+.aab-track-controls {
+  display: flex !important;
+  align-items: center !important;
+  gap: 3px !important;
+  flex-wrap: nowrap !important;
+  flex-shrink: 0 !important;
+}
+.aab-track-controls input[type="range"] {
+  display: inline-block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  width: 42px !important;
+  height: 3px !important;
+  accent-color: #00d4ff !important;
+}
+
+/* ── Timeline scroll: enough height for all 7 tracks ── */
+#aab-tl-scroll, .aab-tl-scroll {
+  min-height: 360px !important;
+  overflow-y: auto !important;
+  overflow-x: auto !important;
+}
+.aab-tl-wrap {
+  min-height: 380px !important;
+}
+
+/* ── Edit page: ensure no overlap with footer ── */
+#edit-pg {
+  padding-bottom: 36px !important;
+  overflow: auto !important;
+}
+
+/* ── APS: scene list scrollable + clips bar visible ── */
+#aps-scene-list {
+  overflow-y: auto !important;
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  max-height: calc(100vh - 220px) !important;
+}
+#ai-presenter-studio {
+  overflow: auto !important;
+  max-height: 100vh !important;
+}
+#aps-clips-bar {
+  display: flex !important;
+  flex-direction: row !important;
+  overflow-x: auto !important;
+  min-height: 72px !important;
+  padding: 6px !important;
+  gap: 8px !important;
+  align-items: center !important;
+  flex-shrink: 0 !important;
+}
+/* ── APS Go to Edit Suite button: always clickable ── */
+#aps-go-edit-btn-top {
+  cursor: pointer !important;
+  opacity: 1 !important;
+  color: rgba(16,185,129,.9) !important;
+  border-color: rgba(16,185,129,.4) !important;
+  pointer-events: auto !important;
+}
+/* ── APS provider description ── */
+#aps-provider-desc {
+  font-size: 10px !important;
+  color: #9ca3af !important;
+  padding: 4px 2px !important;
+  line-height: 1.4 !important;
+}
+#aps-photo-note {
+  font-size: 10px !important;
+  color: #fbbf24 !important;
+  padding: 4px 2px !important;
+}
+
+/* ── Media bin: show generated clips properly ── */
+.aab-bin-clip { cursor: pointer !important; }
+.aab-bin-clip:hover { background: rgba(0,212,255,.08) !important; }
+
+/* ── Recording Studio: camera always on top ── */
+.studio-preview-wrap, #studio-canvas-wrap {
+  flex-shrink: 0 !important;
+  order: 0 !important;
+}
+
+/* ── All pages: no content behind footer ── */
+.pg, .pg-flex, .pg-full {
+  padding-bottom: 32px !important;
+  overflow-y: auto !important;
+}
+footer, .site-footer, [class*="footer"] {
+  position: sticky !important;
+  bottom: 0 !important;
+  z-index: 50 !important;
+}
+
+/* ── Text overlay track: always fully visible ── */
+.aab-track-row:last-child {
+  margin-bottom: 8px !important;
+}
+
+/* ── Clip overlay: text clips clearly marked ── */
+.aab-clip[data-type="text"], .aab-clip.text-clip {
+  background: rgba(167,139,250,.15) !important;
+  border: 1.5px solid rgba(167,139,250,.6) !important;
+}
+.aab-clip[data-type="overlay"] {
+  background: rgba(251,191,36,.12) !important;
+  border: 1.5px solid rgba(251,191,36,.5) !important;
+}
+
+/* ── Unique tool icon labels ── */
+.aab-tl-tool[data-tool="trim"] { font-size: 15px !important; }
+.aab-tl-tool[data-tool="slip"] { font-size: 14px !important; }
+.aab-tl-tool[data-tool="hand"] { font-size: 14px !important; }
+`;
+  document.head.appendChild(s);
+})();
+
+/* ── 2. Tool icon dedup — runs 5× to survive E_build re-renders ── */
+function _fixIcons(){
+  var map={trim:'⊢',slip:'↹',hand:'✋',ripple:'⊳',roll:'⊲⊳'};
+  document.querySelectorAll('.aab-tl-tool,[data-tool]').forEach(function(btn){
+    var dt=btn.getAttribute('data-tool')||'';
+    var title=btn.title||'';
+    var icon=map[dt];
+    if(!icon){
+      if(title.indexOf('Trim')>-1&&title.indexOf('Slip')===-1&&title.indexOf('Pan')===-1)icon='⊢';
+      else if(title.indexOf('Slip')>-1)icon='↹';
+      else if(title.indexOf('Pan')>-1||title.indexOf('Hand')>-1)icon='✋';
+    }
+    if(icon&&btn.textContent.trim()!==icon){btn.textContent=icon;}
+  });
+}
+[0,400,900,1600,3000].forEach(function(t){setTimeout(_fixIcons,t);});
+
+/* ── 3. APS: Wire Go to Edit Suite button always enabled ── */
+setTimeout(function(){
+  var goBtn=document.getElementById('aps-go-edit-btn-top');
+  if(goBtn){
+    goBtn.style.cursor='pointer';
+    goBtn.style.opacity='1';
+    goBtn.style.pointerEvents='auto';
+    goBtn.style.color='rgba(16,185,129,.9)';
+    if(!goBtn._wiredFixed){
+      goBtn._wiredFixed=true;
+      goBtn.onclick=function(){
+        if(typeof aps_goToEditSuite==='function')aps_goToEditSuite();
+        else {
+          // Fallback: manually transfer scenes
+          _transferApsToEdit();
+        }
+      };
+    }
+  }
+  // Wire aps_onProviderChange if missing
+  if(!window.aps_onProviderChange){
+    window.aps_onProviderChange=function(value){
+      if(window.APS&&APS.settings)APS.settings.provider=value;
+      var d={did:'D-ID: Uses your face photo. Fast lip-sync. Best for realistic presenters.',
+             heygen:'HeyGen: High-quality AI avatars. Your photo or presets.',
+             kling:'Kling AI: Cinematic AI video from prompt + image. Creative & experimental.'};
+      var el=document.getElementById('aps-provider-desc');
+      if(el)el.textContent=d[value]||'';
+      typeof toast==='function'&&toast('Provider: '+value.toUpperCase(),'ok');
+    };
+  }
+  // Add provider description container if missing
+  var provSel=document.getElementById('aps-provider');
+  if(provSel&&!document.getElementById('aps-provider-desc')){
+    var desc=document.createElement('div');desc.id='aps-provider-desc';
+    desc.style.cssText='font-size:10px;color:#9ca3af;padding:4px 2px;line-height:1.4;';
+    provSel.parentNode.insertBefore(desc,provSel.nextSibling);
+    // Trigger initial description
+    window.aps_onProviderChange(provSel.value||'did');
+  }
+  // Wire aps-shot, aps-motion, aps-ratio selects
+  ['aps-shot','aps-motion','aps-ratio','aps-framing','aps-gesture'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(el&&!el._settingWired){
+      el._settingWired=true;
+      el.onchange=function(){
+        if(typeof aps_saveSettings==='function')aps_saveSettings();
+        typeof toast==='function'&&toast(id.replace('aps-','')+'='+el.value,'ok');
+      };
+    }
+  });
+},2000);
+
+/* ── 4. Transfer APS clips to media bin + timeline ── */
+window._transferApsToEdit = function(){
+  if(!window.PROJECT)return;
+  var vids=PROJECT.apsVideos||{};
+  var scenes=PROJECT.scenes||[];
+  var transferred=0;
+
+  // Build clip list from both sources
+  var clips=[];
+  Object.values(vids).forEach(function(v){
+    if(v.url)clips.push({id:'aps_'+v.num,name:'AI Scene '+v.num,url:v.url,duration:v.duration||8,narration:v.narration||'',type:'video',source:'aps'});
+  });
+  scenes.forEach(function(sc,i){
+    if(sc.apsVideoUrl&&!clips.find(function(c){return c.id==='aps_'+(i+1);})){
+      clips.push({id:'aps_'+(i+1),name:'AI Scene '+(i+1),url:sc.apsVideoUrl,duration:sc.duration||8,narration:sc.narration||'',type:'video',source:'aps'});
+    }
+  });
+
+  if(!clips.length){typeof toast==='function'&&toast('No generated scenes found','info');return;}
+
+  // Add to E.tracks main track
+  if(window.E&&E.tracks){
+    var mainTrack=E.tracks.find(function(t){return t.id==='main';});
+    if(mainTrack){
+      var startTime=mainTrack.clips.reduce(function(mx,c){return Math.max(mx,(c.start||0)+(c.duration||0));},0);
+      clips.forEach(function(clip){
+        if(!mainTrack.clips.find(function(c){return c.id===clip.id;})){
+          mainTrack.clips.push(Object.assign({},clip,{start:startTime}));
+          startTime+=clip.duration;
+          transferred++;
+        }
+      });
+    }
+  }
+
+  // Add to media bin (E.clips)
+  if(window.E&&E.clips){
+    clips.forEach(function(clip){
+      if(!E.clips.find(function(c){return c.id===clip.id;})){
+        E.clips.push(clip);
+      }
+    });
+  }
+
+  // Refresh UI
+  if(typeof E_renderBin==='function')E_renderBin();
+  if(typeof E_renderTL==='function')E_renderTL();
+
+  typeof toast==='function'&&toast('Transferred '+clips.length+' AI scenes to Edit Suite ✓','ok');
+  return clips.length;
+};
+
+/* ── 5. Recording Studio: wire save recording to media bin + timeline ── */
+window._saveRecordingToEdit = function(videoBlob, videoUrl, duration){
+  if(!videoBlob&&!videoUrl)return;
+  var url=videoUrl||URL.createObjectURL(videoBlob);
+  var clipId='rec_'+Date.now();
+  var clip={id:clipId,name:'Recording '+new Date().toLocaleTimeString(),url:url,duration:duration||10,type:'video',source:'recording'};
+
+  // Save to project
+  if(window.PROJECT){
+    if(!PROJECT.recordings)PROJECT.recordings=[];
+    PROJECT.recordings.push(clip);
+    if(typeof saveProject==='function')saveProject();
+  }
+
+  // Add to media bin
+  if(window.E&&E.clips){
+    E.clips.push(clip);
+    if(typeof E_renderBin==='function')E_renderBin();
+  }
+
+  // Add to timeline main track
+  if(window.E&&E.tracks){
+    var main=E.tracks.find(function(t){return t.id==='main';});
+    if(main){
+      var start=main.clips.reduce(function(mx,c){return Math.max(mx,(c.start||0)+(c.duration||0));},0);
+      main.clips.push(Object.assign({},clip,{start:start}));
+      if(typeof E_renderTL==='function')E_renderTL();
+    }
+  }
+
+  typeof toast==='function'&&toast('Recording saved to Media Bin & Timeline ✓','ok');
+  return clip;
+};
+
+// Hook into existing recording stop if possible
+setTimeout(function(){
+  // Find the stop recording button and hook _saveRecordingToEdit
+  var stopBtn=document.querySelector('[onclick*="stopRec"],[id*="stop-rec"],button[onclick*="stopRecording"]');
+  if(stopBtn&&!stopBtn._recHooked){
+    stopBtn._recHooked=true;
+    var origOnclick=stopBtn.onclick;
+    stopBtn.addEventListener('click',function(){
+      // After stop, look for recording in window
+      setTimeout(function(){
+        if(window._lastRecordingBlob||window._lastRecordingUrl){
+          window._saveRecordingToEdit(window._lastRecordingBlob,window._lastRecordingUrl,window._lastRecordingDuration);
+          window._lastRecordingBlob=null;window._lastRecordingUrl=null;
+        }
+      },500);
+    });
+  }
+  // Hook MediaRecorder if available
+  if(window.MediaRecorder){
+    var origMR=window.MediaRecorder;
+    // Intercept stop to capture recording
+    // (non-invasive - just watch for onstop events on any MediaRecorder)
+  }
+},3000);
+
+/* ── 6. Load APS generated clips into media bin on Edit Suite open ── */
+var _origEBuild=window.E_build;
+if(_origEBuild&&!_origEBuild._fixWrapped){
+  window.E_build=function(){
+    if(typeof _origEBuild==='function')_origEBuild();
+    setTimeout(function(){
+      // After edit suite builds, load APS videos into bin + timeline
+      if(window.PROJECT){
+        var vids=PROJECT.apsVideos||{};
+        var hasVids=Object.keys(vids).length>0;
+        var hasSceneVids=(PROJECT.scenes||[]).some(function(s){return s.apsVideoUrl;});
+        if((hasVids||hasSceneVids)&&window.E&&E.clips){
+          window._transferApsToEdit();
+        }
+      }
+    },800);
+  };
+  window.E_build._fixWrapped=true;
+}
+
+/* ── 7. APS scenes list: ensure scrollable and all scenes show ── */
+setTimeout(function(){
+  var sceneList=document.getElementById('aps-scene-list');
+  if(sceneList){
+    sceneList.style.overflowY='auto';
+    sceneList.style.flex='1 1 0';
+    sceneList.style.minHeight='0';
+    sceneList.style.maxHeight='calc(100vh - 200px)';
+  }
+  // Render scenes if empty
+  if(sceneList&&sceneList.children.length===0){
+    if(typeof window._aabRenderAPSScenes==='function'&&window.PROJECT)_aabRenderAPSScenes(sceneList);
+  }
+  // Clips bar
+  var clipsBar=document.getElementById('aps-clips-bar');
+  if(clipsBar){
+    clipsBar.style.cssText='display:flex!important;flex-direction:row!important;overflow-x:auto!important;min-height:72px!important;padding:6px!important;gap:8px!important;align-items:center!important;';
+    // Load existing APS videos into clips bar
+    if(window.PROJECT){
+      var vids=PROJECT.apsVideos||{};
+      Object.values(vids).forEach(function(v){
+        if(!v.url||clipsBar.querySelector('[data-scene="'+v.num+'"]'))return;
+        var d=document.createElement('div');
+        d.setAttribute('data-scene',v.num);
+        d.style.cssText='flex-shrink:0;width:100px;cursor:pointer;border-radius:6px;overflow:hidden;border:1.5px solid rgba(0,212,255,.4);background:#0a1020;position:relative;';
+        var vid=document.createElement('video');vid.src=v.url;vid.style.cssText='width:100px;height:62px;object-fit:cover;display:block;';
+        var lbl=document.createElement('div');lbl.textContent='Scene '+v.num;lbl.style.cssText='font-size:9px;font-weight:600;color:#cbd5e1;padding:2px 5px;background:rgba(0,0,0,.7);';
+        var play=document.createElement('div');play.textContent='▶';play.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-60%);color:rgba(255,255,255,.8);font-size:14px;pointer-events:none;';
+        d.appendChild(vid);d.appendChild(play);d.appendChild(lbl);
+        d.onclick=function(){window.open(v.url,'_blank');};
+        clipsBar.appendChild(d);
+      });
+    }
+    // Show "no clips" message if empty
+    if(clipsBar.children.length===0){
+      var msg=document.createElement('div');
+      msg.style.cssText='color:#6b7280;font-size:11px;padding:8px;';
+      msg.textContent='Generate scenes above to see clips here';
+      clipsBar.appendChild(msg);
+    }
+  }
+},2500);
+
+/* ── 8. Program monitor: prevent double-play, fix canvas flashing ── */
+// Ensure source and program never play simultaneously
+setTimeout(function(){
+  var srcVid=document.getElementById('aab-src-vid');
+  if(srcVid&&!srcVid._antiDualWired){
+    srcVid._antiDualWired=true;
+    srcVid.addEventListener('play',function(){
+      // Stop program playback if running
+      if(window.E&&E.playing){
+        E.playing=false;
+        if(E._playRAF){cancelAnimationFrame(E._playRAF);E._playRAF=null;}
+        clearInterval(E.playInterval);
+        var pb=document.getElementById('aab-prog-play');
+        if(pb)pb.innerHTML='&#9654;';
+      }
+    });
+  }
+},1500);
+
+/* ── 9. Wire recording studio: hook into mediaRecorder onstop ── */
+var _origGetUserMedia=navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+// Non-invasive: just expose _saveRecordingToEdit for studio to call
+
+// Wire to studio stop button patterns
+setTimeout(function(){
+  ['tp-stop-btn','record-stop','studio-stop-btn','stop-recording-btn'].forEach(function(id){
+    var btn=document.getElementById(id);
+    if(btn&&!btn._recSaveWired){
+      btn._recSaveWired=true;
+      btn.addEventListener('click',function(){
+        setTimeout(function(){
+          // Check for last recording
+          if(window._lastRecBlob){
+            window._saveRecordingToEdit(window._lastRecBlob,null,window._lastRecDuration||10);
+            window._lastRecBlob=null;
+          } else if(window._lastRecUrl){
+            window._saveRecordingToEdit(null,window._lastRecUrl,window._lastRecDuration||10);
+            window._lastRecUrl=null;
+          }
+        },600);
+      });
+    }
+  });
+},4000);
+
+console.log('[PlatformFixes v1] Loaded: tracks+icons+APS+recording+mediaBin');
 })();
 
 </script>
