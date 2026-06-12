@@ -5012,7 +5012,7 @@ function _mkTimeline(){
   [["select","V","▲ Select"],["razor","R","✂ Razor"],["trim","T","⬤ Trim"],["slip","S","⇆ Slip"],["hand","H","✋ Pan"]].forEach(function(s){
     var btn=_el("button","aab-tl-tool"+(s[0]==="select"?" on":""));
     btn.dataset.tool=s[0];
-    btn.textContent=s[0]==="select"?"↖":s[0]==="razor"?"✂":s[0]==="trim"?"⊢":s[0]==="slip"?"↹":"✋";
+    btn.textContent=s[0]==="select"?"↖":s[0]==="razor"?"✂":"↔";
     btn.title=s[2]+" ("+s[1]+")";btn.dataset.tool=s[0];
     btn.onclick=function(){
       tb.querySelectorAll(".aab-tl-tool").forEach(function(b){b.classList.remove("on");});
@@ -19557,56 +19557,38 @@ setTimeout(function(){
 
 })();
 
-/* ═══ CROSS-BROWSER SYNC via Supabase Realtime ═══ */
+/* ═══ CROSS-BROWSER / CROSS-DEVICE SYNC ═══ */
 window._initCrossSync = function(){
   var supa=typeof getSupa==='function'?getSupa():null;
   if(!supa||!window._sbSession||window._csInited)return;
   window._csInited=true;
-
-  // Subscribe to project changes via Supabase Realtime
   var uid=window.APP&&APP.user?APP.user.id:null;
   if(!uid)return;
-
-  var channel=supa.channel('project-sync:'+uid)
-    .on('postgres_changes',{
-      event:'*',table:'user_projects',schema:'public',
-      filter:'user_id=eq.'+uid
-    },function(payload){
-      // Another browser/device saved a project
-      var remoteData=payload.new&&payload.new.project_data;
-      if(!remoteData)return;
-      var rp=typeof remoteData==='string'?JSON.parse(remoteData):remoteData;
-      // Update local if remote is newer
-      var localProjs=JSON.parse(localStorage.getItem('aab_projects')||'[]');
-      var idx=localProjs.findIndex(function(p){return p.id===rp.id;});
-      if(idx>-1){
-        var local=localProjs[idx];
+  try{
+    supa.channel('project-sync:'+uid)
+      .on('postgres_changes',{event:'*',table:'user_projects',schema:'public',filter:'user_id=eq.'+uid},function(payload){
+        var remoteData=payload.new&&payload.new.project_data;
+        if(!remoteData)return;
+        var rp=typeof remoteData==='string'?JSON.parse(remoteData):remoteData;
+        var localProjs=JSON.parse(localStorage.getItem('aab_projects')||'[]');
+        var idx=localProjs.findIndex(function(p){return p.id===rp.id;});
         var remoteTime=new Date(rp.updatedAt||rp.updated_at||0).getTime();
-        var localTime=new Date(local.updatedAt||local.updated_at||0).getTime();
-        if(remoteTime>localTime){
-          localProjs[idx]=rp;
-          localStorage.setItem('aab_projects',JSON.stringify(localProjs));
-          if(window.PROJECT&&window.PROJECT.id===rp.id){
-            window.PROJECT=rp;
-            if(typeof renderProjectList==='function')renderProjectList();
-            if(typeof toast==='function')toast('Project synced from another device ✓','ok');
+        if(idx>-1){
+          var localTime=new Date(localProjs[idx].updatedAt||localProjs[idx].updated_at||0).getTime();
+          if(remoteTime>localTime){
+            localProjs[idx]=rp;localStorage.setItem('aab_projects',JSON.stringify(localProjs));
+            if(window.PROJECT&&window.PROJECT.id===rp.id){window.PROJECT=rp;}
+            typeof toast==='function'&&toast('Synced from another device ✓','ok');
           }
+        } else {
+          localProjs.push(rp);localStorage.setItem('aab_projects',JSON.stringify(localProjs));
+          typeof toast==='function'&&toast('New project synced: '+rp.title,'ok');
         }
-      } else {
-        // New project from another device
-        localProjs.push(rp);
-        localStorage.setItem('aab_projects',JSON.stringify(localProjs));
-        if(typeof toast==='function')toast('New project synced: '+rp.title,'ok');
-      }
-    })
-    .subscribe();
-
-  window._csSyncChannel=channel;
-  console.log('[AAB] Cross-device sync active for user '+uid);
+      }).subscribe();
+    console.log('[AAB] Cross-device sync active');
+  }catch(e){console.warn('[AAB] Sync init failed:',e.message);}
 };
-
-// Init sync after auth
-setTimeout(function(){window._initCrossSync();},3000);
+setTimeout(function(){window._initCrossSync();},4000);
 
 
 /* ═══════ EDIT SUITE V2 ═══════ */
@@ -19708,53 +19690,49 @@ s.textContent=`
 }
 
 
-/* ═══ MOBILE & TABLET (≤1024px) ═══ */
-@media (max-width:1024px){
-  /* Edit Suite: stack vertically */
-  .aab-edit-body{flex-direction:column!important;}
-  .aab-monitors-row{flex-direction:row!important;height:200px!important;flex-shrink:0!important;}
-  .aab-monitor{height:200px!important;}
-  #aab-inspector,.aab-inspector{display:none!important;}
-  /* Timeline: full width */
-  .aab-tl-wrap{flex:1!important;min-height:200px!important;}
-  .aab-track-lbl{flex:0 0 120px!important;min-width:120px!important;}
-  .aab-track-name{font-size:9px!important;max-width:95px!important;}
-  /* Toolbar: smaller */
-  .aab-tl-tool{width:24px!important;height:24px!important;font-size:12px!important;}
-}
-@media (max-width:768px){
-  /* Mobile: single column */
-  .aab-monitors-row{flex-direction:column!important;height:auto!important;}
-  #aab-src-mon{display:none!important;}  /* hide source on mobile, keep program */
-  #aab-prog-mon{height:220px!important;flex:none!important;}
-  .aab-tl-wrap{height:calc(100dvh - 420px)!important;min-height:160px!important;}
-  .aab-track-lbl{flex:0 0 80px!important;min-width:80px!important;}
-  .aab-track-name{font-size:8px!important;max-width:60px!important;}
-  .aab-track-controls{transform:scale(.85)!important;transform-origin:left center!important;}
-  /* Recording Studio */
-  .studio-wrap,.studio-body,.studio-main{flex-direction:column!important;}
-  #studio-canvas,video.studio-vid{width:100vw!important;height:56.25vw!important;max-height:250px!important;order:0!important;}
-  .studio-teleprompter,.tp-panel,.studio-tp-panel{order:1!important;height:120px!important;font-size:16px!important;}
-  .studio-scenes,.studio-scenes-col{order:2!important;display:flex!important;flex-direction:row!important;overflow-x:auto!important;height:100px!important;gap:8px!important;padding:6px!important;}
-  .studio-scenes .scene-card,.studio-scenes-col .scene-card{flex-shrink:0!important;width:120px!important;height:80px!important;}
-  /* APS */
-  #ai-presenter-studio .aps-layout{flex-direction:column!important;}
-  #ai-presenter-studio .aps-scenes-col{width:100%!important;height:140px!important;flex-direction:row!important;overflow-x:auto!important;}
-  #ai-presenter-studio .aps-center{height:200px!important;}
-  #ai-presenter-studio .aps-presenter-col{width:100%!important;height:auto!important;}
-  /* Dashboard */
-  .dash-grid,.projects-grid{grid-template-columns:1fr!important;}
-  /* Navigation */
-  #topnav .nav-links{display:none!important;}
-  #topnav .nav-mobile-menu{display:flex!important;}
-}
+/* ═══ RESPONSIVE: Tablet (769-1024px) ═══ */
 @media (min-width:769px) and (max-width:1024px){
-  /* Tablet */
   .aab-monitors-row{height:220px!important;}
   .aab-monitor{height:220px!important;}
-  .aab-tl-wrap{height:calc(100dvh - 380px)!important;}
-  #ai-presenter-studio .aps-scenes-col{width:200px!important;}
+  .aab-tl-wrap{height:calc(100dvh - 370px)!important;min-height:180px!important;}
+  #aab-inspector,.aab-inspector{width:180px!important;}
+  .aab-track-lbl{flex:0 0 130px!important;min-width:130px!important;}
+  .aab-track-name{font-size:9px!important;}
   .dash-grid,.projects-grid{grid-template-columns:repeat(2,1fr)!important;}
+  #ai-presenter-studio .aps-scenes-col{width:200px!important;}
+}
+/* ═══ RESPONSIVE: Mobile (≤768px) ═══ */
+@media (max-width:768px){
+  /* Edit Suite */
+  .aab-edit-body{flex-direction:column!important;}
+  .aab-monitors-row{flex-direction:column!important;height:auto!important;flex-shrink:0!important;}
+  #aab-src-mon{display:none!important;}
+  #aab-prog-mon{height:220px!important;min-height:220px!important;flex:none!important;}
+  .aab-tl-wrap{height:calc(100dvh - 460px)!important;min-height:160px!important;}
+  #aab-inspector,.aab-inspector{display:none!important;}
+  .aab-track-lbl{flex:0 0 85px!important;min-width:85px!important;}
+  .aab-track-name{font-size:8px!important;max-width:62px!important;}
+  .aab-track-controls{transform:scale(.8)!important;transform-origin:left center!important;}
+  .aab-tl-tool{min-width:22px!important;height:22px!important;font-size:11px!important;padding:0 2px!important;}
+  /* Recording Studio: camera first */
+  .studio-wrap,.studio-body,.studio-main,.studio-layout{flex-direction:column!important;}
+  #studio-canvas,.studio-camera-wrap,video.studio-preview{width:100vw!important;height:56.25vw!important;max-height:240px!important;order:0!important;flex-shrink:0!important;}
+  .studio-tp-panel,.teleprompter-panel,.tp-panel{order:1!important;height:130px!important;overflow-y:auto!important;font-size:18px!important;}
+  .studio-scenes-col,.studio-scenes{order:2!important;display:flex!important;flex-direction:row!important;overflow-x:auto!important;height:90px!important;min-height:90px!important;gap:8px!important;padding:6px 8px!important;flex-shrink:0!important;}
+  .studio-scenes .scene-card,.studio-scenes-col .scene-card,.scene-item{flex-shrink:0!important;width:110px!important;height:72px!important;}
+  .studio-asset-col,.studio-tools-col{position:fixed!important;bottom:0!important;left:0!important;right:0!important;height:48px!important;overflow:hidden!important;background:#0a1020!important;border-top:.5px solid rgba(255,255,255,.08)!important;z-index:100!important;transition:height .3s!important;}
+  .studio-asset-col.open,.studio-tools-col.open{height:260px!important;}
+  /* AI Presenter Studio mobile */
+  #ai-presenter-studio{flex-direction:column!important;}
+  #ai-presenter-studio .aps-left-col,.aps-scenes-col{width:100%!important;height:140px!important;display:flex!important;flex-direction:row!important;overflow-x:auto!important;order:2!important;}
+  #ai-presenter-studio .aps-center-col,.aps-center{order:0!important;height:200px!important;}
+  #ai-presenter-studio .aps-right-col,.aps-presenter-col{width:100%!important;order:1!important;}
+  /* Dashboard */
+  .dash-grid,.projects-grid,[class*="grid"]{grid-template-columns:1fr!important;}
+  /* Topnav */
+  #topnav .nav-links,#topnav [class*="nav-links"]{display:none!important;}
+  /* Script/Scene builder */
+  .scene-board,.scene-list{flex-direction:column!important;}
 }
 
 /* ── Stability: prevent layout thrashing ── */
@@ -21071,14 +21049,26 @@ window._CE_showClipMenu = function(e, clip, track){
    Apply to all clips after E_renderTL
    ═══════════════════════════════════ */
 window._CE_enhanceAll = function(){
-  if(!window.AABE||!AABE.tracks)return;
-  AABE.tracks.forEach(function(track){
+  var clipEls=Array.from(document.querySelectorAll('.aab-clip'));
+  if(!clipEls.length)return;
+  
+  // Build clip map from AABE
+  var clipMap={};
+  window.AABE&&AABE.tracks&&AABE.tracks.forEach(function(track){
     track.clips.forEach(function(clip){
-      var clipEl=document.querySelector('.aab-clip[data-id="'+clip.id+'"]');
-      if(clipEl&&!clipEl._ceEnhanced){
-        window._CE_enhanceClip(clipEl,clip,track);
-      }
+      clipMap[clip.id]={clip:clip,track:track};
     });
+  });
+  
+  // Enhance each DOM clip element
+  clipEls.forEach(function(clipEl){
+    if(clipEl._ceEnhanced)return;
+    var cid=clipEl.getAttribute('data-id');
+    var tid=clipEl.getAttribute('data-track-id')||'main';
+    var entry=clipMap[cid];
+    var clip=entry?entry.clip:{id:cid||('c'+Date.now()),start:0,duration:8,name:'Clip',type:'video'};
+    var track=entry?entry.track:(window.AABE&&AABE.tracks.find(function(t){return t.id===tid;})||{id:tid,type:'video',color:'rgba(0,150,255,.5)',clips:[],locked:false,muted:false});
+    window._CE_enhanceClip(clipEl,clip,track);
   });
 };
 
@@ -21088,7 +21078,7 @@ window._CE_enhanceAll = function(){
   if(_orig&&!_orig._ceWrapped){
     window.E_renderTL = function(){
       if(typeof _orig==='function')_orig();
-      setTimeout(window._CE_enhanceAll, 50);
+      setTimeout(window._CE_enhanceAll, 200);
     };
     window.E_renderTL._ceWrapped = true;
     window.E_renderTL._orig = _orig;
@@ -21121,7 +21111,7 @@ setTimeout(function(){
   var _obs=new MutationObserver(function(muts){
     if(muts.some(function(m){return Array.from(m.addedNodes).some(function(n){return n.classList&&n.classList.contains('aab-clip');});})){
       clearTimeout(window._CE_timer);
-      window._CE_timer=setTimeout(window._CE_enhanceAll,80);
+      window._CE_timer=setTimeout(window._CE_enhanceAll,250);
     }
   });
   var target=document.getElementById('aab-tl-tracks')||document.querySelector('.aab-tl-tracks')||document.getElementById('edit-pg')||document.body;
