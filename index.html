@@ -18434,6 +18434,8 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
 
 
 
+
+
 <script id="aab-platform-clean">
 (function(){
 'use strict';
@@ -18947,24 +18949,104 @@ window.aps_loadPhoto=function(inp){
   var f=inp&&inp.files&&inp.files[0];if(!f||!f.type.startsWith('image/'))return;
   var r=new FileReader();
   r.onload=function(e){
-    var url=e.target.result;
-    var b64=url.split(',')[1];
+    var url=e.target.result;  // full data URL
+    var b64=url.split(',')[1]; // base64 only
+
+    // Init APS state object
     if(!window.APS)window.APS={};
-    APS.photo=url;APS.photoB64=b64;APS.photoMimeType=f.type;APS.photoFileName=f.name;
-    document.querySelectorAll('#aps-presenter-photo,#aps-photo-preview,.aps-avatar-placeholder,.aps-presenter-placeholder').forEach(function(el){
+    // Store BOTH forms — original code uses full dataURL as photoB64
+    APS.photoB64 = b64;           // base64 only (for API calls)
+    APS.photo = url;              // full data URL
+    APS.photoMimeType = f.type;
+    APS.photoFileName = f.name;
+
+    // 1. Update small thumbnail preview (#aps-photo-preview + wrapper)
+    var preview = document.getElementById('aps-photo-preview');
+    if(preview){preview.src=url;preview.style.display='block';}
+    var previewWrap = document.getElementById('aps-photo-preview-wrap');
+    if(previewWrap){previewWrap.style.display='flex';}
+
+    // 2. Update label text
+    var lbl = document.getElementById('ai-photo-lbl')||document.getElementById('aps-upload-label');
+    if(lbl&&lbl.tagName!=='INPUT'){
+      var lblSpan = lbl.querySelector('span,[class*="lbl"]')||lbl;
+      // Don't replace label, just update its text node or add a status indicator
+    }
+
+    // 3. Update big center avatar in #aps-presenter-img-wrap
+    var wrap = document.getElementById('aps-presenter-img-wrap');
+    if(wrap){
+      // Clear placeholder, show photo
+      var existingImg = wrap.querySelector('img.aps-presenter-real-img');
+      if(!existingImg){
+        existingImg = document.createElement('img');
+        existingImg.className='aps-presenter-real-img';
+        existingImg.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit;z-index:5;';
+        wrap.style.position='relative';
+        wrap.appendChild(existingImg);
+      }
+      existingImg.src=url;
+    }
+
+    // 4. Update upload label to show success state
+    var uploadLabel = document.getElementById('aps-upload-label');
+    if(uploadLabel){
+      uploadLabel.style.borderColor='rgba(0,212,255,.5)';
+      uploadLabel.style.background='rgba(0,212,255,.08)';
+      var icon = uploadLabel.querySelector('[class*="icon"],span');
+      // Add checkmark before label text
+      var existCheck = uploadLabel.querySelector('.aps-photo-check');
+      if(!existCheck){
+        var chk=document.createElement('span');chk.className='aps-photo-check';
+        chk.textContent='✓ ';chk.style.color='#10b981';
+        uploadLabel.prepend(chk);
+      }
+    }
+
+    // 5. Show save button
+    var saveBtn = document.getElementById('aps-save-photo-btn');
+    if(saveBtn)saveBtn.style.display='flex';
+
+    // 6. Update any other photo preview containers  
+    document.querySelectorAll('.aps-avatar-placeholder,.aps-presenter-placeholder,[id*="aps-presenter-photo"]').forEach(function(el){
       el.innerHTML='';var img=document.createElement('img');img.src=url;
       img.style.cssText='width:100%;height:100%;object-fit:cover;border-radius:inherit;';el.appendChild(img);
     });
-    typeof toast==='function'&&toast('Photo loaded: '+f.name,'ok');
-  };r.readAsDataURL(f);
+
+    typeof toast==='function'&&toast('Photo ready: '+f.name,'ok');
+  };
+  r.readAsDataURL(f);
 };
+
+// Wire all photo inputs (replace to clear old onchange attributes)
 setTimeout(function(){
   ['aps-photo-input','ai-photo-input'].forEach(function(id){
     var el=document.getElementById(id);if(!el)return;
-    var fresh=el.cloneNode(true);fresh.onchange=function(){window.aps_loadPhoto(this);};
-    if(el.parentNode)el.parentNode.replaceChild(fresh,el);
+    el.onchange=function(){window.aps_loadPhoto(this);};
   });
-},1000);
+  // Also wire the upload button click
+  var uploadLabel = document.getElementById('aps-upload-label');
+  var photoInp = document.getElementById('aps-photo-input');
+  if(uploadLabel&&photoInp&&!uploadLabel._photoWired){
+    uploadLabel._photoWired=true;
+    // Label already wraps input via containment — should work automatically
+    // But also wire direct click as fallback
+    uploadLabel.onclick=function(e){
+      if(e.target===photoInp)return;
+      photoInp.click();
+    };
+  }
+  // Wire the 📁 Upload button  
+  var uploadBtn = document.querySelector('[onclick*="ai-photo-input"]');
+  if(!uploadBtn){
+    var allBtns = Array.from(document.querySelectorAll('button'));
+    var uploadFileBtn = allBtns.find(function(b){return b.textContent.indexOf('Upload')>-1&&b.closest&&b.closest('#aps-photo-drop');});
+    if(uploadFileBtn&&!uploadFileBtn._wired){
+      uploadFileBtn._wired=true;
+      uploadFileBtn.onclick=function(){var i=document.getElementById('aps-photo-input');if(i)i.click();};
+    }
+  }
+},1500);
 
 /* ── APS save character (persists to localStorage + Supabase) ── */
 window.aps_saveCharacter=function(){
