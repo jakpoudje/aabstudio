@@ -5012,7 +5012,7 @@ function _mkTimeline(){
   [["select","V","▲ Select"],["razor","R","✂ Razor"],["trim","T","⬤ Trim"],["slip","S","⇆ Slip"],["hand","H","✋ Pan"]].forEach(function(s){
     var btn=_el("button","aab-tl-tool"+(s[0]==="select"?" on":""));
     btn.dataset.tool=s[0];
-    btn.textContent=s[0]==="select"?"↖":s[0]==="razor"?"✂":"↔";
+    btn.textContent=s[0]==="select"?"↖":s[0]==="razor"?"✂":s[0]==="trim"?"⊢":s[0]==="slip"?"↹":"✋";
     btn.title=s[2]+" ("+s[1]+")";btn.dataset.tool=s[0];
     btn.onclick=function(){
       tb.querySelectorAll(".aab-tl-tool").forEach(function(b){b.classList.remove("on");});
@@ -5378,7 +5378,7 @@ function E_renderTL(){
       E_addClip({url:data.url,type:data.type,name:data.name,duration:data.duration||5},track.id,startT);
     });    track.clips.forEach(function(clip){
       var w=clip.duration*E.pxPerSec;var l=clip.start*E.pxPerSec;
-      var ce2=_el("div","aab-clip"+(E.selectedClipId===clip.id?" sel":""));
+      var ce2=_el("div","aab-clip"+(E.selectedClipId===clip.id?" sel":""));ce2.setAttribute("data-id",clip.id);ce2.setAttribute("data-track-id",track.id);
       ce2.style.left=l+"px";ce2.style.width=Math.max(w,20)+"px";
       ce2.style.background=track.color+"44";ce2.style.borderColor=track.color;
       if(track.type==="video"&&clip.url&&w>40){
@@ -10471,7 +10471,7 @@ function loadDashboard() {
       localStorage.setItem('aab_last_project', PROJECT.id);
       // Sync to cloud (non-blocking)
       if (typeof syncProjectToCloud === 'function') {
-        syncProjectToCloud(PROJECT).catch(function(e){ console.warn('Cloud sync:', e.message); });
+        var _r=syncProjectToCloud(PROJECT);if(_r&&typeof _r.catch==='function')_r.catch(function(e){console.warn('Cloud sync:',e.message);});
       }
       var light = JSON.parse(JSON.stringify(PROJECT));
 
@@ -18452,6 +18452,8 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
 
 
 
+
+
 <script id="aab-platform-clean">
 (function(){
 'use strict';
@@ -19555,6 +19557,57 @@ setTimeout(function(){
 
 })();
 
+/* ═══ CROSS-BROWSER SYNC via Supabase Realtime ═══ */
+window._initCrossSync = function(){
+  var supa=typeof getSupa==='function'?getSupa():null;
+  if(!supa||!window._sbSession||window._csInited)return;
+  window._csInited=true;
+
+  // Subscribe to project changes via Supabase Realtime
+  var uid=window.APP&&APP.user?APP.user.id:null;
+  if(!uid)return;
+
+  var channel=supa.channel('project-sync:'+uid)
+    .on('postgres_changes',{
+      event:'*',table:'user_projects',schema:'public',
+      filter:'user_id=eq.'+uid
+    },function(payload){
+      // Another browser/device saved a project
+      var remoteData=payload.new&&payload.new.project_data;
+      if(!remoteData)return;
+      var rp=typeof remoteData==='string'?JSON.parse(remoteData):remoteData;
+      // Update local if remote is newer
+      var localProjs=JSON.parse(localStorage.getItem('aab_projects')||'[]');
+      var idx=localProjs.findIndex(function(p){return p.id===rp.id;});
+      if(idx>-1){
+        var local=localProjs[idx];
+        var remoteTime=new Date(rp.updatedAt||rp.updated_at||0).getTime();
+        var localTime=new Date(local.updatedAt||local.updated_at||0).getTime();
+        if(remoteTime>localTime){
+          localProjs[idx]=rp;
+          localStorage.setItem('aab_projects',JSON.stringify(localProjs));
+          if(window.PROJECT&&window.PROJECT.id===rp.id){
+            window.PROJECT=rp;
+            if(typeof renderProjectList==='function')renderProjectList();
+            if(typeof toast==='function')toast('Project synced from another device ✓','ok');
+          }
+        }
+      } else {
+        // New project from another device
+        localProjs.push(rp);
+        localStorage.setItem('aab_projects',JSON.stringify(localProjs));
+        if(typeof toast==='function')toast('New project synced: '+rp.title,'ok');
+      }
+    })
+    .subscribe();
+
+  window._csSyncChannel=channel;
+  console.log('[AAB] Cross-device sync active for user '+uid);
+};
+
+// Init sync after auth
+setTimeout(function(){window._initCrossSync();},3000);
+
 
 /* ═══════ EDIT SUITE V2 ═══════ */
 /* ═══════════════════════════════════════════════════════════
@@ -19652,6 +19705,56 @@ s.textContent=`
   /* Bottom drawer for tools */
   .studio-asset-col{position:fixed!important;bottom:0!important;left:0!important;right:0!important;height:40px!important;overflow:hidden!important;transition:height .3s!important;background:#0a1020!important;z-index:100!important;border-top:.5px solid rgba(255,255,255,.1)!important;}
   .studio-asset-col.expanded{height:280px!important;}
+}
+
+
+/* ═══ MOBILE & TABLET (≤1024px) ═══ */
+@media (max-width:1024px){
+  /* Edit Suite: stack vertically */
+  .aab-edit-body{flex-direction:column!important;}
+  .aab-monitors-row{flex-direction:row!important;height:200px!important;flex-shrink:0!important;}
+  .aab-monitor{height:200px!important;}
+  #aab-inspector,.aab-inspector{display:none!important;}
+  /* Timeline: full width */
+  .aab-tl-wrap{flex:1!important;min-height:200px!important;}
+  .aab-track-lbl{flex:0 0 120px!important;min-width:120px!important;}
+  .aab-track-name{font-size:9px!important;max-width:95px!important;}
+  /* Toolbar: smaller */
+  .aab-tl-tool{width:24px!important;height:24px!important;font-size:12px!important;}
+}
+@media (max-width:768px){
+  /* Mobile: single column */
+  .aab-monitors-row{flex-direction:column!important;height:auto!important;}
+  #aab-src-mon{display:none!important;}  /* hide source on mobile, keep program */
+  #aab-prog-mon{height:220px!important;flex:none!important;}
+  .aab-tl-wrap{height:calc(100dvh - 420px)!important;min-height:160px!important;}
+  .aab-track-lbl{flex:0 0 80px!important;min-width:80px!important;}
+  .aab-track-name{font-size:8px!important;max-width:60px!important;}
+  .aab-track-controls{transform:scale(.85)!important;transform-origin:left center!important;}
+  /* Recording Studio */
+  .studio-wrap,.studio-body,.studio-main{flex-direction:column!important;}
+  #studio-canvas,video.studio-vid{width:100vw!important;height:56.25vw!important;max-height:250px!important;order:0!important;}
+  .studio-teleprompter,.tp-panel,.studio-tp-panel{order:1!important;height:120px!important;font-size:16px!important;}
+  .studio-scenes,.studio-scenes-col{order:2!important;display:flex!important;flex-direction:row!important;overflow-x:auto!important;height:100px!important;gap:8px!important;padding:6px!important;}
+  .studio-scenes .scene-card,.studio-scenes-col .scene-card{flex-shrink:0!important;width:120px!important;height:80px!important;}
+  /* APS */
+  #ai-presenter-studio .aps-layout{flex-direction:column!important;}
+  #ai-presenter-studio .aps-scenes-col{width:100%!important;height:140px!important;flex-direction:row!important;overflow-x:auto!important;}
+  #ai-presenter-studio .aps-center{height:200px!important;}
+  #ai-presenter-studio .aps-presenter-col{width:100%!important;height:auto!important;}
+  /* Dashboard */
+  .dash-grid,.projects-grid{grid-template-columns:1fr!important;}
+  /* Navigation */
+  #topnav .nav-links{display:none!important;}
+  #topnav .nav-mobile-menu{display:flex!important;}
+}
+@media (min-width:769px) and (max-width:1024px){
+  /* Tablet */
+  .aab-monitors-row{height:220px!important;}
+  .aab-monitor{height:220px!important;}
+  .aab-tl-wrap{height:calc(100dvh - 380px)!important;}
+  #ai-presenter-studio .aps-scenes-col{width:200px!important;}
+  .dash-grid,.projects-grid{grid-template-columns:repeat(2,1fr)!important;}
 }
 
 /* ── Stability: prevent layout thrashing ── */
