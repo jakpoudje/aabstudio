@@ -18442,6 +18442,8 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
 
 
 
+
+
 <script id="aab-platform-clean">
 (function(){
 'use strict';
@@ -19435,24 +19437,23 @@ setTimeout(function(){
   }
   _wireTrackClicks();
   // Re-wire after TL renders
-  var origRenderTL=window.E_renderTL;
-  window.E_renderTL=function(){
-    if(typeof origRenderTL==='function')origRenderTL();
-    setTimeout(function(){
-      _wireTrackClicks();
-      // Wire right-click on all clips
-      document.querySelectorAll('.aab-clip').forEach(function(el){
-        if(!el._ctxWired){
-          el._ctxWired=true;
-          el.addEventListener('contextmenu',function(e){
-            var cid=el.getAttribute('data-id')||el.dataset.id;
-            var tid=el.getAttribute('data-track-id')||el.dataset.trackId||el.closest&&el.closest('[data-track-id]')&&el.closest('[data-track-id]').getAttribute('data-track-id')||'main';
-            window._aabClipCtxMenu(e,cid,tid);
-          });
-        }
-      });
-    },100);
-  };
+  // Don't override E_renderTL — use MutationObserver to wire after source renders
+  function _wireAfterRender(){
+    _wireTrackClicks();
+    // Wire right-click on clips created by source's E_renderTL
+    // Source clips use class 'aab-clip-el' or '.aab-clip' 
+    document.querySelectorAll('.aab-clip,.aab-clip-el,[class*="tl-clip"]').forEach(function(el){
+      if(!el._ctxWired){
+        el._ctxWired=true;
+        el.addEventListener('contextmenu',function(e){
+          // Try to get clip ID from data attribute or from E.selectedClipId
+          var cid=el.getAttribute('data-id')||el.getAttribute('data-clip-id')||el.dataset.id||el.dataset.clipId;
+          var tid=el.getAttribute('data-track-id')||el.getAttribute('data-tid')||el.dataset.trackId||el.dataset.tid||'main';
+          window._aabClipCtxMenu(e,cid,tid);
+        });
+      }
+    });
+  }
 
   // Full export with audio — override E_doExport in our module
   window.E_doExport = function(){
