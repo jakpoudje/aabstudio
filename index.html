@@ -18440,6 +18440,8 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
 
 
 
+
+
 <script id="aab-platform-clean">
 (function(){
 'use strict';
@@ -19259,6 +19261,116 @@ setTimeout(function(){
   }
 },500);
 
+/* ── EDIT SUITE: track selection + clip context menu ── */
+
+// ── Clip right-click context menu ──
+window._aabClipCtxMenu = function(e, clipId, trackId){
+  e.preventDefault();e.stopPropagation();
+  // Remove any existing menu
+  var old = document.getElementById('aab-clip-ctx');
+  if(old)old.remove();
+
+  var menu = document.createElement('div');
+  menu.id = 'aab-clip-ctx';
+  menu.style.cssText = 'position:fixed;z-index:99999;background:#1e293b;border:.5px solid rgba(255,255,255,.12);border-radius:8px;padding:4px;min-width:160px;box-shadow:0 8px 24px rgba(0,0,0,.5);font-size:12px;';
+  menu.style.left = Math.min(e.clientX, window.innerWidth-170) + 'px';
+  menu.style.top = Math.min(e.clientY, window.innerHeight-220) + 'px';
+
+  var items = [
+    {icon:'✂', label:'Split at playhead',  fn:function(){ _aabSplitClip(clipId, trackId); }},
+    {icon:'⎘', label:'Duplicate',          fn:function(){ _aabDuplicateClip(clipId, trackId); }},
+    null, // separator
+    {icon:'[', label:'Set In point',        fn:function(){ if(window.AABE&&AABE.setIn)AABE.setIn(); else typeof toast==='function'&&toast('Mark In set','ok'); }},
+    {icon:']', label:'Set Out point',       fn:function(){ if(window.AABE&&AABE.setOut)AABE.setOut(); else typeof toast==='function'&&toast('Mark Out set','ok'); }},
+    null,
+    {icon:'🔇', label:'Mute clip',          fn:function(){ _aabToggleClipMute(clipId, trackId); }},
+    {icon:'🔒', label:'Lock clip',          fn:function(){ _aabToggleClipLock(clipId, trackId); }},
+    null,
+    {icon:'📋', label:'Properties',         fn:function(){ E_selectClip&&E_selectClip(clipId); }},
+    {icon:'🗑', label:'Delete',             fn:function(){ _aabDeleteClip(clipId, trackId); }, danger:true},
+  ];
+
+  items.forEach(function(item){
+    if(!item){ // separator
+      var sep = document.createElement('div');
+      sep.style.cssText = 'height:.5px;background:rgba(255,255,255,.08);margin:3px 6px;';
+      menu.appendChild(sep);return;
+    }
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:5px;cursor:pointer;color:'+(item.danger?'#ef4444':'#e2e8f0')+';transition:background .1s;';
+    row.innerHTML = '<span style="width:16px;text-align:center;font-size:11px;">'+item.icon+'</span><span>'+item.label+'</span>';
+    row.onmouseenter = function(){row.style.background='rgba(255,255,255,.06)';};
+    row.onmouseleave = function(){row.style.background='';};
+    row.onclick = function(){ menu.remove(); item.fn(); };
+    menu.appendChild(row);
+  });
+
+  document.body.appendChild(menu);
+  // Close on outside click
+  setTimeout(function(){
+    document.addEventListener('mousedown', function _close(ev){
+      if(!menu.contains(ev.target)){menu.remove();document.removeEventListener('mousedown',_close);}
+    });
+  },10);
+};
+
+// Clip operations
+window._aabSplitClip = function(clipId, trackId){
+  if(!window.AABE)return;
+  var playhead = AABE.currentTime||0;
+  var track = AABE.tracks.find(function(t){return t.id===trackId;});
+  if(!track)return;
+  var clip = track.clips.find(function(c){return c.id===clipId;});
+  if(!clip||playhead<=clip.start||playhead>=(clip.start+clip.duration))return;
+  var dur1 = playhead-clip.start, dur2 = clip.duration-dur1;
+  var clip2 = Object.assign({},clip,{id:'c'+Date.now(),start:playhead,duration:dur2});
+  clip.duration = dur1;
+  track.clips.push(clip2);
+  track.clips.sort(function(a,b){return a.start-b.start;});
+  if(typeof E_renderTL==='function')E_renderTL();
+  typeof toast==='function'&&toast('Split at '+playhead.toFixed(2)+'s','ok');
+};
+window._aabDuplicateClip = function(clipId, trackId){
+  if(!window.AABE)return;
+  var track = AABE.tracks.find(function(t){return t.id===trackId;});
+  if(!track)return;
+  var clip = track.clips.find(function(c){return c.id===clipId;});
+  if(!clip)return;
+  var end = track.clips.reduce(function(mx,c){return Math.max(mx,(c.start||0)+(c.duration||0));},0);
+  var dup = Object.assign({},clip,{id:'c'+Date.now(),start:end,name:(clip.name||'Clip')+' copy'});
+  track.clips.push(dup);
+  if(typeof E_renderTL==='function')E_renderTL();
+  typeof toast==='function'&&toast('Duplicated: '+dup.name,'ok');
+};
+window._aabToggleClipMute = function(clipId, trackId){
+  if(!window.AABE)return;
+  var track = AABE.tracks.find(function(t){return t.id===trackId;});
+  if(!track)return;
+  var clip = track.clips.find(function(c){return c.id===clipId;});
+  if(!clip)return;
+  clip.muted = !clip.muted;
+  if(typeof E_renderTL==='function')E_renderTL();
+  typeof toast==='function'&&toast(clip.muted?'Clip muted':'Clip unmuted','ok');
+};
+window._aabToggleClipLock = function(clipId, trackId){
+  if(!window.AABE)return;
+  var track = AABE.tracks.find(function(t){return t.id===trackId;});
+  if(!track)return;
+  var clip = track.clips.find(function(c){return c.id===clipId;});
+  if(!clip)return;
+  clip.locked = !clip.locked;
+  if(typeof E_renderTL==='function')E_renderTL();
+  typeof toast==='function'&&toast(clip.locked?'Clip locked':'Clip unlocked','ok');
+};
+window._aabDeleteClip = function(clipId, trackId){
+  if(!window.AABE)return;
+  var track = AABE.tracks.find(function(t){return t.id===trackId;});
+  if(!track)return;
+  track.clips = track.clips.filter(function(c){return c.id!==clipId;});
+  if(typeof E_renderTL==='function')E_renderTL();
+  typeof toast==='function'&&toast('Clip deleted','ok');
+};
+
 /* ── EDIT SUITE: missing AABE methods + track selection ── */
 setTimeout(function(){
   var AB = window.AABE;
@@ -19326,7 +19438,20 @@ setTimeout(function(){
   var origRenderTL=window.E_renderTL;
   window.E_renderTL=function(){
     if(typeof origRenderTL==='function')origRenderTL();
-    setTimeout(_wireTrackClicks,100);
+    setTimeout(function(){
+      _wireTrackClicks();
+      // Wire right-click on all clips
+      document.querySelectorAll('.aab-clip').forEach(function(el){
+        if(!el._ctxWired){
+          el._ctxWired=true;
+          el.addEventListener('contextmenu',function(e){
+            var cid=el.getAttribute('data-id')||el.dataset.id;
+            var tid=el.getAttribute('data-track-id')||el.dataset.trackId||el.closest&&el.closest('[data-track-id]')&&el.closest('[data-track-id]').getAttribute('data-track-id')||'main';
+            window._aabClipCtxMenu(e,cid,tid);
+          });
+        }
+      });
+    },100);
   };
 
   // Full export with audio — override E_doExport in our module
