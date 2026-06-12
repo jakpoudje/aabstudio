@@ -9120,7 +9120,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
         <label
           style="display:flex;align-items:center;gap:7px;padding:9px 13px;border:.5px dashed rgba(255,255,255,.15);border-radius:var(--r);cursor:pointer;background:rgba(255,255,255,.02);margin-top:5px;" id="ai-photo-label">
           <span style="font-size:12px;color:rgba(255,255,255,.4);" id="ai-photo-lbl">📸 Upload presenter photo</span>
-          <input type="file" style="display:none;" accept="image/*" id="ai-photo-input"
+          <input type="file" style="opacity:0;position:absolute;width:1px;height:1px;pointer-events:none;" accept="image/*" id="ai-photo-input"
             onchange="(window.aps_loadPhoto||window.loadAIPhoto||function(){})(this)">
         </label>
         <div id="ai-photo-actions" style="display:flex;gap:6px;margin-top:6px;">
@@ -16344,7 +16344,7 @@ window.aps_clearPhoto = aps_clearPhoto;
               onmouseout="this.style.borderColor='rgba(255,255,255,.15)';this.style.color='#9ca3af';">
               <span>📷</span>
               <span id="aps-upload-label-text">Upload presenter photo</span>
-              <input id="aps-photo-input" type="file" accept="image/*" style="display:none;"
+              <input id="aps-photo-input" type="file" accept="image/*" style="opacity:0;position:absolute;width:1px;height:1px;pointer-events:none;"
                 onchange="aps_loadPhoto(this)">
             </label>
             <!-- Preview (shown after upload) -->
@@ -18436,6 +18436,8 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
 
 
 
+
+
 <script id="aab-platform-clean">
 (function(){
 'use strict';
@@ -19018,35 +19020,42 @@ window.aps_loadPhoto=function(inp){
   r.readAsDataURL(f);
 };
 
-// Wire all photo inputs (replace to clear old onchange attributes)
-setTimeout(function(){
+// Wire all photo inputs — use addEventListener for Safari compatibility
+// Safari doesn't reliably fire onchange on display:none inputs
+function _wirePhotoInputs(){
   ['aps-photo-input','ai-photo-input'].forEach(function(id){
-    var el=document.getElementById(id);if(!el)return;
-    el.onchange=function(){window.aps_loadPhoto(this);};
+    var el=document.getElementById(id);if(!el||el._safariWired)return;
+    el._safariWired=true;
+    // Remove inline handler to avoid double-fire
+    el.removeAttribute('onchange');
+    el.addEventListener('change',function(){window.aps_loadPhoto(this);});
   });
-  // Also wire the upload button click
-  var uploadLabel = document.getElementById('aps-upload-label');
-  var photoInp = document.getElementById('aps-photo-input');
+  // Wire upload label click — needed when input is visually hidden
+  var uploadLabel=document.getElementById('aps-upload-label');
+  var photoInp=document.getElementById('aps-photo-input');
   if(uploadLabel&&photoInp&&!uploadLabel._photoWired){
     uploadLabel._photoWired=true;
-    // Label already wraps input via containment — should work automatically
-    // But also wire direct click as fallback
-    uploadLabel.onclick=function(e){
+    uploadLabel.addEventListener('click',function(e){
+      // Don't re-trigger if user clicked the input itself
       if(e.target===photoInp)return;
+      e.preventDefault();
       photoInp.click();
-    };
+    });
   }
-  // Wire the 📁 Upload button  
-  var uploadBtn = document.querySelector('[onclick*="ai-photo-input"]');
-  if(!uploadBtn){
-    var allBtns = Array.from(document.querySelectorAll('button'));
-    var uploadFileBtn = allBtns.find(function(b){return b.textContent.indexOf('Upload')>-1&&b.closest&&b.closest('#aps-photo-drop');});
-    if(uploadFileBtn&&!uploadFileBtn._wired){
-      uploadFileBtn._wired=true;
-      uploadFileBtn.onclick=function(){var i=document.getElementById('aps-photo-input');if(i)i.click();};
+  // Wire the 📁 Upload button inside aps-photo-drop
+  var dropBtns=document.querySelectorAll('#aps-photo-drop button');
+  dropBtns.forEach(function(btn){
+    if(!btn._wired&&(btn.textContent.indexOf('Upload')>-1||btn.textContent.indexOf('📁')>-1)){
+      btn._wired=true;
+      btn.addEventListener('click',function(e){
+        e.stopPropagation();
+        var i=document.getElementById('aps-photo-input');if(i)i.click();
+      });
     }
-  }
-},1500);
+  });
+}
+setTimeout(_wirePhotoInputs,1000);
+setTimeout(_wirePhotoInputs,2500); // retry after APS page may open
 
 /* ── APS save character (persists to localStorage + Supabase) ── */
 window.aps_saveCharacter=function(){
