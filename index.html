@@ -18450,6 +18450,8 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
 
 
 
+
+
 <script id="aab-platform-clean">
 (function(){
 'use strict';
@@ -20590,6 +20592,468 @@ window._E2_wireAll = function(){
 })();
 
 console.log('[AABE v2] Professional edit suite loaded OK');
+})();
+
+
+/* ═══════ CLIP EDITOR V1 ═══════ */
+/* ═══════════════════════════════════════════════
+   AABStudio Clip Editor v1 — Full NLE clip editing
+   - Unique icons for all tools
+   - Resize handles (trim from edges)
+   - Cursor changes on hover
+   - Full right-click menu per clip
+   - All clip operations
+   ═══════════════════════════════════════════════ */
+(function(){
+'use strict';
+
+/* ── Fix: Unique tool icons ── */
+(function fixToolIcons(){
+  // The three ↔ symbols for Trim, Slip, Pan — replace with distinct ones
+  var iconMap = {
+    'Trim (T)':  { icon: '⊢', label: 'Trim', desc: 'Drag clip edge to trim' },
+    'Trim':      { icon: '⊢', label: 'Trim', desc: 'Drag clip edge to trim' },
+    'Slip (S)':  { icon: '↹', label: 'Slip', desc: 'Slip content inside clip' },
+    'Slip':      { icon: '↹', label: 'Slip', desc: 'Slip content inside clip' },
+    'Pan (H)':   { icon: '✋', label: 'Pan',  desc: 'Pan/scroll timeline' },
+    'Pan':       { icon: '✋', label: 'Pan',  desc: 'Pan/scroll timeline' },
+    'Select (V)':{ icon: '↖', label: 'Select', desc: 'Select & move clips (V)' },
+    'Razor (R)': { icon: '✂', label: 'Razor', desc: 'Cut clips (R)' },
+  };
+  document.querySelectorAll('.aab-tl-tool,[data-tool]').forEach(function(btn){
+    var title = btn.title||btn.getAttribute('data-tool')||'';
+    Object.keys(iconMap).forEach(function(key){
+      if(title.indexOf(key)>-1){
+        btn.textContent = iconMap[key].icon;
+        btn.title = iconMap[key].label+' — '+iconMap[key].desc;
+      }
+    });
+  });
+})();
+
+/* ── Cursor map per tool ── */
+var TOOL_CURSORS = {
+  select:'default', razor:'crosshair', trim:'col-resize',
+  slip:'ew-resize', pan:'grab', ripple:'col-resize', roll:'col-resize'
+};
+
+/* ── Global CSS for clip editing ── */
+(function(){
+  var old=document.getElementById('aab-clip-editor-css');if(old)old.remove();
+  var s=document.createElement('style');s.id='aab-clip-editor-css';
+  s.textContent=`
+/* Trim cursor zones */
+.aab-clip{position:absolute!important;user-select:none!important;border-radius:4px!important;overflow:visible!important;box-sizing:border-box!important;}
+.aab-clip-inner{position:absolute!important;inset:0!important;overflow:hidden!important;border-radius:4px!important;border:1.5px solid currentColor;}
+.aab-clip-label{position:absolute!important;bottom:0!important;left:0!important;right:0!important;background:rgba(0,0,0,.55)!important;color:#fff!important;font-size:9px!important;padding:1px 4px!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;pointer-events:none!important;z-index:4!important;}
+/* Left trim handle */
+.aab-clip-trim-l{position:absolute!important;left:0!important;top:0!important;bottom:0!important;width:8px!important;cursor:col-resize!important;z-index:10!important;background:transparent!important;border-left:3px solid rgba(255,255,255,.4)!important;border-radius:4px 0 0 4px!important;}
+.aab-clip-trim-l:hover{border-left-color:#00d4ff!important;background:rgba(0,212,255,.15)!important;}
+/* Right trim handle */
+.aab-clip-trim-r{position:absolute!important;right:0!important;top:0!important;bottom:0!important;width:8px!important;cursor:col-resize!important;z-index:10!important;background:transparent!important;border-right:3px solid rgba(255,255,255,.4)!important;border-radius:0 4px 4px 0!important;}
+.aab-clip-trim-r:hover{border-right-color:#00d4ff!important;background:rgba(0,212,255,.15)!important;}
+/* Selected */
+.aab-clip.sel,.aab-clip.selected{outline:2px solid #00d4ff!important;z-index:6!important;}
+.aab-clip.sel .aab-clip-trim-l,.aab-clip.sel .aab-clip-trim-r{opacity:1!important;}
+/* Muted */
+.aab-clip.muted-clip{opacity:.4!important;}
+/* Locked */
+.aab-clip.locked-clip{cursor:not-allowed!important;outline:1px solid #f59e0b!important;}
+/* Fade handles */
+.aab-clip-fade{position:absolute!important;top:0!important;height:100%!important;width:20px!important;pointer-events:none!important;z-index:3!important;}
+.aab-clip-fade-in{left:0!important;background:linear-gradient(to right, rgba(0,0,0,.6), transparent)!important;}
+.aab-clip-fade-out{right:0!important;background:linear-gradient(to left, rgba(0,0,0,.6), transparent)!important;}
+/* Waveform */
+.aab-waveform{position:absolute!important;inset:0!important;display:flex!important;align-items:center!important;gap:.5px!important;padding:0 2px!important;pointer-events:none!important;}
+.aab-waveform-bar{flex:1!important;background:rgba(52,211,153,.8)!important;border-radius:1px!important;min-height:2px!important;}
+/* Timeline cursor changes based on active tool */
+.tool-razor .aab-clip:hover{cursor:crosshair!important;}
+.tool-trim .aab-clip:hover{cursor:col-resize!important;}
+.tool-pan .aab-clip:hover{cursor:grab!important;}
+/* Track tools inline */
+.aab-track-controls .e2-add-btn{font-size:12px!important;font-weight:700!important;color:#00d4ff!important;}
+.aab-track-controls .e2-del-btn{font-size:12px!important;color:#ef4444!important;}
+/* Context menu */
+#aab-clip-ctx,#aab-track-ctx{
+  position:fixed!important;z-index:99999!important;
+  background:#1a2438!important;
+  border:.5px solid rgba(255,255,255,.1)!important;
+  border-radius:8px!important;padding:4px 0!important;
+  min-width:190px!important;
+  box-shadow:0 12px 32px rgba(0,0,0,.6)!important;
+  font-size:12px!important;font-family:system-ui,sans-serif!important;
+}
+.aab-ctx-section{padding:2px 0!important;border-bottom:.5px solid rgba(255,255,255,.07)!important;margin:2px 0!important;}
+.aab-ctx-item{display:flex!important;align-items:center!important;gap:10px!important;padding:7px 14px!important;cursor:pointer!important;color:#e2e8f0!important;transition:background .1s!important;white-space:nowrap!important;}
+.aab-ctx-item:hover{background:rgba(255,255,255,.07)!important;}
+.aab-ctx-item.danger{color:#ef4444!important;}
+.aab-ctx-item.disabled{color:#4b5563!important;pointer-events:none!important;}
+.aab-ctx-icon{width:18px!important;text-align:center!important;font-size:12px!important;flex-shrink:0!important;}
+.aab-ctx-label{flex:1!important;}
+.aab-ctx-shortcut{font-size:10px!important;color:#6b7280!important;margin-left:8px!important;}
+.aab-ctx-header{padding:5px 14px 3px!important;font-size:9px!important;font-weight:700!important;color:#4b5563!important;text-transform:uppercase!important;letter-spacing:.08em!important;}
+`;
+  document.head.appendChild(s);
+})();
+
+/* ═══════════════════════════════════
+   CLIP RENDERING — replace source clips with enhanced ones
+   ═══════════════════════════════════ */
+window._CE_enhanceClip = function(clipEl, clip, track){
+  if(clipEl._ceEnhanced) return;
+  clipEl._ceEnhanced = true;
+
+  var isAudio = track.type==='audio';
+  var isText  = track.type==='text'||clip.type==='text';
+  var isLocked= !!(track.locked||clip.locked);
+  var isMuted = !!(track.muted||clip.muted);
+
+  // Apply state classes
+  if(isMuted) clipEl.classList.add('muted-clip');
+  if(isLocked) clipEl.classList.add('locked-clip');
+
+  // Wrap content in inner div (allows overflow:hidden without blocking handles)
+  var inner = document.createElement('div');
+  inner.className = 'aab-clip-inner';
+  inner.style.borderColor = track.color||'rgba(0,212,255,.5)';
+
+  // Move existing children into inner
+  while(clipEl.firstChild) inner.appendChild(clipEl.firstChild);
+  clipEl.appendChild(inner);
+
+  // Add thumbnail strip or waveform inside inner
+  if(isAudio && clip.waveform && clip.waveform.length){
+    var wv=document.createElement('div');wv.className='aab-waveform';
+    clip.waveform.forEach(function(h){
+      var b=document.createElement('div');b.className='aab-waveform-bar';
+      b.style.height=Math.max(5,Math.round(h*100))+'%';wv.appendChild(b);
+    });
+    inner.appendChild(wv);
+  }
+
+  // Label
+  var lbl=document.createElement('div');lbl.className='aab-clip-label';
+  lbl.textContent = (isMuted?'🔇 ':'')+(isLocked?'🔒 ':'')+
+    (isText?(clip.text||clip.name||'Text').slice(0,25):(clip.name||'Clip').slice(0,25));
+  clipEl.appendChild(lbl);
+
+  // Fade overlays
+  if(!isAudio&&!isText&&clip.fadeIn){
+    var fi=document.createElement('div');fi.className='aab-clip-fade aab-clip-fade-in';inner.appendChild(fi);
+  }
+  if(!isAudio&&!isText&&clip.fadeOut){
+    var fo=document.createElement('div');fo.className='aab-clip-fade aab-clip-fade-out';inner.appendChild(fo);
+  }
+
+  // ── LEFT TRIM HANDLE ──
+  var trimL=document.createElement('div');
+  trimL.className='aab-clip-trim-l';
+  trimL.title='Drag to trim start';
+  clipEl.appendChild(trimL);
+  trimL.addEventListener('mousedown',function(e){
+    e.stopPropagation();e.preventDefault();
+    if(isLocked)return;
+    var origStart=clip.start, origDur=clip.duration, sx=e.clientX;
+    var pps=window.AABE?AABE.pxPerSec:50;
+    clipEl.style.cursor='col-resize';
+    var mv=function(e2){
+      var dx=(e2.clientX-sx)/pps;
+      var newStart=Math.max(0,Math.min(origStart+dx, origStart+origDur-0.1));
+      var delta=newStart-origStart;
+      clip.start=newStart;clip.duration=origDur-delta;
+      if(typeof E_renderTL==='function')E_renderTL();
+    };
+    var up=function(){document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);clipEl.style.cursor='';if(typeof saveProject==='function')saveProject();};
+    document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
+  });
+
+  // ── RIGHT TRIM HANDLE ──
+  var trimR=document.createElement('div');
+  trimR.className='aab-clip-trim-r';
+  trimR.title='Drag to trim end';
+  clipEl.appendChild(trimR);
+  trimR.addEventListener('mousedown',function(e){
+    e.stopPropagation();e.preventDefault();
+    if(isLocked)return;
+    var origDur=clip.duration, sx=e.clientX;
+    var pps=window.AABE?AABE.pxPerSec:50;
+    clipEl.style.cursor='col-resize';
+    var mv=function(e2){
+      var dx=(e2.clientX-sx)/pps;
+      clip.duration=Math.max(0.1,origDur+dx);
+      if(typeof E_renderTL==='function')E_renderTL();
+    };
+    var up=function(){document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);clipEl.style.cursor='';if(typeof saveProject==='function')saveProject();};
+    document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
+  });
+
+  // ── CURSOR on hover based on active tool ──
+  clipEl.addEventListener('mouseenter',function(){
+    if(isLocked){clipEl.style.cursor='not-allowed';return;}
+    var tool=window.AABE&&AABE.activeTool||'select';
+    clipEl.style.cursor=TOOL_CURSORS[tool]||'default';
+  });
+  clipEl.addEventListener('mouseleave',function(){clipEl.style.cursor='';});
+
+  // ── CLICK: select ──
+  inner.addEventListener('click',function(e){
+    if(e.target.classList.contains('aab-clip-trim-l')||e.target.classList.contains('aab-clip-trim-r'))return;
+    e.stopPropagation();
+    var tool=window.AABE&&AABE.activeTool||'select';
+    if(tool==='razor'){
+      // Cut at click position
+      var pps=window.AABE?AABE.pxPerSec:50;
+      var r=clipEl.getBoundingClientRect();
+      var offset=(e.clientX-r.left)/pps;
+      var cutTime=clip.start+offset;
+      if(typeof E_razorAt==='function') E_razorAt(cutTime);
+      else if(typeof window._E2_splitClip==='function') window._E2_splitClip(clip.id, track.id);
+      return;
+    }
+    window._CE_selectClip(clip.id, track.id, clip, track);
+  });
+
+  // ── RIGHT-CLICK: full context menu ──
+  clipEl.addEventListener('contextmenu',function(e){
+    e.preventDefault();e.stopPropagation();
+    window._CE_showClipMenu(e, clip, track);
+  });
+};
+
+/* ── Select clip ── */
+window._CE_selectClip = function(clipId, trackId, clip, track){
+  window._CE_selectedClipId = clipId;
+  window._CE_selectedTrackId = trackId;
+  // Highlight
+  document.querySelectorAll('.aab-clip').forEach(el=>el.classList.remove('sel','selected'));
+  var el=document.querySelector('.aab-clip[data-id="'+clipId+'"]');
+  if(el){el.classList.add('sel');el.classList.add('selected');}
+  // Also call source E_selectClip if it works
+  if(typeof E_selectClip==='function'){try{E_selectClip(clipId);}catch(e){}}
+  // Show inspector
+  if(typeof window._E2_selectClip==='function') window._E2_selectClip(clipId, trackId, clip);
+};
+
+/* ═══════════════════════════════════
+   FULL CLIP CONTEXT MENU
+   ═══════════════════════════════════ */
+window._CE_showClipMenu = function(e, clip, track){
+  var old=document.getElementById('aab-clip-ctx');if(old)old.remove();
+
+  var menu=document.createElement('div');menu.id='aab-clip-ctx';
+  // Position
+  var mx=Math.min(e.clientX,window.innerWidth-210);
+  var my=Math.min(e.clientY,window.innerHeight-380);
+  menu.style.left=mx+'px';menu.style.top=my+'px';
+
+  // Header
+  var hdr=document.createElement('div');hdr.className='aab-ctx-header';
+  hdr.textContent=(clip.name||clip.type||'Clip').slice(0,28);
+  menu.appendChild(hdr);
+
+  var makeSep=function(){var d=document.createElement('div');d.className='aab-ctx-section';menu.appendChild(d);};
+  var makeItem=function(icon,label,shortcut,fn,danger,disabled){
+    var row=document.createElement('div');
+    row.className='aab-ctx-item'+(danger?' danger':'')+(disabled?' disabled':'');
+    row.innerHTML='<span class="aab-ctx-icon">'+icon+'</span><span class="aab-ctx-label">'+label+'</span>'+(shortcut?'<span class="aab-ctx-shortcut">'+shortcut+'</span>':'');
+    if(fn&&!disabled)row.onclick=function(){menu.remove();fn();};
+    menu.appendChild(row);return row;
+  };
+
+  // ── CLIP INFO ──
+  var pps=window.AABE&&AABE.pxPerSec||50;
+  var totalDur=(window.AABE&&window.E&&window.E.tracks)?
+    window.E.tracks.reduce(function(mx,t){return Math.max(mx,t.clips.reduce(function(m,c){return Math.max(m,(c.start||0)+(c.duration||0));},0));},0):60;
+
+  // ── EDIT GROUP ──
+  makeItem('✂','Split at playhead','R',function(){
+    var ph=window.AABE&&AABE.currentTime||0;
+    if(ph<=clip.start||ph>=(clip.start+clip.duration)){typeof toast==='function'&&toast('Move playhead inside clip first','info');return;}
+    if(typeof E_razorAt==='function')E_razorAt(ph);
+    else window._E2_splitClip&&window._E2_splitClip(clip.id,track.id);
+  });
+  makeItem('⎘','Duplicate','D',function(){
+    var end=track.clips.reduce(function(mx,c){return Math.max(mx,(c.start||0)+(c.duration||0));},0);
+    var dup=JSON.parse(JSON.stringify(clip));dup.id='c'+Date.now();dup.start=end;dup.name=(clip.name||'Clip')+' copy';
+    track.clips.push(dup);if(typeof E_renderTL==='function')E_renderTL();
+    typeof toast==='function'&&toast('Duplicated','ok');
+  });
+  makeItem('↔','Speed / Duration','',function(){
+    var newDur=parseFloat(prompt('New duration (seconds):',clip.duration.toFixed(2)));
+    if(!isNaN(newDur)&&newDur>0){clip.duration=newDur;if(typeof E_renderTL==='function')E_renderTL();}
+  });
+  makeSep();
+
+  // ── TRIM GROUP ──
+  makeItem('⊢⊣','Trim to In/Out','',function(){
+    var inPt=window.AABE&&AABE.inPoint;var outPt=window.AABE&&AABE.outPoint;
+    if(inPt!=null&&inPt>clip.start){var delta=inPt-clip.start;clip.start=inPt;clip.duration-=delta;}
+    if(outPt!=null&&outPt<clip.start+clip.duration)clip.duration=outPt-clip.start;
+    if(typeof E_renderTL==='function')E_renderTL();
+    typeof toast==='function'&&toast('Trimmed to In/Out','ok');
+  });
+  makeItem('[','Set In point at start','I',function(){if(window.AABE)AABE.inPoint=clip.start;window._E2_updateInOutMarkers&&window._E2_updateInOutMarkers();typeof toast==='function'&&toast('[In] = '+clip.start.toFixed(2)+'s','ok');});
+  makeItem(']','Set Out point at end','O',function(){if(window.AABE)AABE.outPoint=clip.start+clip.duration;window._E2_updateInOutMarkers&&window._E2_updateInOutMarkers();typeof toast==='function'&&toast('[Out] = '+(clip.start+clip.duration).toFixed(2)+'s','ok');});
+  makeSep();
+
+  // ── POSITION GROUP ──
+  makeItem('←','Move to start','',function(){
+    clip.start=0;if(typeof E_renderTL==='function')E_renderTL();
+    typeof toast==='function'&&toast('Moved to start','ok');
+  });
+  makeItem('→','Move to end','',function(){
+    var prevEnd=track.clips.filter(function(c){return c.id!==clip.id;}).reduce(function(mx,c){return Math.max(mx,(c.start||0)+(c.duration||0));},0);
+    clip.start=prevEnd;if(typeof E_renderTL==='function')E_renderTL();
+    typeof toast==='function'&&toast('Moved to end','ok');
+  });
+  if(clip.type!=='text'){
+    makeItem('⬆','Move to B-Roll track','',function(){
+      var broll=window.AABE&&AABE.tracks.find(function(t){return t.id==='broll';});
+      if(!broll){typeof toast==='function'&&toast('B-Roll track not found','info');return;}
+      track.clips=track.clips.filter(function(c){return c.id!==clip.id;});
+      broll.clips.push(clip);
+      if(typeof E_renderTL==='function')E_renderTL();
+      typeof toast==='function'&&toast('Moved to B-Roll','ok');
+    });
+  }
+  makeSep();
+
+  // ── CLIP PROPERTIES ──
+  makeItem(clip.muted?'🔊':'🔇',clip.muted?'Unmute clip':'Mute clip','',function(){
+    clip.muted=!clip.muted;if(typeof E_renderTL==='function')E_renderTL();
+    typeof toast==='function'&&toast(clip.muted?'Muted':'Unmuted','ok');
+  });
+  makeItem(clip.locked?'🔓':'🔒',clip.locked?'Unlock clip':'Lock clip','',function(){
+    clip.locked=!clip.locked;if(typeof E_renderTL==='function')E_renderTL();
+    typeof toast==='function'&&toast(clip.locked?'Locked':'Unlocked','ok');
+  });
+  makeItem(clip.fadeIn?'◀ Remove fade in':'◀ Add fade in','',function(){
+    clip.fadeIn=!clip.fadeIn;if(typeof E_renderTL==='function')E_renderTL();
+  });
+  makeItem(clip.fadeOut?'Remove fade out ▶':'Add fade out ▶','',function(){
+    clip.fadeOut=!clip.fadeOut;if(typeof E_renderTL==='function')E_renderTL();
+  });
+
+  if(clip.type==='text'){
+    makeSep();
+    makeItem('✏','Edit text & style','',function(){
+      if(typeof window._E2_editTextClip==='function') window._E2_editTextClip(clip.id,track.id,clip);
+    });
+  }
+  if(clip.url&&(clip.type==='video'||clip.type==='audio')){
+    makeItem('🔗','Open in new tab','',function(){window.open(clip.url,'_blank');});
+  }
+  makeSep();
+
+  // ── PROPERTIES & DELETE ──
+  makeItem('📋','Properties','',function(){
+    if(typeof window._E2_selectClip==='function')window._E2_selectClip(clip.id,track.id,clip);
+  });
+  makeItem('🗑','Delete clip','Del',function(){
+    track.clips=track.clips.filter(function(c){return c.id!==clip.id;});
+    if(typeof E_renderTL==='function')E_renderTL();
+    typeof toast==='function'&&toast('Clip deleted','ok');
+  },true);
+
+  document.body.appendChild(menu);
+  // Close on outside click
+  setTimeout(function(){
+    var _close=function(ev){if(!menu.contains(ev.target)){menu.remove();document.removeEventListener('mousedown',_close);}};
+    document.addEventListener('mousedown',_close);
+  },10);
+};
+
+/* ═══════════════════════════════════
+   POST-RENDER ENHANCEMENT HOOK
+   Apply to all clips after E_renderTL
+   ═══════════════════════════════════ */
+window._CE_enhanceAll = function(){
+  if(!window.AABE||!AABE.tracks)return;
+  AABE.tracks.forEach(function(track){
+    track.clips.forEach(function(clip){
+      var clipEl=document.querySelector('.aab-clip[data-id="'+clip.id+'"]');
+      if(clipEl&&!clipEl._ceEnhanced){
+        window._CE_enhanceClip(clipEl,clip,track);
+      }
+    });
+  });
+};
+
+/* ── Wrap E_renderTL to always enhance clips after render ── */
+(function(){
+  var _orig = window.E_renderTL;
+  if(_orig&&!_orig._ceWrapped){
+    window.E_renderTL = function(){
+      if(typeof _orig==='function')_orig();
+      setTimeout(window._CE_enhanceAll, 50);
+    };
+    window.E_renderTL._ceWrapped = true;
+    window.E_renderTL._orig = _orig;
+  }
+})();
+
+/* ── Fix toolbar icon symbols ── */
+setTimeout(function(){
+  var toolMap = {
+    'trim':'⊢', 'Trim':'⊢',
+    'slip':'↹', 'Slip':'↹',
+    'pan':'✋', 'Pan':'✋',
+    'ripple':'⊳', 'Ripple':'⊳',
+    'roll':'⊲⊳', 'Roll':'⊲⊳',
+  };
+  document.querySelectorAll('.aab-tl-tool,[data-tool]').forEach(function(btn){
+    var tool=btn.getAttribute('data-tool')||'';
+    var title=btn.title||'';
+    if(toolMap[tool]){btn.textContent=toolMap[tool];}
+    else if(title.indexOf('Trim')>-1&&title.indexOf('Slip')===-1&&title.indexOf('Pan')===-1){btn.textContent='⊢';}
+    else if(title.indexOf('Slip')>-1){btn.textContent='↹';}
+    else if(title.indexOf('Pan')>-1){btn.textContent='✋';}
+  });
+  // Enhance existing clips
+  window._CE_enhanceAll();
+},1500);
+
+/* ── MutationObserver to catch new clips ── */
+(function(){
+  var _obs=new MutationObserver(function(muts){
+    if(muts.some(function(m){return Array.from(m.addedNodes).some(function(n){return n.classList&&n.classList.contains('aab-clip');});})){
+      clearTimeout(window._CE_timer);
+      window._CE_timer=setTimeout(window._CE_enhanceAll,80);
+    }
+  });
+  var target=document.getElementById('aab-tl-tracks')||document.querySelector('.aab-tl-tracks')||document.getElementById('edit-pg')||document.body;
+  _obs.observe(target,{childList:true,subtree:true});
+})();
+
+/* ── Keyboard shortcuts for active clip ── */
+document.addEventListener('keydown',function(e){
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
+  var clipId=window._CE_selectedClipId;
+  var trackId=window._CE_selectedTrackId;
+  var track=window.AABE&&AABE.tracks.find(function(t){return t.id===trackId;});
+  var clip=track&&track.clips.find(function(c){return c.id===clipId;});
+
+  if(e.key==='Delete'||e.key==='Backspace'){
+    if(clip&&!clip.locked){
+      track.clips=track.clips.filter(function(c){return c.id!==clipId;});
+      if(typeof E_renderTL==='function')E_renderTL();
+      typeof toast==='function'&&toast('Clip deleted','ok');
+    }
+  }
+  if((e.key==='d'||e.key==='D')&&!e.ctrlKey&&!e.metaKey){
+    if(clip){
+      var end=track.clips.reduce(function(mx,c){return Math.max(mx,(c.start||0)+(c.duration||0));},0);
+      var dup=JSON.parse(JSON.stringify(clip));dup.id='c'+Date.now();dup.start=end;dup.name=(clip.name||'Clip')+' copy';
+      track.clips.push(dup);if(typeof E_renderTL==='function')E_renderTL();
+    }
+  }
+  if(e.key===','&&clip){clip.start=Math.max(0,clip.start-0.1);if(typeof E_renderTL==='function')E_renderTL();}
+  if(e.key==='.'&&clip){clip.start+=0.1;if(typeof E_renderTL==='function')E_renderTL();}
+  if(e.key==='<'&&clip){clip.duration=Math.max(0.1,clip.duration-0.1);if(typeof E_renderTL==='function')E_renderTL();}
+  if(e.key==='>'&&clip){clip.duration+=0.1;if(typeof E_renderTL==='function')E_renderTL();}
+});
+
+console.log('[ClipEditor v1] Loaded — trim handles, unique icons, full context menu');
 })();
 
 </script>
