@@ -22097,6 +22097,50 @@ function _applyUniqueIcons(){
 console.log('[PlatformFixes v2] Loaded: toast-filter + session-persist + APS-progress + in-platform-play + right-click-v2 + icons');
 })();
 
+
+/* Char grid render */
+window.aps_renderCharGrid=function(){
+  var grid=document.getElementById('aps-char-grid');
+  if(!grid)return;
+  var key='aab_chars_'+((window.APP&&APP.user&&APP.user.id)||'guest');
+  var chars=[];try{chars=JSON.parse(localStorage.getItem(key)||'[]');}catch(e){}
+  if(!chars.length){grid.innerHTML='<div style="grid-column:1/-1;text-align:center;color:rgba(255,255,255,.2);font-size:11px;padding:8px;">No saved characters yet</div>';return;}
+  grid.innerHTML='';
+  chars.forEach(function(ch){
+    var card=document.createElement('div');
+    card.style.cssText='cursor:pointer;border-radius:6px;overflow:hidden;border:.5px solid rgba(255,255,255,.1);background:#111827;position:relative;';
+    card.title=ch.name;
+    if(ch.photoB64||ch.photoUrl){
+      var img=document.createElement('img');
+      img.src=ch.photoUrl||('data:'+(ch.photoMimeType||'image/jpeg')+';base64,'+ch.photoB64);
+      img.style.cssText='width:100%;height:54px;object-fit:cover;display:block;';
+      img.onerror=function(){this.style.display='none';};
+      card.appendChild(img);
+    }
+    var lbl=document.createElement('div');
+    lbl.textContent=ch.name;
+    lbl.style.cssText='font-size:9px;padding:3px 4px;color:#e2e8f0;background:rgba(0,0,0,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+    card.appendChild(lbl);
+    card.onclick=function(){
+      if(!window.APS)window.APS={};
+      APS.photoB64=ch.photoB64;APS.photoMimeType=ch.photoMimeType;
+      APS.photo=ch.photoUrl||('data:'+(ch.photoMimeType||'image/jpeg')+';base64,'+ch.photoB64);
+      APS.charName=ch.name;
+      var prev=document.getElementById('aps-presenter-preview');
+      if(prev){prev.src=APS.photo;prev.style.display='block';}
+      var nameEl=document.getElementById('aps-char-name')||document.querySelector('input[placeholder*="John Anchor"]');
+      if(nameEl)nameEl.value=ch.name;
+      grid.querySelectorAll('div').forEach(function(d){d.style.border='.5px solid rgba(255,255,255,.1)';});
+      card.style.border='1.5px solid #00d4ff';
+      typeof toast==='function'&&toast('Loaded: '+ch.name,'ok');
+    };
+    grid.appendChild(card);
+  });
+};
+/* Wire Save button in APS to aps_saveCharacter */
+window.aps_saveCharProfile=window.aps_saveCharacter;
+/* Load char grid on APS open */
+setTimeout(function(){if(typeof aps_renderCharGrid==='function')aps_renderCharGrid();},2000);
 </script>
 </body>
 </html>
