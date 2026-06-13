@@ -5611,83 +5611,40 @@ function E_openExport(){
 function E_doExport(){
   var clips=[];
   E.tracks.filter(function(t){return t.type==="video"&&!t.muted;}).forEach(function(t){
-    t.clips.forEach(function(c){if(c.url)clips.push({url:c.url,name:c.name,start:c.start,duration:c.duration});});
+    t.clips.forEach(function(c){if(c.url)clips.push({url:c.url,name:c.name||"clip",start:c.start||0,duration:c.duration||0});});
   });
   clips.sort(function(a,b){return a.start-b.start;});
-  if(!clips.length){if(typeof toast==="function")toast("No video clips on timeline to export","error");return;}
-
-  var prog=document.getElementById("aab-exp-prog");
-  var bar=document.getElementById("aab-exp-bar");
-  var status=document.getElementById("aab-exp-status");
-  if(prog)prog.style.display="block";
-  if(bar)bar.style.width="5%";
-  if(status)status.textContent="Stitching "+clips.length+" clip"+(clips.length!==1?"s":"")+" into one video…";
-
-  var API_BASE=(window.API||'https://aabstudio-production.up.railway.app');
-  var title=(window.PROJECT&&window.PROJECT.title)||'AABStudio Export';
-
-  // Try stitching via Railway
-  fetch(API_BASE+'/api/export',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({clips:clips,title:title})
-  })
-  .then(function(r){
-    if(!r.ok)throw new Error('Server error '+r.status);
-    return r.json();
-  })
+  if(!clips.length){if(typeof toast==="function")toast("No video clips on timeline","error");return;}
+  var prog=document.getElementById("aab-exp-prog"),bar=document.getElementById("aab-exp-bar"),status=document.getElementById("aab-exp-status");
+  if(prog)prog.style.display="block";if(bar)bar.style.width="5%";
+  if(status)status.textContent="Stitching "+clips.length+" clips into one video...";
+  var BASE=(window.API||"https://aabstudio-production.up.railway.app");
+  var title=(window.PROJECT&&window.PROJECT.title)||"AABStudio Export";
+  fetch(BASE+"/api/export",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({clips:clips,title:title})})
+  .then(function(r){if(!r.ok)throw new Error("Server "+r.status);return r.json();})
   .then(function(d){
     if(d.error)throw new Error(d.error);
     var url=d.url||d.videoUrl||d.downloadUrl;
-    if(!url)throw new Error('No download URL returned');
-    if(bar)bar.style.width="100%";
-    if(status)status.textContent="✓ Video ready! Downloading…";
-    // Download the stitched file
-    var a=document.createElement("a");
-    a.href=url;
-    a.download=title.replace(/[^a-z0-9]/gi,"_")+".mp4";
-    document.body.appendChild(a);a.click();document.body.removeChild(a);
-    if(typeof toast==="function")toast("🎉 Video is Ready! Downloading…","ok");
-    // Show notification banner
-    _aab_showVideoReady(url,title);
+    if(!url)throw new Error("No URL");
+    if(bar)bar.style.width="100%";if(status)status.textContent="Video ready! Downloading...";
+    var a=document.createElement("a");a.href=url;a.download=title.replace(/[^a-z0-9]/gi,"_")+".mp4";document.body.appendChild(a);a.click();document.body.removeChild(a);
+    if(typeof toast==="function")toast("Video is Ready! Downloading...","ok");
+    var bv=document.createElement("div");bv.id="aab-vid-ready";
+    bv.style.cssText="position:fixed;bottom:24px;right:24px;z-index:99999;background:linear-gradient(135deg,#065f46,#047857);border:.5px solid #10b981;border-radius:12px;padding:16px 20px;box-shadow:0 8px 32px rgba(0,0,0,.5);display:flex;align-items:center;gap:14px;max-width:340px;";
+    bv.innerHTML="<div style='font-size:28px'>&#127881;</div><div style='flex:1'><div style='font-size:13px;font-weight:800;color:#fff;margin-bottom:3px;'>Video is Ready!</div><div style='font-size:11px;color:#6ee7b7;'>"+title+" exported</div></div><a href='"+url+"' download style='background:#10b981;border:none;color:#fff;border-radius:7px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;white-space:nowrap;'>Download</a><button onclick="document.getElementById('aab-vid-ready').remove()" style='background:none;border:none;color:#6ee7b7;font-size:18px;cursor:pointer;margin-left:4px;'>x</button>";
+    document.body.appendChild(bv);setTimeout(function(){var el=document.getElementById("aab-vid-ready");if(el)el.remove();},30000);
   })
   .catch(function(err){
-    // Fallback: download clips individually
-    console.warn("Stitch failed, downloading individually:",err.message);
-    if(status)status.textContent="Downloading clips individually… ("+clips.length+" files)";
-    var idx=0;
-    function next(){
-      if(idx>=clips.length){
-        if(bar)bar.style.width="100%";
-        if(status)status.textContent="✓ "+clips.length+" clip"+(clips.length!==1?"s":"")+" downloaded";
-        if(typeof toast==="function")toast("Export complete – "+clips.length+" MP4 files downloaded","ok");
-        return;
-      }
-      var c=clips[idx++];
-      if(bar)bar.style.width=Math.round(idx/clips.length*100)+"%";
-      if(status)status.textContent="Downloading: "+(c.name||"clip")+" ("+idx+"/"+clips.length+")";
-      var a=document.createElement("a");a.href=c.url;
-      a.download=(c.name||"clip").replace(/[^a-z0-9]/gi,"_")+".mp4";
-      document.body.appendChild(a);a.click();document.body.removeChild(a);
-      setTimeout(next,1500);
-    }
-    next();
+    console.warn("Stitch failed:",err.message);
+    if(status)status.textContent="Downloading "+clips.length+" clips...";
+    var idx2=0;
+    function next2(){
+      if(idx2>=clips.length){if(bar)bar.style.width="100%";if(status)status.textContent="Done";if(typeof toast==="function")toast("Export complete","ok");return;}
+      var c=clips[idx2++];if(bar)bar.style.width=Math.round(idx2/clips.length*100)+"%";
+      var a=document.createElement("a");a.href=c.url;a.download=(c.name||"clip").replace(/[^a-z0-9]/gi,"_")+".mp4";document.body.appendChild(a);a.click();document.body.removeChild(a);
+      setTimeout(next2,1500);
+    }next2();
   });
-}
-
-// Show "Video is Ready" notification banner
-function _aab_showVideoReady(url,title){
-  var old=document.getElementById('aab-vid-ready');if(old)old.remove();
-  var banner=document.createElement('div');
-  banner.id='aab-vid-ready';
-  banner.style.cssText='position:fixed;bottom:24px;right:24px;z-index:99999;background:linear-gradient(135deg,#065f46,#047857);border:.5px solid #10b981;border-radius:12px;padding:16px 20px;box-shadow:0 8px 32px rgba(0,0,0,.5);display:flex;align-items:center;gap:14px;max-width:340px;animation:slideInUp .4s ease;';
-  banner.innerHTML='<div style="font-size:28px">🎉</div>'+
-    '<div style="flex:1"><div style="font-size:13px;font-weight:800;color:#fff;margin-bottom:3px;">Video is Ready!</div>'+
-    '<div style="font-size:11px;color:#6ee7b7;">'+( title||'Your video' )+' has been exported</div></div>'+
-    '<a href="'+url+'" download style="background:#10b981;border:none;color:#fff;border-radius:7px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;white-space:nowrap;">⬇ Download</a>'+
-    '<button onclick="document.getElementById('aab-vid-ready').remove()" style="background:none;border:none;color:#6ee7b7;font-size:18px;cursor:pointer;margin-left:4px;">×</button>';
-  document.body.appendChild(banner);
-  setTimeout(function(){if(document.getElementById('aab-vid-ready'))document.getElementById('aab-vid-ready').remove();},30000);
 }
 
 function E_exportSRT(){
@@ -7207,7 +7164,8 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
 .aab-marker-lbl { position:absolute;top:0;font-size:8px;background:#f59e0b;color:#000;padding:1px 3px;border-radius:0 2px 2px 0;white-space:nowrap; }
 .aab-region-overlay { position:absolute;top:0;bottom:0;background:rgba(37,99,235,.12);border-left:2px solid #3b82f6;border-right:2px solid #3b82f6;pointer-events:none;z-index:28; }
 .aab-track-lane.drop-active { background: rgba(37,99,235,.15) !important; }
-</style></head>
+</style><style id="aab-dedup">.aab-track-tools{display:none!important;}</style>
+</head>
 
     <style>
     /* Professional track color system */
@@ -16012,7 +15970,6 @@ window.aps_onProviderChange=aps_onProviderChange;
           });
         }
       }
-      if(typeof E_renderTL==='function')E_renderTL();
       saveProject();
     }
 
@@ -18466,7 +18423,117 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
       };
       vid.onseeked = function() {
         try {
-          var canvas = docume<script id="aab-platform-clean">
+          var canvas = document.createElement('canvas');
+          canvas.width = 160; canvas.height = 90;
+          var ctx = canvas.getContext('2d');
+          ctx.drawImage(vid, 0, 0, 160, 90);
+          var thumb = canvas.toDataURL('image/jpeg', 0.7);
+          callback && callback(thumb);
+        } catch(e) { callback && callback(null); }
+        vid.remove();
+      };
+      vid.onerror = function() { callback && callback(null); vid.remove(); };
+      vid.src = videoUrl;
+    } catch(e) { callback && callback(null); }
+  };
+
+  // ── Clip card renderer for My Videos page ──────────────────────────
+  window.renderClipCard = function(clip, project, container) {
+    var card = document.createElement('div');
+    card.style.cssText = 'background:#f1f5f9;border-radius:8px;overflow:hidden;position:relative;margin-bottom:8px;';
+    
+    var thumb = document.createElement('div');
+    thumb.style.cssText = 'width:100%;height:120px;background:#1f2937;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;';
+    
+    if(clip.url && (clip.url.startsWith('blob:') || clip.url.startsWith('http'))) {
+      var vid = document.createElement('video');
+      vid.src = clip.url;
+      vid.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+      vid.controls = false;
+      vid.muted = true;
+      vid.preload = 'metadata';
+      thumb.appendChild(vid);
+    } else {
+      thumb.innerHTML = '<div style="color:#9ca3af;font-size:11px;text-align:center;"><div style="font-size:24px;margin-bottom:4px;">&#127902;</div>No preview<br><span style="font-size:9px;">(not yet uploaded)</span></div>';
+    }
+    
+    var info = document.createElement('div');
+    info.style.cssText = 'padding:8px;';
+    var dur = clip.duration ? clip.duration.toFixed(1)+'s' : '?';
+    var src = clip.source || 'recording';
+    info.innerHTML = '<div style="font-size:12px;font-weight:600;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+
+      (clip.sceneName||'Scene '+clip.sceneNum||'Clip')+'</div>'+
+      '<div style="font-size:10px;color:#9ca3af;display:flex;justify-content:space-between;align-items:center;">'+
+      '<span>'+dur+' &bull; '+src+'</span>'+
+      '<div style="display:flex;gap:4px;">'+
+      '<button onclick="addClipToTimeline && addClipToTimeline('+JSON.stringify({name:(clip.sceneName||'Clip'),duration:(clip.duration||8),type:'video',url:(clip.url||''),sceneId:(clip.sceneId||'')}).replace(/</g,'&lt;')+')" style="background:#00d4ff;color:#000;border:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:9px;font-weight:700;">+ Timeline</button>'+
+      (clip.url ? '<button onclick="deleteMyVideo&&deleteMyVideo(this)" style="background:#fef2f2;border:1px solid #fecaca;color:#ef4444;border-radius:4px;padding:3px 6px;cursor:pointer;font-size:9px;">x</button>' : '')+
+      '</div></div>';
+    
+    card.appendChild(thumb);
+    card.appendChild(info);
+    if(container) container.appendChild(card);
+    return card;
+  };
+
+
+  console.log('[AABStudio Platform v2] All functions loaded OK');
+
+
+}());
+
+
+
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<script id="aab-platform-clean">
 (function(){
 'use strict';
 /* ══════════════════════════════════════════════
@@ -19707,8 +19774,81 @@ window._E2_wireTrack = function(row, trackId, trackDef){
     });
   }
 
-  
+  // Tool buttons row (M=mute S=solo L=lock V=vol)
+  if(!lbl._toolsWired){
+    lbl._toolsWired=true;
+    var tools = lbl.querySelector('.aab-track-tools');
+    if(!tools){
+      tools = document.createElement('div');
+      tools.className='aab-track-tools';
+      lbl.appendChild(tools);
+    }
+    tools.innerHTML='';
 
+    var makeBtn = function(icon, title, cls, fn){
+      var b=document.createElement('button');
+      b.className='aab-track-tool-btn '+(cls||'');
+      b.textContent=icon;b.title=title;
+      b.onclick=function(e){e.stopPropagation();fn(b);};
+      tools.appendChild(b);return b;
+    };
+
+    // Mute
+    makeBtn('M','Mute track','',function(b){
+      var track=window.AABE&&AABE.tracks.find(function(t){return t.id===trackId;});
+      if(!track)return;
+      track.muted=!track.muted;
+      b.classList.toggle('active',track.muted);
+      b.style.color=track.muted?'#ef4444':'';
+      typeof toast==='function'&&toast((track.muted?'Muted: ':'Unmuted: ')+nameEl.textContent.trim(),'ok');
+    });
+
+    // Lock
+    makeBtn('L','Lock track','',function(b){
+      var track=window.AABE&&AABE.tracks.find(function(t){return t.id===trackId;});
+      if(!track)return;
+      track.locked=!track.locked;
+      b.classList.toggle('active',track.locked);
+      b.style.color=track.locked?'#f59e0b':'';
+      typeof toast==='function'&&toast((track.locked?'Locked: ':'Unlocked: ')+nameEl.textContent.trim(),'ok');
+    });
+
+    // Solo (video tracks)
+    if(trackDef&&(trackDef.type==='video')){
+      makeBtn('S','Solo track','',function(b){
+        var track=window.AABE&&AABE.tracks.find(function(t){return t.id===trackId;});
+        if(!track)return;
+        track.solo=!track.solo;
+        b.classList.toggle('active',track.solo);
+        b.style.color=track.solo?'#00d4ff':'';
+      });
+    }
+
+    // Volume slider for audio tracks
+    if(trackDef&&trackDef.type==='audio'){
+      var vol=document.createElement('input');
+      vol.type='range';vol.min=0;vol.max=150;vol.value=100;
+      vol.style.cssText='width:40px;height:3px;accent-color:#00d4ff;cursor:pointer;';
+      vol.title='Volume';
+      vol.oninput=function(){
+        var track=window.AABE&&AABE.tracks.find(function(t){return t.id===trackId;});
+        if(track)track.volume=parseInt(vol.value)/100;
+      };
+      tools.appendChild(vol);
+    }
+
+    // Add clip button
+    makeBtn('+','Add clip to this track','',function(){
+      window._E2_addClipToTrack(trackId, trackDef);
+    });
+
+    // Delete track (not main)
+    if(trackId!=='main'){
+      makeBtn('×','Remove track','',function(){
+        window._E2_removeTrack(trackId);
+      });
+    }
+  }
 
   // Right-click track for add options
   if(!lbl._ctxWired2){
@@ -21908,63 +22048,7 @@ function _applyUniqueIcons(){
 }
 [0,500,1200,2500,4000].forEach(function(t){ setTimeout(_applyUniqueIcons,t); });
 
-/* 10. MutationObserver - re-wire clip context menus after re-render */
-(function(){
-  var _debounce = null;
-  var obs = new MutationObserver(function(){
-    clearTimeout(_debounce);
-    _debounce = setTimeout(function(){
-      _applyUniqueIcons();
-      // Re-wire clips
-      document.querySelectorAll('.aab-clip,.aab-clip-el').forEach(function(el){
-        if(el._v2wired) return;
-        el._v2wired = true;
-        var cid = el.getAttribute('data-id');
-        var tid = el.getAttribute('data-track-id')||'main';
-        var track = window.AABE && AABE.tracks && AABE.tracks.find(function(t){return t.id===tid;});
-        var clip = track && track.clips.find(function(c){return c.id===cid;});
-        if(!clip) return;
-        // Context menu
-        el.addEventListener('contextmenu',function(e){
-          e.preventDefault(); e.stopPropagation();
-          window._CE_showClipMenu_v2(e, clip, track);
-        });
-        // Trim handles
-        if(!el.querySelector('.aab-clip-trim-l')){
-          var pps = window.AABE&&AABE.pxPerSec||50;
-          var tl=document.createElement('div'); tl.className='aab-clip-trim-l'; tl.title='Drag to trim start';
-          el.appendChild(tl);
-          tl.addEventListener('mousedown',function(e){
-            e.stopPropagation();e.preventDefault();
-            if(clip.locked||(track&&track.locked))return;
-            var os=clip.start,od=clip.duration,sx=e.clientX;
-            document.body.style.cursor='col-resize';
-            var mv=function(e2){var dx=(e2.clientX-sx)/pps;var ns=Math.max(0,Math.min(os+dx,os+od-0.1));clip.start=ns;clip.duration=od-(ns-os);if(typeof E_renderTL==='function')E_renderTL();};
-            var up=function(){document.body.style.cursor='';document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);};
-            document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
-          });
-          var tr=document.createElement('div'); tr.className='aab-clip-trim-r'; tr.title='Drag to trim end';
-          el.appendChild(tr);
-          tr.addEventListener('mousedown',function(e){
-            e.stopPropagation();e.preventDefault();
-            if(clip.locked||(track&&track.locked))return;
-            var od=clip.duration,sx=e.clientX;
-            document.body.style.cursor='col-resize';
-            var mv=function(e2){clip.duration=Math.max(0.1,od+(e2.clientX-sx)/pps);if(typeof E_renderTL==='function')E_renderTL();};
-            var up=function(){document.body.style.cursor='';document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);};
-            document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
-          });
-        }
-      });
-    }, 150);
-  });
-  obs.observe(document.getElementById('edit-pg')||document.body, {childList:true, subtree:true});
-})();
-
-console.log('[PlatformFixes v2] Loaded: toast-filter + session-persist + APS-progress + in-platform-play + right-click-v2 + icons');
-})();
-
-══════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════
    10. MutationObserver — re-wire clip context menus after re-render
    and re-apply unique icons
    ══════════════════════════════════════════════════════ */
