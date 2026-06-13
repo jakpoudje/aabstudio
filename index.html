@@ -4691,9 +4691,9 @@ function _el(t,c){var e=document.createElement(t);if(c)e.className=c;return e;}
 window.E={tracks:[],sourceClip:null,selectedClipId:null,pxPerSec:60,playing:false,playhead:0,snap:true,activeTool:'select'};
 var _noop=function(){};
 var _fns=['E_build','E_loadClips','E_renderTL','E_fit','E_selectClip','E_addClip',
-  'E_progToggle','E_drawProg','E_openTextEditor','E_addTextClip','E_applyTransition',
+  'E_openTextEditor','E_addTextClip','E_applyTransition',
   'E_openExport','E_doExport','E_exportSRT','E_upClip','E_delClip','E_triggerUpload',
-  'E_srcToggle','E_loadSrc','E_updatePH','E_renderBin','E_dur','E_fc',
+  'E_srcToggle','E_loadSrc','E_renderBin','E_fc',
   'renderEditClips','edit_buildPlaylist','renderEditSuite',
   'tl_render','tl_addClip','tl_muteTrack','tl_lockTrack',
   'edit_setTool','edit_doTool','edit_showSpeedDialog','edit_applyFilter',
@@ -5289,37 +5289,49 @@ function E_progToggle(){
   var btn=document.getElementById("aab-prog-play");
   if(E.playing){
     E.playing=false;
-    if(E._playRAF){cancelAnimationFrame(E._playRAF);E._playRAF=null;}
-    if(clearInterval)clearInterval(E.playInterval);
-    if(E._progVideo)E._progVideo.pause();
+    if(E.playInterval){clearInterval(E.playInterval);E.playInterval=null;}
+    if(E._progVideo&&!E._progVideo.paused)E._progVideo.pause();
     if(btn)btn.innerHTML="&#9654;";
-  } else {
-    var dur=E_dur();if(!dur)return;
-    // Pause source monitor first
-    var sv=document.getElementById("aab-src-vid");
-    if(sv&&!sv.paused)sv.pause();
-    var srcBtn=document.getElementById("aab-src-play");
-    if(srcBtn)srcBtn.innerHTML="&#9654;";
-    E.playing=true;
-    if(btn)btn.innerHTML="&#9646;&#9646;";
-    // Use rAF instead of setInterval to prevent flashing
-    var lastT=null;
-    function tick(t){
-      if(!E.playing)return;
-      if(lastT!==null){
-        var dt=(t-lastT)/1000;
-        E.currentTime=Math.min(E.currentTime+dt,dur);
-        E_updatePH();
-        E_drawProg();
-        if(E.currentTime>=dur){E.playing=false;E.currentTime=0;E_updatePH();if(btn)btn.innerHTML="&#9654;";return;}
-        // Respect Out point
-        if(window.AABE&&AABE.outPoint&&E.currentTime>=AABE.outPoint){E.playing=false;E_updatePH();if(btn)btn.innerHTML="&#9654;";return;}
-      }
-      lastT=t;
-      E._playRAF=requestAnimationFrame(tick);
-    }
-    E._playRAF=requestAnimationFrame(tick);
+    return;
   }
+  // Calculate duration inline so it's never 0 from a stubbed E_dur
+  var _getDur=function(){
+    var m=0;
+    if(window.E&&E.tracks)E.tracks.forEach(function(t){
+      t.clips.forEach(function(c){m=Math.max(m,(c.start||0)+(c.duration||0));});
+    });
+    return m;
+  };
+  var dur=_getDur();
+  if(!dur)return;
+  // Pause source monitor
+  var sv=document.getElementById("aab-src-vid");
+  if(sv&&!sv.paused){sv.pause();var sb=document.getElementById("aab-src-play");if(sb)sb.innerHTML="&#9654;";}
+  E.playing=true;
+  E.currentTime=E.currentTime||0;
+  if(btn)btn.innerHTML="&#9646;&#9646;";
+  var lastMs=Date.now();
+  E.playInterval=setInterval(function(){
+    if(!E.playing){clearInterval(E.playInterval);E.playInterval=null;return;}
+    var now=Date.now();
+    var dt=(now-lastMs)/1000;
+    lastMs=now;
+    var _dur=_getDur();
+    E.currentTime=Math.min(E.currentTime+dt,_dur);
+    E.playhead=E.currentTime;
+    var ph=document.getElementById("aab-ph");
+    if(ph)ph.style.left=(200+E.currentTime*(E.pxPerSec||60))+"px";
+    var pt2=document.getElementById("aab-prog-time");
+    if(pt2){var m2=Math.floor(E.currentTime/60),s2=Math.floor(E.currentTime%60),dm=Math.floor(_dur/60),ds=Math.floor(_dur%60);pt2.textContent=m2+":"+String(s2).padStart(2,"0")+" / "+dm+":"+String(ds).padStart(2,"0");}
+    if(!E._lastDraw||now-E._lastDraw>=100){E._lastDraw=now;if(typeof E_drawProg==="function")E_drawProg();}
+    if(E.currentTime>=_dur){
+      E.playing=false;clearInterval(E.playInterval);E.playInterval=null;
+      E.currentTime=0;E.playhead=0;
+      if(ph)ph.style.left="200px";
+      if(btn)btn.innerHTML="&#9654;";
+      if(typeof E_drawProg==="function")E_drawProg();
+    }
+  },16);
 }
 
 function E_renderTL(){
@@ -15834,30 +15846,39 @@ function aps_loadSavedPhotos() {
     window.aps_stopQueue = aps_stopQueue;
 
 /* ─── APS orchestrators (missing functions) ──────────────────── */
-async function aps_generateAll() {
-  if (APS.generating) { toast('Already generating', 'info'); return; }
-  APS.generating = true; APS.stopRequested = false;
-  var genBtn = document.getElementById('aps-gen-all-btn');
-  var stopBtn = document.getElementById('aps-stop-btn');
-  if (genBtn) genBtn.disabled = true;
-  if (stopBtn) stopBtn.style.display = '';
-  toast('Starting generation for ' + APS.scenes.length + ' scenes…', 'info');
-  for (var i = 0; i < APS.scenes.length; i++) {
-    if (APS.stopRequested) break;
-    var sc = APS.scenes[i];
-    if (sc.status === 'done' && sc.videoUrl) continue;
-    try { await aps_generateScene(i); } catch(e) { console.error('Scene ' + i + ' failed', e); }
-    await new Promise(function(r){ setTimeout(r, 600); });
+async function aps_generateAll(){
+  if(APS.generating){typeof toast==="function"&&toast("Already generating","info");return;}
+  if(!APS.scenes||!APS.scenes.length){typeof toast==="function"&&toast("No scenes","error");return;}
+  APS.generating=true;APS.stopRequested=false;
+  var genBtn=document.getElementById("aps-gen-all-btn");
+  var stopBtn=document.getElementById("aps-stop-btn");
+  if(genBtn)genBtn.disabled=true;
+  if(stopBtn)stopBtn.style.display="";
+  // Sort by scene number for strict sequential order
+  var toGen=APS.scenes
+    .map(function(sc,i){return{sc:sc,i:i};})
+    .filter(function(x){return !(x.sc.status==="done"&&x.sc.videoUrl);})
+    .sort(function(a,b){return (a.sc.num||a.i+1)-(b.sc.num||b.i+1);});
+  if(!toGen.length){APS.generating=false;if(genBtn)genBtn.disabled=false;if(stopBtn)stopBtn.style.display="none";typeof toast==="function"&&toast("All scenes already generated","ok");return;}
+  typeof toast==="function"&&toast("Generating "+toGen.length+" scenes in order (scene "+toGen[0].sc.num+" first)...","ok");
+  var idx=0;
+  function nextScene(){
+    if(APS.stopRequested||idx>=toGen.length){
+      APS.generating=false;
+      if(genBtn)genBtn.disabled=false;
+      if(stopBtn)stopBtn.style.display="none";
+      if(!APS.stopRequested)typeof toast==="function"&&toast("All scenes generated!","ok");
+      return;
+    }
+    var item=toGen[idx++];
+    var p=aps_generateScene(item.i);
+    if(p&&typeof p.then==="function"){
+      p.then(function(){setTimeout(nextScene,500);}).catch(function(){setTimeout(nextScene,500);});
+    } else {
+      setTimeout(nextScene,2000);
+    }
   }
-  APS.generating = false;
-  if (genBtn) genBtn.disabled = false;
-  if (stopBtn) stopBtn.style.display = 'none';
-  var done = APS.scenes.filter(function(s){ return s.videoUrl; });
-  if (done.length) {
-    var goBtn = document.getElementById('aps-go-edit-btn-top');
-    if (goBtn) { goBtn.disabled = false; goBtn.style.cursor = 'pointer'; goBtn.style.background = 'rgba(16,185,129,.25)'; goBtn.style.color = '#10b981'; goBtn.style.borderColor = 'rgba(16,185,129,.5)'; }
-  }
-  toast(APS.stopRequested ? 'Stopped.' : 'Done! ' + done.length + ' video(s) generated.', APS.stopRequested ? 'info' : 'ok');
+  nextScene();
 }
 window.aps_generateAll = aps_generateAll;
 
@@ -15935,37 +15956,31 @@ window.aps_onProviderChange=aps_onProviderChange;
       bar.appendChild(clip);
     }
 
-    function aps_addClipToTimeline(sc) {
-      if (!sc || !sc.videoUrl) return;
-      // Add to project apsVideos store
-      if (!window.PROJECT.apsVideos) window.PROJECT.apsVideos = {};
-      window.PROJECT.apsVideos[sc.id] = {
-        url: sc.videoUrl,
-        name: 'AI Scene ' + sc.num,
-        duration: sc.duration || 10,
-        num: sc.num,
-        narration: sc.narration
-      };
-      
-      // Add to edit suite E.tracks if E is loaded
-      if (window.E && window.E.tracks) {
-        var mainTrack = window.E.tracks.find(function(t){ return t.id === 'main'; });
-        if (mainTrack) {
-          var pos = mainTrack.clips.reduce(function(max, c){ return Math.max(max, c.start + c.duration); }, 0);
-          mainTrack.clips.push({
-            id: 'aps_' + sc.id + '_' + Date.now(),
-            name: 'AI Scene ' + sc.num,
-            url: sc.videoUrl,
-            type: 'video',
-            start: pos,
-            duration: sc.duration || 10,
-            color: '#2563eb',
-            source: 'aps'
-          });
+    function aps_addClipToTimeline(sc){
+  if(!sc||!sc.videoUrl)return;
+  var sceneNum=sc.num||sc.sceneNum||1;
+  if(!window.PROJECT.apsVideos)window.PROJECT.apsVideos={};
+  window.PROJECT.apsVideos[sc.id||("s"+sceneNum)]={url:sc.videoUrl,name:"AI Scene "+sceneNum,duration:sc.duration||8,num:sceneNum,narration:sc.narration};
+  // Add to edit suite timeline in correct position
+  if(window.E&&window.E.tracks){
+    var mainTrack=E.tracks.find(function(t){return t.id==="main";});
+    if(mainTrack){
+      // Remove existing clip for this scene if regenerating
+      mainTrack.clips=mainTrack.clips.filter(function(c){return c.sceneNum!==sceneNum&&c.id!==("aps_"+sceneNum);});
+      // Calculate start time based on scene order
+      var startTime=0;
+      if(window.PROJECT&&PROJECT.scenes){
+        for(var si=0;si<Math.min(sceneNum-1,PROJECT.scenes.length);si++){
+          startTime+=PROJECT.scenes[si].duration||8;
         }
       }
-      saveProject();
+      mainTrack.clips.push({id:"aps_"+sceneNum,name:"AI Scene "+sceneNum,url:sc.videoUrl,start:startTime,duration:sc.duration||8,type:"video",source:"aps",sceneNum:sceneNum});
+      mainTrack.clips.sort(function(a,b){return a.start-b.start;});
+      if(typeof E_renderTL==="function")E_renderTL();
     }
+  }
+  saveProject();
+}
 
     // ── SAFARI COMPATIBILITY: Explicitly expose all handler functions on window ──
     // Safari with strict scripts can lose inline handler access to closured functions
