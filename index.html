@@ -5226,24 +5226,22 @@ function E_drawProg(){
   });
   if(vc&&vc.url){
     if(empty)empty.style.display="none";
-    if(!E._progVideo){E._progVideo=document.createElement("video");E._progVideo.muted=true;E._progVideo.setAttribute("playsinline","");E._progVideo.style.display="none";document.body.appendChild(E._progVideo);}
+    if(!E._progVideo){E._progVideo=document.createElement("video");E._progVideo.muted=true;E._progVideo.setAttribute("playsinline","");E._progVideo.crossOrigin="anonymous";E._progVideo.style.cssText="position:absolute;top:-9999px;left:-9999px;width:1px;height:1px;";document.body.appendChild(E._progVideo);}
     var pv=E._progVideo;
     var targetT=Math.max(0,t-vc.start);
     if(pv.src!==vc.url){
       pv.src=vc.url;pv.load();
       pv.addEventListener("loadedmetadata",function(){
         pv.currentTime=targetT;
-        pv.addEventListener("seeked",function(){
-          try{ctx.drawImage(pv,0,0,canvas.width,canvas.height);}catch(e){}
-          E_drawTextLayers(ctx,canvas,t);
-        },{once:true});
+        if(E.playing)pv.play().catch(function(){});
       },{once:true});
     } else {
-      pv.currentTime=targetT;
-      pv.addEventListener("seeked",function(){
-        try{ctx.drawImage(pv,0,0,canvas.width,canvas.height);}catch(e){}
-        E_drawTextLayers(ctx,canvas,t);
-      },{once:true});
+      // During playback: let the video play naturally and draw each frame
+      if(E.playing&&pv.paused){pv.currentTime=targetT;pv.play().catch(function(){});}
+      // Draw current video frame (no seek needed during playback)
+      try{ctx.drawImage(pv,0,0,canvas.width,canvas.height);}catch(e){}
+      E_drawTextLayers(ctx,canvas,t);
+      return; // skip the seek path below
     }
   } else {
     if(empty&&E_dur()===0)empty.style.display="flex";
@@ -5311,7 +5309,8 @@ function E_progToggle(){
         E.currentTime=Math.min(E.currentTime+dt,dur);
         E.playhead=E.currentTime;
         E_updatePH();
-        E_drawProg();
+        // Throttle E_drawProg to every 100ms to prevent seek thrashing
+        if(!E._lastDraw||t-E._lastDraw>=100){E._lastDraw=t;E_drawProg();}
         if(E.currentTime>=dur){E.playing=false;E.currentTime=0;E_updatePH();if(btn)btn.innerHTML="&#9654;";return;}
         // Respect Out point
         if(window.AABE&&AABE.outPoint&&E.currentTime>=AABE.outPoint){E.playing=false;E_updatePH();if(btn)btn.innerHTML="&#9654;";return;}
