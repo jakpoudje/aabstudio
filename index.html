@@ -16454,7 +16454,7 @@ window.aps_clearPhoto = aps_clearPhoto;
           </div>
 
           <div class="aps-label">Framing</div>
-          <select id="aps-framing" class="aps-select">
+          <select id="aps-framing" class="aps-select" onchange="aps_saveSettings()">
             <option value="medium">Medium shot (chest up)</option>
             <option value="close">Close-up (face only)</option>
             <option value="wide">Wide shot (full body)</option>
@@ -16462,7 +16462,7 @@ window.aps_clearPhoto = aps_clearPhoto;
             <option value="podcast">Podcast close</option>
           </select>
           <div class="aps-label">Gesture Style</div>
-          <select id="aps-gesture" class="aps-select">
+          <select id="aps-gesture" class="aps-select" onchange="aps_saveSettings()">
             <option value="professional">Professional calm</option>
             <option value="news-anchor">News anchor</option>
             <option value="teacher">Teaching / explaining</option>
@@ -16481,7 +16481,7 @@ window.aps_clearPhoto = aps_clearPhoto;
             <option value="elevenlabs">ElevenLabs</option>
           </select>
           <div class="aps-label">Voice</div>
-          <select id="aps-voice-sel" class="aps-select">
+          <select id="aps-voice-sel" class="aps-select" onchange="aps_saveSettings()">
             <option value="pNInz6obpgDQGcFmaJgB" data-gender="male">Adam — Professional male</option>
             <option value="TxGEqnHWrfWFTfGW9XjX" data-gender="male">Josh — Warm male</option>
             <option value="yoZ06aMxZJJ28mfd3POQ" data-gender="male">Sam — Casual male</option>
@@ -16504,9 +16504,9 @@ window.aps_clearPhoto = aps_clearPhoto;
               to all</button>
           </div>
           <div class="aps-label" style="margin-top:10px;">Stability</div>
-          <input type="range" id="aps-voice-stability" min="0" max="100" value="50" class="aps-slider">
+          <input type="range" id="aps-voice-stability" min="0" max="100" value="50" class="aps-slider" oninput="aps_saveSettings()">
           <div class="aps-label">Clarity</div>
-          <input type="range" id="aps-voice-clarity" min="0" max="100" value="75" class="aps-slider">
+          <input type="range" id="aps-voice-clarity" min="0" max="100" value="75" class="aps-slider" oninput="aps_saveSettings()">
         </div>
 
         <!-- 3. Studio Background -->
@@ -16543,7 +16543,7 @@ window.aps_clearPhoto = aps_clearPhoto;
         <div class="aps-section">
           <div class="aps-section-hdr">🎥 Camera & Motion</div>
           <div class="aps-label">Shot type</div>
-          <select id="aps-shot" class="aps-select">
+          <select id="aps-shot" class="aps-select" onchange="aps_saveSettings()">
             <option value="medium">Medium shot</option>
             <option value="close-up">Close-up</option>
             <option value="wide">Wide studio shot</option>
@@ -16551,7 +16551,7 @@ window.aps_clearPhoto = aps_clearPhoto;
             <option value="push-in">Slow push-in</option>
           </select>
           <div class="aps-label">Motion</div>
-          <select id="aps-motion" class="aps-select">
+          <select id="aps-motion" class="aps-select" onchange="aps_saveSettings()">
             <option value="static">Static</option>
             <option value="slow-push">Subtle slow push-in</option>
             <option value="handheld">Slight handheld</option>
@@ -16570,7 +16570,7 @@ window.aps_clearPhoto = aps_clearPhoto;
             ⚡ D-ID animates your uploaded photo in 30-90s per scene
           </div>
           <div class="aps-label">Aspect Ratio</div>
-          <select id="aps-ratio" class="aps-select">
+          <select id="aps-ratio" class="aps-select" onchange="aps_saveSettings()">
             <option value="16:9">16:9 — YouTube / LinkedIn</option>
             <option value="9:16">9:16 — TikTok / Reels</option>
             <option value="1:1">1:1 — Instagram</option>
@@ -22267,6 +22267,94 @@ window.dash_filterAssets=window.dash_filterAssets||function(filter,btn){
 window.aps_loadSavedPhotos=function(){if(typeof aps_renderCharGrid==='function')aps_renderCharGrid();};
 
 console.log('[AABStudio] Stubs loaded: sidebarTab, aps_goToEditSuite, aps_setBg, aps_filterScenes, aps_selectAll, aps_regenerateCurrent, aps_previewVoice, aps_applyVoiceAll, aps_stopQueue, aps_triggerCustomBg, aps_clearPhoto');
+</script>
+<script id="aab-tp-stubs">
+// toggleMirror — mirror the teleprompter display
+window.toggleMirror = function() {
+  if(typeof window.tpMirror === 'function') { tpMirror(); return; }
+  var tp = document.getElementById('studio-tp') || document.getElementById('teleprompter-body');
+  if(!tp) return;
+  var curr = tp.style.transform || '';
+  tp.style.transform = curr.includes('scaleX(-1)') ? '' : 'scaleX(-1)';
+  // Toggle mirror btn state
+  var btn = Array.from(document.querySelectorAll('button')).find(function(b){return b.textContent.includes('Mirror');});
+  if(btn) btn.classList.toggle('on');
+};
+
+// tpPractice — start/stop teleprompter practice mode  
+window.tpPractice = function() {
+  var btn = document.getElementById('btn-tp-start') || Array.from(document.querySelectorAll('button')).find(function(b){return b.textContent.includes('Practice');});
+  if(window.STUDIO_TP && STUDIO_TP.running) {
+    // Stop
+    STUDIO_TP.running = false;
+    clearInterval(STUDIO_TP.timer);
+    if(btn){btn.textContent='▶ Practice';btn.style.background='';}
+    if(typeof toast==='function') toast('Teleprompter stopped','ok');
+  } else {
+    // Start auto-scroll
+    if(typeof window.setTpScrollMode === 'function') setTpScrollMode('auto');
+    if(btn){btn.textContent='⏸ Stop';btn.style.background='rgba(239,68,68,.2)';}
+    if(typeof toast==='function') toast('Teleprompter started','ok');
+  }
+};
+
+// _startTpAutoScroll / _stopTpAutoScroll
+window._startTpAutoScroll = function() { if(typeof window.setTpScrollMode==='function') setTpScrollMode('auto'); };
+window._stopTpAutoScroll = function() { if(typeof window.setTpScrollMode==='function') setTpScrollMode('manual'); };
+
+// tpToggleMirror alias
+window.tpToggleMirror = window.toggleMirror;
+
+// setTpTheme alias (in case it's called as setTpTheme not tpSetTheme)
+window.setTpTheme = window.setTpTheme || window.tpSetTheme || function(theme) {
+  var tp = document.getElementById('studio-tp');
+  if(!tp) return;
+  var themes = {dark:'#000',light:'#fff',green:'#002200',blue:'#000033'};
+  tp.style.background = themes[theme] || '#000';
+};
+
+// tpSetMode — set teleprompter mode from dropdown
+window.tpSetMode = function(mode) { if(typeof window.setTpScrollMode==='function') setTpScrollMode(mode); };
+
+// startTpScroll / stopTpScroll aliases
+window.startTpScroll = window._startTpAutoScroll;
+window.stopTpScroll = window._stopTpAutoScroll;
+
+// teleprompterState helper
+window.teleprompterState = window.STUDIO_TP || {};
+
+// tpAdaptSpeed — toggle adaptive speed  
+window.tpAdaptSpeed = window.toggleAdaptiveTp || function() {
+  if(typeof toast==='function') toast('Adaptive speed toggled','ok');
+};
+
+// tpFontSize — change font size
+window.tpFontSize = function(delta) {
+  if(typeof window.increaseTpFont==='function' && delta>0) increaseTpFont();
+  else if(typeof window.decreaseTpFont==='function' && delta<0) decreaseTpFont();
+};
+
+// tpSpeedChange — change scroll speed  
+window.tpSpeedChange = function(val) {
+  if(window.STUDIO_TP) STUDIO_TP.speed = parseFloat(val) || 1;
+  if(typeof window.setTpSpeed==='function') setTpSpeed(val);
+};
+
+// tpWordMode / tpSyncMode / tpPracticeMode — set modes
+window.tpWordMode = function() { if(typeof window.setTpScrollMode==='function') setTpScrollMode('word'); };
+window.tpSyncMode = function() { if(typeof window.setTpScrollMode==='function') setTpScrollMode('sync'); };
+window.tpPracticeMode = window.tpPractice;
+
+// startAutoScroll / stopAutoScroll
+window.startAutoScroll = window._startTpAutoScroll;
+window.stopAutoScroll = window._stopTpAutoScroll;
+
+// aps_triggerCustomBg fallback
+window.aps_triggerCustomBg = window.aps_triggerCustomBg || function() {
+  if(typeof toast==='function') toast('Upload a custom background image in Assets', 'info');
+};
+
+console.log('[AABStudio] TP stubs loaded: toggleMirror, tpPractice, tpWordMode, tpSyncMode, tpSpeedChange, tpFontSize, startAutoScroll, stopAutoScroll, tpToggleMirror');
 </script>
 </body>
 </html>
