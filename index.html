@@ -7143,71 +7143,125 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
 .aab-region-overlay { position:absolute;top:0;bottom:0;background:rgba(37,99,235,.12);border-left:2px solid #3b82f6;border-right:2px solid #3b82f6;pointer-events:none;z-index:28; }
 .aab-track-lane.drop-active { background: rgba(37,99,235,.15) !important; }
 </style>
-<style id="aab-layout-fix">
-/* ── Edit Suite: fix layout so all 7 tracks visible via scroll ── */
-#edit-pg {
-  display: flex !important;
-  flex-direction: column !important;
-  height: 100vh !important;
-  overflow: hidden !important;
-}
-/* Monitor row: fixed height, slightly shorter to give timeline space */
-.aab-monitors-row {
-  flex: 0 0 250px !important;
-  height: 250px !important;
-  min-height: 250px !important;
-  max-height: 250px !important;
-}
-.aab-monitor {
-  height: 250px !important;
-  min-height: 250px !important;
-}
-/* Edit body: flex-col, fixed to monitor+toolbar height */
-#edit-pg > .aab-edit-body {
-  flex: 0 0 auto !important;
-}
-/* Timeline wrap: takes ALL remaining space */
-#aab-tl-wrap, #edit-pg > .aab-tl-wrap {
+
+
+<style id="aab-layout-master">
+/* ══════════════════════════════════════════
+   AABStudio Layout Master Fix
+   Root causes identified and fixed:
+   1. .aab-tl-wrap was fixed 260px - changed to flex:1
+   2. APS scenes/right col - proper overflow
+   3. All pages - no footer overlap
+   ══════════════════════════════════════════ */
+
+/* ── EDIT SUITE: Timeline wrap fills remaining space ── */
+.aab-tl-wrap {
   flex: 1 1 0 !important;
-  min-height: 0 !important;
-  overflow: hidden !important;
+  min-height: 200px !important;
+  max-height: none !important;
   display: flex !important;
   flex-direction: column !important;
+  overflow: hidden !important;
 }
-/* Timeline scroll: fills the wrap, scrollable */
-#aab-tl-scroll, .aab-tl-scroll {
+
+/* Timeline scroll area fills the wrap */
+.aab-tl-scroll, #aab-tl-scroll {
   flex: 1 1 0 !important;
   min-height: 0 !important;
   overflow-y: auto !important;
   overflow-x: auto !important;
-  padding-bottom: 12px !important;
+  padding-bottom: 16px !important;
 }
-/* Scrollbar visible */
-#aab-tl-scroll::-webkit-scrollbar { width: 5px !important; height: 5px !important; }
-#aab-tl-scroll::-webkit-scrollbar-track { background: transparent !important; }
-#aab-tl-scroll::-webkit-scrollbar-thumb { background: #374151 !important; border-radius: 3px !important; }
-#aab-tl-scroll::-webkit-scrollbar-thumb:hover { background: #6b7280 !important; }
-/* e-resize divider stays fixed */
-#e-resize { flex: 0 0 5px !important; }
 
-/* ── APS: all content visible, no footer cutoff ── */
+/* Visible scrollbar so users know they can scroll */
+.aab-tl-scroll::-webkit-scrollbar,
+#aab-tl-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+.aab-tl-scroll::-webkit-scrollbar-thumb,
+#aab-tl-scroll::-webkit-scrollbar-thumb { 
+  background: rgba(255,255,255,.2); border-radius: 3px; 
+}
+
+/* Edit body: takes remaining space after we give tl-wrap flex:1 too
+   Since both have flex:1, the edit page (monitors+toolbar) and 
+   timeline split the space evenly. Monitors need to be slightly smaller */
+.aab-monitors-row {
+  height: 250px !important;
+  min-height: 250px !important;
+  max-height: 250px !important;
+  flex-shrink: 0 !important;
+}
+.aab-monitor {
+  height: 250px !important;
+  min-height: 250px !important;
+  max-height: 250px !important;
+}
+
+/* ── APS: Scenes list and right panel fully visible ── */
 #ai-presenter-studio {
+  height: 100vh !important;
   max-height: 100vh !important;
   overflow: hidden !important;
 }
-#aps-scene-list {
-  overflow-y: auto !important;
+
+/* APS main body row (below top bar) */
+#ai-presenter-studio > div:nth-child(2) {
   flex: 1 1 0 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+}
+
+/* APS left column (scenes list) */
+#ai-presenter-studio > div:nth-child(2) > div:first-child {
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+/* APS scenes list - scroll */
+#aps-scene-list {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+}
+
+/* APS right column (presenter settings) - scroll */
+#ai-presenter-studio > div:nth-child(2) > div:last-child {
+  overflow-y: auto !important;
+  max-height: 100% !important;
+}
+
+/* APS clips bar row */
+#ai-presenter-studio > div:last-child {
+  flex-shrink: 0 !important;
+  overflow-x: auto !important;
   min-height: 0 !important;
 }
 
-/* ── All pages: no content behind footer ── */
-footer, .aab-footer, [class*="site-footer"] {
+/* ── ALL PAGES: no content behind footer ── */
+#edit-pg, #record-pg, #scenes-pg, #script-pg, #export-pg, #dashboard-pg {
+  padding-bottom: 0 !important;
+}
+
+/* Footer stays visible */
+footer, .site-footer {
   position: relative !important;
-  z-index: 10 !important;
+  flex-shrink: 0 !important;
+}
+
+/* Recording studio page: camera first */
+#record-pg {
+  overflow-y: auto !important;
+}
+
+/* ── Program monitor: correct role label ── */
+.aab-monitor-label {
+  font-size: 9px !important;
+  font-weight: 700 !important;
+  letter-spacing: .1em !important;
+  opacity: .6 !important;
 }
 </style>
-
 </head>
 
     <style>
