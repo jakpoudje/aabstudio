@@ -4691,7 +4691,7 @@ function _el(t,c){var e=document.createElement(t);if(c)e.className=c;return e;}
 window.E={tracks:[],sourceClip:null,selectedClipId:null,pxPerSec:60,playing:false,playhead:0,snap:true,activeTool:'select'};
 var _noop=function(){};
 var _fns=['E_build','E_loadClips','E_renderTL','E_fit','E_selectClip','E_addClip',
-  /* E_progToggle defined by source *//* E_drawProg defined by source */'E_openTextEditor','E_addTextClip','E_applyTransition',
+  'E_progToggle','E_drawProg','E_openTextEditor','E_addTextClip','E_applyTransition',
   'E_openExport','E_doExport','E_exportSRT','E_upClip','E_delClip','E_triggerUpload',
   'E_srcToggle','E_loadSrc','E_updatePH','E_renderBin','E_dur','E_fc',
   'renderEditClips','edit_buildPlaylist','renderEditSuite',
@@ -5226,22 +5226,24 @@ function E_drawProg(){
   });
   if(vc&&vc.url){
     if(empty)empty.style.display="none";
-    if(!E._progVideo){E._progVideo=document.createElement("video");E._progVideo.muted=true;E._progVideo.setAttribute("playsinline","");E._progVideo.crossOrigin="anonymous";E._progVideo.style.cssText="position:absolute;top:-9999px;left:-9999px;width:1px;height:1px;";document.body.appendChild(E._progVideo);}
+    if(!E._progVideo){E._progVideo=document.createElement("video");E._progVideo.muted=true;E._progVideo.setAttribute("playsinline","");E._progVideo.style.display="none";document.body.appendChild(E._progVideo);}
     var pv=E._progVideo;
     var targetT=Math.max(0,t-vc.start);
     if(pv.src!==vc.url){
       pv.src=vc.url;pv.load();
       pv.addEventListener("loadedmetadata",function(){
         pv.currentTime=targetT;
-        if(E.playing)pv.play().catch(function(){});
+        pv.addEventListener("seeked",function(){
+          try{ctx.drawImage(pv,0,0,canvas.width,canvas.height);}catch(e){}
+          E_drawTextLayers(ctx,canvas,t);
+        },{once:true});
       },{once:true});
     } else {
-      // During playback: let the video play naturally and draw each frame
-      if(E.playing&&pv.paused){pv.currentTime=targetT;pv.play().catch(function(){});}
-      // Draw current video frame (no seek needed during playback)
-      try{ctx.drawImage(pv,0,0,canvas.width,canvas.height);}catch(e){}
-      E_drawTextLayers(ctx,canvas,t);
-      return; // skip the seek path below
+      pv.currentTime=targetT;
+      pv.addEventListener("seeked",function(){
+        try{ctx.drawImage(pv,0,0,canvas.width,canvas.height);}catch(e){}
+        E_drawTextLayers(ctx,canvas,t);
+      },{once:true});
     }
   } else {
     if(empty&&E_dur()===0)empty.style.display="flex";
@@ -5287,14 +5289,12 @@ function E_progToggle(){
   var btn=document.getElementById("aab-prog-play");
   if(E.playing){
     E.playing=false;
-    if(E._playRAF){cancelAnimationFrame(E._playRAF);E._playRAF=null;}if(E.playInterval){clearInterval(E.playInterval);E.playInterval=null;}
+    if(E._playRAF){cancelAnimationFrame(E._playRAF);E._playRAF=null;}
     if(clearInterval)clearInterval(E.playInterval);
     if(E._progVideo)E._progVideo.pause();
     if(btn)btn.innerHTML="&#9654;";
   } else {
-    // Don't capture dur in closure - recalculate each tick so E_dur patch works
-    var _getDur=function(){var m=0;if(window.E&&E.tracks)E.tracks.forEach(function(t){t.clips.forEach(function(c){m=Math.max(m,(c.start||0)+(c.duration||0));});});return m;};
-    var _initialDur=_getDur();if(!_initialDur)return;
+    var dur=E_dur();if(!dur)return;
     // Pause source monitor first
     var sv=document.getElementById("aab-src-vid");
     if(sv&&!sv.paused)sv.pause();
@@ -5308,12 +5308,10 @@ function E_progToggle(){
       if(!E.playing)return;
       if(lastT!==null){
         var dt=(t-lastT)/1000;
-        var _dur=_getDur();E.currentTime=Math.min(E.currentTime+dt,_dur);
-        E.playhead=E.currentTime;
+        E.currentTime=Math.min(E.currentTime+dt,dur);
         E_updatePH();
-        // Throttle E_drawProg to every 100ms to prevent seek thrashing
-        if(!E._lastDraw||t-E._lastDraw>=100){E._lastDraw=t;E_drawProg();}
-        if(E.currentTime>=_dur){E.playing=false;E.currentTime=0;E_updatePH();if(btn)btn.innerHTML="&#9654;";return;}
+        E_drawProg();
+        if(E.currentTime>=dur){E.playing=false;E.currentTime=0;E_updatePH();if(btn)btn.innerHTML="&#9654;";return;}
         // Respect Out point
         if(window.AABE&&AABE.outPoint&&E.currentTime>=AABE.outPoint){E.playing=false;E_updatePH();if(btn)btn.innerHTML="&#9654;";return;}
       }
@@ -6700,7 +6698,7 @@ body{max-width:100vw;overflow-x:hidden}
 
 /* Edit page — CSS Grid */
 #edit-pg{display:none}
-#edit-pg.on{display:grid!important;grid-template-rows:36px 32px 1fr 5px 1fr!important;grid-template-columns:1fr;height:100vh;height:100dvh;overflow:hidden!important;max-width:100vw!important}
+#edit-pg.on{display:grid!important;grid-template-rows:0 0 1fr 5px 1fr!important;grid-template-columns:1fr;height:100vh;height:100dvh;overflow:hidden!important;max-width:100vw!important}
 #edit-pg>#edit-topbar,#aab-export-btn{display:none!important}
 #e-nav-bar{display:flex!important;align-items:center;overflow:hidden;max-height:36px}
 #e-tools-bar{display:flex!important;align-items:center;overflow-x:auto;max-height:32px;scrollbar-width:none}
@@ -7165,14 +7163,6 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
 .aab-region-overlay { position:absolute;top:0;bottom:0;background:rgba(37,99,235,.12);border-left:2px solid #3b82f6;border-right:2px solid #3b82f6;pointer-events:none;z-index:28; }
 .aab-track-lane.drop-active { background: rgba(37,99,235,.15) !important; }
 </style><style id="aab-dedup">.aab-track-tools{display:none!important;}</style>
-<style id="aab-grid-fix">
-#e-nav-bar{display:none!important;height:0!important;overflow:hidden!important;}
-#e-tools-bar{display:none!important;height:0!important;overflow:hidden!important;}
-#e-main{display:none!important;height:0!important;overflow:hidden!important;}
-#e-timeline{display:none!important;height:0!important;overflow:hidden!important;}
-/* Force grid to give timeline the space */
-#edit-pg.on{grid-template-rows:0px 0px 1fr 5px 1fr!important;}
-</style>
 </head>
 
     <style>
