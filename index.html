@@ -5608,11 +5608,9 @@ function E_openExport(){
 
 function E_doExport(){
   var clips=[];
-  E.tracks.filter(function(t){return t.type==="video"&&!t.muted;}).forEach(function(t){
-    t.clips.forEach(function(c){if(c.url)clips.push({url:c.url,name:c.name||"clip",start:c.start||0,duration:c.duration||0});});
-  });
+  E.tracks.filter(function(t){return t.type==="video"&&!t.muted;}).forEach(function(t){t.clips.forEach(function(c){if(c.url)clips.push({url:c.url,name:c.name||"clip",start:c.start||0,duration:c.duration||0});});});
   clips.sort(function(a,b){return a.start-b.start;});
-  if(!clips.length){if(typeof toast==="function")toast("No video clips on timeline","error");return;}
+  if(!clips.length){if(typeof toast==="function")toast("No video clips","error");return;}
   var prog=document.getElementById("aab-exp-prog"),bar=document.getElementById("aab-exp-bar"),status=document.getElementById("aab-exp-status");
   if(prog)prog.style.display="block";if(bar)bar.style.width="5%";
   if(status)status.textContent="Stitching "+clips.length+" clips into one video...";
@@ -5633,15 +5631,8 @@ function E_doExport(){
     document.body.appendChild(bv);setTimeout(function(){var el=document.getElementById("aab-vid-ready");if(el)el.remove();},30000);
   })
   .catch(function(err){
-    console.warn("Stitch failed:",err.message);
     if(status)status.textContent="Downloading "+clips.length+" clips...";
-    var idx2=0;
-    function next2(){
-      if(idx2>=clips.length){if(bar)bar.style.width="100%";if(status)status.textContent="Done";if(typeof toast==="function")toast("Export complete","ok");return;}
-      var c=clips[idx2++];if(bar)bar.style.width=Math.round(idx2/clips.length*100)+"%";
-      var a=document.createElement("a");a.href=c.url;a.download=(c.name||"clip").replace(/[^a-z0-9]/gi,"_")+".mp4";document.body.appendChild(a);a.click();document.body.removeChild(a);
-      setTimeout(next2,1500);
-    }next2();
+    var i2=0;function n(){if(i2>=clips.length){if(bar)bar.style.width="100%";if(typeof toast==="function")toast("Export complete","ok");return;}var c=clips[i2++];if(bar)bar.style.width=Math.round(i2/clips.length*100)+"%";var a=document.createElement("a");a.href=c.url;a.download=(c.name||"clip").replace(/[^a-z0-9]/gi,"_")+".mp4";document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(n,1500);}n();
   });
 }
 
@@ -7162,13 +7153,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
 .aab-marker-lbl { position:absolute;top:0;font-size:8px;background:#f59e0b;color:#000;padding:1px 3px;border-radius:0 2px 2px 0;white-space:nowrap; }
 .aab-region-overlay { position:absolute;top:0;bottom:0;background:rgba(37,99,235,.12);border-left:2px solid #3b82f6;border-right:2px solid #3b82f6;pointer-events:none;z-index:28; }
 .aab-track-lane.drop-active { background: rgba(37,99,235,.15) !important; }
-</style><style id="aab-safe-css">
-/* Hide duplicate track tool row - source has M/Lock/Eye already */
-.aab-track-tools{display:none!important;}
-/* Track scrollbar visible */
-.aab-tl-scroll::-webkit-scrollbar{width:5px;height:5px;}
-.aab-tl-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:3px;}
-</style>
+</style><style id="aab-safe-css">.aab-track-tools{display:none!important;}.aab-tl-scroll::-webkit-scrollbar{width:5px;height:5px;}.aab-tl-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:3px;}</style>
 </head>
 
     <style>
@@ -21515,24 +21500,20 @@ setTimeout(function(){
 },3000);
 
 /* ── 6. Load APS generated clips into media bin on Edit Suite open ── */
-var _origEBuild=window.E_build;
-if(_origEBuild&&!_origEBuild._fixWrapped){
-  window.E_build=function(){
-    if(typeof _origEBuild==='function')_origEBuild();
-    setTimeout(function(){
-      // After edit suite builds, load APS videos into bin + timeline
-      if(window.PROJECT){
-        var vids=PROJECT.apsVideos||{};
-        var hasVids=Object.keys(vids).length>0;
-        var hasSceneVids=(PROJECT.scenes||[]).some(function(s){return s.apsVideoUrl;});
-        if((hasVids||hasSceneVids)&&window.E&&E.clips){
-          window._transferApsToEdit();
-        }
-      }
-    },800);
-  };
-  window.E_build._fixWrapped=true;
-}
+/* Load APS videos into edit suite - triggered by nav, not E_build wrap */
+setTimeout(function(){
+  if(window.PROJECT&&window.E&&window.E.tracks){
+    var vids=PROJECT.apsVideos||{};
+    var main=E.tracks.find(function(t){return t.id==='main';});
+    if(main&&main.clips.length===0){
+      Object.values(vids).sort(function(a,b){return (a.num||0)-(b.num||0);}).forEach(function(v){
+        var pos=main.clips.reduce(function(m,c){return Math.max(m,(c.start||0)+(c.duration||0));},0);
+        main.clips.push({id:'aps_'+v.num,name:v.name||('Scene '+v.num),url:v.url,type:'video',start:pos,duration:v.duration||8});
+      });
+      if(typeof E_renderTL==='function')E_renderTL();
+    }
+  }
+},3000);
 
 /* ── 7. APS scenes list: ensure scrollable and all scenes show ── */
 setTimeout(function(){
