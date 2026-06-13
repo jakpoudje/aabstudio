@@ -5292,7 +5292,9 @@ function E_progToggle(){
     if(E._progVideo)E._progVideo.pause();
     if(btn)btn.innerHTML="&#9654;";
   } else {
-    var dur=E_dur();if(!dur)return;
+    // Don't capture dur in closure - recalculate each tick so E_dur patch works
+    var _getDur=function(){var m=0;if(window.E&&E.tracks)E.tracks.forEach(function(t){t.clips.forEach(function(c){m=Math.max(m,(c.start||0)+(c.duration||0));});});return m;};
+    var _initialDur=_getDur();if(!_initialDur)return;
     // Pause source monitor first
     var sv=document.getElementById("aab-src-vid");
     if(sv&&!sv.paused)sv.pause();
@@ -5306,12 +5308,12 @@ function E_progToggle(){
       if(!E.playing)return;
       if(lastT!==null){
         var dt=(t-lastT)/1000;
-        E.currentTime=Math.min(E.currentTime+dt,dur);
+        var _dur=_getDur();E.currentTime=Math.min(E.currentTime+dt,_dur);
         E.playhead=E.currentTime;
         E_updatePH();
         // Throttle E_drawProg to every 100ms to prevent seek thrashing
         if(!E._lastDraw||t-E._lastDraw>=100){E._lastDraw=t;E_drawProg();}
-        if(E.currentTime>=dur){E.playing=false;E.currentTime=0;E_updatePH();if(btn)btn.innerHTML="&#9654;";return;}
+        if(E.currentTime>=_dur){E.playing=false;E.currentTime=0;E_updatePH();if(btn)btn.innerHTML="&#9654;";return;}
         // Respect Out point
         if(window.AABE&&AABE.outPoint&&E.currentTime>=AABE.outPoint){E.playing=false;E_updatePH();if(btn)btn.innerHTML="&#9654;";return;}
       }
