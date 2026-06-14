@@ -118,7 +118,17 @@ function pushClipReady(projectId, payload) {
   console.log('Pushed clip_ready to project room:', projectId);
 }
 
-const corsOpts = { origin: '*', methods: ['GET','POST','DELETE','OPTIONS'], allowedHeaders: ['Content-Type','Authorization'] };
+const corsOpts = { 
+  origin: function(origin, callback) {
+    // Allow any origin including aabstudio.ai and localhost
+    callback(null, true);
+  },
+  credentials: false,
+  methods: ['GET','POST','PUT','DELETE','OPTIONS','PATCH'],
+  allowedHeaders: ['Content-Type','Authorization','X-Requested-With'],
+  exposedHeaders: ['Content-Length','X-Kuma-Revision'],
+  maxAge: 86400
+};
 app.use(cors(corsOpts));
 app.options('*', cors(corsOpts));
 
@@ -659,7 +669,7 @@ app.get('/api/projects', async (req, res) => {
 app.post('/api/clip/upload', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No auth token' });
+    if (!authHeader) return res.set('Access-Control-Allow-Origin','*').status(401).json({ error: 'No auth token' });
     const token = authHeader.replace('Bearer ', '');
     const sb = getSupaAdmin();
     const { data: { user }, error: authErr } = await sb.auth.getUser(token);
@@ -746,15 +756,15 @@ app.post('/api/project/save', async (req, res) => {
         const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
         // Check expiry
         if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
-          return res.status(401).json({ error: 'Token expired' });
+          return res.set('Access-Control-Allow-Origin','*').status(401).json({ error: 'Token expired' });
         }
         user = { id: payload.sub, email: payload.email, role: payload.role };
       }
     } catch(jwtErr) {
       // Fall back to Supabase getUser
       try {
-        const sb = getSupaAdmin();
-        const authRes = await sb.auth.getUser(token);
+        const sbAuth = getSupaAdmin();
+        const authRes = await sbAuth.auth.getUser(token);
         user = authRes.data?.user;
       } catch(authErr) {
         console.warn('project/save auth error:', authErr.message);
@@ -765,7 +775,8 @@ app.post('/api/project/save', async (req, res) => {
     if (!project?.id) return res.status(400).json({ error: 'project.id required' });
     const p = stripProject(project);
     try {
-      const { error } = await sb.from('aab_projects').upsert(
+      const sbSave = getSupaAdmin();
+      const { error } = await sbSave.from('aab_projects').upsert(
         { id: p.id, user_id: user.id, title: p.title || 'My Video', data: p },
         { onConflict: 'id' }
       );
@@ -2537,6 +2548,10 @@ server.listen(PORT, () => {
 // Global error handler — catches BadRequestError from client disconnects mid-upload
 // These are harmless (client closed connection) and should not crash the server
 app.use((err, req, res, next) => {
+  // Always add CORS headers even on errors
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization');
   if (err && (err.type === 'entity.too.large' || err.message?.includes('request aborted') || err.status === 400)) {
     console.warn('Request error (client likely disconnected):', err.message);
     if (!res.headersSent) res.status(400).json({ error: 'Request aborted or too large' });
