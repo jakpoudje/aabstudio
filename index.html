@@ -5708,7 +5708,7 @@ function E_doExport(){
   .catch(function(err){
     console.warn("Stitch failed:",err.message);
     // Fallback: download each clip individually in order
-    if(status)status.textContent="Downloading "+clips.length+" clips in sequence...";
+    if(status)status.textContent="Server stitching unavailable (check CREATOMATE_API_KEY). Downloading "+clips.length+" clips individually."; if(typeof toast==="function")toast("Export: downloading clips individually","info");
     var idx2=0;
     function next2(){
       if(idx2>=clips.length){
@@ -17997,7 +17997,7 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
     supa.from('user_projects').upsert(
       { project_id: project.id, user_id: uid, title: project.title, project_data: project, updated_at: project.updatedAt },
       { onConflict: 'user_id,project_id' }
-    ).catch(function(e){/* user_projects table not found - suppressed */}).then(function(){}).catch(function(){});
+    ).then(function(){},function(e){/* user_projects 400 suppressed */}).then(function(){}).catch(function(){});
   };
 
   // Auto-save every 30s
@@ -22681,6 +22681,125 @@ window.aps_saveCharacter=function(){
 };
 
 console.log('[AABStudio] All stubs loaded: setTpScrollMode, toggleMirror, tpPractice, aps_goToEditSuite, aps_setBg, aps_filterScenes, sidebarTab + all APS controls');
+
+// ── SYNC RECORD: records all scenes in order, auto-advances ──
+window.startSyncRecord_All=function(){
+  if(!window.PROJECT||!PROJECT.scenes||!PROJECT.scenes.length){
+    if(typeof toast==='function')toast('No scenes to record','error');return;
+  }
+  if(!window.STUDIO||!STUDIO.stream){
+    if(typeof toast==='function')toast('Start your camera first (click Cam button)','error');return;
+  }
+  var scenes=PROJECT.scenes.slice();
+  var sceneIdx=0;
+  var recorded=[];
+  
+  function recordNextScene(){
+    if(STUDIO.recording)return; // already recording
+    if(sceneIdx>=scenes.length){
+      // All scenes recorded
+      STUDIO.recording=false;
+      _finishSyncRecord(recorded);
+      return;
+    }
+    var sc=scenes[sceneIdx];
+    var dur=(sc.duration||8)*1000;
+    
+    // Navigate to this scene in the teleprompter
+    if(typeof STUDIO_TP!=='undefined'&&typeof setTpScrollMode==='function'){
+      // Reset scroll and set scene text
+      if(typeof resetTpScroll==='function')resetTpScroll();
+    }
+    
+    if(typeof toast==='function')toast('Recording scene '+(sceneIdx+1)+'/'+scenes.length+': '+sc.narration.slice(0,30)+'...','ok');
+    
+    // Start recording
+    var chunks=[];
+    var mr=null;
+    try{
+      var stream=STUDIO.stream;
+      mr=new MediaRecorder(stream,{mimeType:MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm'});
+      mr.ondataavailable=function(e){if(e.data&&e.data.size>0)chunks.push(e.data);};
+      mr.onstop=function(){
+        var blob=new Blob(chunks,{type:'video/webm'});
+        var url=URL.createObjectURL(blob);
+        recorded.push({url:url,name:'Scene '+(sceneIdx)+': '+sc.narration.slice(0,20),duration:sc.duration||8,start:0,sceneNum:sceneIdx+1,type:'video'});
+        // Show in recordings list
+        var recList=document.getElementById('studio-rec-list')||document.querySelector('.studio-recordings');
+        if(recList){
+          var item=document.createElement('div');
+          item.style.cssText='padding:6px 10px;background:rgba(0,212,255,.08);border-radius:6px;margin:4px 0;font-size:11px;color:#e2e8f0;display:flex;align-items:center;gap:8px;';
+          item.innerHTML='<span>Scene '+(sceneIdx)+'</span><a href="'+url+'" download="scene_'+sceneIdx+'.webm" style="color:#00d4ff;font-size:10px;">↓ Save</a>';
+          recList.appendChild(item);
+        }
+        sceneIdx++;
+        if(sceneIdx<scenes.length){
+          setTimeout(recordNextScene,800);
+        } else {
+          _finishSyncRecord(recorded);
+        }
+      };
+      mr.start(100);
+      STUDIO.currentRecorder=mr;
+      STUDIO.recording=true;
+      // Update UI
+      var recBtn=document.getElementById('aab-rec-btn')||document.querySelector('[onclick*="toggleRecording"]');
+      if(recBtn)recBtn.style.background='rgba(239,68,68,.25)';
+      // Auto-stop after scene duration
+      setTimeout(function(){
+        if(mr&&mr.state==='recording')mr.stop();
+        STUDIO.recording=false;
+      },dur);
+    }catch(e){
+      if(typeof toast==='function')toast('Recording error: '+e.message,'error');
+      sceneIdx++;
+      setTimeout(recordNextScene,500);
+    }
+  }
+  
+  function _finishSyncRecord(clips){
+    STUDIO.recording=false;
+    var recBtn=document.getElementById('aab-rec-btn')||document.querySelector('[onclick*="toggleRecording"]');
+    if(recBtn)recBtn.style.background='';
+    if(typeof toast==='function')toast('All '+clips.length+' scenes recorded! Passing to Edit Suite...','ok');
+    
+    // Pass all recorded clips to Edit Suite in correct order
+    if(window.E&&E.tracks){
+      var mainTrack=E.tracks.find(function(t){return t.id==='main';});
+      if(mainTrack){
+        mainTrack.clips=[];
+        var t2=0;
+        clips.sort(function(a,b){return (a.sceneNum||0)-(b.sceneNum||0);});
+        clips.forEach(function(c){
+          mainTrack.clips.push({id:'rec_'+c.sceneNum,name:c.name,url:c.url,start:t2,duration:c.duration,type:'video',source:'recording',sceneNum:c.sceneNum});
+          t2+=c.duration;
+        });
+      }
+    }
+    // Store in project
+    if(window.PROJECT){
+      PROJECT.recordedClips=clips;
+      if(typeof saveProject==='function')saveProject();
+    }
+    // Navigate to edit suite after 1.5s
+    setTimeout(function(){
+      if(typeof nav==='function')nav('edit-pg');
+      if(typeof E_build==='function')setTimeout(E_build,500);
+      if(typeof E_renderTL==='function')setTimeout(E_renderTL,600);
+    },1500);
+  }
+  
+  // Show countdown then start
+  if(typeof toast==='function')toast('Starting sync record in 3 seconds...','info');
+  setTimeout(recordNextScene,3000);
+};
+
+// Override startSyncRecord to use auto-advance version
+var _origSyncRecord=window.startSyncRecord;
+window.startSyncRecord=function(){
+  // Use auto-advance version for full workflow
+  window.startSyncRecord_All();
+};
 </script>
 <script id="aab-session-restore">
 // Restore last page on refresh (not on full navigation)
