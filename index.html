@@ -22420,6 +22420,59 @@ window.aps_generateAll=function(){
   }
   nextScene();
 };
+
+// ── Filter test/invalid URLs from project data on load ──────────
+var _TEST_URLS=['w3schools.com','blob:','0b6b0b5b'];
+function _isTestUrl(url){if(!url||typeof url!=='string')return false;return _TEST_URLS.some(function(t){return url.includes(t);});}
+
+// Clean project of test URLs before using
+function _cleanProjectUrls(proj){
+  if(!proj)return proj;
+  try{
+    var str=JSON.stringify(proj);
+    var hasTest=_TEST_URLS.some(function(t){return str.includes(t);});
+    if(!hasTest)return proj;
+    // Deep clean
+    function clean(v){
+      if(!v)return v;
+      if(typeof v==='string')return _isTestUrl(v)?null:v;
+      if(Array.isArray(v))return v.map(clean).filter(function(i){return i!=null;});
+      if(typeof v==='object'){var r={};Object.keys(v).forEach(function(k){r[k]=clean(v[k]);});return r;}
+      return v;
+    }
+    return clean(proj);
+  }catch(e){return proj;}
+}
+
+// Override E_build to clean clips before building timeline
+window.addEventListener('load',function(){
+  var _origEB=window.E_build;
+  if(typeof _origEB==='function'){
+    window.E_build=function(){
+      // Clean PROJECT before building
+      if(window.PROJECT)window.PROJECT=_cleanProjectUrls(window.PROJECT);
+      // Clean E.tracks if loaded
+      if(window.E&&E.tracks)E.tracks.forEach(function(t){
+        if(t.clips)t.clips=t.clips.filter(function(c){return!_isTestUrl(c.url);});
+      });
+      return _origEB.apply(this,arguments);
+    };
+  }
+  // Also clean on project load
+  var _origAR=window.aab_refreshTimeline;
+  if(typeof _origAR==='function'){
+    window.aab_refreshTimeline=function(){
+      if(window.PROJECT)window.PROJECT=_cleanProjectUrls(window.PROJECT);
+      return _origAR.apply(this,arguments);
+    };
+  }
+  // Clean localStorage projects
+  try{
+    var projs=JSON.parse(localStorage.getItem('aab_projects')||'[]');
+    var cleaned=projs.map(function(p){return p?_cleanProjectUrls(p):null;}).filter(Boolean);
+    localStorage.setItem('aab_projects',JSON.stringify(cleaned));
+  }catch(e){}
+});
 </script>
 <script id="aab-tp-stubs">
 // ── Teleprompter mode - setTpScrollMode aliases studioTpSetMode ──
