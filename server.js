@@ -118,6 +118,39 @@ function pushClipReady(projectId, payload) {
   console.log('Pushed clip_ready to project room:', projectId);
 }
 
+// ── PostgreSQL direct connection for migrations ──────────────────────────────
+(async () => {
+  if (!process.env.DATABASE_URL) return;
+  try {
+    const { Pool } = require('pg');
+    const pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false }
+    });
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_projects (
+        id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+        project_id text NOT NULL,
+        user_id uuid NOT NULL,
+        title text DEFAULT 'Untitled',
+        project_data jsonb,
+        updated_at timestamptz DEFAULT now(),
+        CONSTRAINT user_projects_unique UNIQUE(user_id, project_id)
+      )
+    `);
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_up_uid ON user_projects(user_id)');
+    console.log('✓ user_projects table ready (direct pg)');
+    pool.end();
+  } catch(e) {
+    // Already exists or benign
+    if (!e.message || !e.message.includes('already exists')) {
+      console.log('user_projects pg:', e.message);
+    } else {
+      console.log('✓ user_projects already exists');
+    }
+  }
+})();
+
 const corsOpts = {
   origin: '*',
   methods: ['GET','POST','PUT','DELETE','OPTIONS','PATCH'],
