@@ -22266,6 +22266,11 @@ window.dash_filterAssets=window.dash_filterAssets||function(filter,btn){
 window.aps_loadSavedPhotos=function(){if(typeof aps_renderCharGrid==='function')aps_renderCharGrid();};
 
 console.log('[AABStudio] Stubs loaded: sidebarTab, aps_goToEditSuite, aps_setBg, aps_filterScenes, aps_selectAll, aps_regenerateCurrent, aps_previewVoice, aps_applyVoiceAll, aps_stopQueue, aps_triggerCustomBg, aps_clearPhoto');
+
+// E_deleteClip alias
+window.E_deleteClip=window.E_delClip||function(clipId){if(window.E&&E.tracks)E.tracks.forEach(function(t){t.clips=t.clips.filter(function(c){return c.id!==clipId;});});if(typeof E_renderTL==='function')E_renderTL();};
+// E_dur alias  
+window.E_dur=window.E_dur||function(){var m=0;if(window.E&&E.tracks)E.tracks.forEach(function(t){t.clips.forEach(function(c){m=Math.max(m,(c.start||0)+(c.duration||0));});});return m;};
 </script>
 <script id="aab-tp-stubs">
 // ── Teleprompter mode - setTpScrollMode aliases studioTpSetMode ──
@@ -22301,13 +22306,18 @@ window.setTpScrollMode=function(mode){
 
 // toggleMirror
 window.toggleMirror=function(){
-  if(typeof window.tpMirror==='function'){tpMirror();return;}
+  // Implement directly - tpMirror may call back to toggleMirror causing recursion
+  var cam=document.getElementById('studio-cam');
   var tp=document.getElementById('studio-tp')||document.getElementById('tp-body');
-  if(!tp)return;
-  var curr=tp.style.transform||'';
-  tp.style.transform=curr.includes('scaleX(-1)')?'':'scaleX(-1)';
-  var btn=Array.from(document.querySelectorAll('button')).find(function(b){return b.textContent.includes('Mirror')&&b.getAttribute('onclick')&&b.getAttribute('onclick').includes('toggleMirror');});
-  if(btn)btn.classList.toggle('on');
+  var canvas=document.getElementById('studio-canvas');
+  var target=canvas||cam;
+  if(target){
+    var curr=target.style.transform||'';
+    target.style.transform=curr.includes('scaleX(-1)')?'':'scaleX(-1)';
+  }
+  if(tp){var curr2=tp.style.transform||'';tp.style.transform=curr2.includes('scaleX(-1)')?'':'scaleX(-1)';}
+  var btns=document.querySelectorAll('[onclick*="toggleMirror"],[onclick*="tpMirror"]');
+  btns.forEach(function(b){b.classList.toggle('on');});
 };
 window.tpToggleMirror=window.toggleMirror;
 
