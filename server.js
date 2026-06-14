@@ -1024,10 +1024,7 @@ app.post('/api/creatomate/stitch', async (req, res) => {
     const data   = await r.json();
     const render = Array.isArray(data) ? data[0] : data;
     res.json({ taskId: render.id, status: render.status || 'pending', outputUrl: render.url || null, provider: 'creatomate', totalDuration: time, clipCount: clips.length });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/creatomate/status/:renderId', async (req, res) => {
+  } catch(e) { console.error('[stitch]', e.message); res.status(503).json({ error: 'Render failed: ' + e.message, hint: 'Clip URLs must be public CDN URLs, not CORS-blocked.' }); }rId', async (req, res) => {
   try {
     if (!CREATOMATE_KEY) return res.status(503).json({ error: 'CREATOMATE_API_KEY not configured' });
     const r = await fetch('https://api.creatomate.com/v1/renders/' + req.params.renderId, { headers: { 'Authorization': 'Bearer ' + CREATOMATE_KEY } });
