@@ -22895,12 +22895,21 @@ window.addEventListener('load',function(){
       var n='aab-field-'+_c;
       el.id=n;el.name=n;
       if(!el.getAttribute('aria-label')){
-        var lbl=type==='range'?'Slider '+(type||'control'):
+        // Try to get label from parent label element
+        var parentLabel=el.closest?el.closest('label'):null;
+        var labelText=parentLabel?parentLabel.textContent.trim().slice(0,30):'';
+        var lbl=labelText||
+                (type==='range'?'Slider control':
                 type==='file'?'File upload':
                 el.tagName==='SELECT'?'Select option':
-                'Input '+type;
-        el.setAttribute('aria-label',lbl+' '+_c);
+                'Input '+type);
+        el.setAttribute('aria-label',lbl);
       }
+    }
+    // Fix parent label if it has no 'for'
+    var parentLbl=el.closest?el.closest('label'):null;
+    if(parentLbl&&!parentLbl.getAttribute('for')&&el.id){
+      parentLbl.setAttribute('for',el.id);
     }
   }
   function fixAll(){
