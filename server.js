@@ -1970,6 +1970,21 @@ async function ensureAabProjectsTable() {
   try {
     if (!process.env.SUPABASE_SERVICE_KEY) return;
     const sb = getSupaAdmin();
+    
+    // Check/create user_projects table via SQL
+    // This is the primary cross-browser sync table
+    try {
+      const { error: upErr } = await sb.from('user_projects').select('project_id').limit(1);
+      if (!upErr) {
+        console.log('✓ user_projects table ready');
+      } else {
+        // Try to create it via SQL function if available
+        console.warn('⚠ user_projects table missing — run Supabase migration');
+        console.warn('  SQL: CREATE TABLE user_projects (id uuid DEFAULT gen_random_uuid() PRIMARY KEY, project_id text NOT NULL, user_id uuid NOT NULL, title text DEFAULT \'Untitled\', project_data jsonb, updated_at timestamptz DEFAULT now(), UNIQUE(user_id,project_id));');
+        console.warn('  Then: ALTER TABLE user_projects ENABLE ROW LEVEL SECURITY;');
+        console.warn('  Then: CREATE POLICY "own" ON user_projects FOR ALL USING (auth.uid()=user_id);');
+      }
+    } catch(e2) { console.warn('user_projects check:', e2.message); }
 
     // Check legacy table
     const { error } = await sb.from('aab_projects').select('id').limit(1);
