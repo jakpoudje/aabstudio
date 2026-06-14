@@ -22268,92 +22268,263 @@ window.aps_loadSavedPhotos=function(){if(typeof aps_renderCharGrid==='function')
 console.log('[AABStudio] Stubs loaded: sidebarTab, aps_goToEditSuite, aps_setBg, aps_filterScenes, aps_selectAll, aps_regenerateCurrent, aps_previewVoice, aps_applyVoiceAll, aps_stopQueue, aps_triggerCustomBg, aps_clearPhoto');
 </script>
 <script id="aab-tp-stubs">
-// toggleMirror — mirror the teleprompter display
-window.toggleMirror = function() {
-  if(typeof window.tpMirror === 'function') { tpMirror(); return; }
-  var tp = document.getElementById('studio-tp') || document.getElementById('teleprompter-body');
-  if(!tp) return;
-  var curr = tp.style.transform || '';
-  tp.style.transform = curr.includes('scaleX(-1)') ? '' : 'scaleX(-1)';
-  // Toggle mirror btn state
-  var btn = Array.from(document.querySelectorAll('button')).find(function(b){return b.textContent.includes('Mirror');});
-  if(btn) btn.classList.toggle('on');
-};
-
-// tpPractice — start/stop teleprompter practice mode  
-window.tpPractice = function() {
-  var btn = document.getElementById('btn-tp-start') || Array.from(document.querySelectorAll('button')).find(function(b){return b.textContent.includes('Practice');});
-  if(window.STUDIO_TP && STUDIO_TP.running) {
-    // Stop
-    STUDIO_TP.running = false;
+// ── Teleprompter mode - setTpScrollMode aliases studioTpSetMode ──
+window.setTpScrollMode=function(mode){
+  if(typeof window.studioTpSetMode==='function'){studioTpSetMode(mode);return;}
+  // Fallback implementation
+  var tp=document.getElementById('tp-body')||document.getElementById('studio-tp');
+  if(!tp)return;
+  if(!window.STUDIO_TP)window.STUDIO_TP={};
+  if(mode==='auto'||mode==='Auto-scroll'){
+    STUDIO_TP.running=true;
+    var speed=parseInt(document.getElementById('tp-speed-val')?.textContent||'80',10)||80;
+    var msPerPx=60000/(speed*20); // approximate
     clearInterval(STUDIO_TP.timer);
-    if(btn){btn.textContent='▶ Practice';btn.style.background='';}
-    if(typeof toast==='function') toast('Teleprompter stopped','ok');
+    STUDIO_TP.timer=setInterval(function(){
+      if(!STUDIO_TP.running){clearInterval(STUDIO_TP.timer);return;}
+      tp.scrollTop+=(speed/80);
+      if(tp.scrollTop>=tp.scrollHeight-tp.clientHeight){
+        STUDIO_TP.running=false;clearInterval(STUDIO_TP.timer);
+        var btn=document.getElementById('btn-tp-start');if(btn){btn.textContent='▶ Practice';btn.style.background='';}
+      }
+    },50);
+    var btn=document.getElementById('btn-tp-start');
+    if(btn){btn.textContent='⏸ Stop';btn.style.background='rgba(0,212,255,.15)';btn.style.color='#00d4ff';}
+  } else if(mode==='word'||mode==='wbw'||mode==='Word-by-word'){
+    STUDIO_TP.running=true;
+    if(typeof window._studioStartWBW==='function')_studioStartWBW();
   } else {
-    // Start auto-scroll
-    if(typeof window.setTpScrollMode === 'function') setTpScrollMode('auto');
-    if(btn){btn.textContent='⏸ Stop';btn.style.background='rgba(239,68,68,.2)';}
-    if(typeof toast==='function') toast('Teleprompter started','ok');
+    STUDIO_TP.running=false;clearInterval(STUDIO_TP.timer);
+    var btn2=document.getElementById('btn-tp-start');if(btn2){btn2.textContent='▶ Practice';btn2.style.background='';}
   }
 };
 
-// _startTpAutoScroll / _stopTpAutoScroll
-window._startTpAutoScroll = function() { if(typeof window.setTpScrollMode==='function') setTpScrollMode('auto'); };
-window._stopTpAutoScroll = function() { if(typeof window.setTpScrollMode==='function') setTpScrollMode('manual'); };
+// toggleMirror
+window.toggleMirror=function(){
+  if(typeof window.tpMirror==='function'){tpMirror();return;}
+  var tp=document.getElementById('studio-tp')||document.getElementById('tp-body');
+  if(!tp)return;
+  var curr=tp.style.transform||'';
+  tp.style.transform=curr.includes('scaleX(-1)')?'':'scaleX(-1)';
+  var btn=Array.from(document.querySelectorAll('button')).find(function(b){return b.textContent.includes('Mirror')&&b.getAttribute('onclick')&&b.getAttribute('onclick').includes('toggleMirror');});
+  if(btn)btn.classList.toggle('on');
+};
+window.tpToggleMirror=window.toggleMirror;
 
-// tpToggleMirror alias
-window.tpToggleMirror = window.toggleMirror;
+// tpPractice - start/stop practice mode
+window.tpPractice=function(){
+  if(typeof window.studioTpSetMode==='function'){
+    var running=window.STUDIO_TP&&STUDIO_TP.running;
+    studioTpSetMode(running?'manual':'auto');
+  } else {
+    setTpScrollMode(window.STUDIO_TP&&STUDIO_TP.running?'manual':'auto');
+  }
+};
+window.tpPracticeMode=window.tpPractice;
 
-// setTpTheme alias (in case it's called as setTpTheme not tpSetTheme)
-window.setTpTheme = window.setTpTheme || window.tpSetTheme || function(theme) {
-  var tp = document.getElementById('studio-tp');
-  if(!tp) return;
-  var themes = {dark:'#000',light:'#fff',green:'#002200',blue:'#000033'};
-  tp.style.background = themes[theme] || '#000';
+// tpWordMode / tpSyncMode
+window.tpWordMode=function(){setTpScrollMode('word');};
+window.tpSyncMode=function(){setTpScrollMode('sync');};
+window.startAutoScroll=function(){setTpScrollMode('auto');};
+window.stopAutoScroll=function(){setTpScrollMode('manual');};
+window._startTpAutoScroll=window.startAutoScroll;
+window._stopTpAutoScroll=window.stopAutoScroll;
+
+// tpAdaptSpeed
+window.tpAdaptSpeed=window.toggleAdaptiveTp||function(){
+  if(typeof toast==='function')toast('Adaptive speed toggled','ok');
 };
 
-// tpSetMode — set teleprompter mode from dropdown
-window.tpSetMode = function(mode) { if(typeof window.setTpScrollMode==='function') setTpScrollMode(mode); };
-
-// startTpScroll / stopTpScroll aliases
-window.startTpScroll = window._startTpAutoScroll;
-window.stopTpScroll = window._stopTpAutoScroll;
-
-// teleprompterState helper
-window.teleprompterState = window.STUDIO_TP || {};
-
-// tpAdaptSpeed — toggle adaptive speed  
-window.tpAdaptSpeed = window.toggleAdaptiveTp || function() {
-  if(typeof toast==='function') toast('Adaptive speed toggled','ok');
+// tpSpeedChange
+window.tpSpeedChange=function(val){
+  if(window.STUDIO_TP)STUDIO_TP.speed=parseFloat(val)||1;
+  if(typeof window.setTpSpeed==='function')setTpSpeed(val);
 };
 
-// tpFontSize — change font size
-window.tpFontSize = function(delta) {
-  if(typeof window.increaseTpFont==='function' && delta>0) increaseTpFont();
-  else if(typeof window.decreaseTpFont==='function' && delta<0) decreaseTpFont();
+// tpFontSize 
+window.tpFontSize=function(delta){
+  if(delta>0&&typeof window.increaseTpFont==='function')increaseTpFont();
+  else if(delta<0&&typeof window.decreaseTpFont==='function')decreaseTpFont();
 };
 
-// tpSpeedChange — change scroll speed  
-window.tpSpeedChange = function(val) {
-  if(window.STUDIO_TP) STUDIO_TP.speed = parseFloat(val) || 1;
-  if(typeof window.setTpSpeed==='function') setTpSpeed(val);
+// teleprompterState
+window.teleprompterState=window.STUDIO_TP||{};
+
+// setTpTheme alias  
+window.setTpTheme=window.tpSetTheme||function(theme){
+  var tp=document.getElementById('studio-tp')||document.getElementById('tp-body');
+  if(tp){var themes={dark:'#000',light:'#fff',green:'#002200',blue:'#00002a'};tp.style.background=themes[theme]||'#000';}
 };
 
-// tpWordMode / tpSyncMode / tpPracticeMode — set modes
-window.tpWordMode = function() { if(typeof window.setTpScrollMode==='function') setTpScrollMode('word'); };
-window.tpSyncMode = function() { if(typeof window.setTpScrollMode==='function') setTpScrollMode('sync'); };
-window.tpPracticeMode = window.tpPractice;
-
-// startAutoScroll / stopAutoScroll
-window.startAutoScroll = window._startTpAutoScroll;
-window.stopAutoScroll = window._stopTpAutoScroll;
-
-// aps_triggerCustomBg fallback
-window.aps_triggerCustomBg = window.aps_triggerCustomBg || function() {
-  if(typeof toast==='function') toast('Upload a custom background image in Assets', 'info');
+// sidebarTab
+window.sidebarTab=function(tabName,el){
+  if(el){
+    var p=el.closest('.sb-tabs,.asset-tabs,.sidebar-tabs-row')||el.parentElement;
+    if(p)p.querySelectorAll('[class*="sb-tab"],[class*="tab-btn"]').forEach(function(b){b.classList.remove('on','active');});
+    el.classList.add('on','active');
+  }
+  document.querySelectorAll('[data-tab]').forEach(function(pnl){pnl.style.display=pnl.dataset.tab===tabName?'':'none';});
 };
 
-console.log('[AABStudio] TP stubs loaded: toggleMirror, tpPractice, tpWordMode, tpSyncMode, tpSpeedChange, tpFontSize, startAutoScroll, stopAutoScroll, tpToggleMirror');
+// aps_goToEditSuite - always navigate
+window.aps_goToEditSuite=function(){
+  if(window.APS&&APS.scenes){
+    APS.scenes.forEach(function(sc){if(sc.videoUrl&&typeof aps_addClipToTimeline==='function'){try{aps_addClipToTimeline(sc);}catch(e){};}});
+  }
+  if(typeof nav==='function')nav('edit-pg');
+  setTimeout(function(){if(typeof E_build==='function')E_build();},500);
+  if(typeof toast==='function')toast('Opening Edit Suite...','ok');
+};
+
+// aps_setBg - background selection
+window.aps_setBg=function(bg,el){
+  if(!window.APS)window.APS={settings:{}};
+  if(!APS.settings)APS.settings={};
+  APS.settings.bg=bg;
+  document.querySelectorAll('[onclick*="aps_setBg"]').forEach(function(b){b.classList.remove('on','active');b.style.border='';});
+  if(el){el.classList.add('on','active');el.style.border='1.5px solid #00d4ff';}
+  if(typeof aps_saveSettings==='function')aps_saveSettings();
+  if(typeof toast==='function')toast('Background: '+bg,'ok');
+};
+
+// aps_filterScenes
+window.aps_filterScenes=function(filter,el){
+  if(window.APS)APS.filter=filter;
+  document.querySelectorAll('[onclick*="aps_filterScenes"]').forEach(function(b){b.classList.remove('on');});
+  if(el)el.classList.add('on');
+  if(typeof aps_renderSceneList==='function')aps_renderSceneList();
+};
+
+// aps_selectAll
+window.aps_selectAll=function(selected){
+  if(window.APS&&APS.scenes)APS.scenes.forEach(function(sc){sc.selected=selected!==false;});
+  if(typeof aps_renderSceneList==='function')aps_renderSceneList();
+};
+
+// aps_regenerateCurrent
+window.aps_regenerateCurrent=function(){
+  if(!window.APS||APS.currentIdx==null)return;
+  if(typeof aps_generateScene==='function'){
+    var p=aps_generateScene(APS.currentIdx);
+    if(p&&typeof p.then==='function')p.catch(function(e){if(typeof toast==='function')toast('Failed: '+e.message,'error');});
+  }
+};
+
+// aps_previewVoice
+window.aps_previewVoice=function(){if(typeof toast==='function')toast('Previewing voice...','ok');};
+
+// aps_applyVoiceAll
+window.aps_applyVoiceAll=function(){
+  if(typeof aps_saveSettings==='function')aps_saveSettings();
+  if(typeof toast==='function')toast('Voice applied to all scenes','ok');
+};
+
+// aps_stopQueue
+window.aps_stopQueue=function(){
+  if(window.APS){APS.stopRequested=true;APS.generating=false;}
+  var btn=document.getElementById('aps-stop-btn');if(btn)btn.style.display='none';
+  var gBtn=document.getElementById('aps-gen-all-btn');if(gBtn)gBtn.disabled=false;
+  if(typeof toast==='function')toast('Generation stopped','ok');
+};
+
+// aps_triggerCustomBg
+window.aps_triggerCustomBg=function(){
+  if(typeof toast==='function')toast('Upload a custom background image in Assets','info');
+};
+
+// aps_clearPhoto
+window.aps_clearPhoto=function(){
+  if(window.APS){APS.photoB64=null;APS.photo=null;APS.photoMimeType=null;}
+  var prev=document.getElementById('aps-presenter-preview');if(prev){prev.src='';prev.style.display='none';}
+  if(typeof toast==='function')toast('Photo cleared','ok');
+};
+
+// navPricing
+window.navPricing=function(){if(typeof nav==='function')nav('pricing-pg');};
+
+// dash_filterAssets
+window.dash_filterAssets=window.dash_filterAssets||function(filter,btn){
+  document.querySelectorAll('.dash-asset-filter').forEach(function(b){b.classList.remove('on');});
+  if(btn)btn.classList.add('on');
+  if(typeof dash_loadAssets==='function')dash_loadAssets(filter);
+};
+
+// aps_renderCharGrid - show saved characters
+window.aps_renderCharGrid=function(){
+  var grid=document.getElementById('aps-char-grid');
+  if(!grid)return;
+  var key='aab_chars_'+((window.APP&&APP.user&&APP.user.id)||'guest');
+  var chars=[];try{chars=JSON.parse(localStorage.getItem(key)||'[]');}catch(e){}
+  if(!chars.length){
+    grid.innerHTML='<div style="grid-column:1/-1;text-align:center;color:rgba(255,255,255,.3);font-size:11px;padding:12px;">No saved characters yet</div>';
+    return;
+  }
+  grid.innerHTML='';
+  chars.forEach(function(ch,ci){
+    var card=document.createElement('div');
+    card.style.cssText='cursor:pointer;border-radius:6px;overflow:hidden;border:.5px solid rgba(255,255,255,.15);background:#111827;text-align:center;';
+    card.title=ch.name;
+    if(ch.photoB64||ch.photoUrl){
+      var img=document.createElement('img');
+      img.src=ch.photoUrl||('data:'+(ch.photoMimeType||'image/jpeg')+';base64,'+ch.photoB64);
+      img.style.cssText='width:100%;height:54px;object-fit:cover;display:block;';
+      img.onerror=function(){this.style.display='none';};
+      card.appendChild(img);
+    }
+    var lbl=document.createElement('div');
+    lbl.textContent=ch.name;
+    lbl.style.cssText='font-size:9px;padding:2px 4px;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+    card.appendChild(lbl);
+    card.onclick=function(){
+      if(!window.APS)window.APS={settings:{}};
+      APS.photoB64=ch.photoB64;APS.photoMimeType=ch.photoMimeType;
+      APS.photo=ch.photoUrl||('data:'+(ch.photoMimeType||'image/jpeg')+';base64,'+ch.photoB64);
+      var prev=document.getElementById('aps-presenter-preview');
+      if(prev){prev.src=APS.photo;prev.style.display='block';}
+      var nameEl=document.getElementById('aps-char-name')||document.querySelector('input[placeholder*="John Anchor"]');
+      if(nameEl)nameEl.value=ch.name;
+      grid.querySelectorAll('div[style*="border"]').forEach(function(d){d.style.border='.5px solid rgba(255,255,255,.15)';});
+      card.style.border='1.5px solid #00d4ff';
+      if(typeof toast==='function')toast('Loaded: '+ch.name,'ok');
+    };
+    grid.appendChild(card);
+  });
+};
+
+// aps_saveCharacter
+window.aps_saveCharacter=function(){
+  if(!window.APS)return;
+  var nameEl=document.getElementById('aps-char-name')||document.querySelector('input[placeholder*="John Anchor"]');
+  var name=nameEl?nameEl.value.trim():'';
+  if(!name){if(typeof toast==='function')toast('Enter a character name first','error');return;}
+  var key='aab_chars_'+((window.APP&&APP.user&&APP.user.id)||'guest');
+  var chars=[];try{chars=JSON.parse(localStorage.getItem(key)||'[]');}catch(e){}
+  var existing=chars.findIndex(function(c){return c.name===name;});
+  var entry={id:'char_'+(Date.now()),name:name,photoB64:APS.photoB64||null,photoMimeType:APS.photoMimeType||null,photoUrl:APS.photo||null,savedAt:new Date().toISOString()};
+  if(existing>-1)chars[existing]=entry; else chars.push(entry);
+  localStorage.setItem(key,JSON.stringify(chars));
+  if(typeof toast==='function')toast('Saved: '+name,'ok');
+  if(typeof aps_renderCharGrid==='function')aps_renderCharGrid();
+};
+
+console.log('[AABStudio] All stubs loaded: setTpScrollMode, toggleMirror, tpPractice, aps_goToEditSuite, aps_setBg, aps_filterScenes, sidebarTab + all APS controls');
+</script>
+<script id="aab-session-restore">
+// Restore last page on refresh (not on full navigation)
+(function(){
+  var savedPage=sessionStorage.getItem('aab_current_page');
+  if(savedPage&&savedPage!=='home-pg'&&savedPage!=='dash-pg'){
+    // Restore after app loads
+    setTimeout(function(){
+      if(typeof nav==='function'&&savedPage){
+        nav(savedPage);
+        // If it was scenes/record/edit, also restore project
+        var savedProj=sessionStorage.getItem('aab_current_proj');
+        if(savedProj&&typeof openProject==='function'){try{openProject(JSON.parse(savedProj));}catch(e){}}
+      }
+    },1500);
+  }
+})();
 </script>
 </body>
 </html>
