@@ -118,15 +118,10 @@ function pushClipReady(projectId, payload) {
   console.log('Pushed clip_ready to project room:', projectId);
 }
 
-const corsOpts = { 
-  origin: function(origin, callback) {
-    // Allow any origin including aabstudio.ai and localhost
-    callback(null, true);
-  },
-  credentials: false,
+const corsOpts = {
+  origin: '*',
   methods: ['GET','POST','PUT','DELETE','OPTIONS','PATCH'],
   allowedHeaders: ['Content-Type','Authorization','X-Requested-With'],
-  exposedHeaders: ['Content-Length','X-Kuma-Revision'],
   maxAge: 86400
 };
 app.use(cors(corsOpts));
