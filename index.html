@@ -7819,7 +7819,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
               🎬 Upload Video<input name="asset-video-upload" type="file" style="display:none;" accept="video/*" onchange="dash_uploadAsset(this.files[0],'video')">
             </label>
             <label class="btn btn-ghost btn-sm" style="cursor:pointer;">
-              🎤 Upload SFX<input type="file" style="display:none;" accept="audio/*" onchange="dash_uploadAsset(this.files[0],'sfx')">
+              🎤 Upload SFX<input name="upload-sfx" type="file" style="display:none;" accept="audio/*" onchange="dash_uploadAsset(this.files[0],'sfx')">
             </label>
           </div>
           <!-- Filter by type -->
@@ -22440,20 +22440,6 @@ window.aps_generateAll=function(){
   }
   nextScene();
 };
-
-// syncProjectToCloud: 30s debounce override to stop CORS spam
-(function(){
-  var _orig=window.syncProjectToCloud;
-  if(typeof _orig!=='function')return;
-  var _lastT=0,_lastH='';
-  function _h(p){try{return (p&&p.id||'')+'|'+(p&&p.title||'')+'|'+(p&&p.scenes&&p.scenes.length||0);}catch(e){return '';}}
-  window.syncProjectToCloud=function(projectData){
-    var now=Date.now(),h=_h(projectData);
-    if(now-_lastT<30000&&h===_lastH)return;
-    _lastT=now;_lastH=h;
-    _orig(projectData);
-  };
-})();
 </script>
 <script id="aab-tp-stubs">
 // ── Teleprompter mode - setTpScrollMode aliases studioTpSetMode ──
@@ -22837,6 +22823,52 @@ window.startSyncRecord=function(){
     },1500);
   }
 })();
+</script>
+<script id="aab-debounce">
+window.addEventListener('load',function(){
+  // Override syncProjectToCloud with 30s debounce
+  var _orig=window.syncProjectToCloud;
+  if(typeof _orig!=='function')return;
+  var _lT=0,_lH='';
+  window.syncProjectToCloud=function(p){
+    var now=Date.now(),h=(p&&p.id||'')+'|'+(p&&p.title||'');
+    if(now-_lT<30000&&h===_lH)return;
+    _lT=now;_lH=h;
+    _orig(p);
+  };
+  // Also override _saveProjectFull if it exists to use debounce
+  var _origSave=window._saveProjectFull;
+  if(typeof _origSave==='function'){
+    var _lTS=0;
+    window._saveProjectFull=function(p){
+      var now=Date.now();
+      if(now-_lTS<30000)return;
+      _lTS=now;
+      _origSave(p);
+    };
+  }
+  console.log('[AABStudio] Save debounce active (30s)');
+});
+</script>
+<script id="aab-form-fix">
+// Add name/id to hidden file inputs that are missing them
+window.addEventListener('DOMContentLoaded',function(){
+  var fileInputs=document.querySelectorAll('input[type="file"]:not([id]):not([name])');
+  fileInputs.forEach(function(inp,i){
+    inp.name='file-upload-'+i;
+    inp.id='file-upload-'+i;
+    inp.setAttribute('aria-label','File upload '+(i+1));
+  });
+  // Add autocomplete=off to search/text fields
+  document.querySelectorAll('input[type="search"],input[placeholder*="search"]').forEach(function(inp){
+    if(!inp.getAttribute('autocomplete'))inp.setAttribute('autocomplete','off');
+  });
+  // Ensure all selects have aria-label if missing
+  document.querySelectorAll('select:not([aria-label]):not([id])').forEach(function(sel,i){
+    sel.setAttribute('aria-label','Select option '+(i+1));
+    sel.name='select-'+i;
+  });
+});
 </script>
 </body>
 <script>
