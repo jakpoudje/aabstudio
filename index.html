@@ -20664,24 +20664,11 @@ window.syncProjectToCloud = function(projectData){
 };
 
 // Direct Supabase save fix — use correct upsert
-window._E2_saveProjectToSupabase = function(project){
-  var supa=typeof getSupa==='function'?getSupa():null;
-  if(!supa||!window._sbSession)return;
-  var uid=window.APP&&APP.user?APP.user.id:null;
-  if(!uid||!project||!project.id)return;
-  // Try both column combinations
-  supa.from('user_projects').upsert(
-    {project_id:project.id,user_id:uid,title:project.title||'Untitled',project_data:project,updated_at:new Date().toISOString()},
-    {onConflict:'user_id,project_id',ignoreDuplicates:false}
-  ).then(function(res){
-    if(res.error){
-      // Fallback: try with just project_id
-      supa.from('user_projects').upsert(
-        {project_id:project.id,user_id:uid,title:project.title||'Untitled',project_data:project,updated_at:new Date().toISOString()},
-        {onConflict:'project_id'}
-      ).catch(function(){});
-    }
-  }).catch(function(){});
+window._E2_saveProjectToSupabase = function(project) {
+  // All project saving goes through Railway API which uses aab_projects table per user
+  // Direct Supabase user_projects calls removed (table doesn't exist / 400 errors)
+  if (!project || !project.id) return;
+  if (typeof syncProjectToCloud === 'function') syncProjectToCloud(project);
 };
 
 /* ══════════════════════════════════════
