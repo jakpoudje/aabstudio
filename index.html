@@ -7684,20 +7684,20 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
           <button class="auth-tab" id="tab-up" onclick="authTab('up')">Create account</button>
         </div>
         <div id="form-in">
-          <div class="auth-field"><label>Email</label><label for="si-email" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);">Email</label><input class="inp inp-dark" type="email" id="si-email" aria-label="Email address" autocomplete="email"
+          <div class="auth-field"><label>Email</label><input class="inp inp-dark" type="email" id="si-email" aria-label="Email address" autocomplete="email"
               placeholder="you@example.com"></div>
-          <div class="auth-field"><label>Password</label><label for="si-pass" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);">Password</label><input class="inp inp-dark" type="password" id="si-pass" aria-label="Password" autocomplete="current-password"
+          <div class="auth-field"><label>Password</label><input class="inp inp-dark" type="password" id="si-pass" aria-label="Password" autocomplete="current-password"
               placeholder="••••••••"></div>
           <div class="auth-err" id="err-in"></div>
           <button class="btn btn-primary" style="width:100%;margin-top:4px;" id="btn-in" onclick="doSignIn()">Sign
             in</button>
         </div>
         <div id="form-up" style="display:none;">
-          <div class="auth-field"><label>Name</label><label for="su-name" class="sr-only" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">Full name</label><input class="inp inp-dark" type="text" id="su-name" aria-label="Full name" autocomplete="name"
+          <div class="auth-field"><label>Name</label><input class="inp inp-dark" type="text" id="su-name" aria-label="Full name" autocomplete="name"
               placeholder="Your name"></div>
-          <div class="auth-field"><label>Email</label><label for="su-email" class="sr-only" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">Email</label><input class="inp inp-dark" type="email" id="su-email" aria-label="Email address" autocomplete="email"
+          <div class="auth-field"><label>Email</label><input class="inp inp-dark" type="email" id="su-email" aria-label="Email address" autocomplete="email"
               placeholder="you@example.com"></div>
-          <div class="auth-field"><label>Password</label><label for="su-pass" class="sr-only" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">Password</label><input class="inp inp-dark" type="password" id="su-pass" aria-label="Password" autocomplete="new-password"
+          <div class="auth-field"><label>Password</label><input class="inp inp-dark" type="password" id="su-pass" aria-label="Password" autocomplete="new-password"
               placeholder="Min 8 characters"></div>
           <div class="auth-err" id="err-up"></div>
           <button class="btn btn-primary" style="width:100%;margin-top:4px;" id="btn-up" onclick="doSignUp()">Create
@@ -10467,7 +10467,7 @@ function loadDashboard() {
         var ghosts = projs.filter(function(p){ return delIds.indexOf(p.id)>-1||!p.scenes||!p.scenes.length; });
         var supa = typeof getSupa==='function'?getSupa():null;
         if(supa && window._sbSession) {
-          ghosts.forEach(function(p){ if(p.id) supa.from('user_projects').delete().eq('project_id',p.id).catch(function(){}); });
+          ghosts.forEach(function(p){ /* ghost cleanup: project no longer removed from DB - handled server-side */ });
         }
       }
     } catch(e){}
@@ -17983,22 +17983,24 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
 
   // ── 5. Project persistence ──────────────────────────────────
   window._saveProjectFull = function(project) {
-    if (!project) project = window.PROJECT;
-    if (!project || !project.id) return;
-    project.updatedAt = new Date().toISOString();
+  if (!project) project = window.PROJECT;
+  if (!project || !project.id) return;
+  project.updatedAt = new Date().toISOString();
+  // 1. Always save to localStorage immediately (instant, no network needed)
+  try {
     var projs = JSON.parse(localStorage.getItem('aab_projects') || '[]').filter(Boolean);
-    var idx = projs.findIndex(function(p) { return p.id === project.id; });
-    if (idx > -1) projs[idx] = project; else projs.unshift(project);
+    var pIdx = projs.findIndex(function(p) { return p.id === project.id; });
+    if (pIdx > -1) projs[pIdx] = project; else projs.unshift(project);
+    // Keep max 50 projects in localStorage
+    if (projs.length > 50) projs = projs.slice(0, 50);
     localStorage.setItem('aab_projects', JSON.stringify(projs));
-    var supa = typeof getSupa === 'function' ? getSupa() : null;
-    if (!supa || !window._sbSession) return;
-    var uid = APP && APP.user ? APP.user.id : null;
-    if (!uid) return;
-    supa.from('user_projects').upsert(
-      { project_id: project.id, user_id: uid, title: project.title, project_data: project, updated_at: project.updatedAt },
-      { onConflict: 'user_id,project_id' }
-    ).then(function(){},function(e){/* user_projects 400 suppressed */}).then(function(){}).catch(function(){});
-  };
+  } catch(e) { console.warn('localStorage save failed:', e.message); }
+  // 2. Sync to Railway (which saves to Supabase aab_projects per user)
+  // syncProjectToCloud handles debouncing + network errors gracefully
+  if (typeof syncProjectToCloud === 'function') {
+    syncProjectToCloud(project);
+  }
+};
 
   // Auto-save every 30s
   setInterval(function() {
