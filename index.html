@@ -17926,19 +17926,10 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
 
   // Sync character library from Supabase
   function syncCharLib() {
-    var supa = typeof getSupa === 'function' ? getSupa() : null;
-    if (!supa || !window._sbSession) return;
-    var uid = APP && APP.user ? APP.user.id : null;
-    if (!uid) return;
-    supa.from('characters').select('name,photoUrl').eq('user_id', uid).limit(1)
-      .then(function(r) {
-        if (r.data && r.data[0] && r.data[0].library) {
-          try {
-            var serverChars = JSON.parse(r.data[0].library);
-            localStorage.setItem(getCharKey(), JSON.stringify(serverChars));
-          } catch(e) {}
-        }
-      }).catch(function() {});
+    // Characters are saved locally via aps_saveCharacter
+    // No direct Supabase sync needed (Railway handles it via /api/characters/* routes)
+    // Just ensure localStorage is up to date - no network call needed
+    if (typeof aps_renderCharGrid === 'function') aps_renderCharGrid();
   }
 
   // ── 4. Character library UI ─────────────────────────────────
