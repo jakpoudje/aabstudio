@@ -5606,7 +5606,7 @@ function E_openExport(){
     "<span>&#127916; Export Video</span><button onclick=\"document.getElementById('aab-exp').remove()\" style='background:none;border:none;color:#6b7280;font-size:20px;cursor:pointer;'>&times;</button></div>"+
     "<div style='background:#0f1623;border-radius:7px;padding:12px;margin-bottom:14px;'>"+
     "<div style='font-size:11px;color:#9ca3af;margin-bottom:5px;'>"+clips.length+" video clip"+(clips.length!==1?"s":"")+" \u2022 "+_ft(E_dur())+" total</div>"+
-    "<div style='font-size:10px;color:#4b5563;'>All clips will be stitched into one final MP4 video file via the server.</div></div>"+
+    "<div style='font-size:10px;color:#4b5563;'>All clips stitched into one final MP4 via Creatomate. Takes 1-2 minutes to render.</div></div>"+
     "<div id='aab-exp-prog' style='display:none;margin-bottom:12px;'>"+
     "<div style='background:#1f2937;border-radius:4px;height:5px;overflow:hidden;'><div id='aab-exp-bar' style='background:#2563eb;height:100%;width:0%;transition:width .3s;'></div></div>"+
     "<div id='aab-exp-status' style='font-size:9px;color:#4b5563;margin-top:4px;'>Preparing...</div></div>"+
@@ -5620,46 +5620,130 @@ function E_openExport(){
 
 function E_doExport(){
   var clips=[];
-  E.tracks.filter(function(t){return t.type==="video"&&!t.muted;}).forEach(function(t){t.clips.forEach(function(c){if(c.url)clips.push({url:c.url,name:c.name||"clip",start:c.start||0,duration:c.duration||0});});});
+  E.tracks.filter(function(t){return t.type==="video"&&!t.muted;}).forEach(function(t){
+    t.clips.forEach(function(c){
+      if(c.url)clips.push({url:c.url,name:c.name||"clip",start:c.start||0,duration:c.duration||8});
+    });
+  });
   clips.sort(function(a,b){return a.start-b.start;});
-  if(!clips.length){if(typeof toast==="function")toast("No video clips","error");return;}
-  var prog=document.getElementById("aab-exp-prog"),bar=document.getElementById("aab-exp-bar"),status=document.getElementById("aab-exp-status");
-  if(prog)prog.style.display="block";if(bar)bar.style.width="5%";
-  if(status)status.textContent="Stitching "+clips.length+" clips into one video...";
-  var BASE=(window.API||"https://aabstudio-production.up.railway.app");
+  if(!clips.length){if(typeof toast==="function")toast("No video clips on timeline","error");return;}
+
+  var prog=document.getElementById("aab-exp-prog");
+  var bar=document.getElementById("aab-exp-bar");
+  var status=document.getElementById("aab-exp-status");
+  if(prog)prog.style.display="block";
+  if(bar){bar.style.width="5%";}
+  if(status)status.textContent="Stitching "+clips.length+" clip"+(clips.length!==1?"s":"")+" into one video...";
+
+  var BASE=window.API||"https://aabstudio-production.up.railway.app";
   var title=(window.PROJECT&&window.PROJECT.title)||"AABStudio Export";
-  fetch(BASE+"/api/export",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({clips:clips,title:title})})
-  .then(function(r){if(!r.ok)throw new Error("Server "+r.status);return r.json();})
+  var SESSION=window.SESSION||{};
+
+  // Use creatomate/stitch endpoint
+  fetch(BASE+"/api/creatomate/stitch",{
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json",
+      "Authorization":"Bearer "+(SESSION.access_token||"")
+    },
+    body:JSON.stringify({clips:clips,title:title,outputFormat:"mp4",resolution:"1080p"})
+  })
+  .then(function(r){
+    if(!r.ok)return r.json().then(function(e){throw new Error(e.error||"Server "+r.status);});
+    return r.json();
+  })
   .then(function(d){
-    if(d.error)throw new Error(d.error);
-    var url=d.url||d.videoUrl||d.downloadUrl;
-    if(!url)throw new Error("No URL");
-    if(bar)bar.style.width="100%";if(status)status.textContent="Video ready! Downloading...";
-    var a=document.createElement("a");a.href=url;a.download=title.replace(/[^a-z0-9]/gi,"_")+".mp4";document.body.appendChild(a);a.click();document.body.removeChild(a);
-    if(typeof toast==="function")toast("Video is Ready! Downloading...","ok");
-    var bv=document.createElement("div");bv.id="aab-vid-ready";
-    bv.style.cssText="position:fixed;bottom:24px;right:24px;z-index:99999;background:linear-gradient(135deg,#065f46,#047857);border:.5px solid #10b981;border-radius:12px;padding:16px 20px;box-shadow:0 8px 32px rgba(0,0,0,.5);display:flex;align-items:center;gap:14px;max-width:340px;";
-    var emo=document.createElement("div");emo.textContent="Video is Ready!";emo.style.cssText="font-size:13px;font-weight:800;color:#fff;";
-    var sub=document.createElement("div");sub.textContent=(title||"Export")+" complete";sub.style.cssText="font-size:11px;color:#6ee7b7;margin-top:3px;";
-    var txt=document.createElement("div");txt.style.cssText="flex:1";txt.appendChild(emo);txt.appendChild(sub);
-    var dl=document.createElement("a");dl.href=url;dl.textContent="Download";dl.setAttribute("download","");dl.style.cssText="background:#10b981;border:none;color:#fff;border-radius:7px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;white-space:nowrap;";
-    var cl=document.createElement("button");cl.textContent="x";cl.style.cssText="background:none;border:none;color:#6ee7b7;font-size:18px;cursor:pointer;padding:0 4px;";
-    cl.onclick=function(){var el=document.getElementById("aab-vid-ready");if(el)el.remove();};
-    bv.appendChild(txt);bv.appendChild(dl);bv.appendChild(cl);
-    document.body.appendChild(bv);
-    setTimeout(function(){var el=document.getElementById("aab-vid-ready");if(el)el.remove();},30000);
+    // Creatomate returns renderId, need to poll for completion
+    var renderId=d.renderId||d.id||d.render_id;
+    if(renderId){
+      if(status)status.textContent="Rendering video (this may take 1-2 minutes)...";
+      if(bar)bar.style.width="20%";
+      _aab_pollRender(renderId,bar,status,title,BASE,SESSION);
+    } else if(d.url||d.videoUrl||d.downloadUrl){
+      // Immediate URL
+      _aab_downloadReady(d.url||d.videoUrl||d.downloadUrl,title,bar,status);
+    } else {
+      throw new Error("No render ID or URL returned");
+    }
   })
   .catch(function(err){
-    if(status)status.textContent="Downloading "+clips.length+" clips separately...";
-    var i2=0;
-    function n2(){
-      if(i2>=clips.length){if(bar)bar.style.width="100%";if(typeof toast==="function")toast("Export complete","ok");return;}
-      var c=clips[i2++];if(bar)bar.style.width=Math.round(i2/clips.length*100)+"%";
-      var a2=document.createElement("a");a2.href=c.url;a2.setAttribute("download","");document.body.appendChild(a2);a2.click();document.body.removeChild(a2);
-      setTimeout(n2,1500);
+    console.warn("Stitch failed:",err.message);
+    // Fallback: download each clip individually in order
+    if(status)status.textContent="Downloading "+clips.length+" clips in sequence...";
+    var idx2=0;
+    function next2(){
+      if(idx2>=clips.length){
+        if(bar)bar.style.width="100%";
+        if(status)status.textContent="All "+clips.length+" clips downloaded";
+        if(typeof toast==="function")toast("Export complete — "+clips.length+" clips downloaded","ok");
+        return;
+      }
+      var c=clips[idx2++];
+      if(bar)bar.style.width=Math.round(idx2/clips.length*100)+"%";
+      if(status)status.textContent="Downloading: "+(c.name||"clip")+" ("+idx2+"/"+clips.length+")";
+      var a=document.createElement("a");
+      a.href=c.url;
+      a.download="scene_"+String(idx2).padStart(2,"0")+"_"+(c.name||"clip").replace(/[^a-z0-9]/gi,"_")+".mp4";
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+      setTimeout(next2,1500);
     }
-    n2();
+    next2();
   });
+}
+
+function _aab_pollRender(renderId,bar,status,title,BASE,SESSION){
+  var polls=0;
+  var maxPolls=60; // 2 min timeout
+  function poll(){
+    polls++;
+    if(polls>maxPolls){
+      if(status)status.textContent="Render timeout — try again";
+      return;
+    }
+    fetch(BASE+"/api/creatomate/status/"+renderId,{
+      headers:{"Authorization":"Bearer "+(SESSION.access_token||"")}
+    })
+    .then(function(r){return r.json();})
+    .then(function(d){
+      var pct=d.progress||Math.min(20+polls*3,95);
+      if(bar)bar.style.width=pct+"%";
+      if(d.status==="succeeded"||d.status==="done"||d.url){
+        var url=d.url||d.download_url||d.videoUrl;
+        _aab_downloadReady(url,title,bar,status);
+      } else if(d.status==="failed"||d.status==="error"){
+        if(status)status.textContent="Render failed: "+(d.error||"unknown error");
+        if(typeof toast==="function")toast("Export failed","error");
+      } else {
+        if(status)status.textContent="Rendering... "+(d.progress?d.progress+"%":"please wait");
+        setTimeout(poll,3000);
+      }
+    })
+    .catch(function(){setTimeout(poll,3000);});
+  }
+  setTimeout(poll,3000);
+}
+
+function _aab_downloadReady(url,title,bar,status){
+  if(bar)bar.style.width="100%";
+  if(status)status.textContent="Video ready! Downloading...";
+  var a=document.createElement("a");
+  a.href=url;
+  a.download=(title||"export").replace(/[^a-z0-9]/gi,"_")+".mp4";
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  if(typeof toast==="function")toast("Video is Ready! Downloading...","ok");
+  // Show banner
+  var old=document.getElementById("aab-vid-ready");if(old)old.remove();
+  var bv=document.createElement("div");bv.id="aab-vid-ready";
+  bv.style.cssText="position:fixed;bottom:24px;right:24px;z-index:99999;background:linear-gradient(135deg,#065f46,#047857);border:.5px solid #10b981;border-radius:12px;padding:16px 20px;box-shadow:0 8px 32px rgba(0,0,0,.5);display:flex;align-items:center;gap:14px;max-width:340px;";
+  var emo=document.createElement("div");emo.textContent="Video is Ready!";emo.style.cssText="font-size:13px;font-weight:800;color:#fff;";
+  var sub=document.createElement("div");sub.textContent=(title||"Your video")+" exported as one MP4";sub.style.cssText="font-size:11px;color:#6ee7b7;margin-top:3px;";
+  var txt=document.createElement("div");txt.style.cssText="flex:1";txt.appendChild(emo);txt.appendChild(sub);
+  var dl=document.createElement("a");dl.href=url;dl.textContent="Download";dl.setAttribute("download","");dl.style.cssText="background:#10b981;border:none;color:#fff;border-radius:7px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;white-space:nowrap;";
+  var cl=document.createElement("button");cl.textContent="x";cl.style.cssText="background:none;border:none;color:#6ee7b7;font-size:18px;cursor:pointer;padding:0 4px;";
+  cl.onclick=function(){var el=document.getElementById("aab-vid-ready");if(el)el.remove();};
+  bv.appendChild(txt);bv.appendChild(dl);bv.appendChild(cl);
+  document.body.appendChild(bv);
+  setTimeout(function(){var el=document.getElementById("aab-vid-ready");if(el)el.remove();},30000);
 }
 
 function E_exportSRT(){
@@ -19694,7 +19778,7 @@ s.textContent=`
 .aab-clip.locked{cursor:not-allowed!important;outline:1px solid #f59e0b!important;}
 
 /* ── Track tools row ── */
-.aab-track-tools{display:flex!important;gap:3px!important;align-items:center!important;flex-wrap:nowrap!important;margin-top:2px!important;}
+.aab-track-tools{display:none!important;}
 .aab-track-tool-btn{background:transparent!important;border:none!important;color:#6b7280!important;font-size:10px!important;padding:1px 3px!important;border-radius:3px!important;cursor:pointer!important;line-height:1!important;}
 .aab-track-tool-btn:hover{background:rgba(255,255,255,.08)!important;color:#e2e8f0!important;}
 .aab-track-tool-btn.active{color:#00d4ff!important;}
