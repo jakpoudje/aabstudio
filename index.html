@@ -22851,24 +22851,55 @@ window.addEventListener('load',function(){
 });
 </script>
 <script id="aab-form-fix">
-// Add name/id to hidden file inputs that are missing them
-window.addEventListener('DOMContentLoaded',function(){
-  var fileInputs=document.querySelectorAll('input[type="file"]:not([id]):not([name])');
-  fileInputs.forEach(function(inp,i){
-    inp.name='file-upload-'+i;
-    inp.id='file-upload-'+i;
-    inp.setAttribute('aria-label','File upload '+(i+1));
+// Fix unlabeled form fields — runs now + watches for dynamically added ones
+(function(){
+  var _c=0;
+  function fixEl(el){
+    var type=el.type||'';
+    if(type==='hidden'||type==='submit'||type==='button'||type==='reset')return;
+    if(!el.id&&!el.name){
+      _c++;
+      var n='aab-field-'+_c;
+      el.id=n;el.name=n;
+      if(!el.getAttribute('aria-label')){
+        var lbl=type==='range'?'Slider '+(type||'control'):
+                type==='file'?'File upload':
+                el.tagName==='SELECT'?'Select option':
+                'Input '+type;
+        el.setAttribute('aria-label',lbl+' '+_c);
+      }
+    }
+  }
+  function fixAll(){
+    document.querySelectorAll('input,select,textarea').forEach(fixEl);
+  }
+  // Run on DOM ready
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',fixAll);
+  } else {fixAll();}
+  // Also run after page interactions (tracks added dynamically)
+  ['E_renderTL','E_build','renderEditSuite'].forEach(function(fn){
+    var orig=window[fn];
+    if(typeof orig==='function'){
+      window[fn]=function(){
+        var r=orig.apply(this,arguments);
+        setTimeout(fixAll,100);
+        return r;
+      };
+    }
   });
-  // Add autocomplete=off to search/text fields
-  document.querySelectorAll('input[type="search"],input[placeholder*="search"]').forEach(function(inp){
-    if(!inp.getAttribute('autocomplete'))inp.setAttribute('autocomplete','off');
-  });
-  // Ensure all selects have aria-label if missing
-  document.querySelectorAll('select:not([aria-label]):not([id])').forEach(function(sel,i){
-    sel.setAttribute('aria-label','Select option '+(i+1));
-    sel.name='select-'+i;
-  });
-});
+  // Watch for dynamic additions
+  if(window.MutationObserver){
+    new MutationObserver(function(muts){
+      muts.forEach(function(m){
+        m.addedNodes.forEach(function(n){
+          if(n.querySelectorAll){n.querySelectorAll('input,select,textarea').forEach(fixEl);}
+          if(n.tagName==='INPUT'||n.tagName==='SELECT'||n.tagName==='TEXTAREA')fixEl(n);
+        });
+      });
+    }).observe(document.body,{childList:true,subtree:true});
+  }
+})();
 </script>
 </body>
 <script>
