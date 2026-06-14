@@ -22271,6 +22271,46 @@ console.log('[AABStudio] Stubs loaded: sidebarTab, aps_goToEditSuite, aps_setBg,
 window.E_deleteClip=window.E_delClip||function(clipId){if(window.E&&E.tracks)E.tracks.forEach(function(t){t.clips=t.clips.filter(function(c){return c.id!==clipId;});});if(typeof E_renderTL==='function')E_renderTL();};
 // E_dur alias  
 window.E_dur=window.E_dur||function(){var m=0;if(window.E&&E.tracks)E.tracks.forEach(function(t){t.clips.forEach(function(c){m=Math.max(m,(c.start||0)+(c.duration||0));});});return m;};
+
+// OVERRIDE: Force sequential aps_generateAll (runs last, wins)
+window.aps_generateAll=function(){
+  if(window.APS&&APS.generating){if(typeof toast==='function')toast('Already generating','info');return;}
+  if(!window.APS||!APS.scenes||!APS.scenes.length){if(typeof toast==='function')toast('No scenes','error');return;}
+  APS.generating=true;APS.stopRequested=false;
+  var genBtn=document.getElementById('aps-gen-all-btn');
+  var stopBtn=document.getElementById('aps-stop-btn');
+  if(genBtn)genBtn.disabled=true;
+  if(stopBtn)stopBtn.style.display='';
+  var toGen=APS.scenes
+    .map(function(sc,i){return{sc:sc,i:i};})
+    .filter(function(x){return !(x.sc.status==='done'&&x.sc.videoUrl);})
+    .sort(function(a,b){return (a.sc.num||a.i+1)-(b.sc.num||b.i+1);});
+  if(!toGen.length){
+    APS.generating=false;if(genBtn)genBtn.disabled=false;if(stopBtn)stopBtn.style.display='none';
+    if(typeof toast==='function')toast('All scenes already generated','ok');return;
+  }
+  if(typeof toast==='function')toast('Generating '+toGen.length+' scenes in order — Scene '+(toGen[0].sc.num||1)+' first...','ok');
+  var idx=0;
+  function nextScene(){
+    if(APS.stopRequested||idx>=toGen.length){
+      APS.generating=false;
+      if(genBtn)genBtn.disabled=false;
+      if(stopBtn)stopBtn.style.display='none';
+      if(!APS.stopRequested&&typeof toast==='function')toast('All scenes generated!','ok');
+      return;
+    }
+    var item=toGen[idx++];
+    if(typeof aps_generateScene==='function'){
+      var p=aps_generateScene(item.i);
+      if(p&&typeof p.then==='function'){
+        p.then(function(){setTimeout(nextScene,500);}).catch(function(){setTimeout(nextScene,500);});
+      } else {
+        setTimeout(nextScene,2000);
+      }
+    } else { setTimeout(nextScene,500); }
+  }
+  nextScene();
+};
 </script>
 <script id="aab-tp-stubs">
 // ── Teleprompter mode - setTpScrollMode aliases studioTpSetMode ──
