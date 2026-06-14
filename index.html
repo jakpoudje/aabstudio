@@ -22440,6 +22440,20 @@ window.aps_generateAll=function(){
   }
   nextScene();
 };
+
+// syncProjectToCloud: 30s debounce override to stop CORS spam
+(function(){
+  var _orig=window.syncProjectToCloud;
+  if(typeof _orig!=='function')return;
+  var _lastT=0,_lastH='';
+  function _h(p){try{return (p&&p.id||'')+'|'+(p&&p.title||'')+'|'+(p&&p.scenes&&p.scenes.length||0);}catch(e){return '';}}
+  window.syncProjectToCloud=function(projectData){
+    var now=Date.now(),h=_h(projectData);
+    if(now-_lastT<30000&&h===_lastH)return;
+    _lastT=now;_lastH=h;
+    _orig(projectData);
+  };
+})();
 </script>
 <script id="aab-tp-stubs">
 // ── Teleprompter mode - setTpScrollMode aliases studioTpSetMode ──
