@@ -1074,64 +1074,36 @@ app.post('/api/admin/ensure-tables', async (req, res) => {
   try {
     const sb = getSupaAdmin();
     if (!sb) return res.status(503).json({ error: 'No Supabase admin' });
-    
     const results = {};
-    
-    // Check and create user_projects table
+    const SURL = process.env.SUPABASE_URL || 'https://phjlxkyloafogznhyyig.supabase.co';
+    const SK = process.env.SUPABASE_SERVICE_KEY;
+
+    // Check user_projects table
     const { error: upCheck } = await sb.from('user_projects').select('project_id').limit(1);
     if (!upCheck) {
       results.user_projects = 'exists';
-    } else {
-      // Try creating via Supabase SQL API
-      const SUPABASE_URL = process.env.SUPABASE_URL || 'https://phjlxkyloafogznhyyig.supabase.co';
-      const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-      
-      if (SERVICE_KEY) {
-        const createSql = `
-          CREATE TABLE IF NOT EXISTS user_projects (
-            id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-            project_id text NOT NULL,
-            user_id uuid NOT NULL,
-            title text DEFAULT 'Untitled',
-            project_data jsonb,
-            updated_at timestamptz DEFAULT now(),
-            CONSTRAINT user_projects_unique UNIQUE(user_id, project_id)
-          );
-          CREATE INDEX IF NOT EXISTS idx_up_user_id ON user_projects(user_id);
-        `;
-        
-        // Use Supabase REST API with service key to execute SQL
-        const sqlRes = await fetch(SUPABASE_URL + '/rest/v1/rpc/exec', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + SERVICE_KEY,
-            'apikey': SERVICE_KEY
-          },
-          body: JSON.stringify({ sql: createSql })
-        });
-        
-        if (sqlRes.ok) {
-          // Enable RLS
-          await fetch(SUPABASE_URL + '/rest/v1/rpc/exec', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SERVICE_KEY, 'apikey': SERVICE_KEY },
-            body: JSON.stringify({ sql: `ALTER TABLE user_projects ENABLE ROW LEVEL SECURITY;` })
-          });
-          results.user_projects = 'created';
-        } else {
-          const errText = await sqlRes.text();
-          results.user_projects = 'failed: ' + errText.slice(0, 100);
+      // Try to apply RLS + policy via exec RPC
+      if (SK) {
+        const sqls = [
+          'ALTER TABLE user_projects ENABLE ROW LEVEL SECURITY',
+          `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='user_projects' AND policyname='own') THEN BEGIN CREATE POLICY "own" ON user_projects FOR ALL USING (auth.uid() = user_id); EXCEPTION WHEN OTHERS THEN NULL; END; END IF; END $$`
+        ];
+        for (const sql of sqls) {
+          try {
+            await fetch(SURL + '/rest/v1/rpc/exec', {
+              method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SK, 'apikey': SK },
+              body: JSON.stringify({ sql })
+            });
+          } catch(pe) {}
         }
-      } else {
-        results.user_projects = 'no service key';
+        results.policy = 'attempted';
       }
+    } else {
+      results.user_projects = 'missing';
     }
-    
+
     res.json({ ok: true, results });
-  } catch(e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/creatomate/stitch', async (req, res) => {
