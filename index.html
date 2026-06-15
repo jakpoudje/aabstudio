@@ -22473,6 +22473,27 @@ window.addEventListener('load',function(){
     localStorage.setItem('aab_projects',JSON.stringify(cleaned));
   }catch(e){}
 });
+
+// ── On page load: ensure deleted IDs don't block real AABStudio projects ──
+(function(){
+  try{
+    var del=JSON.parse(localStorage.getItem('aab_deleted_ids')||'[]');
+    // Remove proj_* IDs - these are real video projects
+    var clean=del.filter(function(id){return !id.startsWith('proj_');});
+    if(clean.length!==del.length)localStorage.setItem('aab_deleted_ids',JSON.stringify(clean));
+  }catch(e){}
+  
+  // Ensure session page is valid
+  try{
+    var pg=sessionStorage.getItem('aab_pg')||localStorage.getItem('aab_last_pg')||'';
+    var VALID_PAGES=['dashboard-pg','script-pg','scenes-pg','record-pg','edit-pg','ai-presenter-studio',
+      'segment-pg','export-pg','teleprompter-pg','remote-pg','auth-pg','pricing-pg'];
+    if(pg&&VALID_PAGES.indexOf(pg)===-1){
+      sessionStorage.removeItem('aab_pg');
+      localStorage.removeItem('aab_last_pg');
+    }
+  }catch(e){}
+})();
 </script>
 <script id="aab-tp-stubs">
 // ── Teleprompter mode - setTpScrollMode aliases studioTpSetMode ──
