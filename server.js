@@ -120,34 +120,64 @@ function pushClipReady(projectId, payload) {
 
 // ── PostgreSQL direct connection for migrations ──────────────────────────────
 (async () => {
-  if (!process.env.DATABASE_URL) return;
+  if (!process.env.DATABASE_URL) {
+    console.log('[DB] No DATABASE_URL set — skipping direct Postgres migration');
+    console.log('[DB] To auto-create user_projects: add DATABASE_URL to Railway env');
+    console.log('[DB] (Supabase > Project Settings > Database > Connection string > URI)');
+    return;
+  }
   try {
     const { Pool } = require('pg');
-    const pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false }
-    });
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS user_projects (
-        id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-        project_id text NOT NULL,
-        user_id uuid NOT NULL,
-        title text DEFAULT 'Untitled',
-        project_data jsonb,
-        updated_at timestamptz DEFAULT now(),
-        CONSTRAINT user_projects_unique UNIQUE(user_id, project_id)
-      )
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+    
+    // Check if user_projects exists and what type user_id is
+    const col = await pool.query(`
+      SELECT column_name, data_type FROM information_schema.columns 
+      WHERE table_name = 'user_projects' AND column_name = 'user_id'
     `);
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_up_uid ON user_projects(user_id)');
-    console.log('✓ user_projects table ready (direct pg)');
+    
+    if (col.rows.length === 0) {
+      // Table doesn't exist - create it
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS user_projects (
+          id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+          project_id text NOT NULL,
+          user_id uuid NOT NULL,
+          title text DEFAULT 'Untitled',
+          project_data jsonb,
+          updated_at timestamptz DEFAULT now(),
+          CONSTRAINT user_projects_unique UNIQUE(user_id, project_id)
+        )
+      `);
+      await pool.query('CREATE INDEX IF NOT EXISTS idx_up_uid ON user_projects(user_id)');
+      await pool.query('ALTER TABLE user_projects ENABLE ROW LEVEL SECURITY');
+      await pool.query(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='user_projects' AND policyname='own') THEN CREATE POLICY "own" ON user_projects FOR ALL USING (auth.uid() = user_id); END IF; END $$`);
+      console.log('✓ user_projects table created with correct uuid type (pg)');
+    } else if (col.rows[0].data_type !== 'uuid') {
+      // Table exists with wrong type — fix it
+      console.log('[DB] user_projects.user_id is', col.rows[0].data_type, '— fixing to uuid...');
+      await pool.query('DROP TABLE user_projects CASCADE');
+      await pool.query(`
+        CREATE TABLE user_projects (
+          id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+          project_id text NOT NULL,
+          user_id uuid NOT NULL,
+          title text DEFAULT 'Untitled',
+          project_data jsonb,
+          updated_at timestamptz DEFAULT now(),
+          CONSTRAINT user_projects_unique UNIQUE(user_id, project_id)
+        )
+      `);
+      await pool.query('CREATE INDEX IF NOT EXISTS idx_up_uid ON user_projects(user_id)');
+      await pool.query('ALTER TABLE user_projects ENABLE ROW LEVEL SECURITY');
+      await pool.query(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='user_projects' AND policyname='own') THEN CREATE POLICY "own" ON user_projects FOR ALL USING (auth.uid() = user_id); END IF; END $$`);
+      console.log('✓ user_projects table recreated with correct uuid type (pg)');
+    } else {
+      console.log('✓ user_projects table ready (pg)');
+    }
     pool.end();
   } catch(e) {
-    // Already exists or benign
-    if (!e.message || !e.message.includes('already exists')) {
-      console.log('user_projects pg:', e.message);
-    } else {
-      console.log('✓ user_projects already exists');
-    }
+    console.log('[DB] pg migration error:', e.message);
   }
 })();
 
