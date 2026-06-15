@@ -605,10 +605,9 @@ app.post('/api/admin/setup-db', async (req, res) => {
     
     for (const sql of statements) {
       try {
-        const { error } = await sb.rpc('query', { query: sql }).catch(async () => {
-          // Try direct postgres if rpc fails
-          return await sb.from('_setup_temp').select('1').limit(0);
-        });
+        let _rpcR; try { _rpcR = await sb.rpc('query', {query:sql}); }
+        catch(_rpcE) { _rpcR = {error:_rpcE}; }
+        const {error} = _rpcR || {};
         results.push({ sql: sql.slice(0, 60), status: error ? 'warn: ' + error.message : 'ok' });
       } catch(e) {
         results.push({ sql: sql.slice(0, 60), status: 'skipped: ' + e.message });
@@ -2077,10 +2076,11 @@ async function ensureAabProjectsTable() {
         console.log('✓ user_projects table ready');
       } else {
         // Try to create it via SQL function if available
-        console.warn('⚠ user_projects table missing — run Supabase migration');
-        console.warn('  SQL: CREATE TABLE user_projects (id uuid DEFAULT gen_random_uuid() PRIMARY KEY, project_id text NOT NULL, user_id uuid NOT NULL, title text DEFAULT \'Untitled\', project_data jsonb, updated_at timestamptz DEFAULT now(), UNIQUE(user_id,project_id));');
-        console.warn('  Then: ALTER TABLE user_projects ENABLE ROW LEVEL SECURITY;');
-        console.warn('  Then: CREATE POLICY "own" ON user_projects FOR ALL USING (auth.uid()=user_id);');
+        if (!global._upHint) { global._upHint = 1;
+          console.warn('[AABStudio] user_projects table missing. To create it, run this SQL in Supabase SQL Editor:');
+          console.warn('CREATE TABLE IF NOT EXISTS user_projects (id uuid DEFAULT gen_random_uuid() PRIMARY KEY, project_id text NOT NULL, user_id uuid NOT NULL, title text DEFAULT \'Untitled\', project_data jsonb, updated_at timestamptz DEFAULT now(), CONSTRAINT user_projects_unique UNIQUE(user_id,project_id));');
+          console.warn('ALTER TABLE user_projects ENABLE ROW LEVEL SECURITY;');
+        }
       }
     } catch(e2) { console.warn('user_projects check:', e2.message); }
 
