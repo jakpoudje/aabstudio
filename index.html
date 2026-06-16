@@ -5940,7 +5940,7 @@ setTimeout(function(){
   };
   // navBack polyfill
   if(typeof navBack!=='function'){
-    window.navBack=function(){nav('dashboard-pg');};
+    window.navBack=function(){nav(window._prevNavPage||'dashboard-pg');};
   }
   
   // doSignOut polyfill  
@@ -7868,7 +7868,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
   <button onclick="nav('scenes-pg')" style="font-size:11px;padding:4px 9px;border-radius:5px;border:.5px solid var(--bdr2);background:transparent;cursor:pointer;color:var(--ink2);">🎬 Scenes</button>
   <button onclick="nav('ai-presenter-studio')" style="font-size:11px;padding:4px 9px;border-radius:5px;border:.5px solid var(--bdr2);background:transparent;cursor:pointer;color:var(--ink2);">🤖 AI Presenter</button>
   <button onclick="nav('record-pg')" style="font-size:11px;padding:4px 9px;border-radius:5px;border:.5px solid var(--bdr2);background:transparent;cursor:pointer;color:var(--ink2);">🎥 Record</button>
-  <button onclick="nav('edit-pg');setTimeout(function(){if(typeof E_build==='function')E_build();},400);" style="font-size:11px;padding:4px 9px;border-radius:5px;border:.5px solid var(--bdr2);background:transparent;cursor:pointer;color:var(--ink2);">✂ Edit Suite</button>
+  <button onclick="nav('edit-pg');" style="font-size:11px;padding:4px 9px;border-radius:5px;border:.5px solid var(--bdr2);background:transparent;cursor:pointer;color:var(--ink2);">✂ Edit Suite</button>
 </div>
 <div class="script-layout">
       <div class="script-main">
@@ -22540,15 +22540,24 @@ window.closeAIPresenterStudio=window.closeAIPresenterStudio||function(){var a=do
     };
   })();
 
-  // Track page navigation for navBack
+  // Track page navigation for navBack + fix e-nav-bar hidden
   var _origNav=window.nav;
   if(_origNav&&!_origNav._prevTracked){
     window.nav=function(pg){
       window._prevNavPage=window._curNavPage||'dashboard-pg';
       window._curNavPage=pg;
-      return _origNav.apply(this,arguments);
+      var result=_origNav.apply(this,arguments);
+      // Show edit suite nav bar (platform hides it)
+      if(pg==='edit-pg'){
+        setTimeout(function(){
+          var nb=document.getElementById('e-nav-bar');
+          if(nb)nb.style.display='flex';
+        },150);
+      }
+      return result;
     };
     window.nav._prevTracked=true;
+    window.navBack=function(){nav(window._prevNavPage||'dashboard-pg');};
   }
 })();
 
