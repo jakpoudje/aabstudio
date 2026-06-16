@@ -7863,7 +7863,14 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
 
   <!-- ══ SCRIPT STUDIO ════════════════════════════════════════════════════════════ -->
   <div id="script-pg" class="pg" style="background:var(--off);padding-top:52px;min-height:100vh;overflow-y:auto;overflow-x:hidden;">
-    <div class="script-layout">
+    <div style="position:sticky;top:52px;z-index:90;background:var(--white);border-bottom:.5px solid var(--bdr);display:flex;align-items:center;flex-wrap:wrap;gap:4px;padding:6px 14px;">
+  <button onclick="nav('dashboard-pg')" style="font-size:11px;padding:4px 9px;border-radius:5px;border:.5px solid var(--bdr2);background:transparent;cursor:pointer;color:var(--ink2);">← Dashboard</button>
+  <button onclick="nav('scenes-pg')" style="font-size:11px;padding:4px 9px;border-radius:5px;border:.5px solid var(--bdr2);background:transparent;cursor:pointer;color:var(--ink2);">🎬 Scenes</button>
+  <button onclick="nav('ai-presenter-studio')" style="font-size:11px;padding:4px 9px;border-radius:5px;border:.5px solid var(--bdr2);background:transparent;cursor:pointer;color:var(--ink2);">🤖 AI Presenter</button>
+  <button onclick="nav('record-pg')" style="font-size:11px;padding:4px 9px;border-radius:5px;border:.5px solid var(--bdr2);background:transparent;cursor:pointer;color:var(--ink2);">🎥 Record</button>
+  <button onclick="nav('edit-pg');setTimeout(function(){if(typeof E_build==='function')E_build();},400);" style="font-size:11px;padding:4px 9px;border-radius:5px;border:.5px solid var(--bdr2);background:transparent;cursor:pointer;color:var(--ink2);">✂ Edit Suite</button>
+</div>
+<div class="script-layout">
       <div class="script-main">
         <input class="script-title" id="proj-title" value="My Video" placeholder="Project title...">
         <div class="script-tabs">
@@ -8070,6 +8077,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
           <div class="scenes-meta" id="scenes-meta">0 scenes</div>
         </div>
         <div class="scenes-actions">
+          <button onclick="nav('dashboard-pg')" style="font-size:11px;padding:4px 10px;border-radius:6px;border:.5px solid var(--bdr2);background:transparent;cursor:pointer;color:var(--ink2);white-space:nowrap;">← Dashboard</button>
           <input id="scene-search" aria-label="Search scenes" autocomplete="off" placeholder="Search scenes..."
             style="padding:5px 10px;border-radius:var(--r);border:.5px solid var(--bdr2);background:#fff;font-size:12px;font-family:'Sora',sans-serif;color:var(--ink);outline:none;width:160px;"
             oninput="searchScenes(this.value)">
@@ -22282,15 +22290,7 @@ window.aps_goToEditSuite=window.aps_goToEditSuite||function(){
 };
 
 // aps_setBg — set studio background
-window.aps_setBg=window.aps_setBg||function(bg,el){
-  if(!window.APS)window.APS={settings:{}};
-  if(!APS.settings)APS.settings={};
-  APS.settings.bg=bg;
-  document.querySelectorAll('[onclick*="aps_setBg"]').forEach(function(b){b.classList.remove('on','active');b.style.background='';});
-  if(el){el.classList.add('on','active');el.style.background='rgba(37,99,235,.25)';}
-  if(typeof aps_saveSettings==='function')aps_saveSettings();
-  if(typeof toast==='function')toast('Background: '+bg,'ok');
-};
+window.aps_setBg=window.aps_setBg||function(btn){var bv=(btn&&btn.dataset&&btn.dataset.bg)?btn.dataset.bg:(typeof btn==='string'?btn:'news-studio');if(!window.APS)window.APS={settings:{}};if(!APS.settings)APS.settings={};APS.settings.bg=bv;document.querySelectorAll('.aps-bg-btn').forEach(function(b){b.classList.remove('on','active');b.style.outline='';});if(btn&&btn.classList){btn.classList.add('on','active');btn.style.outline='2px solid #00d4ff';}var pb=document.getElementById('aps-preview-bg');if(pb&&btn&&btn.style&&btn.style.background)pb.style.background=btn.style.background;if(typeof aps_saveSettings==='function')aps_saveSettings();};
 
 // aps_filterScenes — filter scenes by status
 window.aps_filterScenes=window.aps_filterScenes||function(filter,el){
@@ -22496,6 +22496,62 @@ window.addEventListener('load',function(){
   }catch(e){}
 })();
 window.closeAIPresenterStudio=window.closeAIPresenterStudio||function(){var a=document.getElementById('ai-presenter-studio');if(a){a.style.display='none';a.classList.remove('on');}if(typeof nav==='function')nav('dashboard-pg');};
+(function(){
+  // Wire missing AABE edit-suite methods
+  function wireAabe(){
+    if(!window.AABE)return;
+    if(!AABE.setTool)AABE.setTool=function(tool){
+      AABE.tool=tool;
+      document.querySelectorAll('.tl-tool').forEach(function(b){b.classList.remove('on');});
+      var m={select:'etlt-V',razor:'etlt-R',trim:'etlt-T',slip:'etlt-S',hand:'etlt-H'};
+      var el=document.getElementById(m[tool]||'');if(el)el.classList.add('on');
+    };
+    if(!AABE.tlAddTrack)AABE.tlAddTrack=function(type){
+      if(typeof E_addTrack==='function')E_addTrack(type||'video');
+      if(typeof E_build==='function')setTimeout(E_build,200);
+    };
+    if(!AABE.autoCaption)AABE.autoCaption=function(){
+      if(typeof toast==='function')toast('Use Export SRT from the timeline toolbar','info');
+    };
+  }
+  wireAabe();setTimeout(wireAabe,2500);
+
+  // Real teleprompter auto-scroll manager
+  window._tpScrollManager=(function(){
+    var timer=null;
+    return{
+      start:function(){
+        if(timer)clearInterval(timer);
+        var body=document.getElementById('tp-body')||document.getElementById('studio-tp');
+        if(!body)return;
+        var spd=parseFloat((document.getElementById('tp-spd-range')||{value:80}).value);
+        var delay=Math.max(16,Math.round(16000/spd));
+        timer=setInterval(function(){
+          if(!body)return;
+          body.scrollTop+=1;
+          if(body.scrollTop+body.clientHeight>=body.scrollHeight-5){clearInterval(timer);timer=null;}
+        },delay);
+      },
+      stop:function(){if(timer){clearInterval(timer);timer=null;}},
+      reset:function(){if(timer){clearInterval(timer);timer=null;}
+        var body=document.getElementById('tp-body')||document.getElementById('studio-tp');
+        if(body)body.scrollTop=0;
+      }
+    };
+  })();
+
+  // Track page navigation for navBack
+  var _origNav=window.nav;
+  if(_origNav&&!_origNav._prevTracked){
+    window.nav=function(pg){
+      window._prevNavPage=window._curNavPage||'dashboard-pg';
+      window._curNavPage=pg;
+      return _origNav.apply(this,arguments);
+    };
+    window.nav._prevTracked=true;
+  }
+})();
+
 </script>
 <script id="aab-tp-stubs">
 // ── Teleprompter mode - setTpScrollMode aliases studioTpSetMode ──
@@ -22558,16 +22614,10 @@ window.tpPractice=window.tpPractice||function(){
 window.tpPracticeMode=window.tpPractice;
 
 // tpWordMode / tpSyncMode
-window.tpWordMode=window.tpWordMode||function(){setTpScrollMode('word');};
-window.tpSyncMode=window.tpSyncMode||function(){setTpScrollMode('sync');};
-window.startAutoScroll=window.startAutoScroll||function(){
-  // Don't call setTpScrollMode - that causes infinite recursion
-  // setTpScrollMode already calls startAutoScroll internally
-  if(window.STUDIO_TP){STUDIO_TP.autoScrolling=true;STUDIO_TP.mode='auto';}
-};
-window.stopAutoScroll=window.stopAutoScroll||function(){
-  if(window.STUDIO_TP){STUDIO_TP.autoScrolling=false;STUDIO_TP.mode='manual';}
-};
+window.tpWordMode=window.tpWordMode||function(){window._tpScrollManager&&window._tpScrollManager.stop();if(typeof setTpScrollMode==='function')setTpScrollMode('word');var s=document.getElementById('tp-mode-sel');if(s)s.value='word';};
+window.tpSyncMode=window.tpSyncMode||function(){window._tpScrollManager&&window._tpScrollManager.stop();if(typeof setTpScrollMode==='function')setTpScrollMode('sync');var s=document.getElementById('tp-mode-sel');if(s)s.value='sync';};
+window.startAutoScroll=window.startAutoScroll||function(){if(window._tpScrollManager){window._tpScrollManager.start();}if(typeof setTpScrollMode==='function')setTpScrollMode('auto');};
+window.stopAutoScroll=window.stopAutoScroll||function(){if(window._tpScrollManager)window._tpScrollManager.stop();if(typeof setTpScrollMode==='function')setTpScrollMode('manual');};
 window._startTpAutoScroll=window.startAutoScroll;
 window._stopTpAutoScroll=window.stopAutoScroll;
 
