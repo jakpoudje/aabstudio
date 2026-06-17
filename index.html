@@ -15258,7 +15258,7 @@ var APS = {
         bg: 'news-studio',
         shot: 'medium',
         motion: 'static',
-        provider: 'did',  // D-ID default: uses uploaded photo, fastest
+        provider: 'heygen',  // HeyGen default: best quality AI presenter
         ratio: '16:9',
         bgLocked: true,
         stability: 0.5,
@@ -16693,8 +16693,8 @@ window.aps_clearPhoto = aps_clearPhoto;
         <div class="aps-section">
           <div class="aps-section-hdr">⚙ Video Provider</div>
           <select id="aps-provider" aria-label="Video provider" class="aps-select" onchange="aps_onProviderChange(this.value)">
-            <option value="did" selected>D-ID ⚡ (fast, uses your face)</option>
-            <option value="heygen">HeyGen (stock avatar)</option>
+            <option value="did">D-ID ⚡ (fast, uses your face)</option>
+            <option value="heygen" selected>HeyGen (stock avatar)</option>
             <option value="kling">Kling AI (motion video)</option>
           </select>
           <div id="aps-provider-note" style="font-size:9px;color:rgba(0,212,255,.6);margin-top:3px;">
@@ -22280,7 +22280,21 @@ window.sidebarTab=function(tabName,el){
 };
 
 // aps_goToEditSuite — always navigate to edit suite
-window.aps_goToEditSuite=window.aps_goToEditSuite||function(){var scenes=(window.APS&&APS.scenes)||(window.PROJECT&&PROJECT.scenes)||[];scenes.forEach(function(sc){if((sc.videoUrl||sc.url)&&typeof aps_addClipToTimeline==='function'){try{aps_addClipToTimeline(sc);}catch(e){};}});if(typeof nav==='function')nav('edit-pg');if(typeof toast==='function')toast('Clips loaded into Edit Suite','ok');};
+window.aps_goToEditSuite=window.aps_goToEditSuite||function(){
+  var scenes=(window.APS&&APS.scenes)||(window.PROJECT&&PROJECT.scenes)||[];
+  var added=0;
+  scenes.forEach(function(sc){
+    if((sc.videoUrl||sc.url)&&typeof aps_addClipToTimeline==='function'){
+      try{aps_addClipToTimeline(sc);added++;}catch(e){}
+    }
+  });
+  if(typeof nav==='function')nav('edit-pg');
+  setTimeout(function(){
+    if(added>0&&typeof E_renderTL==='function')E_renderTL();
+  },800);
+  if(typeof toast==='function')toast(added+' clips loaded into Edit Suite','ok');
+};
+
 
 // aps_setBg — set studio background
 window.aps_setBg=window.aps_setBg||function(btn){var bv=(btn&&btn.dataset&&btn.dataset.bg)?btn.dataset.bg:(typeof btn==='string'?btn:'news-studio');if(!window.APS)window.APS={settings:{}};if(!APS.settings)APS.settings={};APS.settings.bg=bv;document.querySelectorAll('.aps-bg-btn').forEach(function(b){b.classList.remove('on','active');b.style.outline='';});if(btn&&btn.classList){btn.classList.add('on','active');btn.style.outline='2px solid #00d4ff';}var pb=document.getElementById('aps-preview-bg');if(pb&&btn&&btn.style&&btn.style.background)pb.style.background=btn.style.background;if(typeof aps_saveSettings==='function')aps_saveSettings();};
@@ -22604,6 +22618,21 @@ window.aps_addClipToTimeline = window.aps_addClipToTimeline || function(sc) {
     PROJECT.clips[clip.id] = clip;
   }
 };
+// Protect e-nav-bar from display:none!important set by hideOldEditor
+(function(){
+function protectNavBar(){
+var nb=document.getElementById('e-nav-bar');
+if(!nb||nb._nbProtected)return;
+nb._nbProtected=true;
+new MutationObserver(function(){
+var s=nb.getAttribute('style')||'';
+if(s.indexOf('display: none')>-1||s.indexOf('display:none')>-1){
+nb.setAttribute('style',s.replace(/display:\s*none[^;]*;/gi,'').replace(/height:\s*0px[^;]*;/gi,'').replace(/overflow:\s*hidden[^;]*;/gi,'')+';display:flex!important;');
+}
+}).observe(nb,{attributes:true,attributeFilter:['style']});
+}
+setTimeout(protectNavBar,500);setTimeout(protectNavBar,2000);
+})();
 
 </script>
 <script id="aab-tp-stubs">
