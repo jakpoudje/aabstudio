@@ -22281,29 +22281,38 @@ window.sidebarTab=function(tabName,el){
 
 // aps_goToEditSuite — always navigate to edit suite
 window.aps_goToEditSuite = window.aps_goToEditSuite || function() {
-  var scenes = (window.APS&&APS.scenes)||(window.PROJECT&&PROJECT.scenes)||[];
   var added = 0;
-  scenes.forEach(function(sc){
-    if ((sc.videoUrl||sc.url) && typeof aps_addClipToTimeline==='function') {
-      try { aps_addClipToTimeline(sc); added++; } catch(e) {}
-    }
-  });
-  // Save project so clips persist across sessions
-  if (added > 0) {
-    try {
-      if (window.PROJECT) {
-        var key = 'aab_proj_'+PROJECT.id;
-        localStorage.setItem(key, JSON.stringify(PROJECT));
+  // PRIMARY: use PROJECT.apsVideos (where _apsSceneDone stores generated URLs)
+  if (window.PROJECT && PROJECT.apsVideos && Object.keys(PROJECT.apsVideos).length) {
+    Object.entries(PROJECT.apsVideos).forEach(function(entry) {
+      var key = entry[0]; var av = entry[1];
+      if (av && av.url && typeof aps_addClipToTimeline === 'function') {
+        try {
+          var sc = {id: key, videoUrl: av.url, url: av.url, name: av.narration ? av.narration.slice(0,30) : ('Scene '+(av.sceneNum||'')),
+                    duration: av.duration||8, narration: av.narration||'', provider: 'heygen'};
+          var clip = aps_addClipToTimeline(sc);
+          if (clip) added++;
+        } catch(e) {}
       }
-      if (typeof saveProject==='function') setTimeout(saveProject, 200);
-    } catch(e) {}
+    });
   }
-  if (typeof nav==='function') nav('edit-pg');
-  // After E_build runs, call E_loadClips to pick up new PROJECT.clips
-  setTimeout(function(){
-    if (typeof E_renderTL==='function') E_renderTL();
-  }, 1000);
-  if (typeof toast==='function') toast(added+' clips loaded into Edit Suite','ok');
+  // FALLBACK: APS.scenes or PROJECT.scenes with any URL field
+  if (added === 0) {
+    var scenes = (window.APS && APS.scenes) || (window.PROJECT && PROJECT.scenes) || [];
+    scenes.forEach(function(sc) {
+      var url = sc.videoUrl || sc.apsVideoUrl || sc.url;
+      if (url && typeof aps_addClipToTimeline === 'function') {
+        try { var clip = aps_addClipToTimeline(sc, url); if (clip) added++; } catch(e) {}
+      }
+    });
+  }
+  // Save project so clips persist
+  if (added > 0) {
+    try { if (typeof saveProject === 'function') setTimeout(saveProject, 300); } catch(e) {}
+  }
+  if (typeof nav === 'function') nav('edit-pg');
+  setTimeout(function(){ if (typeof E_renderTL === 'function') E_renderTL(); }, 1000);
+  if (typeof toast === 'function') toast(added > 0 ? added + ' clips loaded into Edit Suite' : 'Opening Edit Suite (generate scenes first)', added > 0 ? 'ok' : 'info');
 };
 // aps_setBg — set studio background
 window.aps_setBg=window.aps_setBg||function(btn){var bv=(btn&&btn.dataset&&btn.dataset.bg)?btn.dataset.bg:(typeof btn==='string'?btn:'news-studio');if(!window.APS)window.APS={settings:{}};if(!APS.settings)APS.settings={};APS.settings.bg=bv;document.querySelectorAll('.aps-bg-btn').forEach(function(b){b.classList.remove('on','active');b.style.outline='';});if(btn&&btn.classList){btn.classList.add('on','active');btn.style.outline='2px solid #00d4ff';}var pb=document.getElementById('aps-preview-bg');if(pb&&btn&&btn.style&&btn.style.background)pb.style.background=btn.style.background;if(typeof aps_saveSettings==='function')aps_saveSettings();};
@@ -22594,28 +22603,28 @@ window._aabAddTrack = window._aabAddTrack || function(type) {
 };
 
 // aps_addClipToTimeline: add APS-generated video to main video track
-window.aps_addClipToTimeline = window.aps_addClipToTimeline || function(sc) {
-  if (!sc) return;
-  var url = sc.videoUrl || sc.url || sc.video_url;
-  if (!url) return;
-  // Primary: write to PROJECT.clips — E_loadClips reads this on E_build
+window.aps_addClipToTimeline = window.aps_addClipToTimeline || function(sc, overrideUrl) {
+  if (!sc) return null;
+  // Check ALL possible URL fields — platform stores as apsVideoUrl after generation
+  var url = overrideUrl || sc.videoUrl || sc.apsVideoUrl || sc.url || sc.video_url || sc.heygen_url;
+  // Also check PROJECT.apsVideos (where _apsSceneDone stores URLs)
+  if (!url && window.PROJECT && PROJECT.apsVideos) {
+    var av = PROJECT.apsVideos[sc.id] || PROJECT.apsVideos['s' + (sc.sceneNum || sc.num || 0)];
+    if (av) url = av.url;
+  }
+  if (!url) return null;
   if (!window.PROJECT) window.PROJECT = {clips:{}, scenes:[], id:'proj_'+Date.now()};
   if (!PROJECT.clips) PROJECT.clips = {};
-  var clipId = sc.id ? ('aps_'+sc.id) : ('aps_'+Date.now()+'_'+(Math.random()*999|0));
-  // Calculate start time from existing clips
+  var clipId = 'aps_' + (sc.id||Date.now()) + '_' + (Math.random()*999|0);
   var maxEnd = 0;
-  Object.values(PROJECT.clips).forEach(function(c){
-    var e = (c.start||0)+(c.duration||8);
-    if(e > maxEnd) maxEnd = e;
-  });
+  Object.values(PROJECT.clips).forEach(function(c){ var e=(c.start||0)+(c.duration||8); if(e>maxEnd) maxEnd=e; });
   var clip = {
-    id: clipId, name: sc.label||sc.name||('AI Scene '+(sc.num||'')),
+    id: clipId, name: sc.label||sc.name||sc.narration&&sc.narration.slice(0,30)||('Scene '+(sc.sceneNum||sc.num||'')),
     url: url, type: 'video', duration: sc.duration||8, start: maxEnd,
     provider: sc.provider||'heygen', thumbnail: sc.thumbnail||null,
     narration: sc.narration||sc.text||''
   };
   PROJECT.clips[clipId] = clip;
-  // Also push to E.tracks[main] if already built (runtime update)
   if (window.E && E.tracks && E.tracks.length) {
     var vTrk = E.tracks.find(function(t){return t.id==='main'||t.type==='video';});
     if (vTrk) { vTrk.clips = vTrk.clips||[]; vTrk.clips.push(clip); }
