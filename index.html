@@ -22773,6 +22773,143 @@ window.exportSRT = window.exportSRT || function() {
   a.click();
   if(typeof toast==='function') toast('SRT file downloaded','ok');
 };
+// ═══════════════════════════════════════════════════════════════════
+// FINAL MISSING STUBS — 22 functions called from HTML attributes
+// ═══════════════════════════════════════════════════════════════════
+
+// Source Monitor controls (srcToggle, srcSeek, srcJump, srcStep, srcFullscreen, srcToTimeline)
+window.srcToggle = window.srcToggle || function() {
+  var v = document.getElementById('aab-src-vid') || document.querySelector('#aab-src-mon video');
+  if (!v) return;
+  if (v.paused) v.play(); else v.pause();
+  var btn = document.querySelector('[onclick*="srcToggle"]');
+  if (btn) btn.textContent = v.paused ? '▶' : '⏸';
+};
+window.srcSeek = window.srcSeek || function(t) {
+  var v = document.getElementById('aab-src-vid') || document.querySelector('#aab-src-mon video');
+  if (v && !isNaN(t)) v.currentTime = Math.max(0, parseFloat(t));
+};
+window.srcJump = window.srcJump || function(delta) {
+  var v = document.getElementById('aab-src-vid') || document.querySelector('#aab-src-mon video');
+  if (v) v.currentTime = Math.max(0, v.currentTime + (parseFloat(delta)||0));
+};
+window.srcStep = window.srcStep || function(dir) {
+  var v = document.getElementById('aab-src-vid') || document.querySelector('#aab-src-mon video');
+  if (v) v.currentTime = Math.max(0, v.currentTime + ((parseInt(dir)||1) * (1/30)));
+};
+window.srcFullscreen = window.srcFullscreen || function() {
+  var el = document.getElementById('aab-src-mon') || document.getElementById('aab-src');
+  if (!el) return;
+  if (document.fullscreenElement) document.exitFullscreen();
+  else el.requestFullscreen && el.requestFullscreen();
+};
+window.srcToTimeline = window.srcToTimeline || function() {
+  if (window.E && E.sourceClip) {
+    if (typeof E_addClip === 'function') E_addClip(E.sourceClip);
+    else if (typeof _E2_addClipToTrack === 'function') _E2_addClipToTrack(E.sourceClip, 'main');
+    if (typeof toast === 'function') toast('Clip added to timeline', 'ok');
+  }
+};
+
+// Timeline controls (tlZoom, tlSetZoom, tlFit, toggleSnap)
+window.tlZoom = window.tlZoom || function(delta) {
+  if (!window.E) return;
+  E.pxPerSec = Math.max(10, Math.min(500, (E.pxPerSec || 60) + (parseFloat(delta)||0)));
+  if (typeof E_renderTL === 'function') E_renderTL();
+};
+window.tlSetZoom = window.tlSetZoom || function(val) {
+  if (!window.E) return;
+  E.pxPerSec = Math.max(10, Math.min(500, parseFloat(val)||60));
+  if (typeof E_renderTL === 'function') E_renderTL();
+};
+window.tlFit = window.tlFit || function() {
+  if (window.E_fit) { E_fit(); } else if (window.AABE && AABE.fit) { AABE.fit(); }
+};
+window.toggleSnap = window.toggleSnap || function() {
+  if (window.E) { E.snap = !E.snap; var btn = document.querySelector('[onclick*="toggleSnap"]'); if (btn) btn.classList.toggle('on', E.snap); }
+  if (window.AABE) AABE.snap = window.E ? E.snap : !AABE.snap;
+};
+
+// Transition controls
+window.transition = window.transition || function(type, clipId) {
+  if (typeof E_applyTransition === 'function') E_applyTransition(type, clipId);
+  else if (typeof toast === 'function') toast('Transition: ' + type, 'ok');
+};
+window.transitionAll = window.transitionAll || function(type) {
+  if (typeof toast === 'function') toast('Applying ' + (type||'fade') + ' to all clips...', 'ok');
+  if (!window.E || !E.tracks) return;
+  E.tracks.forEach(function(t){ (t.clips||[]).forEach(function(c){ c.transition = type||'fade'; }); });
+  if (typeof E_renderTL === 'function') E_renderTL();
+};
+
+// View toggles (safeZones, toggleSubs, toggleLoop, toggleSnap)
+window.safeZones = window.safeZones || function() {
+  var overlay = document.getElementById('aab-safe-zones');
+  if (overlay) overlay.style.display = overlay.style.display === 'none' ? '' : 'none';
+  else if (typeof toast === 'function') toast('Safe zones overlay toggled', 'info');
+};
+window.toggleSubs = window.toggleSubs || function() {
+  if (window.E) { E.showSubs = !E.showSubs; if (typeof E_renderTL === 'function') E_renderTL(); }
+};
+window.toggleLoop = window.toggleLoop || function() {
+  if (window.E) { E.loop = !E.loop; var btn = document.querySelector('[onclick*="toggleLoop"]'); if (btn) btn.classList.toggle('on', E.loop); }
+};
+
+// Drawing/annotation (setEraserMode, resizeStart)
+window.setEraserMode = window.setEraserMode || function() {
+  if (typeof setDrawMode === 'function') setDrawMode('erase');
+  else { var cvs = document.querySelector('.studio-canvas,#studio-canvas,canvas'); if (cvs) cvs.style.cursor = 'cell'; }
+};
+window.resizeStart = window.resizeStart || function(e, direction) {
+  e && e.stopPropagation && e.stopPropagation();
+};
+
+// Marker
+window.saveMarker = window.saveMarker || function(label) {
+  if (window.E) {
+    E.markers = E.markers || [];
+    E.markers.push({ time: E.playhead || 0, label: label || 'Mark ' + (E.markers.length + 1) });
+    if (typeof E_renderTL === 'function') E_renderTL();
+    if (typeof toast === 'function') toast('Marker saved', 'ok');
+  }
+};
+
+// Camera/mic switching (recording studio)
+window.switchCamera = window.switchCamera || function() {
+  if (typeof studioSetMode === 'function') studioSetMode('cam');
+  else if (typeof toast === 'function') toast('Switching camera...', 'info');
+};
+window.switchMic = window.switchMic || function() {
+  if (typeof toast === 'function') toast('Switching microphone input...', 'info');
+};
+window.startCamera = window.startCamera || function() {
+  if (typeof studioSetMode === 'function') studioSetMode('cam');
+  else if (typeof toast === 'function') toast('Starting camera...', 'info');
+};
+
+// Teleprompter back
+window.tpBack = window.tpBack || function() {
+  if (typeof studioPrev === 'function') studioPrev();
+  else if (typeof navBack === 'function') navBack();
+};
+
+// Subtitle editor on timeline
+window.tl_editSubtitle = window.tl_editSubtitle || function(clipId) {
+  if (typeof _E2_editTextClip === 'function') {
+    var clip = null;
+    if (window.E && E.tracks) E.tracks.forEach(function(t){ (t.clips||[]).forEach(function(c){ if(c.id===clipId) clip=c; }); });
+    if (clip) _E2_editTextClip(clipId, clip.trackId || 'subs', clip);
+  } else if (typeof toast === 'function') {
+    toast('Click text clip to edit subtitles', 'info');
+  }
+};
+// Force e-nav-bar always visible (platform hides it with display:none!important)
+(function(){
+  var st=document.createElement('style');
+  st.id='e-nav-bar-force';
+  st.textContent='#e-nav-bar{display:flex!important;height:auto!important;min-height:36px!important;overflow:visible!important;}';
+  document.head&&document.head.appendChild(st);
+})();
 
 </script>
 <script id="aab-tp-stubs">
