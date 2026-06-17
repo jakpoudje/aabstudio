@@ -22280,22 +22280,31 @@ window.sidebarTab=function(tabName,el){
 };
 
 // aps_goToEditSuite — always navigate to edit suite
-window.aps_goToEditSuite=window.aps_goToEditSuite||function(){
-  var scenes=(window.APS&&APS.scenes)||(window.PROJECT&&PROJECT.scenes)||[];
-  var added=0;
+window.aps_goToEditSuite = window.aps_goToEditSuite || function() {
+  var scenes = (window.APS&&APS.scenes)||(window.PROJECT&&PROJECT.scenes)||[];
+  var added = 0;
   scenes.forEach(function(sc){
-    if((sc.videoUrl||sc.url)&&typeof aps_addClipToTimeline==='function'){
-      try{aps_addClipToTimeline(sc);added++;}catch(e){}
+    if ((sc.videoUrl||sc.url) && typeof aps_addClipToTimeline==='function') {
+      try { aps_addClipToTimeline(sc); added++; } catch(e) {}
     }
   });
-  if(typeof nav==='function')nav('edit-pg');
+  // Save project so clips persist across sessions
+  if (added > 0) {
+    try {
+      if (window.PROJECT) {
+        var key = 'aab_proj_'+PROJECT.id;
+        localStorage.setItem(key, JSON.stringify(PROJECT));
+      }
+      if (typeof saveProject==='function') setTimeout(saveProject, 200);
+    } catch(e) {}
+  }
+  if (typeof nav==='function') nav('edit-pg');
+  // After E_build runs, call E_loadClips to pick up new PROJECT.clips
   setTimeout(function(){
-    if(added>0&&typeof E_renderTL==='function')E_renderTL();
-  },800);
-  if(typeof toast==='function')toast(added+' clips loaded into Edit Suite','ok');
+    if (typeof E_renderTL==='function') E_renderTL();
+  }, 1000);
+  if (typeof toast==='function') toast(added+' clips loaded into Edit Suite','ok');
 };
-
-
 // aps_setBg — set studio background
 window.aps_setBg=window.aps_setBg||function(btn){var bv=(btn&&btn.dataset&&btn.dataset.bg)?btn.dataset.bg:(typeof btn==='string'?btn:'news-studio');if(!window.APS)window.APS={settings:{}};if(!APS.settings)APS.settings={};APS.settings.bg=bv;document.querySelectorAll('.aps-bg-btn').forEach(function(b){b.classList.remove('on','active');b.style.outline='';});if(btn&&btn.classList){btn.classList.add('on','active');btn.style.outline='2px solid #00d4ff';}var pb=document.getElementById('aps-preview-bg');if(pb&&btn&&btn.style&&btn.style.background)pb.style.background=btn.style.background;if(typeof aps_saveSettings==='function')aps_saveSettings();};
 
@@ -22589,34 +22598,29 @@ window.aps_addClipToTimeline = window.aps_addClipToTimeline || function(sc) {
   if (!sc) return;
   var url = sc.videoUrl || sc.url || sc.video_url;
   if (!url) return;
-  var tracks = (window.AABE && AABE.tracks) || (window.E && E.tracks);
-  if (!tracks) return;
-  var vTrk = null;
-  for (var i = 0; i < tracks.length; i++) {
-    if (tracks[i].id === 'main' || tracks[i].type === 'video') { vTrk = tracks[i]; break; }
-  }
-  if (!vTrk) return;
-  vTrk.clips = vTrk.clips || [];
-  var start = 0;
-  if (vTrk.clips.length) {
-    var lc = vTrk.clips[vTrk.clips.length - 1];
-    start = (lc.start || 0) + (lc.duration || 8);
-  }
+  // Primary: write to PROJECT.clips — E_loadClips reads this on E_build
+  if (!window.PROJECT) window.PROJECT = {clips:{}, scenes:[], id:'proj_'+Date.now()};
+  if (!PROJECT.clips) PROJECT.clips = {};
+  var clipId = sc.id ? ('aps_'+sc.id) : ('aps_'+Date.now()+'_'+(Math.random()*999|0));
+  // Calculate start time from existing clips
+  var maxEnd = 0;
+  Object.values(PROJECT.clips).forEach(function(c){
+    var e = (c.start||0)+(c.duration||8);
+    if(e > maxEnd) maxEnd = e;
+  });
   var clip = {
-    id: 'aps_' + Date.now() + '_' + (Math.random() * 999 | 0),
-    name: sc.label || sc.name || 'AI Scene',
-    url: url,
-    type: 'video',
-    duration: sc.duration || 8,
-    start: start,
-    provider: sc.provider || 'heygen',
-    thumbnail: sc.thumbnail || null
+    id: clipId, name: sc.label||sc.name||('AI Scene '+(sc.num||'')),
+    url: url, type: 'video', duration: sc.duration||8, start: maxEnd,
+    provider: sc.provider||'heygen', thumbnail: sc.thumbnail||null,
+    narration: sc.narration||sc.text||''
   };
-  vTrk.clips.push(clip);
-  if (window.PROJECT) {
-    PROJECT.clips = PROJECT.clips || {};
-    PROJECT.clips[clip.id] = clip;
+  PROJECT.clips[clipId] = clip;
+  // Also push to E.tracks[main] if already built (runtime update)
+  if (window.E && E.tracks && E.tracks.length) {
+    var vTrk = E.tracks.find(function(t){return t.id==='main'||t.type==='video';});
+    if (vTrk) { vTrk.clips = vTrk.clips||[]; vTrk.clips.push(clip); }
   }
+  return clip;
 };
 // Protect e-nav-bar from display:none!important set by hideOldEditor
 (function(){
