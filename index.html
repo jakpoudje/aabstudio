@@ -22637,6 +22637,142 @@ nb.setAttribute('style',s.replace(/display:\s*none[^;]*;/gi,'').replace(/height:
 }
 setTimeout(protectNavBar,500);setTimeout(protectNavBar,2000);
 })();
+// ═══════════════════════════════════════════════════════════
+// MISSING GLOBAL FUNCTIONS — all called from HTML onchange/onclick
+// ═══════════════════════════════════════════════════════════
+
+// asset_upload: upload file and return Promise<{url,type,name,duration}>
+window.asset_upload = window.asset_upload || function(file, type) {
+  return new Promise(function(resolve, reject) {
+    if (!file) { resolve(null); return; }
+    var blobUrl = URL.createObjectURL(file);
+    var name = file.name || 'asset_' + Date.now();
+    var assetType = type || (file.type ? file.type.split('/')[0] : 'video');
+    // For video/audio: get duration
+    if (assetType === 'video' || assetType === 'audio') {
+      var media = document.createElement(assetType === 'video' ? 'video' : 'audio');
+      media.src = blobUrl;
+      media.onloadedmetadata = function() {
+        resolve({ url: blobUrl, type: assetType, name: name, duration: Math.round(media.duration) || 8, file: file });
+      };
+      media.onerror = function() { resolve({ url: blobUrl, type: assetType, name: name, duration: 8, file: file }); };
+    } else {
+      resolve({ url: blobUrl, type: assetType, name: name, duration: 0, file: file });
+    }
+  });
+};
+
+// binTab: switch between CLIPS / ASSETS / FX tabs in edit suite bin
+window.binTab = window.binTab || function(tab) {
+  ['clips','assets','fx'].forEach(function(t){
+    var el = document.getElementById('aab-bin-'+t);
+    var btn = document.querySelector('[data-bin-tab="'+t+'"]');
+    if (el) el.style.display = (t===tab) ? '' : 'none';
+    if (btn) btn.classList.toggle('on', t===tab);
+  });
+};
+
+// aps_updateVoiceList: update voice select when provider changes
+window.aps_updateVoiceList = window.aps_updateVoiceList || function() {
+  var provEl = document.getElementById('aps-voice-provider');
+  var voiceSel = document.getElementById('aps-voice-sel');
+  if (!provEl || !voiceSel) return;
+  if (typeof aps_saveSettings === 'function') aps_saveSettings();
+};
+
+// deleteAssetById: remove an asset from the assets library
+window.deleteAssetById = window.deleteAssetById || function(id) {
+  var el = document.getElementById(id) || document.querySelector('[data-id="'+id+'"]');
+  if (el && el.parentNode) el.parentNode.removeChild(el);
+  if (typeof saveProject === 'function') setTimeout(saveProject, 500);
+};
+
+// Program monitor controls
+window.progToggle = window.progToggle || function() {
+  if (window.E) {
+    E.playing = !E.playing;
+    if (typeof E_renderTL === 'function') E_renderTL();
+  }
+};
+
+window.progSeek = window.progSeek || function(t) {
+  if (window.E) { E.playhead = Math.max(0, parseFloat(t)||0); if (typeof E_renderTL==='function') E_renderTL(); }
+};
+
+window.progJump = window.progJump || function(delta) {
+  if (window.E) { E.playhead = Math.max(0, (E.playhead||0) + (parseFloat(delta)||0)); if (typeof E_renderTL==='function') E_renderTL(); }
+};
+
+window.progStep = window.progStep || function(dir) {
+  if (window.E) { E.playhead = Math.max(0, (E.playhead||0) + ((parseInt(dir)||1) * (1/30))); if (typeof E_renderTL==='function') E_renderTL(); }
+};
+
+window.progFullscreen = window.progFullscreen || function() {
+  var pm = document.getElementById('aab-prog-mon') || document.getElementById('aab-prog');
+  if (!pm) return;
+  if (document.fullscreenElement) { document.exitFullscreen(); }
+  else { pm.requestFullscreen && pm.requestFullscreen(); }
+};
+
+// cycleQuality: toggle export quality
+window.cycleQuality = window.cycleQuality || function() {
+  var q = ['720p','1080p','4K'];
+  var el = document.getElementById('e-quality') || document.querySelector('[data-quality]');
+  if (!el) return;
+  var cur = el.textContent || el.value || '1080p';
+  var next = q[(q.indexOf(cur)+1) % q.length];
+  if (el.tagName === 'SELECT') el.value = next; else el.textContent = next;
+};
+
+// cycleRatio: toggle aspect ratio
+window.cycleRatio = window.cycleRatio || function() {
+  var r = ['16:9','9:16','1:1'];
+  var el = document.getElementById('e-ratio') || document.querySelector('[data-ratio]');
+  if (!el) return;
+  var cur = el.textContent || el.value || '16:9';
+  var next = r[(r.indexOf(cur)+1) % r.length];
+  if (el.tagName === 'SELECT') el.value = next; else el.textContent = next;
+};
+
+// addMarker: add a timeline marker at current playhead
+window.addMarker = window.addMarker || function() {
+  if (window.E && typeof E_renderTL === 'function') {
+    E.markers = E.markers || [];
+    E.markers.push({ time: E.playhead || 0, label: 'Mark ' + (E.markers.length + 1) });
+    E_renderTL();
+  }
+};
+
+// multiSelect: toggle multi-select mode
+window.multiSelect = window.multiSelect || function() {
+  if (window.AABE) {
+    AABE.multiSelect = !AABE.multiSelect;
+    var btn = document.querySelector('[onclick="multiSelect()"]');
+    if (btn) btn.classList.toggle('on', AABE.multiSelect);
+  }
+};
+
+// masterVol: set master volume
+window.masterVol = window.masterVol || function(val) {
+  if (window.E) { E.masterVol = parseFloat(val) || 1; }
+};
+
+// exportSRT: export subtitles as SRT file
+window.exportSRT = window.exportSRT || function() {
+  if (!window.E || !E.tracks) { if(typeof toast==='function') toast('No subtitle track found','info'); return; }
+  var subTrack = E.tracks.find(function(t){ return t.id==='subs'||t.type==='subtitles'; });
+  if (!subTrack || !subTrack.clips || !subTrack.clips.length) { if(typeof toast==='function') toast('No subtitles to export','info'); return; }
+  var srt = subTrack.clips.map(function(c, i){
+    var s = c.start||0, d = c.duration||2;
+    function fmt(t){ var h=Math.floor(t/3600),m=Math.floor((t%3600)/60),sec=Math.floor(t%60),ms=Math.round((t%1)*1000); return [h,m,sec].map(function(x){return x<10?'0'+x:x;}).join(':')+','+('00'+ms).slice(-3); }
+    return [(i+1), fmt(s)+' --> '+fmt(s+d), (c.narration||c.name||''), ''].join('\n');
+  }).join('\n');
+  var a = document.createElement('a');
+  a.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(srt);
+  a.download = (window.PROJECT && PROJECT.title || 'subtitles') + '.srt';
+  a.click();
+  if(typeof toast==='function') toast('SRT file downloaded','ok');
+};
 
 </script>
 <script id="aab-tp-stubs">
