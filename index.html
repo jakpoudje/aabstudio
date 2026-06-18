@@ -22915,6 +22915,292 @@ window.tl_editSubtitle = window.tl_editSubtitle || function(clipId) {
   st.textContent='#e-nav-bar{display:flex!important;height:auto!important;min-height:36px!important;overflow:visible!important;}';
   document.head&&document.head.appendChild(st);
 })();
+// ═══════════════════════════════════════════════════════════════════════
+// AABSTUDIO COMPREHENSIVE FIX — injected into aab-stubs
+// All changes are additive to stubs only. Platform HTML untouched.
+// ═══════════════════════════════════════════════════════════════════════
+
+// ── 1. TOOLBAR: Wire missing AABE methods ───────────────────────────
+(function(){
+  function extendAabe(){
+    if(!window.AABE || !window.E) return;
+    if(!AABE.tlZoom) AABE.tlZoom = function(d){
+      E.pxPerSec = Math.max(8, Math.min(500, (E.pxPerSec||60) * (d>0 ? 1.4 : 0.72)));
+      if(typeof E_renderTL==='function') E_renderTL();
+      var lbl=document.getElementById('e-zoom-lbl');
+      if(lbl) lbl.textContent = Math.round((E.pxPerSec||60)/10)+'x';
+    };
+    if(!AABE.tlSetZoom) AABE.tlSetZoom = function(v){
+      E.pxPerSec = Math.max(8, Math.min(300, parseFloat(v)*10 || 60));
+      if(typeof E_renderTL==='function') E_renderTL();
+    };
+    if(!AABE.tlFit) AABE.tlFit = function(){
+      if(typeof E_fit==='function'){ E_fit(); return; }
+      var scroll = document.getElementById('aab-tl-scroll');
+      var dur = (typeof E_dur==='function') ? E_dur() : 60;
+      if(scroll && dur > 0) E.pxPerSec = Math.max(8, (scroll.clientWidth - 160) / dur);
+      if(typeof E_renderTL==='function') E_renderTL();
+    };
+    if(!AABE.resizeStart) AABE.resizeStart = function(e){
+      if(e) e.preventDefault && e.preventDefault();
+    };
+    if(!AABE.tlSnapToggle) AABE.tlSnapToggle = function(){
+      E.snap = !E.snap;
+      var b = document.querySelector('[onclick*="tlSnapToggle"],[onclick*="toggleSnap"]');
+      if(b) b.classList.toggle('on', E.snap);
+    };
+  }
+  extendAabe();
+  setTimeout(extendAabe, 1500);
+  setTimeout(extendAabe, 3000);
+})();
+
+// ── 2. TRACK RENAME + REORDER: Hook into E_renderTL ────────────────
+(function(){
+  function patch(){
+    var orig = window.E_renderTL;
+    if(!orig || orig._trackPatched) return;
+    window.E_renderTL = function(){
+      var r = orig.apply(this, arguments);
+      setTimeout(_addTrackControls, 120);
+      return r;
+    };
+    window.E_renderTL._trackPatched = true;
+    setTimeout(_addTrackControls, 400);
+  }
+
+  function _addTrackControls(){
+    // Rename via dblclick
+    document.querySelectorAll('.aab-track-name').forEach(function(nm, idx){
+      if(nm._rrSetup) return;
+      nm._rrSetup = true;
+      nm.title = 'Double-click to rename';
+      nm.style.cursor = 'text';
+      nm.ondblclick = function(e){
+        e.stopPropagation();
+        var orig = nm.textContent;
+        var inp = document.createElement('input');
+        inp.value = orig;
+        inp.style.cssText = 'width:84px;background:#0d1527;color:#c7d2fe;border:.5px solid rgba(99,102,241,.7);border-radius:3px;padding:1px 4px;font-size:10px;font-family:Sora,Inter,sans-serif;outline:none;';
+        nm.textContent = '';
+        nm.appendChild(inp);
+        inp.focus(); inp.select();
+        function commit(){
+          var v = (inp.value||'').trim() || orig;
+          nm.textContent = v;
+          if(window.E && E.tracks && E.tracks[idx]) E.tracks[idx].name = v;
+        }
+        inp.onblur = commit;
+        inp.onkeydown = function(ev){
+          if(ev.key==='Enter'){ ev.preventDefault(); inp.blur(); }
+          if(ev.key==='Escape'){ nm.textContent = orig; }
+        };
+      };
+    });
+
+    // Reorder via drag-drop
+    document.querySelectorAll('.aab-track-lbl').forEach(function(lbl, fromIdx){
+      if(lbl._dragSetup) return;
+      lbl._dragSetup = true;
+      lbl.draggable = true;
+      if(!lbl.querySelector('.aab-drag-hdl')){
+        var hdl = document.createElement('span');
+        hdl.className = 'aab-drag-hdl';
+        hdl.textContent = '⋮⋮';
+        hdl.title = 'Drag to reorder track';
+        hdl.style.cssText = 'opacity:.18;font-size:8px;cursor:grab;padding:0 2px 0 1px;flex-shrink:0;letter-spacing:-2px;user-select:none;';
+        lbl.insertBefore(hdl, lbl.firstChild);
+      }
+      lbl.ondragstart = function(ev){
+        ev.dataTransfer.effectAllowed = 'move';
+        ev.dataTransfer.setData('text/plain', String(fromIdx));
+        setTimeout(function(){ lbl.style.opacity='.4'; }, 0);
+      };
+      lbl.ondragend = function(){ lbl.style.opacity=''; lbl.style.outline=''; };
+      lbl.ondragover = function(ev){ ev.preventDefault(); ev.dataTransfer.dropEffect='move'; lbl.style.outline='1px dashed rgba(99,102,241,.55)'; };
+      lbl.ondragleave = function(){ lbl.style.outline=''; };
+      lbl.ondrop = function(ev){
+        ev.preventDefault(); lbl.style.outline='';
+        var fi = parseInt(ev.dataTransfer.getData('text/plain'), 10);
+        var ti = fromIdx;
+        if(!isNaN(fi) && fi !== ti && window.E && E.tracks && E.tracks.length > 1){
+          var moved = E.tracks.splice(fi, 1)[0];
+          E.tracks.splice(ti, 0, moved);
+          if(typeof E_renderTL==='function') E_renderTL();
+        }
+      };
+    });
+  }
+
+  setTimeout(patch, 800);
+  setTimeout(patch, 2500);
+})();
+
+// ── 3. UPLOAD DURATION FIX: Override E_uploadVideo + E_uploadAudio ─
+// Force-override (no || guard) to replace hardcoded duration:10
+window.E_uploadVideo = function(trackId){
+  var inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'video/*';
+  inp.onchange = function(){
+    var f = inp.files[0]; if(!f) return;
+    var url = URL.createObjectURL(f);
+    if(typeof toast==='function') toast('Reading video duration…','info');
+    var vid = document.createElement('video');
+    vid.preload = 'metadata'; vid.src = url;
+    vid.onloadedmetadata = function(){
+      var dur = isFinite(vid.duration) ? Math.round(vid.duration) : 30;
+      _pushClip(trackId, f.name, url, 'video', dur, '#2563eb');
+    };
+    vid.onerror = function(){ _pushClip(trackId, f.name, url, 'video', 30, '#2563eb'); };
+  };
+  inp.click();
+};
+
+window.E_uploadAudio = function(trackId){
+  var inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'audio/*';
+  inp.onchange = function(){
+    var f = inp.files[0]; if(!f) return;
+    var url = URL.createObjectURL(f);
+    var aud = document.createElement('audio');
+    aud.preload = 'metadata'; aud.src = url;
+    aud.onloadedmetadata = function(){
+      var dur = isFinite(aud.duration) ? Math.round(aud.duration) : 30;
+      var tid = trackId || (window.E && E.tracks ? (E.tracks.find(function(t){return t.type==='audio';}) || {id:'music'}).id : 'music');
+      _pushClip(tid, f.name, url, 'audio', dur, '#7c3aed');
+    };
+    aud.onerror = function(){
+      _pushClip(trackId||'music', f.name, url, 'audio', 30, '#7c3aed');
+    };
+  };
+  inp.click();
+};
+
+window.E_uploadImage = function(trackId){
+  var inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*';
+  inp.onchange = function(){
+    var f = inp.files[0]; if(!f) return;
+    var url = URL.createObjectURL(f);
+    _pushClip(trackId||'overlay', f.name, url, 'image', 5, '#059669');
+  };
+  inp.click();
+};
+
+function _pushClip(trackId, name, url, type, dur, color){
+  if(!window.E || !E.tracks) return;
+  var tr = E.tracks.find(function(t){ return t.id === trackId; });
+  if(!tr) tr = E.tracks.find(function(t){ return t.type === type; });
+  if(!tr) tr = E.tracks[0];
+  if(!tr) return;
+  if(!tr.clips) tr.clips = [];
+  var pos = tr.clips.reduce(function(m,c){ return Math.max(m, c.start + (c.duration||0)); }, 0);
+  tr.clips.push({id: type[0]+'_'+Date.now(), name: name, url: url, type: type, start: pos, duration: dur, color: color});
+  if(typeof E_renderTL==='function') E_renderTL();
+  if(typeof toast==='function') toast(name + ' added — ' + dur + 's', 'ok');
+}
+
+// ── 4. SCENE UPLOAD: Handle null scene editor index ─────────────────
+(function(){
+  var _origSU = window.uploadSceneAsset;
+  window.uploadSceneAsset = function(inp){
+    if(!inp || !inp.files || !inp.files.length) return;
+    // Try original first (it has closure access to _sceneEditorIdx)
+    if(typeof _origSU === 'function'){
+      _origSU(inp);
+      // Check if it did something (no direct way — try both paths)
+    }
+    // Fallback: if no scene is selected, add to global assets + first scene
+    var files = Array.from(inp.files);
+    if(!window.PROJECT) return;
+    if(!PROJECT.assets) PROJECT.assets = [];
+    files.forEach(function(file){
+      var url = URL.createObjectURL(file);
+      var t = file.type ? file.type.split('/')[0] : 'video';
+      var asset = {id:'a_'+Date.now()+'_'+Math.random().toString(36).slice(2), name:file.name, url:url, type:t, size:file.size};
+      PROJECT.assets.unshift(asset);
+      // Also add to the first non-done scene
+      if(PROJECT.scenes && PROJECT.scenes.length){
+        var sc = PROJECT.scenes.find(function(s){ return !s.videoUrl && !s.apsVideoUrl; }) || PROJECT.scenes[0];
+        if(sc){ if(!sc.assets) sc.assets=[]; sc.assets.unshift(asset); }
+      }
+    });
+    if(typeof toast==='function') toast(files.length + ' file(s) uploaded to scene', 'ok');
+    // Refresh scene board if visible
+    if(typeof renderSceneBoard==='function') try{ renderSceneBoard(); }catch(e){}
+  };
+})();
+
+// ── 5. MEDIA BIN UPLOAD: Wire dash_uploadAsset to also refresh edit bin
+(function(){
+  var _origDU = window.dash_uploadAsset;
+  window.dash_uploadAsset = function(file, type){
+    if(typeof _origDU === 'function') _origDU(file, type);
+    // If edit suite is open, also read duration and add to E.tracks for the bin
+    if(!file) return;
+    if(type === 'video' || type === 'audio'){
+      var url = URL.createObjectURL(file);
+      var el = document.createElement(type === 'video' ? 'video' : 'audio');
+      el.preload = 'metadata'; el.src = url;
+      el.onloadedmetadata = function(){
+        var dur = isFinite(el.duration) ? Math.round(el.duration) : 30;
+        // Add to PROJECT.clips so edit bin shows it
+        if(window.PROJECT){
+          if(!PROJECT.clips) PROJECT.clips = {};
+          var cid = type[0]+'_'+Date.now();
+          PROJECT.clips[cid] = {id:cid, name:file.name, url:url, type:type, duration:dur, start:0};
+        }
+        // Refresh bin display
+        if(typeof E_loadClips==='function') try{ E_loadClips(); }catch(e){}
+      };
+    }
+  };
+})();
+
+// ── 6. TP SCROLL: Ensure correct container targeting ────────────────
+(function(){
+  var _origSet = window.setTpScrollMode;
+  window.setTpScrollMode = function(mode){
+    window._tpScrollMode = mode;
+    if(typeof _origSet === 'function') _origSet(mode);
+    if(mode === 'auto'){
+      if(window._tpTimer) clearInterval(window._tpTimer);
+      var body = document.getElementById('tp-body') ||
+                 document.querySelector('.tp-text-wrap') ||
+                 document.querySelector('#record-pg .studio-body');
+      if(!body) return;
+      var spd = parseFloat((document.getElementById('tp-spd-range')||{value:80}).value)||80;
+      window._tpTimer = setInterval(function(){
+        body.scrollTop += 1;
+        if(body.scrollTop + body.clientHeight >= body.scrollHeight - 5){
+          clearInterval(window._tpTimer); window._tpTimer = null;
+        }
+      }, Math.max(16, Math.round(16000/spd)));
+    } else if(mode === 'manual' || mode === 'word'){
+      if(window._tpTimer){ clearInterval(window._tpTimer); window._tpTimer = null; }
+    }
+  };
+})();
+
+// ── 7. CSS IMPROVEMENTS: Inject once ───────────────────────────────
+(function(){
+  if(document.getElementById('aab-fix-css')) return;
+  var s = document.createElement('style');
+  s.id = 'aab-fix-css';
+  s.textContent = [
+    '#e-nav-bar{display:flex!important;min-height:36px!important;overflow:visible!important;}',
+    '#aps-go-edit-btn-top{background:linear-gradient(135deg,#10b981,#059669)!important;color:#fff!important;border:none!important;box-shadow:0 4px 15px rgba(16,185,129,.4)!important;font-weight:700!important;}',
+    '#aps-go-edit-btn-top:hover{transform:translateY(-1px)!important;box-shadow:0 6px 20px rgba(16,185,129,.55)!important;}',
+    '.aps-bg-btn{cursor:pointer!important;transition:all .15s!important;}',
+    '.aps-bg-btn.on,.aps-bg-btn.active{outline:2px solid #00d4ff!important;box-shadow:0 0 10px rgba(0,212,255,.4)!important;}',
+    '.aab-track-lbl:hover{background:rgba(99,102,241,.06)!important;}',
+    '.aab-track-lbl:hover .aab-drag-hdl{opacity:.45!important;}',
+    '.aab-track-name{cursor:text!important;border-radius:2px!important;}',
+    '.aab-track-name:hover{background:rgba(255,255,255,.05)!important;}',
+    '.aab-drag-hdl{display:inline-block!important;user-select:none!important;}',
+  ].join('');
+  document.head.appendChild(s);
+})();
 
 </script>
 <script id="aab-tp-stubs">
