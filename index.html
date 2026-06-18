@@ -23615,6 +23615,78 @@ window.aps_ensurePhotoBase64 = function(){
     });
 };
 
+// Fix character photo loading: bridge old format (images[]) to new (photoB64)
+// Called after any character is loaded to ensure photoB64 is always set
+window.aps_fixCharPhoto = function(){
+  if(!window.APS) return;
+  // If photoB64 already set and valid, nothing to do
+  if(APS.photoB64 && APS.photoB64.length > 100) return;
+  // Try characterImages (set by char.images[0] loading code)
+  var img = (APS.characterImages && APS.characterImages[0]) ||
+            APS.photo ||
+            (APS.photoFileName ? null : null);
+  if(!img) {
+    // Try loading from localStorage saved chars
+    try {
+      var userId = window.APP && APP.user ? APP.user.id : null;
+      if(!userId) return;
+      var charName = APS.charName || APS.characterName;
+      if(!charName) return;
+      var savedChars = JSON.parse(localStorage.getItem('aab_chars_'+userId)||'[]');
+      var ch = savedChars.find(function(c){ return c.name === charName; });
+      if(ch && ch.images && ch.images[0]) img = ch.images[0];
+    } catch(e2){}
+  }
+  if(!img) return;
+  // Convert full data URL to base64 only
+  if(img.includes(',')) {
+    APS.photoB64 = img.split(',')[1];
+    APS.photo = img;
+    APS.photoMimeType = img.split(';')[0].split(':')[1] || 'image/jpeg';
+  } else {
+    APS.photoB64 = img;
+    APS.photo = 'data:image/jpeg;base64,' + img;
+    APS.photoMimeType = 'image/jpeg';
+  }
+};
+
+// Wrap aps_useCharProfile to always fix photo after loading
+(function(){
+  var _origUCP = window.aps_useCharProfile;
+  if(_origUCP && !_origUCP._photoFixed){
+    window.aps_useCharProfile = function(id){
+      if(typeof _origUCP === 'function') _origUCP.call(this, id);
+      setTimeout(window.aps_fixCharPhoto, 100);
+    };
+    window.aps_useCharProfile._photoFixed = true;
+  }
+})();
+
+// Also fix on every aps_generateScene call
+(function(){
+  var _origGSc = window.aps_generateScene;
+  if(_origGSc && !_origGSc._photoFixed){
+    window.aps_generateScene = function(idx){
+      // Always ensure photo is loaded before generating
+      window.aps_fixCharPhoto();
+      // Also init APS.scenes if missing
+      if((!window.APS || !APS.scenes) && window.PROJECT && PROJECT.scenes && PROJECT.scenes.length){
+        if(!window.APS) window.APS={};
+        APS.scenes = PROJECT.scenes.map(function(sc,i){
+          return {id:sc.id||('s'+(i+1)),num:i+1,sceneNum:i+1,
+            narration:sc.narration||sc.label||'',duration:sc.duration||8,
+            status:(sc.videoUrl||sc.apsVideoUrl)?'done':'ready',
+            videoUrl:sc.videoUrl||sc.apsVideoUrl||null,taskId:sc.taskId||null};
+        });
+        APS.results=APS.results||{}; APS.clips=APS.clips||{};
+      }
+      return _origGSc.apply(this, arguments);
+    };
+    window.aps_generateScene._photoFixed = true;
+    window.aps_generateScene._scenesPatched = true;
+  }
+})();
+
 </script>
 <script id="aab-tp-stubs">
 // ── Teleprompter mode - setTpScrollMode aliases studioTpSetMode ──
