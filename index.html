@@ -23475,37 +23475,41 @@ function _fixBinThumbs(){
 })();
 
 // Override E_triggerUpload to read real duration and add to apsVideos
-window.E_triggerUpload = function(){
+
+// E_triggerUpload: unified file upload — video/audio/image with full duration
+window.E_triggerUpload = function(specificType){
   var inp=document.createElement('input');
   inp.type='file';
-  inp.accept='video/*,audio/*,image/*';
+  inp.accept=specificType==='video'?'video/*':specificType==='audio'?'audio/*':specificType==='image'?'image/*':'video/*,audio/*,image/*';
   inp.multiple=true;
   inp.onchange=function(){
     Array.from(inp.files).forEach(function(file){
       var t=file.type?file.type.split('/')[0]:'video';
       var url=URL.createObjectURL(file);
       if(t==='video'){
-        if(typeof E_uploadVideo==='function'){ E_uploadVideo(); return; }
         var vid=document.createElement('video');
-        vid.preload='metadata'; vid.src=url;
+        vid.preload='metadata';vid.src=url;
         vid.onloadedmetadata=function(){
           _pushClip('main',file.name,url,'video',Math.round(vid.duration)||30,'#2563eb');
         };
-        vid.onerror=function(){ _pushClip('main',file.name,url,'video',30,'#2563eb'); };
-      } else if(t==='audio'){
+        vid.onerror=function(){_pushClip('main',file.name,url,'video',30,'#2563eb');};
+      }else if(t==='audio'){
         var aud=document.createElement('audio');
-        aud.preload='metadata'; aud.src=url;
+        aud.preload='metadata';aud.src=url;
         aud.onloadedmetadata=function(){
-          _pushClip(null,file.name,url,'audio',Math.round(aud.duration)||30,'#7c3aed');
+          var dur=Math.round(aud.duration)||30;
+          var atr=window.E&&E.tracks&&(E.tracks.find(function(tk){return tk.type==='audio'&&tk.id!=='main';}))||{id:'music'};
+          _pushClip(atr.id,file.name,url,'audio',dur,'#7c3aed');
         };
-        aud.onerror=function(){ _pushClip(null,file.name,url,'audio',30,'#7c3aed'); };
-      } else {
-        _pushClip('overlays',file.name,url,'image',5,'#059669');
+        aud.onerror=function(){_pushClip('music',file.name,url,'audio',30,'#7c3aed');};
+      }else{
+        _pushClip('overlay',file.name,url,'image',5,'#059669');
       }
     });
   };
   inp.click();
 };
+
 
 // When recording ends, pass recorded video to edit suite
 (function(){
@@ -23685,6 +23689,56 @@ window.aps_fixCharPhoto = function(){
     window.aps_generateScene._photoFixed = true;
     window.aps_generateScene._scenesPatched = true;
   }
+})();
+
+// aps_generateScene: init APS.scenes + fetch imgur photo before generation
+(function(){
+  var _origGenScene = window.aps_generateScene;
+  if(!_origGenScene || _origGenScene._scenesPatched) return;
+  window.aps_generateScene = async function(idx){
+    // 1. Auto-init APS.scenes from PROJECT.scenes if missing
+    if((!window.APS||!APS.scenes)&&window.PROJECT&&PROJECT.scenes&&PROJECT.scenes.length){
+      if(!window.APS)window.APS={};
+      APS.scenes=PROJECT.scenes.map(function(sc,i){
+        return {id:sc.id||('s'+(i+1)),num:i+1,sceneNum:i+1,
+          narration:sc.narration||sc.label||'',duration:sc.duration||8,
+          status:(sc.videoUrl||sc.apsVideoUrl)?'done':'ready',
+          videoUrl:sc.videoUrl||sc.apsVideoUrl||null,taskId:sc.taskId||null};
+      });
+      APS.results=APS.results||{};APS.clips=APS.clips||{};
+    }
+    // 2. Ensure APS.photoB64 is set — fetch external URLs (imgur) from browser
+    if(window.APS&&(!APS.photoB64||APS.photoB64.length<50)){
+      var src=APS.photo||APS.photoUrl||APS.charPhoto;
+      if(src&&src.startsWith('data:image/')&&!src.includes('undefined')){
+        APS.photoB64=(src.split(',')[1])||'';
+        APS.photoMimeType=(src.match(/data:([^;]+);/)||[])[1]||'image/jpeg';
+      } else if(src&&!src.includes('undefined')&&(src.startsWith('http')||src.startsWith('//'))){
+        try{
+          if(typeof toast==='function')toast('Loading character photo...','info');
+          var resp=await fetch(src);
+          if(resp.ok){
+            var blob=await resp.blob();
+            var b64=await new Promise(function(res,rej){
+              var rd=new FileReader();
+              rd.onloadend=function(){res(rd.result);};
+              rd.onerror=rej;
+              rd.readAsDataURL(blob);
+            });
+            APS.photo=b64;
+            APS.photoB64=b64.split(',')[1]||'';
+            APS.photoMimeType=blob.type||'image/jpeg';
+            if(typeof toast==='function')toast('Character photo ready ✓','ok');
+          }
+        }catch(err){
+          console.warn('Photo fetch:',err.message);
+          if(typeof toast==='function')toast('⚠️ Re-upload your photo in AI Presenter','warn');
+        }
+      }
+    }
+    return _origGenScene.apply(this,arguments);
+  };
+  window.aps_generateScene._scenesPatched=true;
 })();
 
 </script>
