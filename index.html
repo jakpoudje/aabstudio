@@ -22733,6 +22733,67 @@ window._passRecordingToTimeline=function(blobUrl,durationSec){
 })();
 
 console.log('[AABStudio] Clean stubs v2: nav+upload+aps+tp+photo all patched');
+
+// Override E_openExport to fix misleading button label and show clear status
+(function(){
+  var _origOpen = window.E_openExport;
+  if(!_origOpen || _origOpen._fixedLabel) return;
+  window.E_openExport = function(){
+    // Call original to build the panel
+    _origOpen.apply(this, arguments);
+    // Then fix the button label and add guidance
+    setTimeout(function(){
+      var panel = document.getElementById('aab-exp');
+      if(!panel) return;
+      // Fix button label: "Download All Clips" → "⬇ Export Timeline as MP4"
+      var btn = panel.querySelector('button[onclick*="E_doExport"]');
+      if(btn) btn.innerHTML = '⬇ Export Timeline as MP4 (via Creatomate)';
+      // If 0 clips, add guidance
+      var clips = [];
+      if(window.E && E.tracks){
+        E.tracks.filter(function(t){return t.type==='video'&&!t.muted;}).forEach(function(t){
+          (t.clips||[]).forEach(function(c){if(c.url)clips.push(c);});
+        });
+      }
+      if(clips.length === 0){
+        var info = panel.querySelector('#aab-exp-prog');
+        if(info){
+          var msg = document.createElement('div');
+          msg.style.cssText = 'background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:6px;padding:10px 12px;margin-bottom:12px;font-size:11px;color:#fbbf24;line-height:1.5;';
+          msg.innerHTML = '<strong>⚠️ No video URLs yet</strong><br>Your scenes need real video to export. Either:<br>1. Generate scenes in AI Presenter (re-upload your photo first)<br>2. Upload video files via “+ Upload File” in the clips bin<br>Then export will stitch all clips into one MP4.';
+          info.parentNode.insertBefore(msg, info);
+        }
+      }
+    }, 50);
+  };
+  window.E_openExport._fixedLabel = true;
+})();
+
+// When a video file is uploaded, try to get a public URL via Railway
+// Creatomate needs publicly accessible URLs (blob:// won't work)
+window._hostVideoForExport = async function(file, blobUrl){
+  var API = 'https://aabstudio-production.up.railway.app';
+  try{
+    // Convert to base64 and upload via Railway
+    var b64 = await new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onloadend = function(){ resolve(reader.result.split(',')[1]); };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    var resp = await fetch(API + '/api/assets/upload-image', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({imageBase64: b64, filename: file.name})
+    });
+    if(resp.ok){
+      var data = await resp.json();
+      if(data.url) return data.url; // Public URL from Railway/Imgur
+    }
+  } catch(e){ console.warn('Asset upload failed:', e.message); }
+  return blobUrl; // Fall back to blob URL
+};
+
 </script>
 <script id="aab-tp-stubs">
 // ── Teleprompter mode - setTpScrollMode aliases studioTpSetMode ──
