@@ -23095,9 +23095,33 @@ function _pushClip(trackId, name, url, type, dur, color){
   if(!tr) return;
   if(!tr.clips) tr.clips = [];
   var pos = tr.clips.reduce(function(m,c){ return Math.max(m, c.start + (c.duration||0)); }, 0);
-  tr.clips.push({id: type[0]+'_'+Date.now(), name: name, url: url, type: type, start: pos, duration: dur, color: color});
+  var clipId = type[0]+'_'+Date.now();
+  var clip = {id:clipId, name:name, url:url, type:type, start:pos, duration:dur, color:color, trackId:tr.id};
+  tr.clips.push(clip);
+
+  // CRITICAL: also write to PROJECT.apsVideos so E_loadClips finds it on rebuild
+  if(window.PROJECT){
+    if(!PROJECT.apsVideos) PROJECT.apsVideos = {};
+    var existingNums = Object.values(PROJECT.apsVideos).map(function(v){ return v.sceneNum||v.num||0; });
+    var nextNum = existingNums.length ? Math.max.apply(null, existingNums) + 1 : 1;
+    PROJECT.apsVideos[clipId] = {
+      url: url, name: name, duration: dur,
+      sceneNum: nextNum, num: nextNum,
+      provider: 'upload', source: 'upload'
+    };
+    // Also write to PROJECT.clips
+    if(!PROJECT.clips) PROJECT.clips = {};
+    PROJECT.clips[clipId] = clip;
+    // Persist
+    try{ if(typeof saveProject==='function') setTimeout(saveProject, 500); }catch(e){}
+  }
+
   if(typeof E_renderTL==='function') E_renderTL();
-  if(typeof toast==='function') toast(name + ' added — ' + dur + 's', 'ok');
+  // Refresh the full edit suite (updates bin + timeline)
+  setTimeout(function(){
+    if(typeof E_build==='function') try{ E_build(); }catch(e){}
+  }, 300);
+  if(typeof toast==='function') toast(name + ' added — ' + Math.round(dur) + 's', 'ok');
 }
 
 // ── 4. SCENE UPLOAD: Handle null scene editor index ─────────────────
@@ -23291,6 +23315,90 @@ window.E_selectClip = function(clipIdOrObj, trackIdOrObj, clipArg, trackArg){
     try{ window._E2_selectClip(clipId, trackId, clip, track); }catch(e){}
   }
 };
+
+// Fix bin thumbnails: _mkVThumb uses crossOrigin='anonymous' which blocks HeyGen/D-ID videos
+// After E_build runs, replace video elements in bin with no-crossOrigin versions
+function _fixBinThumbs(){
+  document.querySelectorAll('.aab-bin-clip-thumb').forEach(function(thumb){
+    var v = thumb.querySelector('video');
+    if(!v || !v.src || !v.crossOrigin) return;
+    var url = v.src;
+    var w = thumb.offsetWidth || 52;
+    var h = thumb.offsetHeight || 30;
+    // Replace with no-crossOrigin video
+    var v2 = document.createElement('video');
+    v2.muted = true; v2.preload = 'metadata';
+    v2.setAttribute('playsinline','');
+    v2.style.cssText = 'width:100%;height:100%;object-fit:cover;position:absolute;inset:0;';
+    if(v.parentNode) v.parentNode.replaceChild(v2, v);
+    // Try canvas capture when seeked
+    v2.addEventListener('loadedmetadata', function(){ v2.currentTime = Math.min(0.5, v2.duration*0.1); });
+    v2.addEventListener('seeked', function(){
+      try{
+        var c=document.createElement('canvas'); c.width=w; c.height=h;
+        c.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;';
+        c.getContext('2d').drawImage(v2,0,0,w,h);
+        thumb.appendChild(c); v2.remove();
+      }catch(e){ /* CORS canvas blocked — video element shows instead, still plays */ }
+    });
+    v2.addEventListener('error', function(){
+      // Show provider-coloured play icon on error
+      thumb.innerHTML='<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:16px;">▶</div>';
+    });
+    v2.src = url; // Set AFTER replacing element (no crossOrigin = video will load)
+  });
+}
+
+// Hook into E_build to fix thumbs after rebuild
+(function(){
+  var _origEB2 = window.E_build;
+  if(_origEB2 && !_origEB2._thumbFixed){
+    window.E_build = function(){
+      var r = _origEB2.apply(this, arguments);
+      setTimeout(_fixBinThumbs, 400);
+      return r;
+    };
+    window.E_build._thumbFixed = true;
+    // Also copy existing flags
+    ['_navBarFixed','_renamePatch'].forEach(function(k){ if(_origEB2[k]) window.E_build[k]=_origEB2[k]; });
+  }
+})();
+
+// Handle clip_ready Socket.IO event — server pushes video URL when generation completes
+// This ensures videos appear IMMEDIATELY when generated, not just on next page load
+(function(){
+  function _setupClipReady(){
+    if(!window.io || window._clipReadySetup) return;
+    window._clipReadySetup = true;
+    try{
+      var sock = window._socket || window.socket || (typeof io==='function' ? io() : null);
+      if(!sock) return;
+      sock.on('clip_ready', function(data){
+        if(!data || !data.videoUrl) return;
+        var videoUrl = data.videoUrl;
+        var taskId = data.taskId || '';
+        // Find the scene in APS.scenes by taskId
+        if(window.APS && APS.scenes){
+          APS.scenes.forEach(function(sc, idx){
+            if(sc.taskId === taskId || sc.id === taskId){
+              if(typeof aab_sceneDone === 'function'){
+                try{ aab_sceneDone(sc, idx, videoUrl); }catch(e){}
+              } else {
+                sc.videoUrl = videoUrl;
+                if(window.PROJECT){
+                  if(!PROJECT.apsVideos) PROJECT.apsVideos = {};
+                  PROJECT.apsVideos[sc.id] = {url:videoUrl, sceneNum:sc.num||idx+1, duration:sc.duration||8};
+                }
+              }
+            }
+          });
+        }
+      });
+    }catch(e){}
+  }
+  setTimeout(_setupClipReady, 2000);
+  setTimeout(_setupClipReady, 5000);
+})();
 
 </script>
 <script id="aab-tp-stubs">
