@@ -23219,6 +23219,78 @@ function _pushClip(trackId, name, url, type, dur, color){
   window._editNavInterval = _editNavInterval;
   _showEditNav();
 })();
+// E_selectClip: E_renderTL calls E_selectClip(clipObject, trackObject)
+// so we must handle BOTH object and string ID calls, then load source monitor
+window.E_selectClip = function(clipIdOrObj, trackIdOrObj, clipArg, trackArg){
+  var clip = clipArg, track = trackArg;
+  var clipId = clipIdOrObj, trackId = trackIdOrObj;
+
+  // Detect when called with full objects (from E_renderTL onclick)
+  if(clipIdOrObj && typeof clipIdOrObj === 'object' && clipIdOrObj.id){
+    clip = clipIdOrObj;
+    clipId = clip.id;
+    if(trackIdOrObj && typeof trackIdOrObj === 'object'){
+      track = trackIdOrObj;
+      trackId = track.id;
+    }
+  }
+
+  // Resolve clip from E.tracks if we only have an ID
+  if(!clip && clipId && window.E && E.tracks){
+    E.tracks.forEach(function(t){
+      (t.clips||[]).forEach(function(c){
+        if(c.id === clipId){ clip = c; track = t; trackId = t.id; }
+      });
+    });
+  }
+
+  // Store selection
+  window._CE_selectedClipId = clipId;
+  window._CE_selectedTrackId = trackId;
+  if(window.E) E.selectedClipId = clipId;
+
+  // Highlight clip element
+  document.querySelectorAll('.aab-clip').forEach(function(el){ el.classList.remove('sel','selected'); });
+  var el = document.querySelector('.aab-clip[data-id="'+clipId+'"]');
+  if(el){ el.classList.add('sel'); el.classList.add('selected'); }
+
+  // ── LOAD INTO SOURCE MONITOR ────────────────────────────────
+  if(clip && clip.url && clip.type !== 'text'){
+    var sv = document.getElementById('aab-src-vid');
+    if(!sv){
+      // Source monitor video might not exist yet — find or create
+      var srcPanel = document.getElementById('aab-src-mon') ||
+                     document.querySelector('[id*="src-mon"],[id*="source-mon"]');
+      if(srcPanel){
+        sv = document.createElement('video');
+        sv.id = 'aab-src-vid';
+        sv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;';
+        sv.controls = true;
+        sv.setAttribute('playsinline','');
+        srcPanel.style.position = 'relative';
+        srcPanel.appendChild(sv);
+      }
+    }
+    if(sv){
+      sv.src = clip.url;
+      sv.load();
+      // Remove placeholder text if any
+      var ph = document.querySelector('.src-placeholder,.aab-src-ph');
+      if(ph) ph.style.display = 'none';
+      // Show clip name
+      var srcLbl = document.getElementById('aab-src-lbl') ||
+                   document.querySelector('[id*="src-lbl"],[id*="source-lbl"]');
+      if(srcLbl) srcLbl.textContent = clip.name || 'Clip';
+    }
+    // Store in E.sourceClip for "Add to TL" button
+    if(window.E){ E.sourceClip = clip; }
+  }
+
+  // ── SHOW INSPECTOR ──────────────────────────────────────────
+  if(typeof window._E2_selectClip === 'function'){
+    try{ window._E2_selectClip(clipId, trackId, clip, track); }catch(e){}
+  }
+};
 
 </script>
 <script id="aab-tp-stubs">
