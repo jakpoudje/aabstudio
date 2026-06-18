@@ -23523,6 +23523,97 @@ window.E_triggerUpload = function(){
     if(typeof toast==='function') toast('Recording added to Edit Suite','ok');
   };
 })();
+// Teleprompter auto-scroll — standalone, no wrapping of original
+(function(){
+  var _origTPMode = null; // Will store original if needed
+  window.startTpAutoScroll = function(){
+    if(window._tpTimer) clearInterval(window._tpTimer);
+    var body = document.getElementById('tp-body') ||
+               document.querySelector('.tp-text-wrap') ||
+               document.querySelector('#record-pg .studio-body') ||
+               document.querySelector('.studio-tp');
+    if(!body) return;
+    var spd = parseFloat((document.getElementById('tp-spd-range')||{value:80}).value)||80;
+    window._tpTimer = setInterval(function(){
+      body.scrollTop += 1;
+      if(body.scrollTop + body.clientHeight >= body.scrollHeight - 10){
+        clearInterval(window._tpTimer); window._tpTimer = null;
+      }
+    }, Math.max(16, Math.round(16000/spd)));
+  };
+  window.stopTpAutoScroll = function(){
+    if(window._tpTimer){ clearInterval(window._tpTimer); window._tpTimer = null; }
+  };
+  // Only add scroll mode handler if NOT already properly defined
+  var _platformTP = window.setTpScrollMode;
+  if(!_platformTP || _platformTP.toString().indexOf('_origSet')>-1){
+    // Platform version is broken/wrapped — use ours
+    window.setTpScrollMode = function(mode){
+      window._tpScrollMode = mode;
+      if(mode==='auto') window.startTpAutoScroll();
+      else window.stopTpAutoScroll();
+      // Update UI dropdown
+      var sel = document.querySelector('[onchange*="setTpScrollMode"],#tp-scroll-mode');
+      if(sel && sel.value !== mode) sel.value = mode;
+    };
+  }
+})();
+
+// Initialize APS.scenes from PROJECT.scenes when missing
+// Called by aps_generateScene — prevents "Cannot read properties of undefined (reading '0')"
+(function(){
+  var _origGenScene = window.aps_generateScene;
+  if(_origGenScene && !_origGenScene._scenesPatched){
+    window.aps_generateScene = function(idx){
+      // Auto-init APS.scenes from PROJECT.scenes if missing
+      if((!window.APS || !APS.scenes) && window.PROJECT && PROJECT.scenes && PROJECT.scenes.length){
+        if(!window.APS) window.APS = {};
+        APS.scenes = PROJECT.scenes.map(function(sc, i){
+          return {
+            id: sc.id || ('s'+(i+1)),
+            num: i+1, sceneNum: i+1,
+            narration: sc.narration || sc.label || '',
+            duration: sc.duration || 8,
+            status: (sc.videoUrl||sc.apsVideoUrl) ? 'done' : 'ready',
+            videoUrl: sc.videoUrl || sc.apsVideoUrl || null,
+            taskId: sc.taskId || null
+          };
+        });
+        APS.results = APS.results || {};
+        APS.clips = APS.clips || {};
+      }
+      return _origGenScene.apply(this, arguments);
+    };
+    window.aps_generateScene._scenesPatched = true;
+  }
+})();
+
+// Character photo fix: if photo URL is an external link (imgur etc.)
+// convert it to base64 so Railway server can use it
+window.aps_ensurePhotoBase64 = function(){
+  if(!window.APS) return Promise.resolve(null);
+  var photo = APS.photo || APS.photoUrl;
+  if(!photo || photo.startsWith('data:image')) return Promise.resolve(photo);
+  // External URL — fetch and convert
+  return fetch(photo)
+    .then(function(r){ return r.blob(); })
+    .then(function(blob){
+      return new Promise(function(resolve){
+        var reader = new FileReader();
+        reader.onloadend = function(){ 
+          APS.photoB64 = reader.result.split(',')[1];
+          APS.photo = reader.result;
+          resolve(reader.result);
+        };
+        reader.readAsDataURL(blob);
+      });
+    })
+    .catch(function(err){
+      console.warn('Could not fetch character photo:', err.message);
+      if(typeof toast==='function') toast('⚠️ Character photo could not load. Please re-upload your photo in AI Presenter.','warn');
+      return null;
+    });
+};
 
 </script>
 <script id="aab-tp-stubs">
