@@ -22397,1086 +22397,70 @@ window.aps_loadSavedPhotos=window.aps_loadSavedPhotos||function(){if(typeof aps_
 
 console.log('[AABStudio] Stubs loaded: sidebarTab, aps_goToEditSuite, aps_setBg, aps_filterScenes, aps_selectAll, aps_regenerateCurrent, aps_previewVoice, aps_applyVoiceAll, aps_stopQueue, aps_triggerCustomBg, aps_clearPhoto');
 
-// E_deleteClip alias
-window.E_deleteClip=window.E_delClip||function(clipId){if(window.E&&E.tracks)E.tracks.forEach(function(t){t.clips=t.clips.filter(function(c){return c.id!==clipId;});});if(typeof E_renderTL==='function')E_renderTL();};
-// E_dur alias  
-window.E_dur=window.E_dur||function(){var m=0;if(window.E&&E.tracks)E.tracks.forEach(function(t){t.clips.forEach(function(c){m=Math.max(m,(c.start||0)+(c.duration||0));});});return m;};
+// ── AABE TOOLBAR EXTENSIONS ─────────────────────────────────────
+window.tlZoom = function(d){ if(window.AABE&&AABE.tlZoom) AABE.tlZoom(d); };
+window.tlSetZoom = function(v){ if(window.AABE&&AABE.tlSetZoom) AABE.tlSetZoom(v); };
+window.tlFit = function(){ if(window.AABE&&AABE.tlFit) AABE.tlFit(); };
+window.resizeStart = function(e,h){ if(window.AABE&&AABE.resizeStart) AABE.resizeStart(e,h); };
+window.tlSnapToggle = function(){ if(window.AABE&&AABE.snapToggle) AABE.snapToggle(); };
 
-// OVERRIDE: Force sequential aps_generateAll (runs last, wins)
-window.aps_generateAll=window.aps_generateAll||function(){
-  if(window.APS&&APS.generating){if(typeof toast==='function')toast('Already generating','info');return;}
-  if(!window.APS||!APS.scenes||!APS.scenes.length){if(typeof toast==='function')toast('No scenes','error');return;}
-  APS.generating=true;APS.stopRequested=false;
-  var genBtn=document.getElementById('aps-gen-all-btn');
-  var stopBtn=document.getElementById('aps-stop-btn');
-  if(genBtn)genBtn.disabled=true;
-  if(stopBtn)stopBtn.style.display='';
-  var toGen=APS.scenes
-    .map(function(sc,i){return{sc:sc,i:i};})
-    .filter(function(x){return !(x.sc.status==='done'&&x.sc.videoUrl);})
-    .sort(function(a,b){return (a.sc.num||a.i+1)-(b.sc.num||b.i+1);});
-  if(!toGen.length){
-    APS.generating=false;if(genBtn)genBtn.disabled=false;if(stopBtn)stopBtn.style.display='none';
-    if(typeof toast==='function')toast('All scenes already generated','ok');return;
-  }
-  if(typeof toast==='function')toast('Generating '+toGen.length+' scenes in order — Scene '+(toGen[0].sc.num||1)+' first...','ok');
-  var idx=0;
-  function nextScene(){
-    if(APS.stopRequested||idx>=toGen.length){
-      APS.generating=false;
-      if(genBtn)genBtn.disabled=false;
-      if(stopBtn)stopBtn.style.display='none';
-      if(!APS.stopRequested){
-      if(typeof toast==='function')toast('All scenes generated! Opening Edit Suite...','ok');
-      setTimeout(function(){
-        if(typeof aps_goToEditSuite==='function')aps_goToEditSuite();
-        else if(typeof nav==='function')nav('edit-pg');
-      },2000);
-    }
-      return;
-    }
-    var item=toGen[idx++];
-    if(typeof aps_generateScene==='function'){
-      var p=aps_generateScene(item.i);
-      if(p&&typeof p.then==='function'){
-        p.then(function(){setTimeout(nextScene,500);}).catch(function(){setTimeout(nextScene,500);});
-      } else {
-        setTimeout(nextScene,2000);
-      }
-    } else { setTimeout(nextScene,500); }
-  }
-  nextScene();
-};
-
-// ── Filter test/invalid URLs from project data on load ──────────
-var _TEST_URLS=['w3schools.com','blob:','0b6b0b5b'];
-function _isTestUrl(url){if(!url||typeof url!=='string')return false;return _TEST_URLS.some(function(t){return url.includes(t);});}
-
-// Clean project of test URLs before using
-function _cleanProjectUrls(proj){
-  if(!proj)return proj;
-  try{
-    var str=JSON.stringify(proj);
-    var hasTest=_TEST_URLS.some(function(t){return str.includes(t);});
-    if(!hasTest)return proj;
-    // Deep clean
-    function clean(v){
-      if(!v)return v;
-      if(typeof v==='string')return _isTestUrl(v)?null:v;
-      if(Array.isArray(v))return v.map(clean).filter(function(i){return i!=null;});
-      if(typeof v==='object'){var r={};Object.keys(v).forEach(function(k){r[k]=clean(v[k]);});return r;}
-      return v;
-    }
-    return clean(proj);
-  }catch(e){return proj;}
-}
-
-// Override E_build to clean clips before building timeline
-window.addEventListener('load',function(){
-  var _origEB=window.E_build;
-  if(typeof _origEB==='function'){
-    window.E_build=window.E_build||function(){
-      // Clean PROJECT before building
-      if(window.PROJECT)window.PROJECT=_cleanProjectUrls(window.PROJECT);
-      // Clean E.tracks if loaded
-      if(window.E&&E.tracks)E.tracks.forEach(function(t){
-        if(t.clips)t.clips=t.clips.filter(function(c){return!_isTestUrl(c.url);});
-      });
-      return _origEB.apply(this,arguments);
-    };
-  }
-  // Also clean on project load
-  var _origAR=window.aab_refreshTimeline;
-  if(typeof _origAR==='function'){
-    window.aab_refreshTimeline=function(){
-      if(window.PROJECT)window.PROJECT=_cleanProjectUrls(window.PROJECT);
-      return _origAR.apply(this,arguments);
-    };
-  }
-  // Clean localStorage projects
-  try{
-    var projs=JSON.parse(localStorage.getItem('aab_projects')||'[]');
-    var cleaned=projs.map(function(p){return p?_cleanProjectUrls(p):null;}).filter(Boolean);
-    localStorage.setItem('aab_projects',JSON.stringify(cleaned));
-  }catch(e){}
-});
-
-// ── On page load: ensure deleted IDs don't block real AABStudio projects ──
-(function(){
-  try{
-    var del=JSON.parse(localStorage.getItem('aab_deleted_ids')||'[]');
-    // Remove proj_* IDs - these are real video projects
-    var clean=del.filter(function(id){return !id.startsWith('proj_');});
-    if(clean.length!==del.length)localStorage.setItem('aab_deleted_ids',JSON.stringify(clean));
-  }catch(e){}
-  
-  // Ensure session page is valid
-  try{
-    var pg=sessionStorage.getItem('aab_pg')||localStorage.getItem('aab_last_pg')||'';
-    var VALID_PAGES=['dashboard-pg','script-pg','scenes-pg','record-pg','edit-pg','ai-presenter-studio',
-      'segment-pg','export-pg','teleprompter-pg','remote-pg','auth-pg','pricing-pg'];
-    if(pg&&VALID_PAGES.indexOf(pg)===-1){
-      sessionStorage.removeItem('aab_pg');
-      localStorage.removeItem('aab_last_pg');
-    }
-  }catch(e){}
-})();
-window.closeAIPresenterStudio=window.closeAIPresenterStudio||function(){var a=document.getElementById('ai-presenter-studio');if(a){a.style.display='none';a.classList.remove('on');}if(typeof nav==='function')nav('dashboard-pg');};
-(function(){
-  // Wire missing AABE edit-suite methods
-  function wireAabe(){
-    if(!window.AABE)return;
-    if(!AABE.setTool)AABE.setTool=function(tool){
-      AABE.tool=tool;
-      document.querySelectorAll('.tl-tool').forEach(function(b){b.classList.remove('on');});
-      var m={select:'etlt-V',razor:'etlt-R',trim:'etlt-T',slip:'etlt-S',hand:'etlt-H'};
-      var el=document.getElementById(m[tool]||'');if(el)el.classList.add('on');
-    };
-    if(!AABE.tlAddTrack)AABE.tlAddTrack=function(type){
-      if(typeof E_addTrack==='function')E_addTrack(type||'video');
-      if(typeof E_build==='function')setTimeout(E_build,200);
-    };
-    if(!AABE.autoCaption)AABE.autoCaption=function(){
-      if(typeof toast==='function')toast('Use Export SRT from the timeline toolbar','info');
-    };
-    // Wrap E_build to always show e-nav-bar after build completes
-    var _rawEB=window.E_build;
-    if(_rawEB&&!_rawEB._navBarFixed){
-      window.E_build=function(){
-        var r=_rawEB.apply(this,arguments);
-        setTimeout(function(){
-          var nb=document.getElementById('e-nav-bar');
-          if(nb&&window.getComputedStyle(nb).display==='none')nb.style.display='flex';
-        },300);
-        return r;
-      };
-      window.E_build._navBarFixed=true;
-    }
-  }
-  wireAabe();setTimeout(wireAabe,2500);
-
-  // Real teleprompter auto-scroll manager
-  window._tpScrollManager=(function(){
-    var timer=null;
-    return{
-      start:function(){
-        if(timer)clearInterval(timer);
-        var body=document.getElementById('tp-body')||document.getElementById('studio-tp');
-        if(!body)return;
-        var spd=parseFloat((document.getElementById('tp-spd-range')||{value:80}).value);
-        var delay=Math.max(16,Math.round(16000/spd));
-        timer=setInterval(function(){
-          if(!body)return;
-          body.scrollTop+=1;
-          if(body.scrollTop+body.clientHeight>=body.scrollHeight-5){clearInterval(timer);timer=null;}
-        },delay);
-      },
-      stop:function(){if(timer){clearInterval(timer);timer=null;}},
-      reset:function(){if(timer){clearInterval(timer);timer=null;}
-        var body=document.getElementById('tp-body')||document.getElementById('studio-tp');
-        if(body)body.scrollTop=0;
-      }
-    };
-  })();
-
-  // Track page navigation for navBack + fix e-nav-bar hidden
-  var _origNav=window.nav;
-  if(_origNav&&!_origNav._prevTracked){
-    window.nav=function(pg){
-      window._prevNavPage=window._curNavPage||'dashboard-pg';
-      window._curNavPage=pg;
-      var result=_origNav.apply(this,arguments);
-      // Show edit suite nav bar — platform's E_build closure hides it
-      if(pg==='edit-pg'){
-        // Show e-nav-bar after E_build hides it (safe: no MutationObserver loop)
-        setTimeout(function(){
-          var nb=document.getElementById('e-nav-bar');
-          if(nb){nb.style.setProperty('display','flex','important');}
-        },800);
-        setTimeout(function(){
-          var nb=document.getElementById('e-nav-bar');
-          if(nb){nb.style.setProperty('display','flex','important');}
-        },2500);
-      }
-      return result;
-    };
-    window.nav._prevTracked=true;
-    window.navBack=function(){nav(window._prevNavPage||'dashboard-pg');};
-  }
-})();
-// _aabAddTrack: was missing globally - caused ReferenceError on track + button click
-window._aabAddTrack = window._aabAddTrack || function(type) {
-  if (typeof E_addTrack === 'function') {
-    E_addTrack(type || 'video');
-  } else if (window.AABE && AABE.tlAddTrack) {
-    AABE.tlAddTrack(type || 'video');
-  }
-};
-
-// aps_addClipToTimeline: add APS-generated video to main video track
-window.aps_addClipToTimeline = window.aps_addClipToTimeline || function(sc, overrideUrl) {
-  if (!sc) return null;
-  // Check ALL possible URL fields — platform stores as apsVideoUrl after generation
-  var url = overrideUrl || sc.videoUrl || sc.apsVideoUrl || sc.url || sc.video_url || sc.heygen_url;
-  // Also check PROJECT.apsVideos (where _apsSceneDone stores URLs)
-  if (!url && window.PROJECT && PROJECT.apsVideos) {
-    var av = PROJECT.apsVideos[sc.id] || PROJECT.apsVideos['s' + (sc.sceneNum || sc.num || 0)];
-    if (av) url = av.url;
-  }
-  if (!url) return null;
-  if (!window.PROJECT) window.PROJECT = {clips:{}, scenes:[], id:'proj_'+Date.now()};
-  if (!PROJECT.clips) PROJECT.clips = {};
-  var clipId = 'aps_' + (sc.id||Date.now()) + '_' + (Math.random()*999|0);
-  var maxEnd = 0;
-  Object.values(PROJECT.clips).forEach(function(c){ var e=(c.start||0)+(c.duration||8); if(e>maxEnd) maxEnd=e; });
-  var clip = {
-    id: clipId, name: sc.label||sc.name||sc.narration&&sc.narration.slice(0,30)||('Scene '+(sc.sceneNum||sc.num||'')),
-    url: url, type: 'video', duration: sc.duration||8, start: maxEnd,
-    provider: sc.provider||'heygen', thumbnail: sc.thumbnail||null,
-    narration: sc.narration||sc.text||''
-  };
-  PROJECT.clips[clipId] = clip;
-  if (window.E && E.tracks && E.tracks.length) {
-    var vTrk = E.tracks.find(function(t){return t.id==='main'||t.type==='video';});
-    if (vTrk) { vTrk.clips = vTrk.clips||[]; vTrk.clips.push(clip); }
-  }
-  return clip;
-};
-// ═══════════════════════════════════════════════════════════
-// MISSING GLOBAL FUNCTIONS — all called from HTML onchange/onclick
-// ═══════════════════════════════════════════════════════════
-
-// asset_upload: upload file and return Promise<{url,type,name,duration}>
-window.asset_upload = window.asset_upload || function(file, type) {
-  return new Promise(function(resolve, reject) {
-    if (!file) { resolve(null); return; }
-    var blobUrl = URL.createObjectURL(file);
-    var name = file.name || 'asset_' + Date.now();
-    var assetType = type || (file.type ? file.type.split('/')[0] : 'video');
-    // For video/audio: get duration
-    if (assetType === 'video' || assetType === 'audio') {
-      var media = document.createElement(assetType === 'video' ? 'video' : 'audio');
-      media.src = blobUrl;
-      media.onloadedmetadata = function() {
-        resolve({ url: blobUrl, type: assetType, name: name, duration: Math.round(media.duration) || 8, file: file });
-      };
-      media.onerror = function() { resolve({ url: blobUrl, type: assetType, name: name, duration: 8, file: file }); };
-    } else {
-      resolve({ url: blobUrl, type: assetType, name: name, duration: 0, file: file });
-    }
-  });
-};
-
-// binTab: switch between CLIPS / ASSETS / FX tabs in edit suite bin
-window.binTab = window.binTab || function(tab) {
-  ['clips','assets','fx'].forEach(function(t){
-    var el = document.getElementById('aab-bin-'+t);
-    var btn = document.querySelector('[data-bin-tab="'+t+'"]');
-    if (el) el.style.display = (t===tab) ? '' : 'none';
-    if (btn) btn.classList.toggle('on', t===tab);
-  });
-};
-
-// aps_updateVoiceList: update voice select when provider changes
-window.aps_updateVoiceList = window.aps_updateVoiceList || function() {
-  var provEl = document.getElementById('aps-voice-provider');
-  var voiceSel = document.getElementById('aps-voice-sel');
-  if (!provEl || !voiceSel) return;
-  if (typeof aps_saveSettings === 'function') aps_saveSettings();
-};
-
-// deleteAssetById: remove an asset from the assets library
-window.deleteAssetById = window.deleteAssetById || function(id) {
-  var el = document.getElementById(id) || document.querySelector('[data-id="'+id+'"]');
-  if (el && el.parentNode) el.parentNode.removeChild(el);
-  if (typeof saveProject === 'function') setTimeout(saveProject, 500);
-};
-
-// Program monitor controls
-window.progToggle = window.progToggle || function() {
-  if (window.E) {
-    E.playing = !E.playing;
-    if (typeof E_renderTL === 'function') E_renderTL();
-  }
-};
-
-window.progSeek = window.progSeek || function(t) {
-  if (window.E) { E.playhead = Math.max(0, parseFloat(t)||0); if (typeof E_renderTL==='function') E_renderTL(); }
-};
-
-window.progJump = window.progJump || function(delta) {
-  if (window.E) { E.playhead = Math.max(0, (E.playhead||0) + (parseFloat(delta)||0)); if (typeof E_renderTL==='function') E_renderTL(); }
-};
-
-window.progStep = window.progStep || function(dir) {
-  if (window.E) { E.playhead = Math.max(0, (E.playhead||0) + ((parseInt(dir)||1) * (1/30))); if (typeof E_renderTL==='function') E_renderTL(); }
-};
-
-window.progFullscreen = window.progFullscreen || function() {
-  var pm = document.getElementById('aab-prog-mon') || document.getElementById('aab-prog');
-  if (!pm) return;
-  if (document.fullscreenElement) { document.exitFullscreen(); }
-  else { pm.requestFullscreen && pm.requestFullscreen(); }
-};
-
-// cycleQuality: toggle export quality
-window.cycleQuality = window.cycleQuality || function() {
-  var q = ['720p','1080p','4K'];
-  var el = document.getElementById('e-quality') || document.querySelector('[data-quality]');
-  if (!el) return;
-  var cur = el.textContent || el.value || '1080p';
-  var next = q[(q.indexOf(cur)+1) % q.length];
-  if (el.tagName === 'SELECT') el.value = next; else el.textContent = next;
-};
-
-// cycleRatio: toggle aspect ratio
-window.cycleRatio = window.cycleRatio || function() {
-  var r = ['16:9','9:16','1:1'];
-  var el = document.getElementById('e-ratio') || document.querySelector('[data-ratio]');
-  if (!el) return;
-  var cur = el.textContent || el.value || '16:9';
-  var next = r[(r.indexOf(cur)+1) % r.length];
-  if (el.tagName === 'SELECT') el.value = next; else el.textContent = next;
-};
-
-// addMarker: add a timeline marker at current playhead
-window.addMarker = window.addMarker || function() {
-  if (window.E && typeof E_renderTL === 'function') {
-    E.markers = E.markers || [];
-    E.markers.push({ time: E.playhead || 0, label: 'Mark ' + (E.markers.length + 1) });
-    E_renderTL();
-  }
-};
-
-// multiSelect: toggle multi-select mode
-window.multiSelect = window.multiSelect || function() {
-  if (window.AABE) {
-    AABE.multiSelect = !AABE.multiSelect;
-    var btn = document.querySelector('[onclick="multiSelect()"]');
-    if (btn) btn.classList.toggle('on', AABE.multiSelect);
-  }
-};
-
-// masterVol: set master volume
-window.masterVol = window.masterVol || function(val) {
-  if (window.E) { E.masterVol = parseFloat(val) || 1; }
-};
-
-// exportSRT: export subtitles as SRT file
-window.exportSRT = window.exportSRT || function() {
-  if (!window.E || !E.tracks) { if(typeof toast==='function') toast('No subtitle track found','info'); return; }
-  var subTrack = E.tracks.find(function(t){ return t.id==='subs'||t.type==='subtitles'; });
-  if (!subTrack || !subTrack.clips || !subTrack.clips.length) { if(typeof toast==='function') toast('No subtitles to export','info'); return; }
-  var srt = subTrack.clips.map(function(c, i){
-    var s = c.start||0, d = c.duration||2;
-    function fmt(t){ var h=Math.floor(t/3600),m=Math.floor((t%3600)/60),sec=Math.floor(t%60),ms=Math.round((t%1)*1000); return [h,m,sec].map(function(x){return x<10?'0'+x:x;}).join(':')+','+('00'+ms).slice(-3); }
-    return [(i+1), fmt(s)+' --> '+fmt(s+d), (c.narration||c.name||''), ''].join('\n');
-  }).join('\n');
-  var a = document.createElement('a');
-  a.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(srt);
-  a.download = (window.PROJECT && PROJECT.title || 'subtitles') + '.srt';
-  a.click();
-  if(typeof toast==='function') toast('SRT file downloaded','ok');
-};
-// ═══════════════════════════════════════════════════════════════════
-// FINAL MISSING STUBS — 22 functions called from HTML attributes
-// ═══════════════════════════════════════════════════════════════════
-
-// Source Monitor controls (srcToggle, srcSeek, srcJump, srcStep, srcFullscreen, srcToTimeline)
-window.srcToggle = window.srcToggle || function() {
-  var v = document.getElementById('aab-src-vid') || document.querySelector('#aab-src-mon video');
-  if (!v) return;
-  if (v.paused) v.play(); else v.pause();
-  var btn = document.querySelector('[onclick*="srcToggle"]');
-  if (btn) btn.textContent = v.paused ? '▶' : '⏸';
-};
-window.srcSeek = window.srcSeek || function(t) {
-  var v = document.getElementById('aab-src-vid') || document.querySelector('#aab-src-mon video');
-  if (v && !isNaN(t)) v.currentTime = Math.max(0, parseFloat(t));
-};
-window.srcJump = window.srcJump || function(delta) {
-  var v = document.getElementById('aab-src-vid') || document.querySelector('#aab-src-mon video');
-  if (v) v.currentTime = Math.max(0, v.currentTime + (parseFloat(delta)||0));
-};
-window.srcStep = window.srcStep || function(dir) {
-  var v = document.getElementById('aab-src-vid') || document.querySelector('#aab-src-mon video');
-  if (v) v.currentTime = Math.max(0, v.currentTime + ((parseInt(dir)||1) * (1/30)));
-};
-window.srcFullscreen = window.srcFullscreen || function() {
-  var el = document.getElementById('aab-src-mon') || document.getElementById('aab-src');
-  if (!el) return;
-  if (document.fullscreenElement) document.exitFullscreen();
-  else el.requestFullscreen && el.requestFullscreen();
-};
-window.srcToTimeline = window.srcToTimeline || function() {
-  if (window.E && E.sourceClip) {
-    if (typeof E_addClip === 'function') E_addClip(E.sourceClip);
-    else if (typeof _E2_addClipToTrack === 'function') _E2_addClipToTrack(E.sourceClip, 'main');
-    if (typeof toast === 'function') toast('Clip added to timeline', 'ok');
-  }
-};
-
-// Timeline controls (tlZoom, tlSetZoom, tlFit, toggleSnap)
-window.tlZoom = window.tlZoom || function(delta) {
-  if (!window.E) return;
-  E.pxPerSec = Math.max(10, Math.min(500, (E.pxPerSec || 60) + (parseFloat(delta)||0)));
-  if (typeof E_renderTL === 'function') E_renderTL();
-};
-window.tlSetZoom = window.tlSetZoom || function(val) {
-  if (!window.E) return;
-  E.pxPerSec = Math.max(10, Math.min(500, parseFloat(val)||60));
-  if (typeof E_renderTL === 'function') E_renderTL();
-};
-window.tlFit = window.tlFit || function() {
-  if (window.E_fit) { E_fit(); } else if (window.AABE && AABE.fit) { AABE.fit(); }
-};
-window.toggleSnap = window.toggleSnap || function() {
-  if (window.E) { E.snap = !E.snap; var btn = document.querySelector('[onclick*="toggleSnap"]'); if (btn) btn.classList.toggle('on', E.snap); }
-  if (window.AABE) AABE.snap = window.E ? E.snap : !AABE.snap;
-};
-
-// Transition controls
-window.transition = window.transition || function(type, clipId) {
-  if (typeof E_applyTransition === 'function') E_applyTransition(type, clipId);
-  else if (typeof toast === 'function') toast('Transition: ' + type, 'ok');
-};
-window.transitionAll = window.transitionAll || function(type) {
-  if (typeof toast === 'function') toast('Applying ' + (type||'fade') + ' to all clips...', 'ok');
-  if (!window.E || !E.tracks) return;
-  E.tracks.forEach(function(t){ (t.clips||[]).forEach(function(c){ c.transition = type||'fade'; }); });
-  if (typeof E_renderTL === 'function') E_renderTL();
-};
-
-// View toggles (safeZones, toggleSubs, toggleLoop, toggleSnap)
-window.safeZones = window.safeZones || function() {
-  var overlay = document.getElementById('aab-safe-zones');
-  if (overlay) overlay.style.display = overlay.style.display === 'none' ? '' : 'none';
-  else if (typeof toast === 'function') toast('Safe zones overlay toggled', 'info');
-};
-window.toggleSubs = window.toggleSubs || function() {
-  if (window.E) { E.showSubs = !E.showSubs; if (typeof E_renderTL === 'function') E_renderTL(); }
-};
-window.toggleLoop = window.toggleLoop || function() {
-  if (window.E) { E.loop = !E.loop; var btn = document.querySelector('[onclick*="toggleLoop"]'); if (btn) btn.classList.toggle('on', E.loop); }
-};
-
-// Drawing/annotation (setEraserMode, resizeStart)
-window.setEraserMode = window.setEraserMode || function() {
-  if (typeof setDrawMode === 'function') setDrawMode('erase');
-  else { var cvs = document.querySelector('.studio-canvas,#studio-canvas,canvas'); if (cvs) cvs.style.cursor = 'cell'; }
-};
-window.resizeStart = window.resizeStart || function(e, direction) {
-  e && e.stopPropagation && e.stopPropagation();
-};
-
-// Marker
-window.saveMarker = window.saveMarker || function(label) {
-  if (window.E) {
-    E.markers = E.markers || [];
-    E.markers.push({ time: E.playhead || 0, label: label || 'Mark ' + (E.markers.length + 1) });
-    if (typeof E_renderTL === 'function') E_renderTL();
-    if (typeof toast === 'function') toast('Marker saved', 'ok');
-  }
-};
-
-// Camera/mic switching (recording studio)
-window.switchCamera = window.switchCamera || function() {
-  if (typeof studioSetMode === 'function') studioSetMode('cam');
-  else if (typeof toast === 'function') toast('Switching camera...', 'info');
-};
-window.switchMic = window.switchMic || function() {
-  if (typeof toast === 'function') toast('Switching microphone input...', 'info');
-};
-window.startCamera = window.startCamera || function() {
-  if (typeof studioSetMode === 'function') studioSetMode('cam');
-  else if (typeof toast === 'function') toast('Starting camera...', 'info');
-};
-
-// Teleprompter back
-window.tpBack = window.tpBack || function() {
-  if (typeof studioPrev === 'function') studioPrev();
-  else if (typeof navBack === 'function') navBack();
-};
-
-// Subtitle editor on timeline
-window.tl_editSubtitle = window.tl_editSubtitle || function(clipId) {
-  if (typeof _E2_editTextClip === 'function') {
-    var clip = null;
-    if (window.E && E.tracks) E.tracks.forEach(function(t){ (t.clips||[]).forEach(function(c){ if(c.id===clipId) clip=c; }); });
-    if (clip) _E2_editTextClip(clipId, clip.trackId || 'subs', clip);
-  } else if (typeof toast === 'function') {
-    toast('Click text clip to edit subtitles', 'info');
-  }
-};
-// Force e-nav-bar always visible (platform hides it with display:none!important)
-(function(){
-  var st=document.createElement('style');
-  st.id='e-nav-bar-force';
-  st.textContent='#e-nav-bar{display:flex!important;height:auto!important;min-height:36px!important;overflow:visible!important;}';
-  document.head&&document.head.appendChild(st);
-})();
-// ═══════════════════════════════════════════════════════════════════════
-// AABSTUDIO COMPREHENSIVE FIX — injected into aab-stubs
-// All changes are additive to stubs only. Platform HTML untouched.
-// ═══════════════════════════════════════════════════════════════════════
-
-// ── 1. TOOLBAR: Wire missing AABE methods ───────────────────────────
-(function(){
-  function extendAabe(){
-    if(!window.AABE || !window.E) return;
-    if(!AABE.tlZoom) AABE.tlZoom = function(d){
-      E.pxPerSec = Math.max(8, Math.min(500, (E.pxPerSec||60) * (d>0 ? 1.4 : 0.72)));
-      if(typeof E_renderTL==='function') E_renderTL();
-      var lbl=document.getElementById('e-zoom-lbl');
-      if(lbl) lbl.textContent = Math.round((E.pxPerSec||60)/10)+'x';
-    };
-    if(!AABE.tlSetZoom) AABE.tlSetZoom = function(v){
-      E.pxPerSec = Math.max(8, Math.min(300, parseFloat(v)*10 || 60));
-      if(typeof E_renderTL==='function') E_renderTL();
-    };
-    if(!AABE.tlFit) AABE.tlFit = function(){
-      if(typeof E_fit==='function'){ E_fit(); return; }
-      var scroll = document.getElementById('aab-tl-scroll');
-      var dur = (typeof E_dur==='function') ? E_dur() : 60;
-      if(scroll && dur > 0) E.pxPerSec = Math.max(8, (scroll.clientWidth - 160) / dur);
-      if(typeof E_renderTL==='function') E_renderTL();
-    };
-    if(!AABE.resizeStart) AABE.resizeStart = function(e){
-      if(e) e.preventDefault && e.preventDefault();
-    };
-    if(!AABE.tlSnapToggle) AABE.tlSnapToggle = function(){
-      E.snap = !E.snap;
-      var b = document.querySelector('[onclick*="tlSnapToggle"],[onclick*="toggleSnap"]');
-      if(b) b.classList.toggle('on', E.snap);
-    };
-  }
-  extendAabe();
-  setTimeout(extendAabe, 1500);
-  setTimeout(extendAabe, 3000);
-})();
-
-// ── 2. TRACK RENAME + REORDER: Hook into E_renderTL ────────────────
-(function(){
-  function patch(){
-    var orig = window.E_renderTL;
-    if(!orig || orig._trackPatched) return;
-    window.E_renderTL = function(){
-      var r = orig.apply(this, arguments);
-      setTimeout(_addTrackControls, 120);
-      return r;
-    };
-    window.E_renderTL._trackPatched = true;
-    setTimeout(_addTrackControls, 400);
-  }
-
-  function _addTrackControls(){
-    // Rename via dblclick
-    document.querySelectorAll('.aab-track-name').forEach(function(nm, idx){
-      if(nm._rrSetup) return;
-      nm._rrSetup = true;
-      nm.title = 'Double-click to rename';
-      nm.style.cursor = 'text';
-      nm.ondblclick = function(e){
-        e.stopPropagation();
-        var orig = nm.textContent;
-        var inp = document.createElement('input');
-        inp.value = orig;
-        inp.style.cssText = 'width:84px;background:#0d1527;color:#c7d2fe;border:.5px solid rgba(99,102,241,.7);border-radius:3px;padding:1px 4px;font-size:10px;font-family:Sora,Inter,sans-serif;outline:none;';
-        nm.textContent = '';
-        nm.appendChild(inp);
-        inp.focus(); inp.select();
-        function commit(){
-          var v = (inp.value||'').trim() || orig;
-          nm.textContent = v;
-          if(window.E && E.tracks && E.tracks[idx]) E.tracks[idx].name = v;
-        }
-        inp.onblur = commit;
-        inp.onkeydown = function(ev){
-          if(ev.key==='Enter'){ ev.preventDefault(); inp.blur(); }
-          if(ev.key==='Escape'){ nm.textContent = orig; }
-        };
-      };
-    });
-
-    // Reorder via drag-drop
-    document.querySelectorAll('.aab-track-lbl').forEach(function(lbl, fromIdx){
-      if(lbl._dragSetup) return;
-      lbl._dragSetup = true;
-      lbl.draggable = true;
-      if(!lbl.querySelector('.aab-drag-hdl')){
-        var hdl = document.createElement('span');
-        hdl.className = 'aab-drag-hdl';
-        hdl.textContent = '⋮⋮';
-        hdl.title = 'Drag to reorder track';
-        hdl.style.cssText = 'opacity:.18;font-size:8px;cursor:grab;padding:0 2px 0 1px;flex-shrink:0;letter-spacing:-2px;user-select:none;';
-        lbl.insertBefore(hdl, lbl.firstChild);
-      }
-      lbl.ondragstart = function(ev){
-        ev.dataTransfer.effectAllowed = 'move';
-        ev.dataTransfer.setData('text/plain', String(fromIdx));
-        setTimeout(function(){ lbl.style.opacity='.4'; }, 0);
-      };
-      lbl.ondragend = function(){ lbl.style.opacity=''; lbl.style.outline=''; };
-      lbl.ondragover = function(ev){ ev.preventDefault(); ev.dataTransfer.dropEffect='move'; lbl.style.outline='1px dashed rgba(99,102,241,.55)'; };
-      lbl.ondragleave = function(){ lbl.style.outline=''; };
-      lbl.ondrop = function(ev){
-        ev.preventDefault(); lbl.style.outline='';
-        var fi = parseInt(ev.dataTransfer.getData('text/plain'), 10);
-        var ti = fromIdx;
-        if(!isNaN(fi) && fi !== ti && window.E && E.tracks && E.tracks.length > 1){
-          var moved = E.tracks.splice(fi, 1)[0];
-          E.tracks.splice(ti, 0, moved);
-          if(typeof E_renderTL==='function') E_renderTL();
-        }
-      };
-    });
-  }
-
-  setTimeout(patch, 800);
-  setTimeout(patch, 2500);
-})();
-
-// ── 3. UPLOAD DURATION FIX: Override E_uploadVideo + E_uploadAudio ─
-// Force-override (no || guard) to replace hardcoded duration:10
-window.E_uploadVideo = function(trackId){
-  var inp = document.createElement('input');
-  inp.type = 'file'; inp.accept = 'video/*';
-  inp.onchange = function(){
-    var f = inp.files[0]; if(!f) return;
-    var url = URL.createObjectURL(f);
-    if(typeof toast==='function') toast('Reading video duration…','info');
-    var vid = document.createElement('video');
-    vid.preload = 'metadata'; vid.src = url;
-    vid.onloadedmetadata = function(){
-      var dur = isFinite(vid.duration) ? Math.round(vid.duration) : 30;
-      _pushClip(trackId, f.name, url, 'video', dur, '#2563eb');
-    };
-    vid.onerror = function(){ _pushClip(trackId, f.name, url, 'video', 30, '#2563eb'); };
-  };
-  inp.click();
-};
-
-window.E_uploadAudio = function(trackId){
-  var inp = document.createElement('input');
-  inp.type = 'file'; inp.accept = 'audio/*';
-  inp.onchange = function(){
-    var f = inp.files[0]; if(!f) return;
-    var url = URL.createObjectURL(f);
-    var aud = document.createElement('audio');
-    aud.preload = 'metadata'; aud.src = url;
-    aud.onloadedmetadata = function(){
-      var dur = isFinite(aud.duration) ? Math.round(aud.duration) : 30;
-      var tid = trackId || (window.E && E.tracks ? (E.tracks.find(function(t){return t.type==='audio';}) || {id:'music'}).id : 'music');
-      _pushClip(tid, f.name, url, 'audio', dur, '#7c3aed');
-    };
-    aud.onerror = function(){
-      _pushClip(trackId||'music', f.name, url, 'audio', 30, '#7c3aed');
-    };
-  };
-  inp.click();
-};
-
-window.E_uploadImage = function(trackId){
-  var inp = document.createElement('input');
-  inp.type = 'file'; inp.accept = 'image/*';
-  inp.onchange = function(){
-    var f = inp.files[0]; if(!f) return;
-    var url = URL.createObjectURL(f);
-    _pushClip(trackId||'overlay', f.name, url, 'image', 5, '#059669');
-  };
-  inp.click();
-};
-
-function _pushClip(trackId, name, url, type, dur, color){
-  if(!window.E || !E.tracks) return;
-  var tr = E.tracks.find(function(t){ return t.id === trackId; });
-  if(!tr) tr = E.tracks.find(function(t){ return t.type === type; });
-  if(!tr) tr = E.tracks[0];
+// ── _pushClip: add clip to E.tracks + PROJECT.apsVideos + PROJECT.clips ──
+window._pushClip = function(trackId, name, url, type, dur, color){
+  if(!window.E||!E.tracks) return;
+  var tr = E.tracks.find(function(t){return t.id===trackId;})
+        || E.tracks.find(function(t){return t.type===type;})
+        || E.tracks[0];
   if(!tr) return;
-  if(!tr.clips) tr.clips = [];
-  var pos = tr.clips.reduce(function(m,c){ return Math.max(m, c.start + (c.duration||0)); }, 0);
-  var clipId = type[0]+'_'+Date.now();
-  var clip = {id:clipId, name:name, url:url, type:type, start:pos, duration:dur, color:color, trackId:tr.id};
+  if(!tr.clips) tr.clips=[];
+  var pos = tr.clips.reduce(function(m,c){return Math.max(m,(c.start||0)+(c.duration||0));},0);
+  var clipId = (type||'v')[0]+'_'+Date.now();
+  var clip = {id:clipId,name:name,url:url,type:type,start:pos,duration:dur,color:color,trackId:tr.id};
   tr.clips.push(clip);
-
-  // CRITICAL: also write to PROJECT.apsVideos so E_loadClips finds it on rebuild
   if(window.PROJECT){
-    if(!PROJECT.apsVideos) PROJECT.apsVideos = {};
-    var existingNums = Object.values(PROJECT.apsVideos).map(function(v){ return v.sceneNum||v.num||0; });
-    var nextNum = existingNums.length ? Math.max.apply(null, existingNums) + 1 : 1;
-    PROJECT.apsVideos[clipId] = {
-      url: url, name: name, duration: dur,
-      sceneNum: nextNum, num: nextNum,
-      provider: 'upload', source: 'upload'
-    };
-    // Also write to PROJECT.clips
-    if(!PROJECT.clips) PROJECT.clips = {};
-    PROJECT.clips[clipId] = clip;
-    // Persist
-    try{ if(typeof saveProject==='function') setTimeout(saveProject, 500); }catch(e){}
-  }
-
-  if(typeof E_renderTL==='function') E_renderTL();
-  // Refresh the full edit suite (updates bin + timeline)
-  setTimeout(function(){
-    if(typeof E_build==='function') try{ E_build(); }catch(e){}
-  }, 300);
-  if(typeof toast==='function') toast(name + ' added — ' + Math.round(dur) + 's', 'ok');
-}
-
-// ── 4. SCENE UPLOAD: Handle null scene editor index ─────────────────
-(function(){
-  var _origSU = window.uploadSceneAsset;
-  window.uploadSceneAsset = function(inp){
-    if(!inp || !inp.files || !inp.files.length) return;
-    // Try original first (it has closure access to _sceneEditorIdx)
-    if(typeof _origSU === 'function'){
-      _origSU(inp);
-      // Check if it did something (no direct way — try both paths)
+    PROJECT.apsVideos=PROJECT.apsVideos||{};
+    PROJECT.clips=PROJECT.clips||{};
+    if(type==='video'){
+      var nums=Object.values(PROJECT.apsVideos).map(function(v){return v.sceneNum||0;});
+      var n=nums.length?Math.max.apply(null,nums)+1:1;
+      PROJECT.apsVideos[clipId]={url:url,name:name,duration:dur,sceneNum:n,num:n,provider:'upload',source:'upload'};
     }
-    // Fallback: if no scene is selected, add to global assets + first scene
-    var files = Array.from(inp.files);
-    if(!window.PROJECT) return;
-    if(!PROJECT.assets) PROJECT.assets = [];
-    files.forEach(function(file){
-      var url = URL.createObjectURL(file);
-      var t = file.type ? file.type.split('/')[0] : 'video';
-      var asset = {id:'a_'+Date.now()+'_'+Math.random().toString(36).slice(2), name:file.name, url:url, type:t, size:file.size};
-      PROJECT.assets.unshift(asset);
-      // Also add to the first non-done scene
-      if(PROJECT.scenes && PROJECT.scenes.length){
-        var sc = PROJECT.scenes.find(function(s){ return !s.videoUrl && !s.apsVideoUrl; }) || PROJECT.scenes[0];
-        if(sc){ if(!sc.assets) sc.assets=[]; sc.assets.unshift(asset); }
-      }
-    });
-    if(typeof toast==='function') toast(files.length + ' file(s) uploaded to scene', 'ok');
-    // Refresh scene board if visible
-    if(typeof renderSceneBoard==='function') try{ renderSceneBoard(); }catch(e){}
-  };
-})();
-
-// ── 5. MEDIA BIN UPLOAD: Wire dash_uploadAsset to also refresh edit bin
-(function(){
-  var _origDU = window.dash_uploadAsset;
-  window.dash_uploadAsset = function(file, type){
-    if(typeof _origDU === 'function') _origDU(file, type);
-    // If edit suite is open, also read duration and add to E.tracks for the bin
-    if(!file) return;
-    if(type === 'video' || type === 'audio'){
-      var url = URL.createObjectURL(file);
-      var el = document.createElement(type === 'video' ? 'video' : 'audio');
-      el.preload = 'metadata'; el.src = url;
-      el.onloadedmetadata = function(){
-        var dur = isFinite(el.duration) ? Math.round(el.duration) : 30;
-        // Add to PROJECT.clips so edit bin shows it
-        if(window.PROJECT){
-          if(!PROJECT.clips) PROJECT.clips = {};
-          var cid = type[0]+'_'+Date.now();
-          PROJECT.clips[cid] = {id:cid, name:file.name, url:url, type:type, duration:dur, start:0};
-        }
-        // Refresh bin display
-        if(typeof E_loadClips==='function') try{ E_loadClips(); }catch(e){}
-      };
-    }
-  };
-})();
-
-// ── 6. TP SCROLL: Ensure correct container targeting ────────────────
-(function(){
-  var _origSet = window.setTpScrollMode;
-  window.setTpScrollMode = function(mode){
-    window._tpScrollMode = mode;
-    if(typeof _origSet === 'function') _origSet(mode);
-    if(mode === 'auto'){
-      if(window._tpTimer) clearInterval(window._tpTimer);
-      var body = document.getElementById('tp-body') ||
-                 document.querySelector('.tp-text-wrap') ||
-                 document.querySelector('#record-pg .studio-body');
-      if(!body) return;
-      var spd = parseFloat((document.getElementById('tp-spd-range')||{value:80}).value)||80;
-      window._tpTimer = setInterval(function(){
-        body.scrollTop += 1;
-        if(body.scrollTop + body.clientHeight >= body.scrollHeight - 5){
-          clearInterval(window._tpTimer); window._tpTimer = null;
-        }
-      }, Math.max(16, Math.round(16000/spd)));
-    } else if(mode === 'manual' || mode === 'word'){
-      if(window._tpTimer){ clearInterval(window._tpTimer); window._tpTimer = null; }
-    }
-  };
-})();
-
-// ── 7. CSS IMPROVEMENTS: Inject once ───────────────────────────────
-(function(){
-  if(document.getElementById('aab-fix-css')) return;
-  var s = document.createElement('style');
-  s.id = 'aab-fix-css';
-  s.textContent = [
-    '#e-nav-bar{display:flex!important;min-height:36px!important;overflow:visible!important;}',
-    '#aps-go-edit-btn-top{background:linear-gradient(135deg,#10b981,#059669)!important;color:#fff!important;border:none!important;box-shadow:0 4px 15px rgba(16,185,129,.4)!important;font-weight:700!important;}',
-    '#aps-go-edit-btn-top:hover{transform:translateY(-1px)!important;box-shadow:0 6px 20px rgba(16,185,129,.55)!important;}',
-    '.aps-bg-btn{cursor:pointer!important;transition:all .15s!important;}',
-    '.aps-bg-btn.on,.aps-bg-btn.active{outline:2px solid #00d4ff!important;box-shadow:0 0 10px rgba(0,212,255,.4)!important;}',
-    '.aab-track-lbl:hover{background:rgba(99,102,241,.06)!important;}',
-    '.aab-track-lbl:hover .aab-drag-hdl{opacity:.45!important;}',
-    '.aab-track-name{cursor:text!important;border-radius:2px!important;}',
-    '.aab-track-name:hover{background:rgba(255,255,255,.05)!important;}',
-    '.aab-drag-hdl{display:inline-block!important;user-select:none!important;}',
-  ].join('');
-  document.head.appendChild(s);
-})();
-// Persistent e-nav-bar + track controls: check every 1.5s when in edit-pg
-(function(){
-  function _showEditNav(){
-    var nb=document.getElementById('e-nav-bar');
-    var ep=document.getElementById('edit-pg');
-    if(!ep||window.getComputedStyle(ep).display==='none') return;
-    if(!nb) return;
-    nb.style.setProperty('display','flex','important');
-    nb.style.setProperty('height','auto','important');
-    nb.style.setProperty('min-height','36px','important');
-    nb.style.setProperty('overflow','visible','important');
-    // Apply track controls if not yet done
-    if(typeof _addTrackControls==='function') _addTrackControls();
+    PROJECT.clips[clipId]=clip;
+    try{if(typeof saveProject==='function')setTimeout(saveProject,500);}catch(e){}
   }
-  var _editNavInterval = setInterval(_showEditNav, 1500);
-  window._editNavInterval = _editNavInterval;
-  _showEditNav();
-})();
-// E_selectClip: E_renderTL calls E_selectClip(clipObject, trackObject)
-// so we must handle BOTH object and string ID calls, then load source monitor
-window.E_selectClip = function(clipIdOrObj, trackIdOrObj, clipArg, trackArg){
-  var clip = clipArg, track = trackArg;
-  var clipId = clipIdOrObj, trackId = trackIdOrObj;
-
-  // Detect when called with full objects (from E_renderTL onclick)
-  if(clipIdOrObj && typeof clipIdOrObj === 'object' && clipIdOrObj.id){
-    clip = clipIdOrObj;
-    clipId = clip.id;
-    if(trackIdOrObj && typeof trackIdOrObj === 'object'){
-      track = trackIdOrObj;
-      trackId = track.id;
-    }
-  }
-
-  // Resolve clip from E.tracks if we only have an ID
-  if(!clip && clipId && window.E && E.tracks){
-    E.tracks.forEach(function(t){
-      (t.clips||[]).forEach(function(c){
-        if(c.id === clipId){ clip = c; track = t; trackId = t.id; }
-      });
-    });
-  }
-
-  // Store selection
-  window._CE_selectedClipId = clipId;
-  window._CE_selectedTrackId = trackId;
-  if(window.E) E.selectedClipId = clipId;
-
-  // Highlight clip element
-  document.querySelectorAll('.aab-clip').forEach(function(el){ el.classList.remove('sel','selected'); });
-  var el = document.querySelector('.aab-clip[data-id="'+clipId+'"]');
-  if(el){ el.classList.add('sel'); el.classList.add('selected'); }
-
-  // ── LOAD INTO SOURCE MONITOR ────────────────────────────────
-  if(clip && clip.url && clip.type !== 'text'){
-    var sv = document.getElementById('aab-src-vid');
-    if(!sv){
-      // Source monitor video might not exist yet — find or create
-      var srcPanel = document.getElementById('aab-src-mon') ||
-                     document.querySelector('[id*="src-mon"],[id*="source-mon"]');
-      if(srcPanel){
-        sv = document.createElement('video');
-        sv.id = 'aab-src-vid';
-        sv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;';
-        sv.controls = true;
-        sv.setAttribute('playsinline','');
-        srcPanel.style.position = 'relative';
-        srcPanel.appendChild(sv);
-      }
-    }
-    if(sv){
-      sv.src = clip.url;
-      sv.load();
-      // Remove placeholder text if any
-      var ph = document.querySelector('.src-placeholder,.aab-src-ph');
-      if(ph) ph.style.display = 'none';
-      // Show clip name
-      var srcLbl = document.getElementById('aab-src-lbl') ||
-                   document.querySelector('[id*="src-lbl"],[id*="source-lbl"]');
-      if(srcLbl) srcLbl.textContent = clip.name || 'Clip';
-    }
-    // Store in E.sourceClip for "Add to TL" button
-    if(window.E){ E.sourceClip = clip; }
-  }
-
-  // ── SHOW INSPECTOR ──────────────────────────────────────────
-  if(typeof window._E2_selectClip === 'function'){
-    try{ window._E2_selectClip(clipId, trackId, clip, track); }catch(e){}
-  }
+  if(typeof E_renderTL==='function'){try{E_renderTL();}catch(e){}}
+  setTimeout(function(){if(typeof E_build==='function')try{E_build();}catch(e){}},400);
+  if(typeof toast==='function') toast(name+' added \u2014 '+Math.round(dur)+'s','ok');
 };
 
-// Fix bin thumbnails: _mkVThumb uses crossOrigin='anonymous' which blocks HeyGen/D-ID videos
-// After E_build runs, replace video elements in bin with no-crossOrigin versions
-function _fixBinThumbs(){
-  document.querySelectorAll('.aab-bin-clip-thumb').forEach(function(thumb){
-    var v = thumb.querySelector('video');
-    if(!v || !v.src || !v.crossOrigin) return;
-    var url = v.src;
-    var w = thumb.offsetWidth || 52;
-    var h = thumb.offsetHeight || 30;
-    // Replace with no-crossOrigin video
-    var v2 = document.createElement('video');
-    v2.muted = true; v2.preload = 'metadata';
-    v2.setAttribute('playsinline','');
-    v2.style.cssText = 'width:100%;height:100%;object-fit:cover;position:absolute;inset:0;';
-    if(v.parentNode) v.parentNode.replaceChild(v2, v);
-    // Try canvas capture when seeked
-    v2.addEventListener('loadedmetadata', function(){ v2.currentTime = Math.min(0.5, v2.duration*0.1); });
-    v2.addEventListener('seeked', function(){
-      try{
-        var c=document.createElement('canvas'); c.width=w; c.height=h;
-        c.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;';
-        c.getContext('2d').drawImage(v2,0,0,w,h);
-        thumb.appendChild(c); v2.remove();
-      }catch(e){ /* CORS canvas blocked — video element shows instead, still plays */ }
-    });
-    v2.addEventListener('error', function(){
-      // Show provider-coloured play icon on error
-      thumb.innerHTML='<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:16px;">▶</div>';
-    });
-    v2.src = url; // Set AFTER replacing element (no crossOrigin = video will load)
-  });
-}
-
-// Hook into E_build to fix thumbs after rebuild
-(function(){
-  var _origEB2 = window.E_build;
-  if(_origEB2 && !_origEB2._thumbFixed){
-    window.E_build = function(){
-      var r = _origEB2.apply(this, arguments);
-      setTimeout(_fixBinThumbs, 400);
-      return r;
-    };
-    window.E_build._thumbFixed = true;
-    // Also copy existing flags
-    ['_navBarFixed','_renamePatch'].forEach(function(k){ if(_origEB2[k]) window.E_build[k]=_origEB2[k]; });
+// ── E_selectClip: handle full clip object from E_renderTL onclick ──
+window.E_selectClip = function(clipIdOrObj, trackIdOrObj, clipArg, trackArg){
+  var clip=clipArg, track=trackArg;
+  var clipId=clipIdOrObj, trackId=trackIdOrObj;
+  if(clipIdOrObj&&typeof clipIdOrObj==='object'&&clipIdOrObj.id){
+    clip=clipIdOrObj; clipId=clip.id;
+    if(trackIdOrObj&&typeof trackIdOrObj==='object'){track=trackIdOrObj;trackId=track.id;}
   }
-})();
-
-// Handle clip_ready Socket.IO event — server pushes video URL when generation completes
-// This ensures videos appear IMMEDIATELY when generated, not just on next page load
-(function(){
-  function _setupClipReady(){
-    if(!window.io || window._clipReadySetup) return;
-    window._clipReadySetup = true;
-    try{
-      var sock = window._socket || window.socket || (typeof io==='function' ? io() : null);
-      if(!sock) return;
-      sock.on('clip_ready', function(data){
-        if(!data || !data.videoUrl) return;
-        var videoUrl = data.videoUrl;
-        var taskId = data.taskId || '';
-        // Find the scene in APS.scenes by taskId
-        if(window.APS && APS.scenes){
-          APS.scenes.forEach(function(sc, idx){
-            if(sc.taskId === taskId || sc.id === taskId){
-              if(typeof aab_sceneDone === 'function'){
-                try{ aab_sceneDone(sc, idx, videoUrl); }catch(e){}
-              } else {
-                sc.videoUrl = videoUrl;
-                if(window.PROJECT){
-                  if(!PROJECT.apsVideos) PROJECT.apsVideos = {};
-                  PROJECT.apsVideos[sc.id] = {url:videoUrl, sceneNum:sc.num||idx+1, duration:sc.duration||8};
-                }
-              }
-            }
-          });
-        }
-      });
-    }catch(e){}
+  if(!clip&&clipId&&window.E&&E.tracks){
+    E.tracks.forEach(function(t){(t.clips||[]).forEach(function(c){if(c.id===clipId){clip=c;track=t;trackId=t.id;}});});
   }
-  setTimeout(_setupClipReady, 2000);
-  setTimeout(_setupClipReady, 5000);
-})();
-
-// ── STUDIO NAV OVERLAY ─────────────────────────────────────────
-// Fixed nav bar injected OUTSIDE edit-pg/record-pg.
-// Platform can never hide it. No body padding.
-(function(){
-  var NAV_ID = 'aab-studio-nav';
-
-  function buildNav(){
-    if(document.getElementById(NAV_ID)) return;
-
-    var bar = document.createElement('div');
-    bar.id = NAV_ID;
-    bar.style.cssText = [
-      'position:fixed','top:0','left:0','right:0','height:38px','z-index:999998',
-      'background:linear-gradient(135deg,#0a0e1a 0%,#111827 100%)',
-      'border-bottom:1px solid rgba(255,255,255,.08)',
-      'display:none','align-items:center','padding:0 10px','gap:4px',
-      'box-shadow:0 2px 12px rgba(0,0,0,.5)',
-      'font-family:Sora,Inter,sans-serif',
-    ].join(';');
-
-    function mkBtn(label, onclick, accent){
-      var b=document.createElement('button');
-      b.innerHTML=label;
-      b.style.cssText='background:'+(accent||'rgba(255,255,255,.06)')+
-        ';color:'+(accent?'#fff':'rgba(255,255,255,.8)')+
-        ';border:1px solid '+(accent?'transparent':'rgba(255,255,255,.1)')+
-        ';border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:500;'+
-        'white-space:nowrap;font-family:inherit;transition:opacity .15s;flex-shrink:0;';
-      b.onclick=function(){ try{ eval(onclick); }catch(e){} };
-      b.onmouseenter=function(){ this.style.opacity='.8'; };
-      b.onmouseleave=function(){ this.style.opacity='1'; };
-      return b;
-    }
-
-    // Navigation buttons (mirrors e-nav-bar exactly)
-    bar.appendChild(mkBtn('← Back','navBack()'));
-    bar.appendChild(mkBtn('⌂ Dashboard',"saveProject();nav('dashboard-pg')"));
-    bar.appendChild(mkBtn('📝 Script',"saveProject();nav('script-pg')"));
-    bar.appendChild(mkBtn('🎬 Scenes',"saveProject();nav('scenes-pg')"));
-    bar.appendChild(mkBtn('🤖 AI',"nav('ai-presenter-studio')"));
-    bar.appendChild(mkBtn('🎥 Record',"saveProject();nav('record-pg')"));
-
-    // Spacer
-    var sp=document.createElement('div'); sp.style.flex='1'; bar.appendChild(sp);
-
-    // Export button — accent
-    bar.appendChild(mkBtn('↓ Export',"nav('export-pg')","linear-gradient(135deg,#6366f1,#8b5cf6)"));
-
-    document.body.appendChild(bar);
+  window._CE_selectedClipId=clipId; window._CE_selectedTrackId=trackId;
+  if(window.E) E.selectedClipId=clipId;
+  document.querySelectorAll('.aab-clip').forEach(function(el){el.classList.remove('sel','selected');});
+  var el=document.querySelector('.aab-clip[data-id="'+clipId+'"]');
+  if(el){el.classList.add('sel');el.classList.add('selected');}
+  if(clip&&clip.url&&clip.type!=='text'){
+    var sv=document.getElementById('aab-src-vid');
+    if(sv){sv.src=clip.url;sv.load();sv.style.display='block';}
+    var ph=document.querySelector('.src-placeholder,.aab-src-ph');
+    if(ph)ph.style.display='none';
+    var lbl=document.getElementById('aab-src-lbl')||document.querySelector('[id*="src-lbl"]');
+    if(lbl)lbl.textContent=clip.name||'Clip';
+    if(window.E)E.sourceClip=clip;
   }
+  if(typeof window._E2_selectClip==='function')try{window._E2_selectClip(clipId,trackId,clip,track);}catch(e){}
+};
 
-  function updateNav(){
-    var bar=document.getElementById(NAV_ID);
-    if(!bar) return;
-    // Show when edit-pg or record-pg is visible
-    var editPg=document.getElementById('edit-pg');
-    var recPg=document.getElementById('record-pg');
-    var editOn=editPg&&window.getComputedStyle(editPg).display!=='none';
-    var recOn=recPg&&window.getComputedStyle(recPg).display!=='none';
-    bar.style.display=(editOn||recOn)?'flex':'none';
-  }
-
-  // Build after DOM ready
-  if(document.readyState==='loading'){
-    document.addEventListener('DOMContentLoaded',buildNav);
-  } else {
-    buildNav();
-  }
-  setTimeout(buildNav, 500);
-  // Update visibility check every 600ms (low overhead)
-  setInterval(updateNav, 600);
-  window._updateStudioNav = updateNav;
-})();
-
-// Override E_triggerUpload to read real duration and add to apsVideos
-
-// E_triggerUpload: unified file upload — video/audio/image with full duration
+// ── E_triggerUpload: unified file upload, no double picker ───────
 window.E_triggerUpload = function(specificType){
   var inp=document.createElement('input');
   inp.type='file';
@@ -23489,16 +22473,14 @@ window.E_triggerUpload = function(specificType){
       if(t==='video'){
         var vid=document.createElement('video');
         vid.preload='metadata';vid.src=url;
-        vid.onloadedmetadata=function(){
-          _pushClip('main',file.name,url,'video',Math.round(vid.duration)||30,'#2563eb');
-        };
+        vid.onloadedmetadata=function(){_pushClip('main',file.name,url,'video',Math.round(vid.duration)||30,'#2563eb');};
         vid.onerror=function(){_pushClip('main',file.name,url,'video',30,'#2563eb');};
       }else if(t==='audio'){
         var aud=document.createElement('audio');
         aud.preload='metadata';aud.src=url;
         aud.onloadedmetadata=function(){
           var dur=Math.round(aud.duration)||30;
-          var atr=window.E&&E.tracks&&(E.tracks.find(function(tk){return tk.type==='audio'&&tk.id!=='main';}))||{id:'music'};
+          var atr=window.E&&E.tracks&&E.tracks.find(function(k){return k.type==='audio'&&k.id!=='main';})||{id:'music'};
           _pushClip(atr.id,file.name,url,'audio',dur,'#7c3aed');
         };
         aud.onerror=function(){_pushClip('music',file.name,url,'audio',30,'#7c3aed');};
@@ -23510,193 +22492,181 @@ window.E_triggerUpload = function(specificType){
   inp.click();
 };
 
-
-// When recording ends, pass recorded video to edit suite
-(function(){
-  var _origStopRec = window.stopRecording || window.studioStopRecording;
-  // Hook into recording stop events
-  document.addEventListener('aab-recording-done', function(ev){
-    if(!ev.detail||!ev.detail.url) return;
-    var url=ev.detail.url, dur=ev.detail.duration||30;
-    _pushClip('main','Recording '+new Date().toLocaleTimeString(),url,'video',Math.round(dur),'#dc2626');
-    if(typeof toast==='function') toast('Recording added to Edit Suite timeline','ok');
-  });
-  // Also hook if blob URL is returned from mediaRecorder
-  window._passRecordingToTimeline = function(blobUrl, durationSec){
-    _pushClip('main','Recording '+new Date().toLocaleTimeString(),blobUrl,'video',Math.round(durationSec||30),'#dc2626');
-    if(typeof toast==='function') toast('Recording added to Edit Suite','ok');
+// ── E_uploadVideo / E_uploadAudio overrides with real duration ────
+window.E_uploadVideo = function(){
+  var inp=document.createElement('input');inp.type='file';inp.accept='video/*';
+  inp.onchange=function(){
+    if(!inp.files[0])return;
+    var f=inp.files[0], url=URL.createObjectURL(f);
+    var vid=document.createElement('video');vid.preload='metadata';vid.src=url;
+    vid.onloadedmetadata=function(){_pushClip('main',f.name,url,'video',Math.round(vid.duration)||30,'#2563eb');};
+    vid.onerror=function(){_pushClip('main',f.name,url,'video',30,'#2563eb');};
   };
-})();
-// Teleprompter auto-scroll — standalone, no wrapping of original
-(function(){
-  var _origTPMode = null; // Will store original if needed
-  window.startTpAutoScroll = function(){
-    if(window._tpTimer) clearInterval(window._tpTimer);
-    var body = document.getElementById('tp-body') ||
-               document.querySelector('.tp-text-wrap') ||
-               document.querySelector('#record-pg .studio-body') ||
-               document.querySelector('.studio-tp');
-    if(!body) return;
-    var spd = parseFloat((document.getElementById('tp-spd-range')||{value:80}).value)||80;
-    window._tpTimer = setInterval(function(){
-      body.scrollTop += 1;
-      if(body.scrollTop + body.clientHeight >= body.scrollHeight - 10){
-        clearInterval(window._tpTimer); window._tpTimer = null;
-      }
-    }, Math.max(16, Math.round(16000/spd)));
-  };
-  window.stopTpAutoScroll = function(){
-    if(window._tpTimer){ clearInterval(window._tpTimer); window._tpTimer = null; }
-  };
-  // Only add scroll mode handler if NOT already properly defined
-  var _platformTP = window.setTpScrollMode;
-  if(!_platformTP || _platformTP.toString().indexOf('_origSet')>-1){
-    // Platform version is broken/wrapped — use ours
-    window.setTpScrollMode = function(mode){
-      window._tpScrollMode = mode;
-      if(mode==='auto') window.startTpAutoScroll();
-      else window.stopTpAutoScroll();
-      // Update UI dropdown
-      var sel = document.querySelector('[onchange*="setTpScrollMode"],#tp-scroll-mode');
-      if(sel && sel.value !== mode) sel.value = mode;
+  inp.click();
+};
+window.E_uploadAudio = function(){
+  var inp=document.createElement('input');inp.type='file';inp.accept='audio/*';
+  inp.onchange=function(){
+    if(!inp.files[0])return;
+    var f=inp.files[0], url=URL.createObjectURL(f);
+    var aud=document.createElement('audio');aud.preload='metadata';aud.src=url;
+    aud.onloadedmetadata=function(){
+      var atr=window.E&&E.tracks&&E.tracks.find(function(k){return k.type==='audio'&&k.id!=='main';})||{id:'music'};
+      _pushClip(atr.id,f.name,url,'audio',Math.round(aud.duration)||30,'#7c3aed');
     };
-  }
-})();
+  };
+  inp.click();
+};
+window.E_uploadImage = function(){
+  var inp=document.createElement('input');inp.type='file';inp.accept='image/*';
+  inp.onchange=function(){
+    if(!inp.files[0])return;
+    var f=inp.files[0], url=URL.createObjectURL(f);
+    _pushClip('overlay',f.name,url,'image',5,'#059669');
+  };
+  inp.click();
+};
 
-// Initialize APS.scenes from PROJECT.scenes when missing
-// Called by aps_generateScene — prevents "Cannot read properties of undefined (reading '0')"
-(function(){
-  var _origGenScene = window.aps_generateScene;
-  if(_origGenScene && !_origGenScene._scenesPatched){
-    window.aps_generateScene = function(idx){
-      // Auto-init APS.scenes from PROJECT.scenes if missing
-      if((!window.APS || !APS.scenes) && window.PROJECT && PROJECT.scenes && PROJECT.scenes.length){
-        if(!window.APS) window.APS = {};
-        APS.scenes = PROJECT.scenes.map(function(sc, i){
-          return {
-            id: sc.id || ('s'+(i+1)),
-            num: i+1, sceneNum: i+1,
-            narration: sc.narration || sc.label || '',
-            duration: sc.duration || 8,
-            status: (sc.videoUrl||sc.apsVideoUrl) ? 'done' : 'ready',
-            videoUrl: sc.videoUrl || sc.apsVideoUrl || null,
-            taskId: sc.taskId || null
-          };
-        });
-        APS.results = APS.results || {};
-        APS.clips = APS.clips || {};
-      }
-      return _origGenScene.apply(this, arguments);
-    };
-    window.aps_generateScene._scenesPatched = true;
+// ── aps_addClipToTimeline ────────────────────────────────────────
+window.aps_addClipToTimeline = window.aps_addClipToTimeline || function(sc){
+  if(!sc||!(sc.videoUrl||sc.apsVideoUrl))return;
+  var url=sc.videoUrl||sc.apsVideoUrl;
+  var n=sc.num||sc.sceneNum||1;
+  if(window.PROJECT){
+    PROJECT.apsVideos=PROJECT.apsVideos||{};
+    PROJECT.apsVideos[sc.id||('s'+n)]={url:url,name:'AI Scene '+n,duration:sc.duration||8,sceneNum:n,num:n,narration:sc.narration||''};
   }
-})();
+  if(window.E&&E.tracks){
+    var main=E.tracks.find(function(t){return t.id==='main';});
+    if(main){
+      main.clips=(main.clips||[]).filter(function(c){return c.sceneNum!==n&&c.id!==('aps_'+n);});
+      var pos=0;
+      if(window.PROJECT&&PROJECT.scenes)for(var i=0;i<Math.min(n-1,PROJECT.scenes.length);i++)pos+=(PROJECT.scenes[i].duration||8);
+      main.clips.push({id:'aps_'+n,name:'AI Scene '+n,url:url,type:'video',start:pos,duration:sc.duration||8,color:'#1e40af',sceneNum:n});
+      if(typeof E_renderTL==='function')try{E_renderTL();}catch(e){}
+    }
+  }
+};
 
-// Character photo fix: if photo URL is an external link (imgur etc.)
-// convert it to base64 so Railway server can use it
-window.aps_ensurePhotoBase64 = function(){
-  if(!window.APS) return Promise.resolve(null);
-  var photo = APS.photo || APS.photoUrl;
-  if(!photo || photo.startsWith('data:image')) return Promise.resolve(photo);
-  // External URL — fetch and convert
-  return fetch(photo)
-    .then(function(r){ return r.blob(); })
-    .then(function(blob){
-      return new Promise(function(resolve){
-        var reader = new FileReader();
-        reader.onloadend = function(){ 
-          APS.photoB64 = reader.result.split(',')[1];
-          APS.photo = reader.result;
-          resolve(reader.result);
-        };
-        reader.readAsDataURL(blob);
-      });
-    })
-    .catch(function(err){
-      console.warn('Could not fetch character photo:', err.message);
-      if(typeof toast==='function') toast('⚠️ Character photo could not load. Please re-upload your photo in AI Presenter.','warn');
-      return null;
+// ── aps_goToEditSuite ─────────────────────────────────────────────
+window.aps_goToEditSuite = window.aps_goToEditSuite || function(){
+  if(window.APS&&APS.scenes){
+    APS.scenes.forEach(function(sc){
+      if((sc.videoUrl||sc.apsVideoUrl)&&typeof aps_addClipToTimeline==='function')aps_addClipToTimeline(sc);
     });
+  }
+  if(typeof nav==='function')nav('edit-pg');
+  setTimeout(function(){if(typeof E_build==='function')try{E_build();}catch(e){}},500);
+  if(typeof toast==='function')toast('Navigating to Edit Suite...','ok');
 };
 
-// Fix character photo loading: bridge old format (images[]) to new (photoB64)
-// Called after any character is loaded to ensure photoB64 is always set
-window.aps_fixCharPhoto = function(){
-  if(!window.APS) return;
-  // If photoB64 already set and valid, nothing to do
-  if(APS.photoB64 && APS.photoB64.length > 100) return;
-  // Try characterImages (set by char.images[0] loading code)
-  var img = (APS.characterImages && APS.characterImages[0]) ||
-            APS.photo ||
-            (APS.photoFileName ? null : null);
-  if(!img) {
-    // Try loading from localStorage saved chars
-    try {
-      var userId = window.APP && APP.user ? APP.user.id : null;
-      if(!userId) return;
-      var charName = APS.charName || APS.characterName;
-      if(!charName) return;
-      var savedChars = JSON.parse(localStorage.getItem('aab_chars_'+userId)||'[]');
-      var ch = savedChars.find(function(c){ return c.name === charName; });
-      if(ch && ch.images && ch.images[0]) img = ch.images[0];
-    } catch(e2){}
+// ── STUDIO NAV OVERLAY (fixed bar, platform can never hide it) ───
+(function(){
+  function buildNav(){
+    if(document.getElementById('aab-studio-nav'))return;
+    var bar=document.createElement('div');
+    bar.id='aab-studio-nav';
+    bar.style.cssText='position:fixed;top:0;left:0;right:0;height:38px;z-index:999998;'+
+      'background:linear-gradient(135deg,#0a0e1a 0%,#111827 100%);'+
+      'border-bottom:1px solid rgba(255,255,255,.08);display:none;align-items:center;'+
+      'padding:0 10px;gap:4px;box-shadow:0 2px 12px rgba(0,0,0,.5);'+
+      'font-family:Sora,Inter,sans-serif;';
+    function mkBtn(label,onclick,accent){
+      var b=document.createElement('button');
+      b.innerHTML=label;
+      b.style.cssText='background:'+(accent||'rgba(255,255,255,.06)')+';color:'+(accent?'#fff':'rgba(255,255,255,.8)')+
+        ';border:1px solid '+(accent?'transparent':'rgba(255,255,255,.1)')+
+        ';border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:500;white-space:nowrap;font-family:inherit;transition:opacity .15s;flex-shrink:0;';
+      b.onclick=function(){try{eval(onclick);}catch(e){}};
+      return b;
+    }
+    bar.appendChild(mkBtn('\u2190 Back','navBack()'));
+    bar.appendChild(mkBtn('\u2302 Dashboard',"saveProject();nav('dashboard-pg')"));
+    bar.appendChild(mkBtn('\uD83D\uDCDD Script',"saveProject();nav('script-pg')"));
+    bar.appendChild(mkBtn('\uD83C\uDFAC Scenes',"saveProject();nav('scenes-pg')"));
+    bar.appendChild(mkBtn('\uD83E\uDD16 AI',"nav('ai-presenter-studio')"));
+    bar.appendChild(mkBtn('\uD83C\uDFA5 Record',"saveProject();nav('record-pg')"));
+    var sp=document.createElement('div');sp.style.flex='1';bar.appendChild(sp);
+    bar.appendChild(mkBtn('\u2193 Export',"nav('export-pg')","linear-gradient(135deg,#6366f1,#8b5cf6)"));
+    document.body.appendChild(bar);
   }
-  if(!img) return;
-  // Convert full data URL to base64 only
-  if(img.includes(',')) {
-    APS.photoB64 = img.split(',')[1];
-    APS.photo = img;
-    APS.photoMimeType = img.split(';')[0].split(':')[1] || 'image/jpeg';
-  } else {
-    APS.photoB64 = img;
-    APS.photo = 'data:image/jpeg;base64,' + img;
-    APS.photoMimeType = 'image/jpeg';
+  function updateNav(){
+    var bar=document.getElementById('aab-studio-nav');if(!bar)return;
+    var e=document.getElementById('edit-pg'), r=document.getElementById('record-pg');
+    var on=(e&&window.getComputedStyle(e).display!=='none')||(r&&window.getComputedStyle(r).display!=='none');
+    bar.style.display=on?'flex':'none';
   }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',buildNav);
+  else buildNav();
+  setTimeout(buildNav,500);
+  setInterval(updateNav,600);
+  window._updateStudioNav=updateNav;
+})();
+
+// ── FIX BIN THUMBNAILS (remove crossOrigin so videos load) ───────
+window._fixBinThumbs=function(){
+  document.querySelectorAll('.aab-bin-clip-thumb').forEach(function(thumb){
+    var v=thumb.querySelector('video');
+    if(!v||!v.src||!v.crossOrigin)return;
+    var url=v.src,w=thumb.offsetWidth||52,h=thumb.offsetHeight||30;
+    var v2=document.createElement('video');
+    v2.muted=true;v2.preload='metadata';v2.setAttribute('playsinline','');
+    v2.style.cssText='width:100%;height:100%;object-fit:cover;position:absolute;inset:0;';
+    if(v.parentNode)v.parentNode.replaceChild(v2,v);
+    v2.addEventListener('loadedmetadata',function(){v2.currentTime=Math.min(0.5,v2.duration*0.1);});
+    v2.addEventListener('seeked',function(){
+      try{
+        var c=document.createElement('canvas');c.width=w;c.height=h;
+        c.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;';
+        c.getContext('2d').drawImage(v2,0,0,w,h);thumb.appendChild(c);v2.remove();
+      }catch(e){}
+    });
+    v2.addEventListener('error',function(){thumb.innerHTML='<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:16px;">\u25B6</div>';});
+    v2.src=url;
+  });
 };
 
-// Wrap aps_useCharProfile to always fix photo after loading
+// ── E_build wrapper: fix thumbs after rebuild (ONE wrapper only) ──
 (function(){
-  var _origUCP = window.aps_useCharProfile;
-  if(_origUCP && !_origUCP._photoFixed){
-    window.aps_useCharProfile = function(id){
-      if(typeof _origUCP === 'function') _origUCP.call(this, id);
-      setTimeout(window.aps_fixCharPhoto, 100);
-    };
-    window.aps_useCharProfile._photoFixed = true;
-  }
+  var _ob=window.E_build;
+  if(!_ob||_ob._cleanWrapped)return;
+  window.E_build=function(){
+    var r=_ob.apply(this,arguments);
+    setTimeout(window._fixBinThumbs,400);
+    return r;
+  };
+  window.E_build._cleanWrapped=true;
 })();
 
-// Also fix on every aps_generateScene call
-(function(){
-  var _origGSc = window.aps_generateScene;
-  if(_origGSc && !_origGSc._photoFixed){
-    window.aps_generateScene = function(idx){
-      // Always ensure photo is loaded before generating
-      window.aps_fixCharPhoto();
-      // Also init APS.scenes if missing
-      if((!window.APS || !APS.scenes) && window.PROJECT && PROJECT.scenes && PROJECT.scenes.length){
-        if(!window.APS) window.APS={};
-        APS.scenes = PROJECT.scenes.map(function(sc,i){
-          return {id:sc.id||('s'+(i+1)),num:i+1,sceneNum:i+1,
-            narration:sc.narration||sc.label||'',duration:sc.duration||8,
-            status:(sc.videoUrl||sc.apsVideoUrl)?'done':'ready',
-            videoUrl:sc.videoUrl||sc.apsVideoUrl||null,taskId:sc.taskId||null};
-        });
-        APS.results=APS.results||{}; APS.clips=APS.clips||{};
-      }
-      return _origGSc.apply(this, arguments);
-    };
-    window.aps_generateScene._photoFixed = true;
-    window.aps_generateScene._scenesPatched = true;
-  }
-})();
+// ── TELEPROMPTER AUTO-SCROLL (no recursive wrapping) ─────────────
+window.startTpAutoScroll=function(){
+  if(window._tpTimer)clearInterval(window._tpTimer);
+  var body=document.getElementById('tp-body')||document.querySelector('.tp-text-wrap,.studio-tp');
+  if(!body)return;
+  var spd=parseFloat((document.getElementById('tp-spd-range')||{value:80}).value)||80;
+  window._tpTimer=setInterval(function(){
+    body.scrollTop+=1;
+    if(body.scrollTop+body.clientHeight>=body.scrollHeight-10){clearInterval(window._tpTimer);window._tpTimer=null;}
+  },Math.max(16,Math.round(16000/spd)));
+};
+window.stopTpAutoScroll=function(){
+  if(window._tpTimer){clearInterval(window._tpTimer);window._tpTimer=null;}
+};
+window.setTpScrollMode=function(mode){
+  window._tpScrollMode=mode;
+  if(mode==='auto')window.startTpAutoScroll();
+  else window.stopTpAutoScroll();
+  var sel=document.querySelector('[onchange*="setTpScrollMode"],#tp-scroll-mode');
+  if(sel&&sel.value!==mode)sel.value=mode;
+};
 
-// aps_generateScene: init APS.scenes + fetch imgur photo before generation
+// ── aps_generateScene: SINGLE async wrapper ──────────────────────
+// Fetches imgur/external photo to base64, inits APS.scenes, then calls original
 (function(){
-  var _origGenScene = window.aps_generateScene;
-  if(!_origGenScene || _origGenScene._scenesPatched) return;
-  window.aps_generateScene = async function(idx){
-    // 1. Auto-init APS.scenes from PROJECT.scenes if missing
+  var _orig=window.aps_generateScene;
+  if(!_orig||_orig._cleanPatched)return;
+  window.aps_generateScene=async function(idx){
+    // Init APS.scenes from PROJECT.scenes if missing
     if((!window.APS||!APS.scenes)&&window.PROJECT&&PROJECT.scenes&&PROJECT.scenes.length){
       if(!window.APS)window.APS={};
       APS.scenes=PROJECT.scenes.map(function(sc,i){
@@ -23707,40 +22677,62 @@ window.aps_fixCharPhoto = function(){
       });
       APS.results=APS.results||{};APS.clips=APS.clips||{};
     }
-    // 2. Ensure APS.photoB64 is set — fetch external URLs (imgur) from browser
+    // Fetch external photo URL (imgur etc.) to base64 from browser
     if(window.APS&&(!APS.photoB64||APS.photoB64.length<50)){
       var src=APS.photo||APS.photoUrl||APS.charPhoto;
       if(src&&src.startsWith('data:image/')&&!src.includes('undefined')){
         APS.photoB64=(src.split(',')[1])||'';
         APS.photoMimeType=(src.match(/data:([^;]+);/)||[])[1]||'image/jpeg';
-      } else if(src&&!src.includes('undefined')&&(src.startsWith('http')||src.startsWith('//'))){
+      }else if(src&&!src.includes('undefined')&&(src.startsWith('http')||src.startsWith('//'))){
         try{
           if(typeof toast==='function')toast('Loading character photo...','info');
           var resp=await fetch(src);
           if(resp.ok){
             var blob=await resp.blob();
-            var b64=await new Promise(function(res,rej){
-              var rd=new FileReader();
-              rd.onloadend=function(){res(rd.result);};
-              rd.onerror=rej;
-              rd.readAsDataURL(blob);
-            });
-            APS.photo=b64;
-            APS.photoB64=b64.split(',')[1]||'';
-            APS.photoMimeType=blob.type||'image/jpeg';
-            if(typeof toast==='function')toast('Character photo ready ✓','ok');
+            var b64=await new Promise(function(res,rej){var rd=new FileReader();rd.onloadend=function(){res(rd.result);};rd.onerror=rej;rd.readAsDataURL(blob);});
+            APS.photo=b64;APS.photoB64=b64.split(',')[1]||'';APS.photoMimeType=blob.type||'image/jpeg';
+            if(typeof toast==='function')toast('Character photo ready \u2713','ok');
           }
         }catch(err){
           console.warn('Photo fetch:',err.message);
-          if(typeof toast==='function')toast('⚠️ Re-upload your photo in AI Presenter','warn');
+          if(typeof toast==='function')toast('\u26a0\ufe0f Re-upload your photo in AI Presenter','warn');
         }
       }
     }
-    return _origGenScene.apply(this,arguments);
+    return _orig.apply(this,arguments);
   };
-  window.aps_generateScene._scenesPatched=true;
+  window.aps_generateScene._cleanPatched=true;
 })();
 
+// ── Recording → Edit Suite passthrough ───────────────────────────
+window._passRecordingToTimeline=function(blobUrl,durationSec){
+  window._pushClip('main','Recording '+new Date().toLocaleTimeString(),blobUrl,'video',Math.round(durationSec||30),'#dc2626');
+  if(typeof toast==='function')toast('Recording added to Edit Suite','ok');
+};
+
+// ── Socket.IO clip_ready handler ─────────────────────────────────
+(function(){
+  function setup(){
+    if(!window.io||window._clipReadySetup)return;
+    window._clipReadySetup=true;
+    try{
+      var sock=window._socket||window.socket;
+      if(!sock)return;
+      sock.on('clip_ready',function(data){
+        if(!data||!data.videoUrl)return;
+        if(window.APS&&APS.scenes){
+          APS.scenes.forEach(function(sc,idx){
+            if(sc.taskId===data.taskId&&typeof aab_sceneDone==='function')
+              try{aab_sceneDone(sc,idx,data.videoUrl);}catch(e){}
+          });
+        }
+      });
+    }catch(e){}
+  }
+  setTimeout(setup,2000);setTimeout(setup,5000);
+})();
+
+console.log('[AABStudio] Clean stubs v2: nav+upload+aps+tp+photo all patched');
 </script>
 <script id="aab-tp-stubs">
 // ── Teleprompter mode - setTpScrollMode aliases studioTpSetMode ──
