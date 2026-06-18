@@ -7868,6 +7868,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
   <button onclick="nav('scenes-pg')" style="font-size:11px;padding:4px 9px;border-radius:5px;border:1px solid #d1d5db;background:#f9fafb;cursor:pointer;color:#374151;font-weight:500;">🎬 Scenes</button>
   <button onclick="nav('ai-presenter-studio')" style="font-size:11px;padding:4px 9px;border-radius:5px;border:1px solid #d1d5db;background:#f9fafb;cursor:pointer;color:#374151;font-weight:500;">🤖 AI Presenter</button>
   <button onclick="nav('record-pg')" style="font-size:11px;padding:4px 9px;border-radius:5px;border:1px solid #d1d5db;background:#f9fafb;cursor:pointer;color:#374151;font-weight:500;">🎥 Record</button>
+  <button onclick="nav('edit-pg')" style="font-size:11px;padding:4px 9px;border-radius:5px;border:1px solid #6366f1;background:#eef2ff;cursor:pointer;color:#6366f1;font-weight:600;">✂ Edit Suite</button>
   <button onclick="nav('edit-pg');" style="font-size:11px;padding:4px 9px;border-radius:5px;border:1px solid #d1d5db;background:#f9fafb;cursor:pointer;color:#374151;font-weight:500;">✂ Edit Suite</button>
 </div>
 <div class="script-layout">
@@ -16319,7 +16320,7 @@ window.aps_clearPhoto = aps_clearPhoto;
           Stop</button>
         <!-- Go to Edit Suite — always visible, enabled after clips generated -->
         <button id="aps-go-edit-btn-top" onclick="aps_goToEditSuite()"
-          style="background:rgba(16,185,129,.2);color:rgba(16,185,129,.9);border:1px solid rgba(16,185,129,.4);padding:7px 16px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;transition:all .2s;" title="Generate scenes first, then go to Edit Suite">
+          style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;box-shadow:0 2px 12px rgba(16,185,129,.4);padding:7px 16px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;transition:all .2s;" title="Generate scenes first, then go to Edit Suite">
           🎬 Go to Edit Suite →
         </button>
         <button onclick="closeAIPresenterStudio()"
@@ -22586,7 +22587,17 @@ window.closeAIPresenterStudio=window.closeAIPresenterStudio||function(){var a=do
       window._curNavPage=pg;
       var result=_origNav.apply(this,arguments);
       // Show edit suite nav bar — platform's E_build closure hides it
-      if(pg==='edit-pg'){setTimeout(function(){var nb=document.getElementById('e-nav-bar');if(!nb||nb._navObserving)return;nb._navObserving=true;function _showNav(){var s=nb.getAttribute('style')||'';if(s.includes('display: none')||s.includes('display:none')){nb.setAttribute('style',s.replace(/display\s*:\s*none\s*!important;?/gi,'').replace(/height\s*:\s*0px\s*!important;?/gi,'').replace(/overflow\s*:\s*hidden\s*!important;?/gi,''));nb.style.setProperty('display','flex','important');}}var _o=new MutationObserver(function(){_showNav();});_o.observe(nb,{attributes:true,attributeFilter:['style']});_showNav();},300);}
+      if(pg==='edit-pg'){
+        // Show e-nav-bar after E_build hides it (safe: no MutationObserver loop)
+        setTimeout(function(){
+          var nb=document.getElementById('e-nav-bar');
+          if(nb){nb.style.setProperty('display','flex','important');}
+        },800);
+        setTimeout(function(){
+          var nb=document.getElementById('e-nav-bar');
+          if(nb){nb.style.setProperty('display','flex','important');}
+        },2500);
+      }
       return result;
     };
     window.nav._prevTracked=true;
@@ -23276,7 +23287,7 @@ window.startSyncRecord=window.startSyncRecord||function(){
 // Restore last page on refresh (not on full navigation)
 (function(){
   var savedPage=sessionStorage.getItem('aab_current_page');
-  if(savedPage&&savedPage!=='home-pg'&&savedPage!=='dash-pg'){
+  if(savedPage&&savedPage!=='home-pg'&&savedPage!=='dash-pg'&&savedPage!=='edit-pg'&&savedPage!=='scenes-pg'&&savedPage!=='script-pg'){
     // Restore after app loads
     setTimeout(function(){
       if(typeof nav==='function'&&savedPage){
