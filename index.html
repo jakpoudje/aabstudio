@@ -23400,6 +23400,130 @@ function _fixBinThumbs(){
   setTimeout(_setupClipReady, 5000);
 })();
 
+// ── STUDIO NAV OVERLAY ─────────────────────────────────────────
+// Fixed nav bar injected OUTSIDE edit-pg/record-pg.
+// Platform can never hide it. No body padding.
+(function(){
+  var NAV_ID = 'aab-studio-nav';
+
+  function buildNav(){
+    if(document.getElementById(NAV_ID)) return;
+
+    var bar = document.createElement('div');
+    bar.id = NAV_ID;
+    bar.style.cssText = [
+      'position:fixed','top:0','left:0','right:0','height:38px','z-index:999998',
+      'background:linear-gradient(135deg,#0a0e1a 0%,#111827 100%)',
+      'border-bottom:1px solid rgba(255,255,255,.08)',
+      'display:none','align-items:center','padding:0 10px','gap:4px',
+      'box-shadow:0 2px 12px rgba(0,0,0,.5)',
+      'font-family:Sora,Inter,sans-serif',
+    ].join(';');
+
+    function mkBtn(label, onclick, accent){
+      var b=document.createElement('button');
+      b.innerHTML=label;
+      b.style.cssText='background:'+(accent||'rgba(255,255,255,.06)')+
+        ';color:'+(accent?'#fff':'rgba(255,255,255,.8)')+
+        ';border:1px solid '+(accent?'transparent':'rgba(255,255,255,.1)')+
+        ';border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:500;'+
+        'white-space:nowrap;font-family:inherit;transition:opacity .15s;flex-shrink:0;';
+      b.onclick=function(){ try{ eval(onclick); }catch(e){} };
+      b.onmouseenter=function(){ this.style.opacity='.8'; };
+      b.onmouseleave=function(){ this.style.opacity='1'; };
+      return b;
+    }
+
+    // Navigation buttons (mirrors e-nav-bar exactly)
+    bar.appendChild(mkBtn('← Back','navBack()'));
+    bar.appendChild(mkBtn('⌂ Dashboard',"saveProject();nav('dashboard-pg')"));
+    bar.appendChild(mkBtn('📝 Script',"saveProject();nav('script-pg')"));
+    bar.appendChild(mkBtn('🎬 Scenes',"saveProject();nav('scenes-pg')"));
+    bar.appendChild(mkBtn('🤖 AI',"nav('ai-presenter-studio')"));
+    bar.appendChild(mkBtn('🎥 Record',"saveProject();nav('record-pg')"));
+
+    // Spacer
+    var sp=document.createElement('div'); sp.style.flex='1'; bar.appendChild(sp);
+
+    // Export button — accent
+    bar.appendChild(mkBtn('↓ Export',"nav('export-pg')","linear-gradient(135deg,#6366f1,#8b5cf6)"));
+
+    document.body.appendChild(bar);
+  }
+
+  function updateNav(){
+    var bar=document.getElementById(NAV_ID);
+    if(!bar) return;
+    // Show when edit-pg or record-pg is visible
+    var editPg=document.getElementById('edit-pg');
+    var recPg=document.getElementById('record-pg');
+    var editOn=editPg&&window.getComputedStyle(editPg).display!=='none';
+    var recOn=recPg&&window.getComputedStyle(recPg).display!=='none';
+    bar.style.display=(editOn||recOn)?'flex':'none';
+  }
+
+  // Build after DOM ready
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',buildNav);
+  } else {
+    buildNav();
+  }
+  setTimeout(buildNav, 500);
+  // Update visibility check every 600ms (low overhead)
+  setInterval(updateNav, 600);
+  window._updateStudioNav = updateNav;
+})();
+
+// Override E_triggerUpload to read real duration and add to apsVideos
+window.E_triggerUpload = function(){
+  var inp=document.createElement('input');
+  inp.type='file';
+  inp.accept='video/*,audio/*,image/*';
+  inp.multiple=true;
+  inp.onchange=function(){
+    Array.from(inp.files).forEach(function(file){
+      var t=file.type?file.type.split('/')[0]:'video';
+      var url=URL.createObjectURL(file);
+      if(t==='video'){
+        if(typeof E_uploadVideo==='function'){ E_uploadVideo(); return; }
+        var vid=document.createElement('video');
+        vid.preload='metadata'; vid.src=url;
+        vid.onloadedmetadata=function(){
+          _pushClip('main',file.name,url,'video',Math.round(vid.duration)||30,'#2563eb');
+        };
+        vid.onerror=function(){ _pushClip('main',file.name,url,'video',30,'#2563eb'); };
+      } else if(t==='audio'){
+        var aud=document.createElement('audio');
+        aud.preload='metadata'; aud.src=url;
+        aud.onloadedmetadata=function(){
+          _pushClip(null,file.name,url,'audio',Math.round(aud.duration)||30,'#7c3aed');
+        };
+        aud.onerror=function(){ _pushClip(null,file.name,url,'audio',30,'#7c3aed'); };
+      } else {
+        _pushClip('overlays',file.name,url,'image',5,'#059669');
+      }
+    });
+  };
+  inp.click();
+};
+
+// When recording ends, pass recorded video to edit suite
+(function(){
+  var _origStopRec = window.stopRecording || window.studioStopRecording;
+  // Hook into recording stop events
+  document.addEventListener('aab-recording-done', function(ev){
+    if(!ev.detail||!ev.detail.url) return;
+    var url=ev.detail.url, dur=ev.detail.duration||30;
+    _pushClip('main','Recording '+new Date().toLocaleTimeString(),url,'video',Math.round(dur),'#dc2626');
+    if(typeof toast==='function') toast('Recording added to Edit Suite timeline','ok');
+  });
+  // Also hook if blob URL is returned from mediaRecorder
+  window._passRecordingToTimeline = function(blobUrl, durationSec){
+    _pushClip('main','Recording '+new Date().toLocaleTimeString(),blobUrl,'video',Math.round(durationSec||30),'#dc2626');
+    if(typeof toast==='function') toast('Recording added to Edit Suite','ok');
+  };
+})();
+
 </script>
 <script id="aab-tp-stubs">
 // ── Teleprompter mode - setTpScrollMode aliases studioTpSetMode ──
