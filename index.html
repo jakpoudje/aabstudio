@@ -4842,6 +4842,8 @@ var E={
 
 function E_build(){
   var ep=document.getElementById("edit-pg");if(!ep)return;
+  // Reset playhead to true beginning every time edit suite opens/rebuilds
+  E.currentTime=0;E.playhead=0;
   // Hide conflicting old editor elements
   ['timeline-panel','tl-resize-handle','edit-status-bar','edit-speed-dialog'].forEach(function(id){var el=document.getElementById(id);if(el)el.style.cssText='display:none!important';});
   var et=document.getElementById('edit-topbar');
@@ -5322,6 +5324,10 @@ function E_progToggle(){
   if(sv&&!sv.paused){sv.pause();var sb=document.getElementById("aab-src-play");if(sb)sb.innerHTML="&#9654;";}
   E.playing=true;
   E.currentTime=E.currentTime||0;
+  // If Loop is active with valid in/out marks, always start from In point
+  if(window.AABE&&AABE._loop&&AABE.inPoint!=null&&AABE.outPoint!=null&&AABE.outPoint>AABE.inPoint){
+    if(E.currentTime<AABE.inPoint||E.currentTime>=AABE.outPoint)E.currentTime=AABE.inPoint;
+  }
   if(btn)btn.innerHTML="&#9646;&#9646;";
   var lastMs=Date.now();
   E.playInterval=setInterval(function(){
@@ -5337,6 +5343,14 @@ function E_progToggle(){
     var pt2=document.getElementById("aab-prog-time");
     if(pt2){var m2=Math.floor(E.currentTime/60),s2=Math.floor(E.currentTime%60),dm=Math.floor(_dur/60),ds=Math.floor(_dur%60);pt2.textContent=m2+":"+String(s2).padStart(2,"0")+" / "+dm+":"+String(ds).padStart(2,"0");}
     if(!E._lastDraw||now-E._lastDraw>=100){E._lastDraw=now;if(typeof E_drawProg==="function")E_drawProg();}
+    // Loop between marked In/Out points if Loop is active
+    var AB=window.AABE;
+    var loopActive=AB&&AB._loop&&AB.inPoint!=null&&AB.outPoint!=null&&AB.outPoint>AB.inPoint;
+    if(loopActive&&E.currentTime>=AB.outPoint){
+      E.currentTime=AB.inPoint;E.playhead=E.currentTime;
+      lastMs=Date.now();
+      return; // keep playing, looped back
+    }
     if(E.currentTime>=_dur){
       E.playing=false;clearInterval(E.playInterval);E.playInterval=null;
       E.currentTime=0;E.playhead=0;
@@ -5667,12 +5681,24 @@ function E_doExport(){
   clips.sort(function(a,b){return a.start-b.start;});
   if(!clips.length){if(typeof toast==="function")toast("No video clips on timeline","error");return;}
 
+  // Collect ALL audio tracks (Voice Over, Music, Sound FX, any imported/recorded
+  // audio) so they get mixed into the SAME single exported file, not dropped.
+  var audioTracks=[];
+  E.tracks.filter(function(t){return t.type==="audio"&&!t.muted;}).forEach(function(t){
+    var vol=1;
+    var volSlider=document.querySelector('[data-track-id="'+t.id+'"] input[type="range"]');
+    if(volSlider)vol=parseFloat(volSlider.value)||1;
+    (t.clips||[]).forEach(function(c){
+      if(c.url)audioTracks.push({url:c.url,start:c.start||0,duration:c.duration||8,volume:c.volume!=null?c.volume:vol});
+    });
+  });
+
   var prog=document.getElementById("aab-exp-prog");
   var bar=document.getElementById("aab-exp-bar");
   var status=document.getElementById("aab-exp-status");
   if(prog)prog.style.display="block";
   if(bar){bar.style.width="5%";}
-  if(status)status.textContent="Stitching "+clips.length+" clip"+(clips.length!==1?"s":"")+" into one video...";
+  if(status)status.textContent="Stitching "+clips.length+" clip"+(clips.length!==1?"s":"")+(audioTracks.length?" + "+audioTracks.length+" audio track"+(audioTracks.length!==1?"s":""):"")+" into one video...";
 
   var BASE=window.API||"https://aabstudio-production.up.railway.app";
   var title=(window.PROJECT&&window.PROJECT.title)||"AABStudio Export";
@@ -5685,7 +5711,7 @@ function E_doExport(){
       "Content-Type":"application/json",
       "Authorization":"Bearer "+(SESSION.access_token||"")
     },
-    body:JSON.stringify({clips:clips,title:title,outputFormat:"mp4",resolution:"1080p"})
+    body:JSON.stringify({clips:clips,audioTracks:audioTracks,title:title,outputFormat:"mp4",resolution:"1080p"})
   })
   .then(function(r){
     if(!r.ok)return r.json().then(function(e){throw new Error(e.error||"Server "+r.status);});
@@ -20481,7 +20507,7 @@ window._E2_showTrackInspector = function(trackId, trackDef){
    ══════════════════════════════════════ */
 window._E2_setIn = function(){
   if(!window.AABE)return;
-  AABE.inPoint = AABE.currentTime||0;
+  AABE.inPoint = (window.E && E.currentTime) || 0; // use REAL playhead position, not stale AABE.currentTime
   window._E2_updateInOutMarkers();
   typeof toast==='function'&&toast('[In] set at '+AABE.inPoint.toFixed(2)+'s','ok');
   // Wire [ and ] keys
@@ -20500,7 +20526,7 @@ window._E2_setIn = function(){
 };
 window._E2_setOut = function(){
   if(!window.AABE)return;
-  AABE.outPoint = AABE.currentTime||0;
+  AABE.outPoint = (window.E && E.currentTime) || 0;
   window._E2_updateInOutMarkers();
   typeof toast==='function'&&toast('[Out] set at '+AABE.outPoint.toFixed(2)+'s','ok');
 };

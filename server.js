@@ -1109,7 +1109,7 @@ app.post('/api/admin/ensure-tables', async (req, res) => {
 app.post('/api/creatomate/stitch', async (req, res) => {
   try {
     if (!CREATOMATE_KEY) return res.status(503).json({ error: 'CREATOMATE_API_KEY not configured' });
-    const { clips, subtitles = [], musicUrl, outputFormat = 'mp4', resolution = '1080p' } = req.body;
+    const { clips, subtitles = [], musicUrl, audioTracks = [], outputFormat = 'mp4', resolution = '1080p' } = req.body;
     if (!clips?.length) return res.status(400).json({ error: 'clips array required' });
     const resMap = { '720p': [1280,720], '1080p': [1920,1080], '4k': [3840,2160] };
     const [width, height] = resMap[resolution] || [1920,1080];
@@ -1119,7 +1119,23 @@ app.post('/api/creatomate/stitch', async (req, res) => {
       if (subtitles[i]) elements.push({ type: 'text', text: subtitles[i], time, duration: clip.duration || 8, x: '50%', y: '88%', width: '85%', font_size: '5 vmin', font_weight: '600', color: '#ffffff', background_color: 'rgba(0,0,0,0.68)', font_family: 'Open Sans', x_anchor: '50%', y_anchor: '100%' });
       time += (clip.duration || 8);
     });
+    // Legacy single background-music slot (kept for backward compatibility)
     if (musicUrl) elements.push({ type: 'audio', source: musicUrl, time: 0, duration: time, volume: 0.25, audio_fade_out: 3 });
+    // NEW: support multiple independent audio tracks (Voice Over, Music, Sound FX,
+    // any uploaded/recorded audio) — each gets its own layered audio element so
+    // ALL audio actually ends up mixed into the single exported MP4, not dropped.
+    if (Array.isArray(audioTracks)) {
+      audioTracks.forEach(a => {
+        if (!a || !a.url) return;
+        elements.push({
+          type: 'audio',
+          source: a.url,
+          time: a.start || 0,
+          duration: a.duration || (time - (a.start || 0)) || time,
+          volume: (a.volume != null ? a.volume : 1)
+        });
+      });
+    }
     const r = await fetch('https://api.creatomate.com/v1/renders', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + CREATOMATE_KEY, 'Content-Type': 'application/json' },
