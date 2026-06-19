@@ -1477,10 +1477,24 @@ async function generateWithHeyGen(req, res, args) {
       }
     }
 
-    // ── Step 2: Upload background to public CDN ───────────────────────────────
+    // ── Step 2: Host background image on OUR OWN server ───────────────────────
+    // CRITICAL FIX: Imgur blocks requests from datacenter/cloud IPs (incl. HeyGen's
+    // servers) even though the URL works fine from a browser. This caused EVERY
+    // HeyGen generation to fail with "Failed to download from https://i.imgur.com/...".
+    // Railway's own /api/temp/ endpoint (already proven reliable for D-ID) fixes this.
     let backgroundUrl = null;
     if (compositeImageB64) {
-      backgroundUrl = await uploadToImgur(compositeImageB64);
+      try {
+        const bgBuf = Buffer.from(compositeImageB64, 'base64');
+        const bgId  = storeTempFile(bgBuf, 'image/jpeg', 600); // 10 min TTL
+        const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+          ? 'https://' + process.env.RAILWAY_PUBLIC_DOMAIN
+          : 'https://aabstudio-production.up.railway.app';
+        backgroundUrl = baseUrl + '/api/temp/' + bgId + '/scene.jpg';
+        console.log('HeyGen: background hosted at:', backgroundUrl.slice(0, 70));
+      } catch(bgErr) {
+        console.warn('HeyGen: background hosting failed:', bgErr.message);
+      }
     }
 
     // ── Step 3: Resolve framing ───────────────────────────────────────────────
@@ -1613,13 +1627,24 @@ async function generateWithKling(req, res, args) {
       // Upload fresh to Imgur for each scene.
       // PiAPI rejects reused URLs with 500 — each task needs a unique image URL.
       // Imgur anonymous upload is fast (~1s) and each upload gets a unique URL.
-      console.log('PiAPI: uploading image to Imgur...');
-      const imageUrl = await uploadToImgur(imageToUse);
+      console.log('PiAPI: hosting image on our own server...');
+      let imageUrl = null;
+      try {
+        const kBuf = Buffer.from(imageToUse, 'base64');
+        const kId  = storeTempFile(kBuf, 'image/jpeg', 600);
+        const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+          ? 'https://' + process.env.RAILWAY_PUBLIC_DOMAIN
+          : 'https://aabstudio-production.up.railway.app';
+        imageUrl = baseUrl + '/api/temp/' + kId + '/scene.jpg';
+        console.log('PiAPI: image hosted at:', imageUrl.slice(0, 70));
+      } catch(hostErr) {
+        console.warn('PiAPI: self-hosting failed, trying Imgur fallback:', hostErr.message);
+        imageUrl = await uploadToImgur(imageToUse);
+      }
       if (!imageUrl) {
-        console.warn('PiAPI: Imgur upload failed — falling back to HeyGen');
+        console.warn('PiAPI: image hosting failed — falling back to HeyGen');
         return await generateWithHeyGen(req, res, args);
       }
-      console.log('PiAPI: Imgur URL:', imageUrl);
 
       const prompt = [
         'Professional TV presenter speaking to camera.',
@@ -1908,12 +1933,20 @@ app.get('/api/presenter-status', async (req, res) => {
         });
       }
       console.log('HeyGen status:', hgStatus, '| video_id:', id);
+      // FIX: typeof null === 'object' in JS — must check truthiness BEFORE typeof,
+      // otherwise a normal "no error yet" (hgError === null) becomes the STRING "null"
+      // via JSON.stringify(null), which the client treats as a truthy error and
+      // aborts polling prematurely (shows "Error: null" even on healthy in-progress renders).
+      let errOut = null;
+      if (hgError) {
+        errOut = (typeof hgError === 'object') ? JSON.stringify(hgError) : hgError;
+      }
       return res.json({
         status:   hgStatus,
         videoUrl: sd.data?.video_url || null,
         done:     hgStatus === 'completed',
         failed:   hgStatus === 'failed',
-        error:    typeof hgError === 'object' ? JSON.stringify(hgError) : (hgError || null)
+        error:    errOut
       });
     }
     if (taskId.startsWith('runway-')) {

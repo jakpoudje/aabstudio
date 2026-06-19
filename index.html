@@ -19061,14 +19061,19 @@ window._apsGenerateScene = function(idx, sc){
   var genBtn = document.getElementById('aps-gen-one-btn')||document.querySelector('[onclick*="aps_generateCurrent"]');
   if(genBtn){genBtn.disabled=true;genBtn.textContent='Generating...';}
   
+  // Update scene row to show "generating" status visually
+  if(sc) sc.status = 'generating';
+  if(typeof aps_updateSceneRow === 'function' && sc) try{ aps_updateSceneRow(sc); }catch(e){}
+
   // Step 1: Voice
+  typeof toast==='function'&&toast('Scene '+(idx+1)+': generating voice...','info');
   fetch('https://aabstudio-production.up.railway.app/api/voice',{
     method:'POST',
     headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
     body:JSON.stringify({text:narration,voiceId:voiceId,stability:0.5,similarityBoost:0.75})
   }).then(function(r){return r.json();}).then(function(voiceD){
     if(!voiceD.audio)throw new Error('Voice failed: '+(voiceD.error||'no audio'));
-    typeof toast==='function'&&toast('Voice ready ✓','ok');
+    typeof toast==='function'&&toast('Scene '+(idx+1)+': voice ready ✓ — animating video...','ok');
     
     // Step 2: Video
     return fetch('https://aabstudio-production.up.railway.app/api/presenter',{
@@ -19099,21 +19104,40 @@ window._apsGenerateScene = function(idx, sc){
       return;
     }
     // Poll for completion
-    typeof toast==='function'&&toast('Rendering... (~1-3 min)','ok');
+    typeof toast==='function'&&toast('Scene '+(idx+1)+': rendering... (~1-3 min)','ok');
     var pollCount=0;
     var pollTimer=setInterval(function(){
       pollCount++;
-      if(pollCount>60){clearInterval(pollTimer);typeof toast==='function'&&toast('Timeout — check later','error');return;}
+      var elapsedSec=pollCount*5;
+      var elapsedStr=elapsedSec>=60?Math.floor(elapsedSec/60)+'m '+(elapsedSec%60)+'s':elapsedSec+'s';
+      // Update scene row with live elapsed time so Julius sees progress, not silence
+      if(sc){ sc.statusDetail = 'Rendering — '+elapsedStr+' elapsed'; }
+      if(typeof aps_updateSceneRow === 'function' && sc) try{ aps_updateSceneRow(sc); }catch(e){}
+      var rowEl=document.getElementById('aps-row-'+(sc.id||idx));
+      var detailEl=rowEl?rowEl.querySelector('.aps-status-detail'):null;
+      if(detailEl) detailEl.textContent=elapsedStr+' elapsed';
+      if(pollCount>60){
+        clearInterval(pollTimer);
+        window._apsState.generating=false;
+        if(genBtn){genBtn.disabled=false;genBtn.textContent='▶ Generate this scene';}
+        typeof toast==='function'&&toast('Scene '+(idx+1)+' timed out after 5 min — try again','error');
+        return;
+      }
       fetch('https://aabstudio-production.up.railway.app/api/presenter-status?taskId='+taskId,{
         headers:{'Authorization':'Bearer '+token}
       }).then(function(r){return r.json();}).then(function(s){
         if(s.done||s.status==='completed'||s.videoUrl){
           clearInterval(pollTimer);
           _apsSceneDone(idx, sc, s.videoUrl||s.url);
-        } else if(s.error){
+        } else if(s.failed){
+          // Check explicit 'failed' flag, not bare 'error' truthiness —
+          // avoids false aborts from non-error string quirks while still processing
           clearInterval(pollTimer);
-          typeof toast==='function'&&toast('Error: '+s.error,'error');
+          window._apsState.generating=false;
+          if(genBtn){genBtn.disabled=false;genBtn.textContent='▶ Generate this scene';}
+          typeof toast==='function'&&toast('Generation failed: '+(s.error||'provider error'),'error');
         }
+        // else: still processing — keep polling silently, no false error shown
       }).catch(function(){clearInterval(pollTimer);});
     },5000);
   }).catch(function(e){
