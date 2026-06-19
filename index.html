@@ -22881,10 +22881,15 @@ window._hostVideoForExport = async function(file, blobUrl){
       nameEl.title = (nameEl.title || '') + ' (double-click to rename)';
       nameEl.addEventListener('dblclick', function(e){
         e.stopPropagation();
-        var row = nameEl.closest('.aab-track-lbl') || nameEl.closest('[data-tid]') || nameEl.parentElement;
-        var trackId = row ? (row.dataset.tid || row.getAttribute('data-tid') || row.getAttribute('data-track-id')) : null;
-        if(!trackId || !window.E || !E.tracks) return;
-        var track = E.tracks.find(function(t){ return t.id === trackId; });
+        e.preventDefault();
+        var row = nameEl.closest('.aab-track-lbl');
+        if(!row || !window.E || !E.tracks) return;
+        // No data-tid attribute exists on these elements in practice —
+        // use positional index against the rendered label list, which
+        // mirrors E.tracks order.
+        var allLbls = Array.from(document.querySelectorAll('.aab-track-lbl'));
+        var idx = allLbls.indexOf(row);
+        var track = idx > -1 ? E.tracks[idx] : null;
         if(!track) return;
         var input = document.createElement('input');
         input.type = 'text';
@@ -22920,10 +22925,13 @@ window._hostVideoForExport = async function(file, blobUrl){
 // ── TRACK DRAG-REORDER: drag track labels to swap positions ──────
 (function(){
   function wireTrackDrag(){
-    document.querySelectorAll('.aab-track-lbl').forEach(function(lbl){
+    var allLbls = Array.from(document.querySelectorAll('.aab-track-lbl'));
+    allLbls.forEach(function(lbl, idx){
       if(lbl._dragWired) return;
       lbl._dragWired = true;
-      var trackId = lbl.dataset.tid || lbl.getAttribute('data-tid') || lbl.getAttribute('data-track-id');
+      // No data-tid attribute exists in practice — resolve via positional index
+      var track = window.E && E.tracks ? E.tracks[idx] : null;
+      var trackId = track ? track.id : null;
       if(!trackId) return;
       lbl.draggable = true;
       lbl.style.cursor = lbl.style.cursor === 'text' ? lbl.style.cursor : 'grab';
@@ -22949,6 +22957,12 @@ window._hostVideoForExport = async function(file, blobUrl){
         e.preventDefault();
         lbl.style.borderTop=''; lbl.style.borderBottom='';
         var srcId = e.dataTransfer.getData('text/plain');
+        // Re-resolve target trackId fresh at drop time (array order may have
+        // shifted since dragover was wired if a previous drop already happened)
+        var freshLbls = Array.from(document.querySelectorAll('.aab-track-lbl'));
+        var freshIdx = freshLbls.indexOf(lbl);
+        var freshTrack = window.E && E.tracks ? E.tracks[freshIdx] : null;
+        trackId = freshTrack ? freshTrack.id : trackId;
         if(!srcId || srcId === trackId || !window.E || !E.tracks) return;
         var srcIdx = E.tracks.findIndex(function(t){ return t.id === srcId; });
         var tgtIdx = E.tracks.findIndex(function(t){ return t.id === trackId; });
