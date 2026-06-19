@@ -19543,7 +19543,14 @@ setTimeout(function(){
 // ── Clip right-click context menu ──
 window._aabClipCtxMenu = function(e, clipId, trackId){
   e.preventDefault();e.stopPropagation();
-  // Remove any existing menu
+  // Consolidated: delegate to the single rich menu builder instead of
+  // building a competing duplicate (was causing two overlapping menus).
+  if(window.E&&E.tracks&&typeof window._CE_showClipMenu_v2==='function'){
+    var track=E.tracks.find(function(t){return t.id===trackId;});
+    var clip=track&&track.clips.find(function(c){return c.id===clipId;});
+    if(track&&clip){ window._CE_showClipMenu_v2(e, clip, track); return; }
+  }
+  // Fallback to original behavior only if rich menu truly unavailable
   var old = document.getElementById('aab-clip-ctx');
   if(old)old.remove();
 
@@ -20196,6 +20203,12 @@ window._E2_addClipToTrack=function(trackId, trackDef){
 
 // Enhanced clip right-click menu
 window._E2_clipContextMenu = function(e, clipId, trackId){
+  if(window.E&&E.tracks&&typeof window._CE_showClipMenu_v2==='function'){
+    var _track=E.tracks.find(function(t){return t.id===trackId||t.id===arguments[2];});
+    var _clip=_track&&_track.clips.find(function(c){return c.id===clipId||c.id===arguments[1];});
+    if(_track&&_clip){ window._CE_showClipMenu_v2(e, _clip, _track); return; }
+  }
+
   var old=document.getElementById('aab-clip-ctx');if(old)old.remove();
   var track=window.AABE&&AABE.tracks.find(function(t){return t.id===trackId;});
   var clip=track&&track.clips.find(function(c){return c.id===clipId;});
@@ -22843,6 +22856,118 @@ window._hostVideoForExport = async function(file, blobUrl){
   } catch(e){ console.warn('Asset upload failed:', e.message); }
   return blobUrl; // Fall back to blob URL
 };
+
+// ── CONTEXT MENU CLEANUP: the legacy inline '._aab_clip_menu' builder
+// (no named function to redirect) sometimes fires alongside the rich
+// menu, causing two overlapping menus. Sweep it away immediately.
+(function(){
+  document.addEventListener('contextmenu', function(){
+    setTimeout(function(){
+      // Keep only the rich menu; remove the legacy icon-only duplicate
+      if(document.getElementById('aab-clip-ctx')){
+        document.querySelectorAll('._aab_clip_menu').forEach(function(m){ m.remove(); });
+      }
+    }, 0);
+  }, true);
+})();
+
+// ── TRACK RENAME: double-click track name to edit inline ─────────
+(function(){
+  function wireTrackRename(){
+    document.querySelectorAll('.aab-track-name').forEach(function(nameEl){
+      if(nameEl._renameWired) return;
+      nameEl._renameWired = true;
+      nameEl.style.cursor = 'text';
+      nameEl.title = (nameEl.title || '') + ' (double-click to rename)';
+      nameEl.addEventListener('dblclick', function(e){
+        e.stopPropagation();
+        var row = nameEl.closest('.aab-track-lbl') || nameEl.closest('[data-tid]') || nameEl.parentElement;
+        var trackId = row ? (row.dataset.tid || row.getAttribute('data-tid') || row.getAttribute('data-track-id')) : null;
+        if(!trackId || !window.E || !E.tracks) return;
+        var track = E.tracks.find(function(t){ return t.id === trackId; });
+        if(!track) return;
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.value = track.name || '';
+        input.style.cssText = 'width:90%;font-size:10px;font-weight:600;background:#0f172a;color:#e2e8f0;border:1px solid #00d4ff;border-radius:3px;padding:1px 4px;';
+        nameEl.style.display = 'none';
+        nameEl.parentNode.insertBefore(input, nameEl);
+        input.focus();
+        input.select();
+        function commit(){
+          var newName = input.value.trim();
+          if(newName) {
+            track.name = newName;
+            nameEl.textContent = newName;
+            nameEl.title = newName;
+          }
+          input.remove();
+          nameEl.style.display = '';
+          try{ if(typeof saveProject==='function') setTimeout(saveProject, 300); }catch(err){}
+        }
+        input.addEventListener('blur', commit);
+        input.addEventListener('keydown', function(ke){
+          if(ke.key === 'Enter'){ ke.preventDefault(); input.blur(); }
+          if(ke.key === 'Escape'){ input.value = track.name || ''; input.blur(); }
+        });
+      });
+    });
+  }
+  setInterval(wireTrackRename, 1000);
+  setTimeout(wireTrackRename, 500);
+})();
+
+// ── TRACK DRAG-REORDER: drag track labels to swap positions ──────
+(function(){
+  function wireTrackDrag(){
+    document.querySelectorAll('.aab-track-lbl').forEach(function(lbl){
+      if(lbl._dragWired) return;
+      lbl._dragWired = true;
+      var trackId = lbl.dataset.tid || lbl.getAttribute('data-tid') || lbl.getAttribute('data-track-id');
+      if(!trackId) return;
+      lbl.draggable = true;
+      lbl.style.cursor = lbl.style.cursor === 'text' ? lbl.style.cursor : 'grab';
+      lbl.addEventListener('dragstart', function(e){
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', trackId);
+        lbl.style.opacity = '0.4';
+      });
+      lbl.addEventListener('dragend', function(){
+        lbl.style.opacity = '';
+        document.querySelectorAll('.aab-track-lbl').forEach(function(l){ l.style.borderTop=''; l.style.borderBottom=''; });
+      });
+      lbl.addEventListener('dragover', function(e){
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        var rect = lbl.getBoundingClientRect();
+        var midpoint = rect.top + rect.height/2;
+        document.querySelectorAll('.aab-track-lbl').forEach(function(l){ l.style.borderTop=''; l.style.borderBottom=''; });
+        if(e.clientY < midpoint) lbl.style.borderTop = '2px solid #00d4ff';
+        else lbl.style.borderBottom = '2px solid #00d4ff';
+      });
+      lbl.addEventListener('drop', function(e){
+        e.preventDefault();
+        lbl.style.borderTop=''; lbl.style.borderBottom='';
+        var srcId = e.dataTransfer.getData('text/plain');
+        if(!srcId || srcId === trackId || !window.E || !E.tracks) return;
+        var srcIdx = E.tracks.findIndex(function(t){ return t.id === srcId; });
+        var tgtIdx = E.tracks.findIndex(function(t){ return t.id === trackId; });
+        if(srcIdx === -1 || tgtIdx === -1) return;
+        var rect = lbl.getBoundingClientRect();
+        var midpoint = rect.top + rect.height/2;
+        var insertAfter = e.clientY >= midpoint;
+        var moved = E.tracks.splice(srcIdx, 1)[0];
+        var newTgtIdx = E.tracks.findIndex(function(t){ return t.id === trackId; });
+        E.tracks.splice(insertAfter ? newTgtIdx+1 : newTgtIdx, 0, moved);
+        if(typeof E_renderTL === 'function') E_renderTL();
+        if(typeof toast === 'function') toast('Track order updated', 'ok');
+        try{ if(typeof saveProject==='function') setTimeout(saveProject, 300); }catch(err){}
+      });
+    });
+  }
+  setInterval(wireTrackDrag, 1000);
+  setTimeout(wireTrackDrag, 500);
+})();
 
 </script>
 <script id="aab-tp-stubs">
