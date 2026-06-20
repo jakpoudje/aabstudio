@@ -22655,9 +22655,30 @@ window.aps_goToEditSuite = window.aps_goToEditSuite || function(){
   }
   function updateNav(){
     var bar=document.getElementById('aab-studio-nav');if(!bar)return;
-    var e=document.getElementById('edit-pg'), r=document.getElementById('record-pg');
-    var on=(e&&window.getComputedStyle(e).display!=='none')||(r&&window.getComputedStyle(r).display!=='none');
+    // Cover every in-studio page, not just edit/record -- AI Presenter Studio
+    // previously had no consistent navigation at all (only a small close X).
+    var pages=['edit-pg','record-pg','ai-presenter-studio'];
+    var visiblePage=null;
+    pages.forEach(function(id){
+      var el=document.getElementById(id);
+      if(el&&window.getComputedStyle(el).display!=='none')visiblePage=el;
+    });
+    var on=!!visiblePage;
     bar.style.display=on?'flex':'none';
+    // Compensate: the fixed 38px bar would otherwise overlap/clip the top
+    // of the page's own content (e.g. the clips bin's "+ Upload File" button
+    // was rendering partially hidden underneath it). Push content down only
+    // while the bar is actually showing, and only on pages we control here.
+    pages.forEach(function(id){
+      var el=document.getElementById(id);
+      if(!el)return;
+      if(on&&el===visiblePage){
+        el.style.boxSizing='border-box';
+        el.style.paddingTop='38px';
+      } else if(el.style.paddingTop==='38px'){
+        el.style.paddingTop='';
+      }
+    });
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',buildNav);
   else buildNav();
