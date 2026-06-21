@@ -5216,58 +5216,51 @@ function E_srcToggle(){
 }
 
 function E_drawProg(){
-  var canvas=document.getElementById("aab-prog-canvas");if(!canvas)return;
-  var ctx=canvas.getContext("2d");var W=canvas.width,H=canvas.height;
-  ctx.fillStyle="#0a0f1a";ctx.fillRect(0,0,W,H);
+  var pvid=document.getElementById("e-prog-vid");
+  var pempty=document.getElementById("e-prog-empty");
   var t=E.playhead||E.currentTime||0;
   var vc=null;
   E.tracks.forEach(function(tr){
     if(tr.type==="video"&&!tr.muted){tr.clips.forEach(function(c){if(t>=(c.start||0)&&t<(c.start||0)+(c.duration||8)&&c.url)vc=c;});}
   });
   if(!vc){
-    ctx.fillStyle="rgba(255,255,255,.06)";ctx.font="13px monospace";ctx.textAlign="center";ctx.textBaseline="middle";
-    ctx.fillText("Timeline output",W/2,H/2);return;
+    if(pvid){pvid.style.display="none";}
+    if(pempty){pempty.style.display="";pempty.classList.remove("hidden");}
+    return;
   }
-  if(!window._progVids)window._progVids={};
-  var pv=window._progVids[vc.id];
-  if(!pv||pv._src!==vc.url){
-    if(pv){pv.pause();pv.src="";}
-    pv=document.createElement("video");
-    pv.crossOrigin="anonymous";pv.muted=true;pv.preload="auto";
-    pv._src=vc.url;pv.src=vc.url;pv.load();
-    window._progVids[vc.id]=pv;
+  if(pempty){pempty.style.display="none";pempty.classList.add("hidden");}
+  if(pvid){pvid.style.display="";}
+  if(!pvid)return;
+  // src change
+  if(pvid._aabSrc!==vc.url){
+    pvid._aabSrc=vc.url;
+    pvid._aabSeeking=false;
+    pvid.src=vc.url;
+    pvid.load();
   }
   if(E.playing){
-    // PLAYING: no seeking — draw current video frame naturally
-    if(pv.paused){
+    if(pvid.paused){
       var cT=Math.max(0,t-(vc.start||0));
-      if(Math.abs(pv.currentTime-cT)>0.5)pv.currentTime=cT;
-      pv.play().catch(function(){});
+      if(Math.abs(pvid.currentTime-cT)>0.5)pvid.currentTime=cT;
+      pvid.play().catch(function(){});
     }
-    if(pv.readyState>=2)ctx.drawImage(pv,0,0,W,H);
   } else {
-    // SCRUBBING/PAUSED: seek precisely once, then draw
-    if(!pv._seeking){
+    if(pvid.playing)pvid.pause();
+    if(!pvid._aabSeeking){
       var cT2=Math.max(0,t-(vc.start||0));
-      if(Math.abs(pv.currentTime-cT2)>0.08){
-        pv._seeking=true;
-        pv.currentTime=cT2;
-        pv.addEventListener("seeked",function done(){
-          pv._seeking=false;pv.removeEventListener("seeked",done);
-          if(canvas&&canvas.getContext){
-            var c2=canvas.getContext("2d");
-            if(pv.readyState>=2)c2.drawImage(pv,0,0,canvas.width,canvas.height);
-          }
+      if(Math.abs(pvid.currentTime-cT2)>0.08){
+        pvid._aabSeeking=true;
+        pvid.currentTime=cT2;
+        pvid.addEventListener("seeked",function done(){
+          pvid._aabSeeking=false;pvid.removeEventListener("seeked",done);
         },{once:true});
-      } else if(pv.readyState>=2){ctx.drawImage(pv,0,0,W,H);}
-    } else if(pv.readyState>=2){ctx.drawImage(pv,0,0,W,H);}
+      }
+    }
   }
-  // Timecode overlay
+  // Timecode
   var mn=Math.floor(t/60),sc=Math.floor(t%60);
   var tc=String(mn).padStart(2,"0")+":"+String(sc).padStart(2,"0");
-  ctx.fillStyle="rgba(0,0,0,.55)";ctx.fillRect(4,H-18,48,14);
-  ctx.fillStyle="#00d4ff";ctx.font="10px monospace";ctx.textAlign="left";ctx.textBaseline="top";
-  ctx.fillText(tc,7,H-17);
+  var tc2=document.getElementById("e-prog-tc2");if(tc2)tc2.textContent=tc;
 }
 
 function E_drawTextLayers(ctx,canvas,t){
@@ -5301,11 +5294,11 @@ function E_drawTextLayers(ctx,canvas,t){
 }
 
 function E_progToggle(){
-  var btn=document.getElementById("aab-prog-play");
+  var btn=document.getElementById("e-prog-play")||document.getElementById("aab-prog-play");
   if(E.playing){
     E.playing=false;
     if(E.playInterval){clearInterval(E.playInterval);E.playInterval=null;}
-    if(E._progVideo&&!E._progVideo.paused)E._progVideo.pause();
+    var pv=document.getElementById("e-prog-vid");if(pv&&!pv.paused)pv.pause();
     if(btn)btn.innerHTML="&#9654;";
     return;
   }
@@ -5320,7 +5313,7 @@ function E_progToggle(){
   var dur=_getDur();
   if(!dur)return;
   // Pause source monitor
-  var sv=document.getElementById("aab-src-vid");
+  var sv=document.getElementById("e-src-vid")||document.getElementById("aab-src-vid");
   if(sv&&!sv.paused){sv.pause();var sb=document.getElementById("aab-src-play");if(sb)sb.innerHTML="&#9654;";}
   E.playing=true;
   E.currentTime=E.currentTime||0;
@@ -5338,10 +5331,10 @@ function E_progToggle(){
     var _dur=_getDur();
     E.currentTime=Math.min(E.currentTime+dt,_dur);
     E.playhead=E.currentTime;
-    var ph=document.getElementById("aab-ph");
-    if(ph)ph.style.left=(200+E.currentTime*(E.pxPerSec||60))+"px";
-    var pt2=document.getElementById("aab-prog-time");
-    if(pt2){var m2=Math.floor(E.currentTime/60),s2=Math.floor(E.currentTime%60),dm=Math.floor(_dur/60),ds=Math.floor(_dur%60);pt2.textContent=m2+":"+String(s2).padStart(2,"0")+" / "+dm+":"+String(ds).padStart(2,"0");}
+    var ph=document.getElementById("e-tl-ph")||document.getElementById("aab-ph");
+    if(ph)ph.style.left=(E.currentTime*(E.pxPerSec||60))+"px";
+    var pt2=document.getElementById("e-prog-tc2")||document.getElementById("aab-prog-time");
+    if(pt2){var m2=Math.floor(E.currentTime/60),s2=Math.floor(E.currentTime%60);pt2.textContent=m2+":"+String(s2).padStart(2,"0");}
     if(!E._lastDraw||now-E._lastDraw>=100){E._lastDraw=now;if(typeof E_drawProg==="function")E_drawProg();}
     // Loop between marked In/Out points if Loop is active
     var AB=window.AABE;
@@ -5349,12 +5342,12 @@ function E_progToggle(){
     if(loopActive&&E.currentTime>=AB.outPoint){
       E.currentTime=AB.inPoint;E.playhead=E.currentTime;
       lastMs=Date.now();
-      return; // keep playing, looped back
+      return;
     }
     if(E.currentTime>=_dur){
       E.playing=false;clearInterval(E.playInterval);E.playInterval=null;
       E.currentTime=0;E.playhead=0;
-      if(ph)ph.style.left="200px";
+      if(ph)ph.style.left="0px";
       if(btn)btn.innerHTML="&#9654;";
       if(typeof E_drawProg==="function")E_drawProg();
     }
@@ -17614,7 +17607,6 @@ console.log('AABStudio Platform v3.0 ✓ — D-ID+HeyGen, Timeline, Export, PWA,
 
 </script>
 
-<script>try{if(false)eval("\nif(!window._studioFix1){window._studioFix1=true;\n// AABStudio Studio Fixes v1.0\n      // 1. Virtual background (canvas-based, MediaPipe body segmentation)\n      // 2. Teleprompter smooth scroll (force override)\n      // 3. Asset overlay placement on canvas\n      // 4. AI Presenter clips → existing timeline\n      // ════════════════════════════════════════════════════════════════════════════\n      (function () {\n              var isApp = !!document.getElementById('aab-v5');\n        if (!isApp) return;\n\n        // ══════════════════════════════════════════════════════════════════════════\n        // 1. VIRTUAL BACKGROUND — canvas compositing\n        // Replaces CSS filter approach with proper background removal\n        // Uses MediaPipe Selfie Segmentation (runs in browser, no server needed)\n        // ══════════════════════════════════════════════════════════════════════════\n\n        var VBG = {\n          active: false,\n          type: 'none',  // none | blur | image | color\n          imageUrl: null,\n          color: '#1a2035',\n          blurAmount: 12,\n          segmenter: null,\n          canvas: null,\n          ctx: null,\n          bgCanvas: null,\n          bgCtx: null,\n          bgImage: null,\n          stream: null,\n          rafId: null,\n          videoEl: null\n        };\n\n        async function vbg_loadMediaPipe() {\n          if (VBG.segmenter) return true;\n          try {\n            // Load MediaPipe Selfie Segmentation from CDN\n            if (!window.SelfieSegmentation) {\n              await new Promise(function (resolve, reject) {\n                var s = document.createElement('script');\n                s.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js';\n                s.onload = resolve;\n                s.onerror = reject;\n                document.head.appendChild(s);\n              });\n            }\n            VBG.segmenter = new window.SelfieSegmentation({\n              locateFile: function (file) {\n                return 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/' + file;\n              }\n            });\n            VBG.segmenter.setOptions({ modelSelection: 1, selfieMode: true });\n            await VBG.segmenter.initialize();\n            console.log('MediaPipe Selfie Segmentation loaded');\n            return true;\n          } catch (e) {\n            console.warn('MediaPipe load failed, falling back to CSS blur:', e.message);\n            return false;\n          }\n        }\n\n        async function vbg_apply(type, value) {\n          VBG.type = type;\n\n          // Find the studio video element\n          var videoEl = document.getElementById('studio-cam')\n            || document.getElementById('studio-cam') || getElementById('studio-canvas') || document.querySelector('#studio-canvas video')\n            || document.querySelector('#record-pg video');\n          if (!videoEl) { console.warn('VBG: no video element found'); return; }\n          VBG.videoEl = videoEl;\n\n          // Stop previous processing\n          if (VBG.rafId) { cancelAnimationFrame(VBG.rafId); VBG.rafId = null; }\n\n          if (type === 'none') {\n            VBG.active = false;\n            // Restore original stream display\n            videoEl.style.filter = '';\n            var overlay = document.getElementById('vbg-canvas-overlay');\n            if (overlay) overlay.style.display = 'none';\n            return;\n          }\n\n          // Load background image if needed\n          if (type === 'image' && value) {\n            VBG.imageUrl = value;\n            VBG.bgImage = new Image();\n            VBG.bgImage.crossOrigin = 'anonymous';\n            VBG.bgImage.src = value;\n            await new Promise(function (r) { VBG.bgImage.onload = r; VBG.bgImage.onerror = r; });\n          }\n\n          // If MediaPipe not available, fall back to CSS\n          var mpLoaded = await vbg_loadMediaPipe();\n          if (!mpLoaded) {\n            vbg_cssBlurFallback(type, value);\n            return;\n          }\n\n          // Create output canvas overlaid on top of video\n          var rect = videoEl.getBoundingClientRect();\n          var canvas = document.getElementById('vbg-canvas-overlay');\n          if (!canvas) {\n            canvas = document.createElement('canvas');\n            canvas.id = 'vbg-canvas-overlay';\n            canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:5;pointer-events:none;border-radius:inherit;';\n            videoEl.parentElement.style.position = 'relative';\n            videoEl.parentElement.appendChild(canvas);\n          }\n          canvas.style.display = 'block';\n          VBG.canvas = canvas;\n          VBG.ctx = canvas.getContext('2d');\n\n          // Set up segmenter callback\n          VBG.segmenter.onResults(function (results) {\n            vbg_renderFrame(results, videoEl, canvas, VBG.ctx);\n          });\n\n          VBG.active = true;\n\n          // Process frames\n          async function processFrame() {\n            if (!VBG.active) return;\n            if (videoEl.readyState >= 2) {\n              canvas.width = videoEl.videoWidth || videoEl.clientWidth || 640;\n              canvas.height = videoEl.videoHeight || videoEl.clientHeight || 480;\n              try {\n                await VBG.segmenter.send({ image: videoEl });\n              } catch (e) { }\n            }\n            VBG.rafId = requestAnimationFrame(processFrame);\n          }\n          processFrame();\n        }\n\n        function vbg_renderFrame(results, videoEl, canvas, ctx) {\n          var w = canvas.width, h = canvas.height;\n          ctx.save();\n          ctx.clearRect(0, 0, w, h);\n\n          // Draw segmentation mask to determine person pixels\n          ctx.globalCompositeOperation = 'source-over';\n\n          // Draw background first\n          if (VBG.type === 'blur') {\n            // Draw blurred video as background\n            ctx.filter = 'blur(' + VBG.blurAmount + 'px)';\n            ctx.drawImage(results.image, 0, 0, w, h);\n            ctx.filter = 'none';\n          } else if (VBG.type === 'image' && VBG.bgImage && VBG.bgImage.complete) {\n            ctx.drawImage(VBG.bgImage, 0, 0, w, h);\n          } else if (VBG.type === 'color') {\n            ctx.fillStyle = VBG.color;\n            ctx.fillRect(0, 0, w, h);\n          } else {\n            // News/Office/Dark — use preset gradient\n            var presets = {\n              'news': ['#081840', '#0a2d6b'],\n              'office': ['#0a1a0a', '#1a3a1a'],\n              'dark': ['#050810', '#0d1117'],\n              'green': ['#00a000', '#004000']\n            };\n            var colors = presets[VBG.type] || presets['dark'];\n            var grad = ctx.createLinearGradient(0, 0, w, h);\n            grad.addColorStop(0, colors[0]);\n            grad.addColorStop(1, colors[1]);\n            ctx.fillStyle = grad;\n            ctx.fillRect(0, 0, w, h);\n          }\n\n          // Cut out person using segmentation mask\n          // The mask is white where the person is\n          ctx.globalCompositeOperation = 'destination-out';\n          ctx.drawImage(results.segmentationMask, 0, 0, w, h);\n\n          // Draw the actual person pixels back on top\n          ctx.globalCompositeOperation = 'destination-over';\n          ctx.drawImage(results.image, 0, 0, w, h);\n\n          ctx.restore();\n        }\n\n        function vbg_cssBlurFallback(type, value) {\n          // CSS-only fallback when MediaPipe unavailable\n          var videoEl = VBG.videoEl;\n          if (!videoEl) return;\n          var presets = {\n            'blur': 'blur(12px) brightness(0.7)',\n            'dark': 'brightness(0.3)',\n            'news': 'hue-rotate(200deg) saturate(0.3) brightness(0.4)',\n            'office': 'sepia(0.3) brightness(0.6)',\n            'green': 'hue-rotate(90deg) saturate(2)'\n          };\n          // Can't do real background removal in CSS, just apply to whole video\n          // Show user a message\n          if (typeof toast === 'function') toast('Full background removal loading... using blur for now', 'info');\n          videoEl.style.filter = presets[type] || '';\n        }\n\n        // Override background button clicks in studio\n        function vbg_wireButtons() {\n          var bgBtns = document.querySelectorAll('.bg-btn, [data-bg], .s-btn[onclick*=\"setBg\"], .s-btn[onclick*=\"bg\"]');\n          // Map button text/data to background type\n          document.querySelectorAll('.studio-bg-btn, [class*=\"bg-opt\"]').forEach(function (btn) {\n            btn.addEventListener('click', function () {\n              var t = (btn.dataset.bg || btn.textContent || '').toLowerCase().trim();\n              if (t.includes('blur')) vbg_apply('blur');\n              if (t.includes('dark')) vbg_apply('color', '#050810');\n              if (t.includes('news')) vbg_apply('news');\n              if (t.includes('office')) vbg_apply('office');\n              if (t.includes('green')) vbg_apply('green');\n              if (t.includes('live') || t.includes('none')) vbg_apply('none');\n            });\n          });\n        }\n\n        // Intercept setBg calls from existing code\n        var _origSetBg = window.setBg || window.setBackground;\n        window.setBg = window.setBackground = function (type, value) {\n          if (typeof _origSetBg === 'function') _origSetBg.apply(this, arguments);\n          // Also apply our canvas-based background removal\n          var typeMap = {\n            'blur': 'blur', 'dark': 'dark', 'news': 'news',\n            'office': 'office', 'green': 'green', 'live': 'none',\n            'none': 'none', '': 'none'\n          };\n          var mapped = typeMap[type] || type;\n          vbg_apply(mapped, value);\n        };\n\n        setTimeout(vbg_wireButtons, 1000);\n\n        // ══════════════════════════════════════════════════════════════════════════\n        // 2. TELEPROMPTER SMOOTH SCROLL — force override at document level\n        // The issue is the existing tpScroll runs after our override\n        // Solution: redefine on a timer AFTER all scripts load\n        // ══════════════════════════════════════════════════════════════════════════\n\n        function installSmoothTp() {\n          // Override tpScroll with CSS transition approach\n        // Install now and again after 2s (to beat any late-loading scripts)\n        installSmoothTp();\n        // Delayed re-installs cancelled — they fight with _aabTpScrollStart\n\n        // ══════════════════════════════════════════════════════════════════════════\n        // 3. AI PRESENTER CLIPS → EXISTING TIMELINE\n        // The existing timeline uses tl_addClip() or similar\n        // We need to find the correct function and call it\n        // ══════════════════════════════════════════════════════════════════════════\n\n        window.aps_addClipToTimeline = function (sc) {\n          if (!sc || !sc.videoUrl) return;\n\n          // Store in PROJECT.clips\n          if (!PROJECT.clips) PROJECT.clips = {};\n          PROJECT.clips[sc.id] = {\n            sceneId: sc.id,\n            sceneNum: sc.num,\n            url: sc.videoUrl,\n            videoUrl: sc.videoUrl,\n            duration: sc.duration || 8,\n            source: 'ai-presenter',\n            sceneName: 'Scene ' + sc.num\n          };\n\n          // Try all known timeline add functions in order\n          var added = false;\n\n          // Method 1: tl_addClipToTrack (most likely function name)\n          if (typeof tl_addClipToTrack === 'function') {\n            try { tl_addClipToTrack({ url: sc.videoUrl, duration: sc.duration, name: 'Scene ' + sc.num, track: 'main' }); added = true; } catch (e) { }\n          }\n\n          // Method 2: tl_addClip\n          if (!added && typeof tl_addClip === 'function') {\n            try { tl_addClip({ url: sc.videoUrl, duration: sc.duration, name: 'Scene ' + sc.num }); added = true; } catch (e) { }\n          }\n\n          // Method 3: addClipToTimeline\n          if (!added && typeof addClipToTimeline === 'function') {\n            try { addClipToTimeline(sc.videoUrl, sc.duration, 'Scene ' + sc.num); added = true; } catch (e) { }\n          }\n\n          // Method 4: tl_buildTracksFromProject (rebuilds from PROJECT.clips)\n          if (typeof tl_buildTracksFromProject === 'function') {\n            try { tl_buildTracksFromProject(); added = true; } catch (e) { }\n          }\n\n          // Method 5: renderEditClips / renderEditSuite\n          if (typeof renderEditClips === 'function') { try { renderEditClips(); } catch (e) { } }\n          if (typeof renderEditSuite === 'function') { try { renderEditSuite(); } catch (e) { } }\n          if (typeof tl_render === 'function') { try { tl_render(); } catch (e) { } }\n\n          if (typeof saveProject === 'function') saveProject();\n          console.log('Timeline: Scene ' + sc.num + ' added' + (added ? ' via function' : ' via PROJECT.clips'));\n\n          // Show \"go to timeline\" hint\n          var hint = document.getElementById('aab-next-hint');\n          if (!hint) {\n            hint = document.createElement('div');\n            hint.id = 'aab-next-hint';\n            hint.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:rgba(0,212,170,.12);border:1px solid rgba(0,212,170,.3);color:#00d4aa;font-size:13px;padding:10px 18px;border-radius:8px;cursor:pointer;z-index:9000;animation:aab-pulse 2s ease infinite;';\n            hint.onclick = function () { if (typeof nav === 'function') nav('edit-pg'); hint.style.display = 'none'; };\n            document.body.appendChild(hint);\n          }\n          hint.textContent = '→ Scene ' + sc.num + ' ready — click to go to Edit Suite';\n          hint.style.display = 'block';\n          setTimeout(function () { if (hint) hint.style.display = 'none'; }, 12000);\n        };\n\n        // ══════════════════════════════════════════════════════════════════════════\n        // 4. RECORDING SAVE → TIMELINE\n        // Wire the existing \"Scene 1 saved — added to timeline\" bar to actually\n        // call our timeline function\n        // ══════════════════════════════════════════════════════════════════════════\n\n        var _origStopRec = window.stopRec;\n        // stopRec override removed — timeline rebuild happens via updateStudioClips\n        // Adding more stopRec overrides causes chained calls and UI freeze\n\n        // ══════════════════════════════════════════════════════════════════════════\n        // 5. ASSET OVERLAY — place assets on video canvas\n        // ══════════════════════════════════════════════════════════════════════════\n\n        window.aab_showAssetOverlay = function (assetUrl, position) {\n          // position: 'pip-right' | 'pip-left' | 'fullscreen' | 'lower-k'\n          var container = document.getElementById('studio-canvas') || document.querySelector('#record-pg .cam-wrap, #record-pg .video-wrap');\n          if (!container) return;\n\n          // Remove existing overlay of same position\n          var existing = container.querySelector('[data-overlay-pos=\"' + position + '\"]');\n          if (existing) { existing.remove(); return; } // toggle off\n\n          var el = document.createElement('div');\n          el.dataset.overlayPos = position;\n          el.style.position = 'absolute';\n          el.style.zIndex = '10';\n\n          var isImg = /\\.(jpg|jpeg|png|gif|webp|svg)$/i.test(assetUrl);\n          var isVid = /\\.(mp4|webm|mov)$/i.test(assetUrl);\n          var inner = isImg ? '<img src=\"' + assetUrl + '\" style=\"width:100%;height:100%;object-fit:contain;\">'\n            : isVid ? '<video src=\"' + assetUrl + '\" autoplay loop muted style=\"width:100%;height:100%;object-fit:contain;\"></video>'\n              : '<img src=\"' + assetUrl + '\" style=\"width:100%;height:100%;object-fit:contain;\">';\n\n          switch (position) {\n            case 'pip-right':\n              el.style.cssText += 'right:16px;bottom:80px;width:28%;height:auto;border-radius:10px;overflow:hidden;border:2px solid rgba(255,255,255,.3);box-shadow:0 4px 20px rgba(0,0,0,.5);';\n              break;\n            case 'pip-left':\n              el.style.cssText += 'left:16px;bottom:80px;width:28%;height:auto;border-radius:10px;overflow:hidden;border:2px solid rgba(255,255,255,.3);box-shadow:0 4px 20px rgba(0,0,0,.5);';\n              break;\n            case 'fullscreen':\n              el.style.cssText += 'inset:0;opacity:.4;pointer-events:none;';\n              break;\n            case 'lower-k':\n              el.style.cssText += 'left:0;right:0;bottom:0;height:18%;padding:0 20px;display:flex;align-items:center;background:linear-gradient(transparent,rgba(0,0,0,.7));';\n              break;\n            default:\n              el.style.cssText += 'top:50%;left:50%;transform:translate(-50%,-50%);width:60%;';\n          }\n\n          el.innerHTML = inner;\n          container.style.position = 'relative';\n          container.appendChild(el);\n        };\n\n        // Wire existing Show buttons to our overlay system\n        setTimeout(function () {\n          document.querySelectorAll('.asset-show-btn, [onclick*=\"showAsset\"], [onclick*=\"showOverlay\"]').forEach(function (btn) {\n            var url = btn.dataset.assetUrl || btn.dataset.url;\n            var pos = btn.dataset.position || 'pip-right';\n            if (url) btn.onclick = function () { window.aab_showAssetOverlay(url, pos); };\n          });\n        }, 1000);\n\n        console.log('Studio fixes v1.0: VBG + smooth TP + timeline wiring + asset overlays');\n      })();\n}\n")}catch(_e){console.warn("Block5:",_e.message);}</script>
 
   <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script>
 
@@ -18288,6 +18280,7 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
     if(typeof E_renderTL === 'function') E_renderTL();
     if(typeof toast === 'function') toast('Track added', 'info');
   };
+  window._aabAddTrack = function(type){ if(typeof E_addTrack==='function') E_addTrack(type); };
 
   window.E_deleteTrack = function(trackId) {
     if(!window.AABE) return;
@@ -22339,7 +22332,7 @@ setTimeout(function(){if(typeof aps_renderCharGrid==='function')aps_renderCharGr
 window.sidebarTab=function(tabName,el){
   if(el){var p=el.parentElement;if(p){p.querySelectorAll('[class*="sb-tab"],[class*="sidebar-tab"]').forEach(function(b){b.classList.remove('on','active');});el.classList.add('on','active');}}
   document.querySelectorAll('[data-tab]').forEach(function(pnl){pnl.style.display=pnl.dataset.tab===tabName?'':'none';});
-  var panels={library:'asset-library-panel','my-assets':'my-assets-panel',upload:'upload-panel'};
+  var panels={library:'asset-library-panel','my-assets':'my-assets-panel',upload:'asset-upload-panel'};
   if(panels[tabName]){var p2=document.getElementById(panels[tabName]);if(p2)p2.style.display='';}
 };
 
@@ -22567,15 +22560,15 @@ window.E_uploadVideo = function(){
   };
   inp.click();
 };
-window.E_uploadAudio = function(){
+window.E_uploadAudio = function(targetTrackId){
   var inp=document.createElement('input');inp.type='file';inp.accept='audio/*';
   inp.onchange=function(){
     if(!inp.files[0])return;
     var f=inp.files[0], url=URL.createObjectURL(f);
     var aud=document.createElement('audio');aud.preload='metadata';aud.src=url;
     aud.onloadedmetadata=function(){
-      var atr=window.E&&E.tracks&&E.tracks.find(function(k){return k.type==='audio'&&k.id!=='main';})||{id:'music'};
-      _pushClip(atr.id,f.name,url,'audio',Math.round(aud.duration)||30,'#7c3aed');
+      var tid=targetTrackId||(window.E&&E.tracks&&E.tracks.find(function(k){return k.id==='voice';})||E.tracks&&E.tracks.find(function(k){return k.type==='audio'&&k.id!=='main';})||{id:'voice'}).id;
+      _pushClip(tid,f.name,url,'audio',Math.round(aud.duration)||30,'#7c3aed');
     };
   };
   inp.click();
