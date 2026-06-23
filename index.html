@@ -5815,7 +5815,6 @@ if(typeof _origNavE==="function"&&!window._navEng){window._navEng=true;
     }
     if(pg==="edit-pg"){setTimeout(function(){
       var ep=document.getElementById("edit-pg");if(!ep)return;
-      if(!ep.querySelector(".aab-edit-body")){E_build();}
       else{E.tracks.find(function(t){return t.id==="main";}).clips=[];E_loadClips();}
     },350);}
     return r;
@@ -8501,24 +8500,6 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
   <div id="edit-pg" class="pg-full" style="display:none;flex-direction:column;height:100vh;overflow:hidden;background:#06080f;font-family:'Sora',sans-serif;">
 
 <!-- NAV ROW 36px -->
-<div id="e-nav-bar" style="flex:0 0 36px;display:flex;align-items:center;background:#070910;border-bottom:.5px solid rgba(255,255,255,.08);z-index:200;padding:0 8px;gap:3px;overflow:hidden;">
-  <button onclick="navBack()" class="enb">← Back</button>
-  <button onclick="saveProject();nav('dashboard-pg')" class="enb">🏠</button>
-  <button onclick="saveProject();nav('script-pg')" class="enb">📝 Script</button>
-  <button onclick="saveProject();nav('scenes-pg')" class="enb">🎬 Scenes</button>
-  <button onclick="saveProject();nav('record-pg')" class="enb">🎥 Studio</button>
-  <button onclick="if(typeof openAIPresenterStudio==='function')openAIPresenterStudio();else nav('ai-presenter-studio');" class="enb">🤖 AI</button>
-  <span style="background:rgba(0,212,255,.12);border:.5px solid rgba(0,212,255,.3);border-radius:4px;color:#00d4ff;font-size:9px;padding:2px 6px;margin-right:8px;">✂️ Edit</span>
-  <span id="edit-title" style="font-size:11px;font-weight:600;color:rgba(255,255,255,.65);">✂️ Edit Suite</span>
-  <span id="edit-save-status" style="font-size:8px;color:rgba(16,185,129,.5);padding:1px 5px;background:rgba(16,185,129,.05);border-radius:3px;border:.5px solid rgba(16,185,129,.12);margin-left:6px;">● Saved</span>
-  <div style="margin-left:auto;display:flex;align-items:center;gap:4px;">
-    <button onclick="AABE.undo()" class="enb" title="Undo">↩ Undo</button>
-    <button onclick="AABE.redo()" class="enb" title="Redo">↪ Redo</button>
-    <span id="e-dur" style="font-size:8px;color:rgba(255,255,255,.2);font-family:monospace;margin:0 6px;">0:00</span>
-    <button onclick="nav('export-pg')" style="background:linear-gradient(135deg,rgba(0,212,255,.2),rgba(139,92,246,.2));border:.5px solid rgba(0,212,255,.35);border-radius:5px;padding:3px 12px;font-size:10px;font-weight:700;color:#00d4ff;cursor:pointer;">↓ Export</button>
-  </div>
-</div>
-
 <!-- TOOLS ROW 32px -->
 <!-- end timeline -->
 
@@ -22237,33 +22218,6 @@ window.aps_goToEditSuite = window.aps_goToEditSuite || function(){
 
 // ── STUDIO NAV OVERLAY (fixed bar, platform can never hide it) ───
 (function(){
-  function updateNav(){
-    var bar=document.getElementById('aab-studio-nav');if(!bar)return;
-    // Cover every in-studio page, not just edit/record -- AI Presenter Studio
-    // previously had no consistent navigation at all (only a small close X).
-    var pages=['edit-pg','record-pg','ai-presenter-studio'];
-    var visiblePage=null;
-    pages.forEach(function(id){
-      var el=document.getElementById(id);
-      if(el&&window.getComputedStyle(el).display!=='none')visiblePage=el;
-    });
-    var on=!!visiblePage;
-    bar.style.display=on?'flex':'none';
-    // Compensate: the fixed 38px bar would otherwise overlap/clip the top
-    // of the page's own content (e.g. the clips bin's "+ Upload File" button
-    // was rendering partially hidden underneath it). Push content down only
-    // while the bar is actually showing, and only on pages we control here.
-    pages.forEach(function(id){
-      var el=document.getElementById(id);
-      if(!el)return;
-      if(on&&el===visiblePage){
-        el.style.boxSizing='border-box';
-        el.style.paddingTop='38px';
-      } else if(el.style.paddingTop==='38px'){
-        el.style.paddingTop='';
-      }
-    });
-  }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',buildNav);
   setTimeout(buildNav,500);
   setInterval(updateNav,600);
