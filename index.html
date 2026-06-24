@@ -4840,8 +4840,6 @@ var E={
 
 function E_build(){
   var ep=document.getElementById("edit-pg");if(!ep)return;
-  // Reset playhead to true beginning every time edit suite opens/rebuilds
-  E.currentTime=0;E.playhead=0;
   // Hide conflicting old editor elements
   ['timeline-panel','tl-resize-handle','edit-status-bar','edit-speed-dialog'].forEach(function(id){var el=document.getElementById(id);if(el)el.style.cssText='display:none!important';});
   var et=document.getElementById('edit-topbar');
@@ -4857,9 +4855,8 @@ function E_build(){
   body.appendChild(_mkBin());
   body.appendChild(_mkMonitors());
   body.appendChild(_mkInspector());
-  body.style.display="none";body.style.pointerEvents="none";
   var topbar=ep.querySelector("[class*=edit-topbar],#edit-topbar")||ep.firstElementChild;
-  /* aab-edit-body not inserted into page — old duplicate UI removed */
+  if(topbar&&topbar.nextSibling)ep.insertBefore(body,topbar.nextSibling);
   else ep.appendChild(body);
   ep.appendChild(_mkTimeline());
   setTimeout(E_loadClips,150);
@@ -13933,7 +13930,12 @@ window._reapplyNav=function(){
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
     function renderEditSuite() {
-  if(window.E){E.currentTime=0;E.playing=false;if(E.playInterval)clearInterval(E.playInterval);}
+  // Always use AABE editor - never show old e-main/e-timeline
+  var ids = ['e-main', 'e-timeline', 'e-nav-bar', 'e-tools-bar'];
+  ids.forEach(function(id) {
+    var el = document.getElementById(id);
+    if(el) { el.style.cssText = 'display:none!important;height:0!important;overflow:hidden!important;'; }
+  });
   // Build AABE editor
   if(typeof E_build === 'function') setTimeout(E_build, 50);
 }
@@ -23216,6 +23218,8 @@ window.addEventListener('load',function(){
 #edit-pg.on:has(.aab-edit-body){padding-top:38px!important}
 #record-pg.on{padding:48px 10px 10px 10px!important}
 
+
+.aab-edit-body{display:none!important;pointer-events:none!important;}
 </style>
 </body>
 <script>
