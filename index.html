@@ -23250,6 +23250,41 @@ window.addEventListener('load',function(){
 #edit-pg.on #aab-tl-wrap{display:flex!important;flex:1 1 0!important;min-height:0!important;}
 #edit-pg.on #e-timeline{display:none!important;}
 </style>
+
+<script id="aab-layout-guard">
+(function(){
+  function healLayout(){
+    var ep = document.getElementById('edit-pg');
+    if(!ep || !ep.classList.contains('on')) return;
+    // Show real monitors and toolbar
+    ['e-tools-bar','e-main'].forEach(function(id){
+      var el = document.getElementById(id);
+      if(el && (el.style.display==='none'||el.getAttribute('style')||'').indexOf('none')>-1){
+        el.removeAttribute('style');
+      }
+    });
+    // Hide old duplicate and empty shell
+    var eb = ep.querySelector('.aab-edit-body');
+    if(eb && getComputedStyle(eb).display !== 'none'){
+      eb.style.setProperty('display','none','important');
+    }
+    var etl = document.getElementById('e-timeline');
+    if(etl && getComputedStyle(etl).display !== 'none'){
+      etl.style.setProperty('display','none','important');
+    }
+  }
+  // Run immediately and on an interval
+  document.addEventListener('DOMContentLoaded', healLayout);
+  setInterval(healLayout, 500);
+  // Also run after any nav() call by patching the nav function
+  var _origNav = window.nav;
+  window.nav = function(pg){
+    var result = _origNav ? _origNav.apply(this, arguments) : undefined;
+    if(pg === 'edit-pg') setTimeout(healLayout, 300);
+    return result;
+  };
+})();
+</script>
 </body>
 <script>
 // aps_saveSettings - guaranteed global, defined last
