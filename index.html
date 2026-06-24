@@ -13929,15 +13929,26 @@ window._reapplyNav=function(){
 };
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
-    function renderEditSuite() {
-  // Always use AABE editor - never show old e-main/e-timeline
-  var ids = ['e-main', 'e-timeline', 'e-nav-bar', 'e-tools-bar'];
-  ids.forEach(function(id) {
-    var el = document.getElementById(id);
-    if(el) { el.style.cssText = 'display:none!important;height:0!important;overflow:hidden!important;'; }
+    function renderEditSuite(){
+  var ep=document.getElementById("edit-pg");
+  if(!ep)return;
+  // Show the real tools bar and monitors
+  ["e-tools-bar","e-main"].forEach(function(id){
+    var el=document.getElementById(id);
+    if(el){el.style.removeProperty("display");el.style.removeProperty("height");el.style.removeProperty("overflow");}
   });
-  // Build AABE editor
-  if(typeof E_build === 'function') setTimeout(E_build, 50);
+  // Hide the old duplicate monitor shell
+  var eb=ep.querySelector(".aab-edit-body");
+  if(eb)eb.style.setProperty("display","none","important");
+  // Hide the empty timeline shell
+  var etl=document.getElementById("e-timeline");
+  if(etl)etl.style.setProperty("display","none","important");
+  // Build AABE tracks if not done yet
+  if(!ep.querySelector(".aab-tl-wrap,#aab-tl-wrap")){if(typeof E_build==="function")E_build();}
+  // Reset playhead
+  if(window.E){E.currentTime=0;E.playing=false;if(E.playInterval)clearInterval(E.playInterval);}
+  // Render timeline clips
+  if(typeof E_renderTL==="function")setTimeout(E_renderTL,50);
 }
 
     function tl_buildTracksFromProject() {
