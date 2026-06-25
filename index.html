@@ -16064,7 +16064,7 @@ window.aps_clearPhoto = aps_clearPhoto;
     window.aps_applyVoiceAll = aps_applyVoiceAll;
 
   
-}}</script>
+}}}</script>
 
 
 
@@ -23600,6 +23600,35 @@ window.aps_saveSettings=function(){
 })();
 </script>
 <script id="aab-auth-fix">
+// Post-login bootstrap functions (setUser, etc.)
+function setUser(u){
+  window._aabUser=u;
+  if(u){
+    // Restore saved page or go to dashboard
+    var savedPage="";
+    try{savedPage=sessionStorage.getItem("aab_last_page")||"";}catch(e){}
+    var pg=savedPage&&savedPage!=="auth-pg"&&savedPage!=="home"?savedPage:"dashboard-pg";
+    nav(pg);
+    // Reset signing in button
+    var btn=document.getElementById("btn-in");
+    if(btn)btn.textContent="Sign in";
+  }
+}
+// Listen for auth state changes (handles existing session on page load)
+setTimeout(function(){
+  var sp=getSupa();
+  if(sp&&sp.auth){
+    sp.auth.getSession().then(function(r){
+      if(r.data&&r.data.session&&r.data.session.user){
+        var u=r.data.session.user;
+        window._aabUser=u;
+        // Only auto-nav if currently on auth page
+        var onPg=document.getElementById("auth-pg");
+        if(onPg&&onPg.classList.contains("on")){nav("dashboard-pg");}
+      }
+    });
+  }
+},500);
 // Auth functions injected here because main script block (lines 9204-16067) fails to execute
 var _supa = null;
 function getSupa(){if(!_supa&&window.supabase){_supa=supabase.createClient("https://phjlxkyloafogznhyyig.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBoamx4a3lsb2Fmb2d6bmh5eWlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNTcxNDgsImV4cCI6MjA5MDYzMzE0OH0.wI9E9CIHwwFN6d_lgJXwO0_G7J3aq4zesp7eU6TCDiI");}return _supa;}
