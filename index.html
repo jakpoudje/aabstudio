@@ -23504,6 +23504,117 @@ function _init(){
 }
 setTimeout(_init,500);
 
+
+// ── ADDED: Track header right-click menus ─────────────────────────────────
+function wireTrackHeaders(){
+  document.querySelectorAll('.aab-track-row').forEach(function(row){
+    if(row.dataset.rhfw)return;
+    row.dataset.rhfw=1;
+    var hdr=row.querySelector('.aab-track-lbl,.aab-track-header');
+    if(!hdr)return;
+    hdr.addEventListener('contextmenu',function(e){
+      e.preventDefault();
+      var old=document.getElementById('aab-ctx');if(old)old.remove();
+      var nm=row.querySelector('.aab-track-name');
+      var trackName=nm?nm.textContent.trim():'';
+      var track=window.E&&E.tracks?E.tracks.find(function(tr){return trackName.indexOf(tr.name||tr.id)>-1;}):null;
+      var m=document.createElement('div');
+      m.id='aab-ctx';
+      m.style.cssText='position:fixed;z-index:9999;background:#1a2335;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:6px;min-width:160px;box-shadow:0 8px 32px rgba(0,0,0,.7);font-size:12px;font-family:Sora,Inter,sans-serif;';
+      m.style.left=Math.min(e.clientX,window.innerWidth-170)+'px';
+      m.style.top=Math.min(e.clientY,window.innerHeight-160)+'px';
+      function mi(ic,lb,col,fn){var d=document.createElement('div');d.style.cssText='padding:7px 10px;cursor:pointer;border-radius:5px;color:'+(col||'#e2e8f0')+';display:flex;align-items:center;gap:8px;';d.innerHTML='<span>'+ic+'</span><span>'+lb+'</span>';d.onmouseenter=function(){d.style.background='rgba(255,255,255,.07)';};d.onmouseleave=function(){d.style.background='';};d.onclick=function(){m.remove();if(fn)fn();};m.appendChild(d);}
+      function ms(){var s=document.createElement('div');s.style.cssText='height:1px;background:rgba(255,255,255,.07);margin:3px 6px;';m.appendChild(s);}
+      mi('➕','Add Track Above',null,function(){if(typeof E_addTrack==='function')E_addTrack('video');});
+      mi('➕','Add Track Below',null,function(){if(typeof E_addTrack==='function')E_addTrack('video');});
+      ms();
+      if(track){mi('🔇','Mute Track',null,function(){if(typeof E_muteTrack==='function')E_muteTrack(track.id);});}
+      if(track){mi('🔒','Lock Track',null,function(){if(typeof E_lockTrack==='function')E_lockTrack(track.id);});}
+      ms();
+      if(track){mi('🗑','Delete Track','#ef4444',function(){if(typeof E_deleteTrack==='function')E_deleteTrack(track.id);});}
+      document.body.appendChild(m);
+      setTimeout(function(){document.addEventListener('click',function _d(){m.remove();document.removeEventListener('click',_d);},{once:true});},50);
+    });
+  });
+}
+
+// ── ADDED: Video elements fill monitors ────────────────────────────────────
+function fixVideoElements(){
+  ['e-src-vid','e-prog-vid'].forEach(function(id){
+    var v=document.getElementById(id);
+    if(!v)return;
+    v.style.width='100%';v.style.height='100%';
+    v.style.objectFit='contain';v.style.background='#000';v.style.display='block';
+  });
+  // Wire source seek bar
+  var sv=document.getElementById('e-src-vid');
+  var seek=document.getElementById('e-src-seek');
+  if(sv&&seek&&!seek.dataset.fwsk){
+    seek.dataset.fwsk=1;
+    sv.addEventListener('timeupdate',function(){if(sv.duration>0)seek.value=(sv.currentTime/sv.duration)*100;});
+    seek.addEventListener('input',function(){if(sv.duration>0)sv.currentTime=(this.value/100)*sv.duration;});
+    sv.addEventListener('ended',function(){var b=document.getElementById('e-src-play');if(b&&b.textContent==='⏸')b.textContent='▶';});
+  }
+}
+
+// ── ADDED: Playhead positioning ────────────────────────────────────────────
+function fixPlayhead(){
+  var ph=document.getElementById('aab-ph');if(!ph)return;
+  var lane=document.querySelector('.aab-lane');if(!lane)return;
+  var parent=ph.parentElement;if(!parent)return;
+  var correctLeft=Math.round(lane.getBoundingClientRect().left-parent.getBoundingClientRect().left);
+  if(parseInt(ph.style.left||0)!==correctLeft)ph.style.left=correctLeft+'px';
+}
+
+// ── ADDED: Volume controls on ALL audio tracks ─────────────────────────────
+function wireVolumeControls(){
+  var audioTracks=['Main Video','B-Roll','Voice Over','Music','Sound FX'];
+  document.querySelectorAll('.aab-track-row').forEach(function(row){
+    if(row.dataset.volfw)return;
+    var nm=row.querySelector('.aab-track-name');if(!nm)return;
+    var isAudio=audioTracks.some(function(n){return nm.textContent.indexOf(n)>-1;});
+    if(!isAudio)return;
+    row.dataset.volfw=1;
+    var ctrl=row.querySelector('.aab-track-lbl');if(!ctrl||ctrl.querySelector('.aab-vol-ctrl'))return;
+    var wrap=document.createElement('div');
+    wrap.className='aab-vol-ctrl';
+    wrap.style.cssText='display:flex;align-items:center;gap:3px;margin-top:3px;padding:0 2px;';
+    var icon=document.createElement('span');icon.innerHTML='&#128266;';icon.style.cssText='font-size:10px;';
+    var slider=document.createElement('input');slider.type='range';slider.min=0;slider.max=100;slider.value=80;
+    slider.style.cssText='width:52px;height:3px;accent-color:#00d4ff;cursor:pointer;';
+    var val=document.createElement('span');val.textContent='80%';val.style.cssText='font-size:9px;color:#64748b;min-width:22px;';
+    slider.oninput=function(){val.textContent=this.value+'%';var tr=window.E&&E.tracks?E.tracks.find(function(t){return nm.textContent.indexOf(t.name||t.id)>-1;}):null;if(tr)tr.volume=parseInt(this.value)/100;};
+    wrap.appendChild(icon);wrap.appendChild(slider);wrap.appendChild(val);
+    ctrl.appendChild(wrap);
+  });
+}
+
+// ── ADDED: Mic button — neat inline in Voice Over only ─────────────────────
+function wireVOMic(){
+  document.querySelectorAll('.aab-track-row').forEach(function(row){
+    if(row.dataset.micfw)return;
+    var nm=row.querySelector('.aab-track-name');
+    if(!nm||nm.textContent.indexOf('Voice Over')===-1)return;
+    row.dataset.micfw=1;
+    row.querySelectorAll('.aab-mic-btn').forEach(function(b){b.remove();});
+    var ctrl=row.querySelector('.aab-track-lbl');if(!ctrl)return;
+    var btn=document.createElement('button');
+    btn.className='aab-mic-btn';
+    btn.innerHTML='&#127908; Rec';
+    btn.title='Record Voice Over';
+    btn.style.cssText='display:inline-flex;align-items:center;gap:3px;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);border-radius:4px;padding:2px 7px;cursor:pointer;color:#ef4444;font-size:10px;font-weight:600;white-space:nowrap;margin-top:3px;';
+    btn.onclick=function(e){e.stopPropagation();if(typeof E_startVoiceRecord==='function')E_startVoiceRecord();};
+    ctrl.appendChild(btn);
+  });
+}
+
+// Hook additional inits into the existing interval/init pattern
+var _fwOrigInterval=window._fwIntervalAdded;
+if(!_fwOrigInterval){
+  window._fwIntervalAdded=true;
+  setTimeout(function(){wireTrackHeaders();fixVideoElements();fixPlayhead();wireVolumeControls();wireVOMic();},600);
+  setInterval(function(){wireTrackHeaders();fixVideoElements();fixPlayhead();wireVolumeControls();wireVOMic();},1500);
+}
 })();
 </script>
 
