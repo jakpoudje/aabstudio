@@ -24486,6 +24486,157 @@ window.toast=function(msg,type){
 // ── Boot ─────────────────────────────────────────────────────────────────
 setTimeout(apsInitScenes,400);
 console.log('[APS Override v3] All 18 missing functions + sequential queue + scene init');
+
+// ── FIX 1: startSegmentation — implement the broken function ─────────────────
+window.startSegmentation = function(){
+  var titleEl = document.getElementById('proj-title');
+  var title = titleEl ? titleEl.value.trim() : '';
+  if(!title || title === 'My Video') title = (window.PROJECT && PROJECT.title) || 'My Video';
+
+  // Get script content from active tab
+  var upTab = document.getElementById('tab-upload');
+  var paTab = document.getElementById('tab-paste');
+  var script = '';
+  if(upTab && upTab.style.display !== 'none'){
+    script = (document.getElementById('t-extracted')||{}).value || '';
+  } else if(paTab && paTab.style.display !== 'none'){
+    script = (document.getElementById('t-paste')||{}).value || '';
+  } else {
+    script = (document.getElementById('t-write')||{}).value || '';
+  }
+  script = script.trim();
+
+  if(!script || script.length < 20){
+    if(typeof apsNotify==='function') apsNotify('Please write your script first.','warn');
+    else if(typeof toast==='function') toast('Please write your script first.','err');
+    return;
+  }
+  if(!window.PROJECT) window.PROJECT = {};
+  PROJECT.id = PROJECT.id || ('p_'+Date.now());
+  PROJECT.title = title;
+  PROJECT.script = script;
+  PROJECT.updatedAt = new Date().toISOString();
+
+  // Update scenes title display
+  var st = document.getElementById('scenes-title');
+  if(st) st.textContent = title;
+
+  // Parse script into scenes by double-newline
+  var wpm = parseInt((document.getElementById('s-wpm')||{}).textContent||'150') || 150;
+  var dur = parseInt((document.querySelector('.dur-opt.on')||{}).dataset&&(document.querySelector('.dur-opt.on')||{}).dataset.sec||'8') || 8;
+  
+  // Split by paragraph (double newline)
+  var paras = script.split(/\n\s*\n/).map(function(p){return p.trim();}).filter(function(p){return p.length>0;});
+  if(paras.length === 0) paras = [script];
+
+  var types = ['intro','main','main','conclusion'];
+  PROJECT.scenes = paras.map(function(text,i){
+    var wordCount = text.split(/\s+/).length;
+    var sceneDur = Math.max(5, Math.round((wordCount/wpm)*60));
+    return {
+      id: 'sc_'+Date.now()+'_'+i,
+      num: i+1,
+      text: text,
+      narration: text,
+      script: text,
+      type: types[Math.min(i, types.length-1)]||'main',
+      duration: sceneDur,
+      wpm: wpm,
+      apsVideoUrl: ''
+    };
+  });
+  PROJECT.wpm = wpm;
+  PROJECT.status = 'segmented';
+
+  // Save
+  if(typeof ap_save==='function') ap_save(true);
+  else if(typeof saveProject==='function') saveProject();
+
+  // Navigate to scenes
+  if(typeof nav==='function'){
+    nav('scenes-pg');
+    setTimeout(function(){
+      var st2 = document.getElementById('scenes-title');
+      if(st2) st2.textContent = PROJECT.title;
+      if(typeof renderSceneBoard==='function') renderSceneBoard();
+      else if(typeof _aabRenderAPSScenes==='function'){
+        var sl=document.getElementById('scenes-list');
+        if(sl) _aabRenderAPSScenes(sl);
+      }
+    }, 300);
+  }
+};
+
+// ── FIX 2: Project title — update #proj-title + #scenes-title with real PROJECT.title ──
+function fixProjectTitle(){
+  var proj = window.PROJECT;
+  if(!proj) return;
+  var title = proj.title && proj.title !== 'My Video' ? proj.title : null;
+  if(!title) return;
+  var ptEl = document.getElementById('proj-title');
+  var stEl = document.getElementById('scenes-title');
+  if(ptEl && ptEl.value === 'My Video') ptEl.value = title;
+  if(stEl && stEl.textContent === 'My Video') stEl.textContent = title;
+}
+setInterval(fixProjectTitle, 800);
+
+// ── FIX 3: APS clips bar — only show valid generated clips, not stale/test ones ──
+function fixApsClipsBar(){
+  var list = document.getElementById('aps-clips-list');
+  var empty = document.getElementById('aps-clips-empty');
+  var goBtn = document.getElementById('aps-go-edit-btn');
+  if(!list) return;
+
+  // Remove clips with fake/test URLs (less than 100 chars or contains 'test_scene')
+  Array.from(list.children).forEach(function(child){
+    var vid = child.querySelector('video');
+    var url = vid ? vid.src : '';
+    var isReal = url && url.length > 100 && url.indexOf('test_scene') === -1 && url.indexOf('placeholder') === -1;
+    if(!isReal && url) {
+      child.remove();
+    }
+  });
+
+  // Remove our own aps_addClipToBar items that are stale (from previous project)
+  Array.from(list.querySelectorAll('[data-scene-idx]')).forEach(function(child){
+    var vid = child.querySelector('video');
+    var url = vid ? vid.src : (child.dataset.url||'');
+    var isReal = url && url.length > 100 && url.indexOf('test_scene') === -1;
+    if(!isReal) child.remove();
+  });
+
+  var hasReal = list.children.length > 0;
+  if(empty) empty.style.display = hasReal ? 'none' : 'block';
+  if(goBtn) goBtn.style.display = hasReal ? 'inline-flex' : 'none';
+}
+setInterval(fixApsClipsBar, 1000);
+
+// Also clean clips bar when APS first opens
+var _origOpenAPS = window.openAIPresenterStudio || window.openAIPresenter;
+var _apsOpenKey = window.openAIPresenterStudio ? 'openAIPresenterStudio' : 'openAIPresenter';
+if(_apsOpenKey && window[_apsOpenKey]) {
+  var _apsOrigFn = window[_apsOpenKey];
+  window[_apsOpenKey] = function(){
+    // Clear stale clips list before opening
+    setTimeout(fixApsClipsBar, 500);
+    return _apsOrigFn.apply(this, arguments);
+  };
+}
+
+// ── FIX 4: On script page load, update title display ──────────────────────────
+setTimeout(function(){
+  fixProjectTitle();
+  // Also wire title input to update PROJECT live
+  var ptEl = document.getElementById('proj-title');
+  if(ptEl && !ptEl.dataset.titleWired){
+    ptEl.dataset.titleWired = '1';
+    ptEl.addEventListener('input', function(){
+      if(window.PROJECT) PROJECT.title = this.value;
+      var stEl = document.getElementById('scenes-title');
+      if(stEl) stEl.textContent = this.value;
+    });
+  }
+}, 600);
 })();
 </script>
 
