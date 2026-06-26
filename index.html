@@ -24202,295 +24202,147 @@ function authTab(t) {
     }
 </script>
 
+
 <script id="aab-aps-override">
 (function(){
-'use strict';
-
-// ── APS SEQUENTIAL GENERATION OVERRIDE ─────────────────────────────────────
-// Replaces the parallel aps_generateAll with a proper scene-by-scene queue
-
-// Professional notification helper (one at a time, non-spammy)
-function apsNotify(msg, type, duration){
-  var existing = document.getElementById('aps-notify');
-  if(existing) existing.remove();
-  var n = document.createElement('div');
-  n.id = 'aps-notify';
-  var colors = {ok:'#10b981', error:'#ef4444', info:'#00d4ff', warn:'#f59e0b'};
-  var color = colors[type||'info'] || colors.info;
-  n.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:9999;background:#1e293b;border:1px solid '+color+';border-radius:10px;padding:14px 24px;color:#f1f5f9;font-family:Sora,Inter,sans-serif;font-size:13px;font-weight:500;box-shadow:0 8px 32px rgba(0,0,0,.6);display:flex;align-items:center;gap:10px;max-width:500px;';
-  var icons = {ok:'✅', error:'⚠️', info:'ℹ️', warn:'⚠️'};
-  n.innerHTML = '<span style="font-size:16px">'+(icons[type||'info'])+'</span><span>'+msg+'</span>';
+"use strict";
+function ST(){return window._apsState||{};}
+window.apsNotify=function(msg,type,dur){
+  var e=document.getElementById("aps-notify");if(e)e.remove();
+  var n=document.createElement("div");n.id="aps-notify";
+  var colors={ok:"#10b981",error:"#ef4444",info:"#00d4ff",warn:"#f59e0b"};
+  var icons={ok:"✅",error:"⚠️",info:"ℹ️",warn:"⚠️"};
+  var c=colors[type||"info"]||colors.info;
+  n.style.cssText="position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:99999;background:#1e293b;border:1px solid "+c+";border-radius:10px;padding:14px 24px;color:#f1f5f9;font-family:Sora,Inter,sans-serif;font-size:13px;font-weight:500;box-shadow:0 8px 32px rgba(0,0,0,.6);display:flex;align-items:center;gap:10px;max-width:520px;";
+  n.innerHTML="<span style=font-size:16px;flex-shrink:0>"+(icons[type||"info"])+"</span><span>"+msg+"</span>";
   document.body.appendChild(n);
-  if(duration !== 0) setTimeout(function(){ if(n.parentNode) n.remove(); }, duration||5000);
+  if(dur!==0)setTimeout(function(){if(n.parentNode)n.remove();},(dur||6000));
   return n;
-}
-
-// Scene progress UI
-function apsShowProgress(current, total, sceneName){
-  var bar = document.getElementById('aps-progress-bar');
-  if(!bar){
-    bar = document.createElement('div');
-    bar.id = 'aps-progress-bar';
-    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9998;background:#0f172a;border-bottom:1px solid rgba(0,212,255,.2);padding:10px 20px;display:flex;align-items:center;gap:16px;font-family:Sora,Inter,sans-serif;';
-    document.body.appendChild(bar);
-  }
-  var pct = total > 0 ? Math.round((current/total)*100) : 0;
-  bar.innerHTML = '<div style="font-size:12px;color:#64748b;white-space:nowrap">GENERATING</div>'+
-    '<div style="flex:1;background:#1e293b;border-radius:4px;height:6px;overflow:hidden;">'+
-      '<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,#00d4ff,#0ea5e9);border-radius:4px;transition:width .4s;"></div>'+
-    '</div>'+
-    '<div style="font-size:12px;color:#e2e8f0;white-space:nowrap;">Scene '+current+' / '+total+(sceneName?' — <em>'+sceneName+'</em>':'')+'</div>';
-}
-
-function apsHideProgress(){
-  var bar = document.getElementById('aps-progress-bar');
-  if(bar) bar.remove();
-}
-
-// Update scene card in sidebar to show generating/done/error state
-function apsUpdateSceneCard(sceneIndex, state){
-  var cards = document.querySelectorAll('[class*="aps-scene"],[class*="scene-item"],[id*="aps-scene"]');
-  var card = cards[sceneIndex];
-  if(!card) return;
-  var icons = {generating:'⟳', done:'✅', error:'❌', pending:'○'};
-  // Find or create status badge
-  var badge = card.querySelector('.aps-status-badge');
-  if(!badge){
-    badge = document.createElement('span');
-    badge.className = 'aps-status-badge';
-    badge.style.cssText = 'margin-left:6px;font-size:11px;';
-    var title = card.querySelector('[class*="title"],[class*="name"],p,span');
-    if(title) title.appendChild(badge);
-  }
-  var colors = {generating:'#00d4ff', done:'#10b981', error:'#ef4444', pending:'#475569'};
-  badge.textContent = icons[state]||'○';
-  badge.style.color = colors[state]||'#475569';
-  if(state==='generating'){
-    card.style.outline = '2px solid #00d4ff';
-    card.style.background = 'rgba(0,212,255,.05)';
-  } else {
-    card.style.outline = '';
-    card.style.background = '';
-  }
-}
-
-// ── SEQUENTIAL GENERATE ALL ─────────────────────────────────────────────────
-window._apsQueue = [];
-window._apsQueueRunning = false;
-window._apsDoneCallbacks = {};
-
-var _origGenerateAll = window.aps_generateAll;
-window.aps_generateAll = async function(){
-  if(window.APS && APS.generating){
-    apsNotify('Generation already in progress. Please wait.', 'warn');
-    return;
-  }
-  if(!window.APS || !APS.scenes || !APS.scenes.length){
-    apsNotify('No scenes found. Add scenes in your script first.', 'warn');
-    return;
-  }
-  // Check presenter is configured
-  var photoEl = document.getElementById('aps-photo-preview') || document.querySelector('[id*="photo"][src]');
-  var hasChar = window.APS && (APS.photoUrl || APS.characterId || APS.avatarId);
-  var savedChars = document.querySelectorAll('[id*="char-pill"],[class*="char-btn"][class*="selected"]');
-  if(!hasChar && savedChars.length === 0){
-    var providerSel = document.getElementById('aps-provider') || document.querySelector('[id*="provider"]');
-    var providerVal = providerSel ? providerSel.value : '';
-    if(providerVal !== 'heygen_stock'){
-      apsNotify('Please upload a presenter photo or select a saved character before generating.', 'warn');
-      return;
-    }
-  }
-  // Build queue of scenes to generate (all that don't have a valid video)
-  var scenesToGen = APS.scenes.filter(function(s, i){
-    return !s.apsVideoUrl || s.apsVideoUrl.length < 30;
-  });
-  if(!scenesToGen.length){
-    apsNotify('All scenes already have generated videos. Use "Generate Selected" to regenerate specific scenes.', 'info');
-    return;
-  }
-  window._apsQueue = scenesToGen.slice();
-  window._apsQueueIdx = 0;
-  window._apsQueueTotal = scenesToGen.length;
-  window._apsQueueDone = 0;
-  window._apsQueueErrors = 0;
-  if(window.APS) APS.generating = true;
-  apsShowProgress(0, scenesToGen.length, 'Starting...');
-  window._apsRunQueue();
 };
-
-window._apsRunQueue = async function(){
-  if(!window._apsQueue || !window._apsQueue.length){
-    // All done
-    if(window.APS) APS.generating = false;
+window.apsShowProgress=function(done,total,label){
+  var bar=document.getElementById("aps-gen-progress");
+  if(!bar){bar=document.createElement("div");bar.id="aps-gen-progress";bar.style.cssText="position:fixed;top:0;left:0;right:0;z-index:99998;background:#0f172a;border-bottom:1px solid rgba(0,212,255,.25);padding:8px 20px;display:flex;align-items:center;gap:14px;font-family:Sora,Inter,sans-serif;";document.body.appendChild(bar);}
+  var pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
+  bar.innerHTML="<span style=font-size:11px;color:#64748b;letter-spacing:.06em;flex-shrink:0>GENERATING</span>"+
+    "<div style=flex:1;background:#1e293b;border-radius:4px;height:5px;overflow:hidden>"+
+      "<div style=width:"+pct+"%;height:100%;background:linear-gradient(90deg,#00d4ff,#0ea5e9);border-radius:4px;transition:width .5s ease></div>"+
+    "</div>"+
+    "<span style=font-size:12px;color:#e2e8f0;flex-shrink:0>Scene "+done+" of "+total+(label?" — "+label.slice(0,35):"")+"</span>";
+};
+window.apsHideProgress=function(){
+  var bar=document.getElementById("aps-gen-progress");
+  if(bar){bar.style.opacity="0";bar.style.transition="opacity .4s";setTimeout(function(){if(bar.parentNode)bar.remove();},400);}
+};
+window._apsQueue=[];
+window._apsDoneCallbacks={};
+window._apsRunQueue=async function(){
+  if(!window._apsQueue||!window._apsQueue.length){
+    var st=ST();if(st)st.generating=false;
     apsHideProgress();
-    var total = window._apsQueueTotal || 0;
-    var done = window._apsQueueDone || 0;
-    var errors = window._apsQueueErrors || 0;
-    if(errors === 0){
-      apsNotify('All '+done+' scene'+(done!==1?'s':'')+' generated successfully. Click "Open in Edit Suite" to continue.', 'ok', 8000);
-    } else if(done > 0){
-      apsNotify(done+' scene'+(done!==1?'s':'')+' generated, '+errors+' failed. Check failed scenes and retry.', 'warn', 8000);
-    } else {
-      apsNotify('Generation failed. Check your credits and presenter settings, then try again.', 'error', 8000);
-    }
+    var done2=window._apsQueueDone||0,errs=window._apsQueueErrors||0;
+    if(errs===0&&done2>0)apsNotify("All "+done2+" scene"+(done2!==1?"s":"")+" generated. Open the Edit Suite to review and export.","ok",9000);
+    else if(done2>0)apsNotify(done2+" scene"+(done2!==1?"s":"")+" generated, "+errs+" failed. Retry the failed scenes.","warn",9000);
+    else apsNotify("Generation failed. Check your credits and presenter settings.","error",9000);
     return;
   }
-  var scene = window._apsQueue.shift();
-  var sceneIdx = APS.scenes.indexOf(scene);
-  var queuePos = (window._apsQueueTotal||0) - (window._apsQueue.length+1) + 1;
-  apsShowProgress(queuePos, window._apsQueueTotal||1, scene.narration ? scene.narration.slice(0,40) : 'Scene '+(sceneIdx+1));
-  apsUpdateSceneCard(sceneIdx, 'generating');
-  // Set APS current scene and generate
-  if(window.APS) APS.currentScene = sceneIdx;
-  if(typeof _apsSelectScene === 'function') _apsSelectScene(sceneIdx);
-  // Store callback for when this scene finishes
-  var sceneId = scene.id || ('scene_'+sceneIdx);
-  window._apsDoneCallbacks[sceneId] = function(success, errorMsg){
-    if(success){
-      window._apsQueueDone = (window._apsQueueDone||0)+1;
-      apsUpdateSceneCard(sceneIdx, 'done');
-    } else {
-      window._apsQueueErrors = (window._apsQueueErrors||0)+1;
-      apsUpdateSceneCard(sceneIdx, 'error');
-    }
-    // Continue with next scene in queue
-    setTimeout(window._apsRunQueue, 500);
+  var sd=window._apsQueue.shift();
+  var st=ST();
+  var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
+  var idx=sd._queueIdx!=null?sd._queueIdx:scenes.indexOf(sd);
+  if(idx<0)idx=0;
+  var qPos=(window._apsQueueTotal||1)-(window._apsQueue.length+1)+1;
+  var label=(sd.narration||sd.text||("Scene "+(idx+1))).slice(0,40);
+  apsShowProgress(qPos-1,window._apsQueueTotal||1,label);
+  if(st)st.currentIdx=idx;
+  if(typeof _apsSelectScene==="function")_apsSelectScene(idx);
+  var sceneId=sd.id||sd.num||("idx_"+idx);
+  window._apsDoneCallbacks[sceneId]=function(ok2){
+    apsShowProgress(qPos,window._apsQueueTotal||1,ok2?"✅ Done":"❌ Failed");
+    if(ok2)window._apsQueueDone=(window._apsQueueDone||0)+1;
+    else window._apsQueueErrors=(window._apsQueueErrors||0)+1;
+    setTimeout(window._apsRunQueue,600);
   };
-  // Call the native generator
-  try {
-    if(typeof _apsGenerateScene === 'function') await _apsGenerateScene(sceneIdx);
-    // If _apsGenerateScene doesn't call the done callback (polling-based), set a safety timeout
-    // The real completion comes via the polling mechanism in _apsSceneDone
-  } catch(err){
-    var sceneId2 = scene.id || ('scene_'+sceneIdx);
-    if(window._apsDoneCallbacks[sceneId2]) window._apsDoneCallbacks[sceneId2](false, err.message);
+  try{if(typeof _apsGenerateScene==="function")await _apsGenerateScene(idx);}
+  catch(err){
+    apsNotify("Scene "+(idx+1)+" error: "+(err.message||"Unknown error"),"error");
+    var cb=window._apsDoneCallbacks[sceneId];
+    if(cb){delete window._apsDoneCallbacks[sceneId];cb(false);}
   }
 };
-
-// ── WRAP _apsSceneDone TO REMOVE TOAST SPAM AND TRIGGER NEXT SCENE ─────────
-var _origSceneDone = window._apsSceneDone;
-window._apsSceneDone = function(sceneIdx, success, errorMsg){
-  // Call original (stores URL, updates APS state)
-  if(typeof _origSceneDone === 'function') _origSceneDone.apply(this, arguments);
-  // Suppress the individual scene toast — we handle notifications holistically
-  // Trigger the queue callback
-  var scene = window.APS && APS.scenes ? APS.scenes[sceneIdx] : null;
-  var sceneId = scene ? (scene.id || ('scene_'+sceneIdx)) : ('scene_'+sceneIdx);
-  if(window._apsDoneCallbacks && window._apsDoneCallbacks[sceneId]){
-    var cb = window._apsDoneCallbacks[sceneId];
-    delete window._apsDoneCallbacks[sceneId];
-    cb(success !== false, errorMsg);
-  }
-};
-
-// ── ADD MISSING PARAMS TO _apsGenerateScene ─────────────────────────────────
-// Intercept by wrapping — adds aspect_ratio, background, motion before the API call
-var _origGenerateScene = window._apsGenerateScene;
-window._apsGenerateScene = async function(sceneIdx){
-  // Read the extra params from the APS UI
-  var aspectSel = document.getElementById('aps-aspect') || document.querySelector('[id*="aspect"],[name*="aspect"]');
-  var bgInput = document.getElementById('aps-bg-color') || document.querySelector('[id*="bg-color"],[id*="background"]');
-  var motionSel = document.getElementById('aps-motion') || document.querySelector('[id*="motion"]');
-  // Store in APS for the original function to pick up
-  if(window.APS){
-    if(aspectSel && aspectSel.value) APS._pendingAspect = aspectSel.value;
-    if(bgInput && bgInput.value) APS._pendingBg = bgInput.value;
-    if(motionSel && motionSel.value) APS._pendingMotion = motionSel.value;
-  }
-  return typeof _origGenerateScene==='function' ? _origGenerateScene.apply(this, arguments) : null;
-};
-
-// ── GENERATE SELECTED — also make sequential ────────────────────────────────
-var _origGenSelected = window.aps_generateSelected;
-window.aps_generateSelected = async function(){
-  if(window.APS && APS.generating){
-    apsNotify('Generation already in progress. Please wait.', 'warn'); return;
-  }
-  if(!window.APS || !APS.scenes) return;
-  // Find checked/selected scenes
-  var selected = APS.scenes.filter(function(s){ return s._selected || s.selected; });
-  if(!selected.length){
-    apsNotify('No scenes selected. Click scene checkboxes to select them.', 'info'); return;
-  }
-  // Use the queue mechanism
-  window._apsQueue = selected.slice();
-  window._apsQueueIdx = 0;
-  window._apsQueueTotal = selected.length;
-  window._apsQueueDone = 0;
-  window._apsQueueErrors = 0;
-  if(window.APS) APS.generating = true;
-  apsShowProgress(0, selected.length, 'Starting...');
+window.aps_generateAll=async function(){
+  var st=ST();
+  if(st&&st.generating){apsNotify("Generation already running. Please wait.","warn");return;}
+  var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
+  if(!scenes.length){apsNotify("No scenes found. Create your script first.","warn");return;}
+  var toGen=scenes.filter(function(s){return !s.apsVideoUrl||s.apsVideoUrl.length<20;});
+  toGen.forEach(function(s){s._queueIdx=scenes.indexOf(s);});
+  if(!toGen.length){apsNotify("All scenes already generated. Use Generate Selected to re-generate specific scenes.","info");return;}
+  window._apsQueue=toGen.slice();
+  window._apsQueueTotal=toGen.length;
+  window._apsQueueDone=0;
+  window._apsQueueErrors=0;
+  if(st)st.generating=true;
+  apsShowProgress(0,toGen.length,"Starting...");
   window._apsRunQueue();
 };
-
-// ── GENERATE CURRENT SCENE ──────────────────────────────────────────────────
-var _origGenCurrent = window.aps_generateCurrent;
-window.aps_generateCurrent = async function(){
-  if(!window.APS || APS.currentScene == null) return;
-  var idx = APS.currentScene;
-  var scene = APS.scenes ? APS.scenes[idx] : null;
-  if(!scene) return;
-  window._apsQueue = [scene];
-  window._apsQueueTotal = 1;
-  window._apsQueueDone = 0;
-  window._apsQueueErrors = 0;
-  if(window.APS) APS.generating = true;
-  apsShowProgress(0, 1, scene.narration ? scene.narration.slice(0,40) : 'Scene '+(idx+1));
+window.aps_generateSelected=async function(){
+  var st=ST();
+  if(st&&st.generating){apsNotify("Generation already running.","warn");return;}
+  var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
+  var sel=scenes.filter(function(s){return s._selected||s.selected||s._checked;});
+  if(!sel.length){apsNotify("No scenes selected. Click the scene checkboxes to select them.","info");return;}
+  sel.forEach(function(s){s._queueIdx=scenes.indexOf(s);});
+  window._apsQueue=sel.slice();
+  window._apsQueueTotal=sel.length;
+  window._apsQueueDone=0;
+  window._apsQueueErrors=0;
+  if(st)st.generating=true;
+  apsShowProgress(0,sel.length,"Starting...");
   window._apsRunQueue();
 };
-
-// ── PROFESSIONAL aps_goToEditSuite ─────────────────────────────────────────
-// Ensure all generated scenes pass their URLs to the edit suite timeline
-var _origGoToEdit = window.aps_goToEditSuite;
-window.aps_goToEditSuite = function(){
-  if(!window.APS || !APS.scenes){
-    apsNotify('No scenes available to send to edit suite.', 'warn'); return;
-  }
-  var readyScenes = APS.scenes.filter(function(s){ return s.apsVideoUrl && s.apsVideoUrl.length > 30; });
-  if(!readyScenes.length){
-    apsNotify('No generated videos yet. Generate scenes first, then open the edit suite.', 'warn'); return;
-  }
-  // Call original to do the actual handoff
-  if(typeof _origGoToEdit === 'function') _origGoToEdit.apply(this, arguments);
-  // Additionally ensure clips are in E.tracks properly
-  setTimeout(function(){
-    if(!window.E || !E.tracks) return;
-    var mt = E.tracks.find(function(tr){return tr.id==='main';});
-    if(!mt) return;
-    var existingIds = mt.clips.map(function(c){return c.id;});
-    var t2 = mt.clips.reduce(function(mx,c){return Math.max(mx,(c.start||0)+(c.duration||0));},0);
-    var added = 0;
-    readyScenes.forEach(function(s){
-      var id = 'aps_'+s.id;
-      if(existingIds.indexOf(id) > -1) return; // already there
-      mt.clips.push({id:id, name:s.narration?s.narration.slice(0,30):'Scene '+(s.num||''), url:s.apsVideoUrl, start:t2, duration:s.duration||8, type:'video'});
-      t2 += (s.duration||8);
-      added++;
-    });
-    if(added > 0){
-      if(typeof E_renderTL==='function') E_renderTL();
-      if(typeof saveProject==='function') setTimeout(saveProject, 500);
-      apsNotify(added+' scene'+(added!==1?'s':'')+' added to your edit suite timeline.', 'ok');
-    }
-  }, 800);
+window.aps_generateCurrent=async function(){
+  var st=ST();
+  if(st&&st.generating){apsNotify("Generation already running.","warn");return;}
+  var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
+  var idx=st.currentIdx!=null?st.currentIdx:0;
+  var scene=scenes[idx];if(!scene)return;
+  scene._queueIdx=idx;
+  window._apsQueue=[scene];
+  window._apsQueueTotal=1;
+  window._apsQueueDone=0;
+  window._apsQueueErrors=0;
+  if(st)st.generating=true;
+  apsShowProgress(0,1,(scene.narration||scene.text||"Scene "+(idx+1)).slice(0,40));
+  window._apsRunQueue();
 };
-
-// ── CREDITS CHECK BEFORE GENERATION ────────────────────────────────────────
-// Intercept the generate button to check credits and provider
-document.addEventListener('click', function(e){
-  var btn = e.target.closest('[onclick*="aps_generate"],[id*="aps-gen"],[class*="aps-gen"]');
-  if(!btn) return;
-  // Check provider selection
-  var provSel = document.getElementById('aps-provider') || document.querySelector('[id*="aps-provider"],[name*="provider"]');
-  if(provSel){
-    var prov = provSel.value || '';
-    // Just let it proceed — the backend will return an error if credits are exhausted
-    // We handle that in the error callback
-  }
-}, true);
-
-console.log('[APS Override] Sequential generation + professional UI loaded');
+var _origSceneDone=window._apsSceneDone;
+window._apsSceneDone=function(sceneIdx,videoUrl,err){
+  if(typeof _origSceneDone==="function")_origSceneDone.apply(this,arguments);
+  var st=ST();
+  var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
+  var scene=scenes[sceneIdx];
+  var sceneId=scene?(scene.id||scene.num||("idx_"+sceneIdx)):("idx_"+sceneIdx);
+  var success=!!(videoUrl&&videoUrl.length>20);
+  var cb=window._apsDoneCallbacks&&window._apsDoneCallbacks[sceneId];
+  if(cb){delete window._apsDoneCallbacks[sceneId];cb(success);}
+};
+var _origGoEdit=window.aps_goToEditSuite;
+window.aps_goToEditSuite=function(){
+  var st=ST();
+  var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
+  var ready=scenes.filter(function(s){return s.apsVideoUrl&&s.apsVideoUrl.length>20;});
+  if(!ready.length){apsNotify("No generated videos yet. Generate scenes first.","warn");return;}
+  if(typeof _loadApsIntoTL==="function"){_loadApsIntoTL();
+  }else if(typeof _origGoEdit==="function"){_origGoEdit.apply(this,arguments);}
+  apsNotify(ready.length+" scene"+(ready.length!==1?"s":"")+" sent to Edit Suite.","ok",6000);
+};
+var _origToast=window.toast;
+window.toast=function(msg,type){
+  var st=ST();
+  if(st&&st.generating&&msg&&(msg.indexOf("Generat")>-1||msg.indexOf("scene")>-1||msg.indexOf("video")>-1||msg.indexOf("Done")>-1))return;
+  if(typeof _origToast==="function")_origToast.apply(this,arguments);
+};
+console.log("[APS Override v2] Sequential generation + professional UI loaded");
 })();
 </script>
 </body>
