@@ -24203,148 +24203,326 @@ function authTab(t) {
 </script>
 
 
+
 <script id="aab-aps-override">
 (function(){
-"use strict";
-function ST(){return window._apsState||{};}
+'use strict';
+
+// ── STATE ACCESSOR ────────────────────────────────────────────────────────
+function ST(){return window._apsState||(window._apsState={currentIdx:0,scenes:[],generating:false});}
+
+// ── PROFESSIONAL NOTIFICATION ─────────────────────────────────────────────
 window.apsNotify=function(msg,type,dur){
-  var e=document.getElementById("aps-notify");if(e)e.remove();
-  var n=document.createElement("div");n.id="aps-notify";
-  var colors={ok:"#10b981",error:"#ef4444",info:"#00d4ff",warn:"#f59e0b"};
-  var icons={ok:"✅",error:"⚠️",info:"ℹ️",warn:"⚠️"};
-  var c=colors[type||"info"]||colors.info;
-  n.style.cssText="position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:99999;background:#1e293b;border:1px solid "+c+";border-radius:10px;padding:14px 24px;color:#f1f5f9;font-family:Sora,Inter,sans-serif;font-size:13px;font-weight:500;box-shadow:0 8px 32px rgba(0,0,0,.6);display:flex;align-items:center;gap:10px;max-width:520px;";
-  n.innerHTML="<span style=font-size:16px;flex-shrink:0>"+(icons[type||"info"])+"</span><span>"+msg+"</span>";
+  var e=document.getElementById('aps-notify');if(e)e.remove();
+  var n=document.createElement('div');n.id='aps-notify';
+  var colors={ok:'#10b981',error:'#ef4444',info:'#00d4ff',warn:'#f59e0b'};
+  var icons={ok:'\u2705',error:'\u26A0\uFE0F',info:'\u2139\uFE0F',warn:'\u26A0\uFE0F'};
+  var c=colors[type||'info']||colors.info;
+  n.style.cssText='position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:99999;background:#1e293b;border:1px solid '+c+';border-radius:10px;padding:14px 24px;color:#f1f5f9;font-family:Sora,Inter,sans-serif;font-size:13px;font-weight:500;box-shadow:0 8px 32px rgba(0,0,0,.6);display:flex;align-items:center;gap:10px;max-width:520px;';
+  n.innerHTML='<span style="font-size:16px;flex-shrink:0">'+(icons[type||'info'])+'</span><span>'+msg+'</span>';
   document.body.appendChild(n);
   if(dur!==0)setTimeout(function(){if(n.parentNode)n.remove();},(dur||6000));
   return n;
 };
+
+// ── SCENE PROGRESS BAR ────────────────────────────────────────────────────
 window.apsShowProgress=function(done,total,label){
-  var bar=document.getElementById("aps-gen-progress");
-  if(!bar){bar=document.createElement("div");bar.id="aps-gen-progress";bar.style.cssText="position:fixed;top:0;left:0;right:0;z-index:99998;background:#0f172a;border-bottom:1px solid rgba(0,212,255,.25);padding:8px 20px;display:flex;align-items:center;gap:14px;font-family:Sora,Inter,sans-serif;";document.body.appendChild(bar);}
+  var bar=document.getElementById('aps-gen-progress');
+  if(!bar){bar=document.createElement('div');bar.id='aps-gen-progress';
+    bar.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99998;background:#0f172a;border-bottom:1px solid rgba(0,212,255,.25);padding:8px 20px;display:flex;align-items:center;gap:14px;font-family:Sora,Inter,sans-serif;';
+    document.body.appendChild(bar);}
   var pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
-  bar.innerHTML="<span style=font-size:11px;color:#64748b;letter-spacing:.06em;flex-shrink:0>GENERATING</span>"+
-    "<div style=flex:1;background:#1e293b;border-radius:4px;height:5px;overflow:hidden>"+
-      "<div style=width:"+pct+"%;height:100%;background:linear-gradient(90deg,#00d4ff,#0ea5e9);border-radius:4px;transition:width .5s ease></div>"+
-    "</div>"+
-    "<span style=font-size:12px;color:#e2e8f0;flex-shrink:0>Scene "+done+" of "+total+(label?" — "+label.slice(0,35):"")+"</span>";
+  bar.innerHTML='<span style="font-size:11px;color:#64748b;letter-spacing:.06em;flex-shrink:0">GENERATING</span>'+
+    '<div style="flex:1;background:#1e293b;border-radius:4px;height:5px;overflow:hidden">'+
+      '<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,#00d4ff,#0ea5e9);border-radius:4px;transition:width .5s ease"></div>'+
+    '</div>'+
+    '<span style="font-size:12px;color:#e2e8f0;flex-shrink:0">Scene '+done+' of '+total+(label?' \u2014 '+label.slice(0,35):'')+'</span>';
 };
 window.apsHideProgress=function(){
-  var bar=document.getElementById("aps-gen-progress");
-  if(bar){bar.style.opacity="0";bar.style.transition="opacity .4s";setTimeout(function(){if(bar.parentNode)bar.remove();},400);}
+  var bar=document.getElementById('aps-gen-progress');
+  if(bar){bar.style.opacity='0';bar.style.transition='opacity .4s';setTimeout(function(){if(bar.parentNode)bar.remove();},400);}
 };
-window._apsQueue=[];
-window._apsDoneCallbacks={};
+
+// ── INIT: Populate _apsState.scenes from PROJECT.scenes ───────────────────
+function apsInitScenes(){
+  var st=ST();
+  if(st.scenes&&st.scenes.length>0)return;
+  var src=window.PROJECT&&PROJECT.scenes?PROJECT.scenes:[];
+  if(!src.length){setTimeout(apsInitScenes,500);return;}
+  st.scenes=src.map(function(s,i){
+    return {id:s.id||('s'+i),num:i+1,narration:s.script||s.narration||s.text||'',
+      duration:s.duration||8,apsVideoUrl:s.apsVideoUrl||'',_selected:false,type:s.type||'main'};
+  });
+  console.log('[APS] Initialized',st.scenes.length,'scenes from PROJECT');
+}
+
+// ── aps_selectScene ───────────────────────────────────────────────────────
+window.aps_selectScene=function(idx){
+  var st=ST();st.currentIdx=idx;
+  if(typeof _apsSelectScene==='function')_apsSelectScene(idx);
+};
+
+// ── aps_selectAll / aps_filterScenes ─────────────────────────────────────
+window.aps_selectAll=function(all){
+  var st=ST();
+  if(st.scenes)st.scenes.forEach(function(s){s._selected=!!all;});
+  document.querySelectorAll('[class*=aps-check],[class*=scene-check]').forEach(function(cb){if(cb.type==='checkbox')cb.checked=!!all;});
+};
+window.aps_filterScenes=function(filter){
+  var st=ST();
+  if(!st.scenes)return;
+  var q=document.getElementById('aps-search')||document.querySelector('[id*=aps-search]');
+  var term=q?q.value.toLowerCase():'';
+  var rows=document.querySelectorAll('[class*=aps-scene-item],[class*=scene-card],[class*=aps-scene-row]');
+  rows.forEach(function(row,i){
+    var s=st.scenes[i];
+    if(!s){row.style.display='';return;}
+    var matchSearch=!term||s.narration.toLowerCase().indexOf(term)>-1;
+    var matchFilter=filter==='all'||(filter==='none'&&!s.apsVideoUrl)||(filter==='failed'&&s._failed);
+    row.style.display=(matchSearch&&matchFilter)?'':'none';
+  });
+};
+
+// ── aps_setBg: set background ─────────────────────────────────────────────
+window.aps_setBg=function(bgName,imgUrl){
+  var st=ST();
+  var scene=st.scenes&&st.scenes[st.currentIdx];
+  if(scene){scene.background=bgName;scene.backgroundUrl=imgUrl||'';}
+  var lock=document.querySelector('[id*=lock-bg],[name*=lock]');
+  if(lock&&lock.checked&&st.scenes)st.scenes.forEach(function(s){s.background=bgName;s.backgroundUrl=imgUrl||'';});
+  document.querySelectorAll('[onclick*=aps_setBg]').forEach(function(btn){
+    var oc=btn.getAttribute('onclick')||'';
+    btn.style.outline=oc.indexOf(bgName)>-1?'2px solid #00d4ff':'';
+    btn.style.background=oc.indexOf(bgName)>-1?'rgba(0,212,255,.12)':'';
+  });
+};
+window.aps_triggerCustomBg=function(){
+  var inp=document.createElement('input');inp.type='file';inp.accept='image/*';
+  inp.onchange=function(){
+    var f=inp.files[0];if(!f)return;
+    var r=new FileReader();r.onload=function(e){aps_setBg('custom',e.target.result);};r.readAsDataURL(f);
+  };inp.click();
+};
+window.aps_loadCustomBg=window.aps_triggerCustomBg;
+
+// ── aps_previewVoice: preview voice with SpeechSynthesis ─────────────────
+window.aps_previewVoice=function(voiceId,voiceName){
+  if(window.speechSynthesis){
+    window.speechSynthesis.cancel();
+    var u=new SpeechSynthesisUtterance('Hello, this is a preview of your selected voice.');
+    var voices=window.speechSynthesis.getVoices();
+    var match=voices.find(function(v){return v.name.toLowerCase().indexOf((voiceName||'').toLowerCase())>-1;});
+    if(match)u.voice=match;
+    window.speechSynthesis.speak(u);
+  }
+  apsNotify('Previewing: '+(voiceName||voiceId||'selected voice'),'info',2500);
+};
+
+// ── aps_updateVoiceList / aps_applyVoiceAll ───────────────────────────────
+window.aps_updateVoiceList=function(provider){
+  if(typeof aps_onProviderChange==='function')aps_onProviderChange(provider||(document.getElementById('aps-provider')||{}).value||'heygen');
+};
+window.aps_applyVoiceAll=function(){
+  var sel=document.getElementById('aps-voice-sel')||document.querySelector('select[id*=voice]');
+  if(!sel||!sel.value)return;
+  var st=ST();if(st.scenes)st.scenes.forEach(function(s){s.voice=sel.value;});
+  apsNotify('Voice applied to all scenes','ok',2500);
+};
+
+// ── aps_clearPhoto / aps_presenter_photo ─────────────────────────────────
+window.aps_clearPhoto=function(){
+  var p=document.getElementById('aps-photo-preview')||document.querySelector('[id*=photo-preview]');
+  if(p){p.src='';p.style.display='none';}
+  var st=ST();if(st.photoUrl)delete st.photoUrl;
+};
+window.aps_presenter_photo=function(){if(typeof aps_loadPhoto==='function')aps_loadPhoto();};
+
+// ── aps_updateSceneRow: update sidebar scene card status ──────────────────
+window.aps_updateSceneRow=function(idx,status,videoUrl){
+  var rows=document.querySelectorAll('[class*=aps-scene-item],[class*=scene-card],[class*=aps-scene-row]');
+  var row=rows[idx];if(!row)return;
+  var badge=row.querySelector('.aps-status-badge');
+  if(!badge){
+    badge=document.createElement('span');badge.className='aps-status-badge';
+    badge.style.cssText='margin-left:4px;font-size:11px;';
+    var nm=row.querySelector('p,span,[class*=title],[class*=text]');
+    if(nm)nm.appendChild(badge);
+  }
+  var icons={generating:'\u23F3',done:'\u2705',error:'\u274C'};
+  badge.textContent=icons[status]||'';
+  row.style.outline=status==='generating'?'2px solid #00d4ff':status==='done'?'1px solid #10b981':status==='error'?'1px solid #ef4444':'';
+  row.style.background=status==='generating'?'rgba(0,212,255,.06)':'';
+};
+
+// ── aps_updateProgress ────────────────────────────────────────────────────
+window.aps_updateProgress=function(done,total,label){if(typeof apsShowProgress==='function')apsShowProgress(done,total,label);};
+
+// ── aps_addClipToBar: add generated clip thumbnail to bottom bar ──────────
+window.aps_addClipToBar=function(idx,videoUrl,sceneName){
+  var bar=document.getElementById('aps-clips-bar')||document.querySelector('[id*=aps-clips],[class*=aps-clips],[class*=generated-clips]');
+  if(!bar)return;
+  // Remove placeholder text
+  var placeholder=bar.querySelector('[class*=placeholder],[class*=empty]');
+  if(placeholder)placeholder.style.display='none';
+  var existing=bar.querySelector('[data-scene-idx="'+idx+'"]');
+  if(existing)existing.remove();
+  var wrap=document.createElement('div');
+  wrap.dataset.sceneIdx=idx;
+  wrap.style.cssText='display:inline-flex;flex-direction:column;align-items:center;gap:4px;padding:6px;background:#1e293b;border-radius:8px;cursor:pointer;border:1px solid rgba(255,255,255,.08);min-width:80px;flex-shrink:0;';
+  var vid=document.createElement('video');
+  vid.src=videoUrl;vid.muted=false;vid.volume=1;
+  vid.style.cssText='width:70px;height:42px;object-fit:cover;border-radius:4px;background:#000;';
+  var lbl=document.createElement('span');
+  lbl.textContent=(sceneName||('Scene '+(idx+1))).slice(0,10);
+  lbl.style.cssText='font-size:9px;color:#94a3b8;text-align:center;white-space:nowrap;';
+  wrap.appendChild(vid);wrap.appendChild(lbl);
+  wrap.onclick=function(){
+    var sv=document.getElementById('e-src-vid')||document.getElementById('aab-src-vid');
+    if(sv){sv.src=videoUrl;sv.muted=false;sv.volume=1;sv.style.display='block';sv.load();sv.play().catch(function(){});}
+  };
+  bar.appendChild(wrap);
+};
+
+// ── aps_showSceneImagePreview ─────────────────────────────────────────────
+window.aps_showSceneImagePreview=function(imgUrl){
+  var p=document.getElementById('aps-preview-img')||document.querySelector('.aps-preview-img');
+  if(p&&imgUrl){p.src=imgUrl;p.style.display='block';}
+};
+
+// ── aps_regenerateScene / aps_regenerateCurrent ───────────────────────────
+window.aps_regenerateScene=function(idx){
+  var st=ST();if(st.generating){apsNotify('Generation already running.','warn');return;}
+  var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
+  var scene=scenes[idx];if(!scene)return;
+  scene._queueIdx=idx;scene.apsVideoUrl=''; // clear old URL to force regeneration
+  window._apsQueue=[scene];window._apsQueueTotal=1;window._apsQueueDone=0;window._apsQueueErrors=0;
+  st.generating=true;
+  apsShowProgress(0,1,(scene.narration||'Scene '+(idx+1)).slice(0,40));
+  window._apsRunQueue();
+};
+window.aps_regenerateCurrent=function(){var st=ST();aps_regenerateScene(st.currentIdx||0);};
+
+// ── aps_stopQueue ─────────────────────────────────────────────────────────
+window.aps_stopQueue=function(){
+  window._apsQueue=[];window._apsDoneCallbacks={};
+  var st=ST();st.generating=false;
+  apsHideProgress();
+  apsNotify('Generation stopped.','info',3000);
+};
+
+// ── Sequential queue ──────────────────────────────────────────────────────
+window._apsQueue=[];window._apsDoneCallbacks={};
+
 window._apsRunQueue=async function(){
   if(!window._apsQueue||!window._apsQueue.length){
-    var st=ST();if(st)st.generating=false;
-    apsHideProgress();
-    var done2=window._apsQueueDone||0,errs=window._apsQueueErrors||0;
-    if(errs===0&&done2>0)apsNotify("All "+done2+" scene"+(done2!==1?"s":"")+" generated. Open the Edit Suite to review and export.","ok",9000);
-    else if(done2>0)apsNotify(done2+" scene"+(done2!==1?"s":"")+" generated, "+errs+" failed. Retry the failed scenes.","warn",9000);
-    else apsNotify("Generation failed. Check your credits and presenter settings.","error",9000);
+    var st=ST();st.generating=false;apsHideProgress();
+    var d=window._apsQueueDone||0,e=window._apsQueueErrors||0;
+    if(e===0&&d>0)apsNotify('All '+d+' scene'+(d!==1?'s':'')+' generated. Open Edit Suite to continue.','ok',9000);
+    else if(d>0)apsNotify(d+' generated, '+e+' failed. Check failed scenes and retry.','warn',9000);
+    else apsNotify('Generation failed. Check your credits and presenter settings.','error',9000);
     return;
   }
   var sd=window._apsQueue.shift();
   var st=ST();
   var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
-  var idx=sd._queueIdx!=null?sd._queueIdx:scenes.indexOf(sd);
-  if(idx<0)idx=0;
+  var idx=sd._queueIdx!=null?sd._queueIdx:scenes.indexOf(sd);if(idx<0)idx=0;
   var qPos=(window._apsQueueTotal||1)-(window._apsQueue.length+1)+1;
-  var label=(sd.narration||sd.text||("Scene "+(idx+1))).slice(0,40);
+  var label=(sd.narration||sd.text||'Scene '+(idx+1)).slice(0,40);
   apsShowProgress(qPos-1,window._apsQueueTotal||1,label);
-  if(st)st.currentIdx=idx;
-  if(typeof _apsSelectScene==="function")_apsSelectScene(idx);
-  var sceneId=sd.id||sd.num||("idx_"+idx);
-  window._apsDoneCallbacks[sceneId]=function(ok2){
-    apsShowProgress(qPos,window._apsQueueTotal||1,ok2?"✅ Done":"❌ Failed");
-    if(ok2)window._apsQueueDone=(window._apsQueueDone||0)+1;
+  aps_updateSceneRow(idx,'generating','');
+  st.currentIdx=idx;
+  if(typeof _apsSelectScene==='function')_apsSelectScene(idx);
+  var sceneId=sd.id||sd.num||('idx_'+idx);
+  window._apsDoneCallbacks[sceneId]=function(ok2,url){
+    apsShowProgress(qPos,window._apsQueueTotal||1,ok2?'\u2705 Done':'\u274C Failed');
+    aps_updateSceneRow(idx,ok2?'done':'error',url||'');
+    if(ok2){window._apsQueueDone=(window._apsQueueDone||0)+1;if(url)aps_addClipToBar(idx,url,label);}
     else window._apsQueueErrors=(window._apsQueueErrors||0)+1;
     setTimeout(window._apsRunQueue,600);
   };
-  try{if(typeof _apsGenerateScene==="function")await _apsGenerateScene(idx);}
+  try{if(typeof _apsGenerateScene==='function')await _apsGenerateScene(idx);}
   catch(err){
-    apsNotify("Scene "+(idx+1)+" error: "+(err.message||"Unknown error"),"error");
+    apsNotify('Scene '+(idx+1)+' error: '+(err.message||'Unknown error'),'error');
     var cb=window._apsDoneCallbacks[sceneId];
-    if(cb){delete window._apsDoneCallbacks[sceneId];cb(false);}
+    if(cb){delete window._apsDoneCallbacks[sceneId];cb(false,'');}
   }
 };
+
+// ── Generate All/Selected/Current ─────────────────────────────────────────
 window.aps_generateAll=async function(){
-  var st=ST();
-  if(st&&st.generating){apsNotify("Generation already running. Please wait.","warn");return;}
+  apsInitScenes();
+  var st=ST();if(st.generating){apsNotify('Generation already running.','warn');return;}
   var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
-  if(!scenes.length){apsNotify("No scenes found. Create your script first.","warn");return;}
+  if(!scenes.length){apsNotify('No scenes found. Create your script first.','warn');return;}
   var toGen=scenes.filter(function(s){return !s.apsVideoUrl||s.apsVideoUrl.length<20;});
   toGen.forEach(function(s){s._queueIdx=scenes.indexOf(s);});
-  if(!toGen.length){apsNotify("All scenes already generated. Use Generate Selected to re-generate specific scenes.","info");return;}
-  window._apsQueue=toGen.slice();
-  window._apsQueueTotal=toGen.length;
-  window._apsQueueDone=0;
-  window._apsQueueErrors=0;
-  if(st)st.generating=true;
-  apsShowProgress(0,toGen.length,"Starting...");
-  window._apsRunQueue();
+  if(!toGen.length){apsNotify('All scenes already have videos. Use regenerate to redo specific scenes.','info');return;}
+  window._apsQueue=toGen.slice();window._apsQueueTotal=toGen.length;window._apsQueueDone=0;window._apsQueueErrors=0;
+  st.generating=true;apsShowProgress(0,toGen.length,'Starting...');window._apsRunQueue();
 };
+
 window.aps_generateSelected=async function(){
-  var st=ST();
-  if(st&&st.generating){apsNotify("Generation already running.","warn");return;}
+  apsInitScenes();
+  var st=ST();if(st.generating){apsNotify('Generation already running.','warn');return;}
   var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
   var sel=scenes.filter(function(s){return s._selected||s.selected||s._checked;});
-  if(!sel.length){apsNotify("No scenes selected. Click the scene checkboxes to select them.","info");return;}
+  if(!sel.length){apsNotify('Select scenes first using the checkboxes.','info');return;}
   sel.forEach(function(s){s._queueIdx=scenes.indexOf(s);});
-  window._apsQueue=sel.slice();
-  window._apsQueueTotal=sel.length;
-  window._apsQueueDone=0;
-  window._apsQueueErrors=0;
-  if(st)st.generating=true;
-  apsShowProgress(0,sel.length,"Starting...");
-  window._apsRunQueue();
+  window._apsQueue=sel.slice();window._apsQueueTotal=sel.length;window._apsQueueDone=0;window._apsQueueErrors=0;
+  st.generating=true;apsShowProgress(0,sel.length,'Starting...');window._apsRunQueue();
 };
+
 window.aps_generateCurrent=async function(){
-  var st=ST();
-  if(st&&st.generating){apsNotify("Generation already running.","warn");return;}
+  apsInitScenes();
+  var st=ST();if(st.generating){apsNotify('Generation already running.','warn');return;}
   var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
-  var idx=st.currentIdx!=null?st.currentIdx:0;
-  var scene=scenes[idx];if(!scene)return;
+  var idx=st.currentIdx||0;var scene=scenes[idx];if(!scene)return;
   scene._queueIdx=idx;
-  window._apsQueue=[scene];
-  window._apsQueueTotal=1;
-  window._apsQueueDone=0;
-  window._apsQueueErrors=0;
-  if(st)st.generating=true;
-  apsShowProgress(0,1,(scene.narration||scene.text||"Scene "+(idx+1)).slice(0,40));
-  window._apsRunQueue();
+  window._apsQueue=[scene];window._apsQueueTotal=1;window._apsQueueDone=0;window._apsQueueErrors=0;
+  st.generating=true;apsShowProgress(0,1,(scene.narration||'Scene '+(idx+1)).slice(0,40));window._apsRunQueue();
 };
-var _origSceneDone=window._apsSceneDone;
-window._apsSceneDone=function(sceneIdx,videoUrl,err){
-  if(typeof _origSceneDone==="function")_origSceneDone.apply(this,arguments);
+window.aps_generateScene=window.aps_generateCurrent;
+
+// ── _apsSceneDone wrapper ─────────────────────────────────────────────────
+var _origSD=window._apsSceneDone;
+window._apsSceneDone=function(sceneIdx,videoUrl,errMsg){
+  if(typeof _origSD==='function')_origSD.apply(this,arguments);
   var st=ST();
-  var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
-  var scene=scenes[sceneIdx];
-  var sceneId=scene?(scene.id||scene.num||("idx_"+sceneIdx)):("idx_"+sceneIdx);
+  var scene=st.scenes&&st.scenes[sceneIdx];
+  if(scene&&videoUrl&&videoUrl.length>20)scene.apsVideoUrl=videoUrl;
+  var sceneId=scene?(scene.id||scene.num||('idx_'+sceneIdx)):('idx_'+sceneIdx);
   var success=!!(videoUrl&&videoUrl.length>20);
   var cb=window._apsDoneCallbacks&&window._apsDoneCallbacks[sceneId];
-  if(cb){delete window._apsDoneCallbacks[sceneId];cb(success);}
+  if(cb){delete window._apsDoneCallbacks[sceneId];cb(success,videoUrl||'');}
 };
+
+// ── aps_goToEditSuite ─────────────────────────────────────────────────────
 var _origGoEdit=window.aps_goToEditSuite;
 window.aps_goToEditSuite=function(){
+  apsInitScenes();
   var st=ST();
   var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
   var ready=scenes.filter(function(s){return s.apsVideoUrl&&s.apsVideoUrl.length>20;});
-  if(!ready.length){apsNotify("No generated videos yet. Generate scenes first.","warn");return;}
-  if(typeof _loadApsIntoTL==="function"){_loadApsIntoTL();
-  }else if(typeof _origGoEdit==="function"){_origGoEdit.apply(this,arguments);}
-  apsNotify(ready.length+" scene"+(ready.length!==1?"s":"")+" sent to Edit Suite.","ok",6000);
+  if(!ready.length){apsNotify('No generated videos yet. Generate scenes first.','warn');return;}
+  if(typeof _loadApsIntoTL==='function')_loadApsIntoTL();
+  else if(typeof _origGoEdit==='function')_origGoEdit.apply(this,arguments);
+  apsNotify(ready.length+' scene'+(ready.length!==1?'s':'')+' sent to Edit Suite.','ok',6000);
 };
+
+// ── Toast suppression during generation ───────────────────────────────────
 var _origToast=window.toast;
 window.toast=function(msg,type){
   var st=ST();
-  if(st&&st.generating&&msg&&(msg.indexOf("Generat")>-1||msg.indexOf("scene")>-1||msg.indexOf("video")>-1||msg.indexOf("Done")>-1))return;
-  if(typeof _origToast==="function")_origToast.apply(this,arguments);
+  if(st.generating&&msg&&(msg.indexOf('Generat')>-1||msg.indexOf('scene')>-1||msg.indexOf('video')>-1||msg.indexOf('done')>-1||msg.indexOf('Done')>-1))return;
+  if(typeof _origToast==='function')_origToast.apply(this,arguments);
 };
-console.log("[APS Override v2] Sequential generation + professional UI loaded");
+
+// ── Boot ─────────────────────────────────────────────────────────────────
+setTimeout(apsInitScenes,400);
+console.log('[APS Override v3] All 18 missing functions + sequential queue + scene init');
 })();
 </script>
+
 </body>
 </html>
 
