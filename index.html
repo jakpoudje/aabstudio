@@ -23284,300 +23284,374 @@ window.addEventListener('load',function(){
 (function(){
 if(window._AAB_FW_LOADED)return;
 window._AAB_FW_LOADED=true;
-function fixPlayhead(){
-  var ph=document.getElementById("aab-ph");
+
+// ── 1. IMPLEMENT EMPTY STUBS ─────────────────────────────────────────────
+
+// Source monitor play/pause
+window.E_srcToggle=function(){
+  var v=document.getElementById('e-src-vid');
+  var btn=document.getElementById('e-src-play');
+  if(!v||!v.src)return;
+  if(v.paused){
+    v.play().catch(function(){});
+    if(btn)btn.textContent='⏸';
+  } else {
+    v.pause();
+    if(btn)btn.textContent='▶';
+  }
+};
+
+// Program monitor play/pause — plays full timeline sequence
+window._progIdx=0;
+window.E_progToggle=function(){
+  var v=document.getElementById('e-prog-vid');
+  var btn=document.getElementById('e-prog-play');
+  if(!window.E||!E.tracks)return;
+  if(E.playing){
+    E.playing=false;
+    if(v)v.pause();
+    clearInterval(E.playInterv);
+    if(btn)btn.textContent='▶';
+    return;
+  }
+  // Start playing from first main track clip
+  E.playing=true;
+  if(btn)btn.textContent='⏸';
+  window._progIdx=0;
+  window._playNextProgClip();
+};
+window._playNextProgClip=function(){
+  var v=document.getElementById('e-prog-vid');
+  if(!v||!window.E||!E.playing)return;
+  var mt=E.tracks.find(function(t){return t.id==='main';});
+  if(!mt||!mt.clips[window._progIdx]){E.playing=false;var b=document.getElementById('e-prog-play');if(b)b.textContent='▶';return;}
+  var clip=mt.clips[window._progIdx];
+  if(!clip.url){window._progIdx++;window._playNextProgClip();return;}
+  v.src=clip.url;v.style.display='block';v.load();
+  v.play().catch(function(){});
+  E.playhead=clip.start||0;
+  window._movePlayhead(clip.start||0);
+};
+
+// Source monitor seek to position
+window.E_loadSrc=function(url,name){
+  var v=document.getElementById('e-src-vid');
+  if(!v)return;
+  v.src=url;v.style.display='block';v.load();
+  var label=document.querySelector('#e-src .e-src-label,[id*="src-label"]');
+  if(label)label.textContent=name||'';
+};
+
+// ── 2. PLAYHEAD — fix position and animate during playback ───────────────
+window._movePlayhead=function(timeSec){
+  var ph=document.getElementById('aab-ph');
   if(!ph)return;
-  var lane=document.querySelector(".aab-lane");
+  var lane=document.querySelector('.aab-lane,.aab-tl-lane');
   if(!lane)return;
   var phParent=ph.parentElement;
   if(!phParent)return;
-  var correctLeft=Math.round(lane.getBoundingClientRect().left-phParent.getBoundingClientRect().left);
-  ph.style.left=correctLeft+"px";
-  if(window.E)E.currentTime=0;
-}
-function fixSourceMonitor(){
-  var sv=document.getElementById("e-src-vid");
-  if(!sv)return;
-  sv.style.cssText="width:100%;height:100%;object-fit:contain;background:#000;display:block;";
-  sv.controls=false;
-  // Wire play button properly
-  var playBtn=document.getElementById("e-src-play");
-  if(playBtn&&!playBtn.dataset.fwPlay){
-    playBtn.dataset.fwPlay=1;
-    playBtn.addEventListener("click",function(e){
-      e.stopPropagation();
-      if(sv.paused){sv.play().catch(function(){});playBtn.textContent="⏸";}
-      else{sv.pause();playBtn.textContent="▶";}
-    });
+  var base=Math.round(lane.getBoundingClientRect().left-phParent.getBoundingClientRect().left);
+  var pxSec=window.E&&E.pxPerSec?E.pxPerSec:10;
+  ph.style.left=(base+(timeSec||0)*pxSec)+'px';
+};
+window._fixPlayheadPosition=function(){
+  window._movePlayhead(window.E?E.playhead||0:0);
+};
+
+// ── 3. CLIP EVENTS — select, source load, inspector, context menu ────────
+window.E_fc=function(clipId){
+  // Called by native E_ engine on clip focus — load in source monitor
+  if(!window.E||!E.tracks)return;
+  var clip=null;
+  E.tracks.forEach(function(tr){tr.clips.forEach(function(c){if(c.id===clipId)clip=c;});});
+  if(!clip)return;
+  E.selectedClipId=clipId;
+  if(clip.url){
+    var v=document.getElementById('e-src-vid');
+    if(v){v.src=clip.url;v.style.display='block';v.load();}
   }
-  // Sync seek bar with playback
-  var seek=document.getElementById("e-src-seek");
-  sv.addEventListener("timeupdate",function(){
-    if(seek&&sv.duration){seek.value=(sv.currentTime/sv.duration)*100;}
-    var tc=document.getElementById("e-src-tc");
-    if(tc){var m=Math.floor(sv.currentTime/60),s=Math.floor(sv.currentTime%60);tc.textContent=(m<10?"0":"")+m+":"+(s<10?"0":"")+s;}
-  });
-  if(seek&&!seek.dataset.fwSk){
-    seek.dataset.fwSk=1;
-    seek.addEventListener("input",function(){if(sv.duration)sv.currentTime=(this.value/100)*sv.duration;});
-  }
-  sv.addEventListener("ended",function(){playBtn&&(playBtn.textContent="▶");});
-}
-function fixProgramMonitor(){
-  var pv=document.getElementById("e-prog-vid");
-  if(!pv)return;
-  pv.style.cssText="width:100%;height:100%;object-fit:contain;background:#000;display:block;";
-  pv.controls=false;
-  // Auto-load first clip from main track
-  function loadFirstClip(){
-    if(!window.E||!E.tracks)return;
-    var mt=E.tracks.find(function(t){return t.id==="main";});
-    if(mt&&mt.clips.length&&mt.clips[0].url&&!pv.src){
-      pv.src=mt.clips[0].url;
-      pv.style.display="block";
-      pv.load();
-    }
-  }
-  setTimeout(loadFirstClip,800);
-  // Wire play button for full sequence playback
-  var pPlay=document.getElementById("e-prog-play");
-  var playIdx=0;
-  function playClipIdx(idx){
-    if(!window.E||!E.tracks)return;
-    var mt=E.tracks.find(function(t){return t.id==="main";});
-    if(!mt||!mt.clips[idx])return;
-    var clip=mt.clips[idx];
-    if(!clip.url)return;
-    pv.src=clip.url;pv.style.display="block";pv.load();
-    pv.play().catch(function(){});
-    if(window.E)E.currentTime=clip.start||0;
-    // Move playhead
-    var ph=document.getElementById("aab-ph");
-    var lane=document.querySelector(".aab-lane");
-    if(ph&&lane){
-      var phParent=ph.parentElement;
-      var baseLeft=Math.round(lane.getBoundingClientRect().left-(phParent?phParent.getBoundingClientRect().left:0));
-      var pxPerSec=(lane.offsetWidth||800)/((window.E&&E.duration)||32);
-      ph.style.left=(baseLeft+(clip.start||0)*pxPerSec)+"px";
-    }
-  }
-  pv.addEventListener("ended",function(){
-    if(!window.E||!E.playing)return;
-    playIdx++;
-    var mt=E.tracks?E.tracks.find(function(t){return t.id==="main";}):null;
-    if(mt&&playIdx<mt.clips.length)playClipIdx(playIdx);
-    else{if(window.E)E.playing=false;playIdx=0;if(pPlay)pPlay.textContent="▶";}
-  });
-  if(pPlay&&!pPlay.dataset.fwPPlay){
-    pPlay.dataset.fwPPlay=1;
-    pPlay.addEventListener("click",function(e){
-      e.stopPropagation();
-      if(!window.E)return;
-      if(E.playing){E.playing=false;pv.pause();pPlay.textContent="▶";}
-      else{E.playing=true;playIdx=0;playClipIdx(0);pPlay.textContent="⏸";}
-    });
-  }
-  // Prog seek
-  var pSeek=document.getElementById("e-prog-seek");
-  pv.addEventListener("timeupdate",function(){
-    if(pSeek&&pv.duration)pSeek.value=(pv.currentTime/pv.duration)*100;
-    // Update timecode
-    var ptc=document.querySelector(".e-prog-tc,[id*=prog-tc]");
-    if(ptc){var m=Math.floor(pv.currentTime/60),s=Math.floor(pv.currentTime%60);ptc.textContent=(m<10?"0":"")+m+":"+(s<10?"0":"")+s;}
-  });
-  if(pSeek&&!pSeek.dataset.fwPSk){
-    pSeek.dataset.fwPSk=1;
-    pSeek.addEventListener("input",function(){if(pv.duration)pv.currentTime=(this.value/100)*pv.duration;});
-  }
-}
-function wireTLClips(){
-  document.querySelectorAll(".aab-clip").forEach(function(cl){
-    if(cl.dataset.sw)return;
-    cl.dataset.sw=1;
-    cl.addEventListener("click",function(e){
-      e.stopPropagation();e.stopImmediatePropagation();
-      var cid=cl.dataset.id;if(!cid||!window.E)return;
-      var cd=null;E.tracks.forEach(function(tr){tr.clips.forEach(function(c){if(c.id===cid)cd=c;});});
-      if(!cd)return;
-      var sv=document.getElementById("e-src-vid");
-      if(sv&&cd.url){sv.src=cd.url;sv.style.display="block";sv.load();}
-      document.querySelectorAll(".aab-clip").forEach(function(x){x.style.outline="";});
-      cl.style.outline="2px solid #00d4ff";
-      if(window.updateInspector)updateInspector(cd);
-    },true);
-    cl.addEventListener("contextmenu",function(e){
-      e.preventDefault();e.stopPropagation();
-      var old=document.getElementById("aab-ctx");if(old)old.remove();
-      var cid=cl.dataset.id;var cd=null,td=null;
-      if(window.E)E.tracks.forEach(function(tr){tr.clips.forEach(function(c){if(c.id===cid){cd=c;td=tr;}});});
-      var m=document.createElement("div");
-      m.id="aab-ctx";
-      m.style.cssText="position:fixed;z-index:9999;background:#1e293b;border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:6px;min-width:170px;box-shadow:0 8px 24px rgba(0,0,0,.6);font-size:12px;";
-      m.style.left=Math.min(e.clientX,window.innerWidth-180)+"px";
-      m.style.top=Math.min(e.clientY,window.innerHeight-220)+"px";
-      function mi(l,col,fn){var d=document.createElement("div");d.style.cssText="padding:6px 10px;cursor:pointer;border-radius:4px;color:"+(col||"#e2e8f0")+";";d.textContent=l;d.onmouseenter=function(){d.style.background="rgba(255,255,255,.08)";};d.onmouseleave=function(){d.style.background="";};d.onclick=function(){m.remove();if(fn)fn();};m.appendChild(d);}
-      function ms(){var s=document.createElement("div");s.style.cssText="height:1px;background:rgba(255,255,255,.06);margin:3px 0;";m.appendChild(s);}
-      if(cd&&cd.url)mi("▶ Preview in Source","#00d4ff",function(){var sv=document.getElementById("e-src-vid");if(sv){sv.src=cd.url;sv.style.display="block";sv.load();}});
-      ms();
-      mi("✂ Split",null,function(){if(window.AABE&&AABE.split)AABE.split();});
-      mi("⧉ Duplicate",null,function(){if(window.AABE&&AABE.duplicate)AABE.duplicate();});
-      mi("⏩ Speed...",null,function(){if(window.AABE&&AABE.speedDialog)AABE.speedDialog();});
-      ms();
-      mi("🔇 Mute/Unmute",null,function(){if(cd){cd.muted=!cd.muted;if(window.E_renderTL)E_renderTL();}});
-      ms();
-      mi("🗑 Delete","#ef4444",function(){if(cd&&td){var i=td.clips.indexOf(cd);if(i>-1)td.clips.splice(i,1);if(window.E_renderTL)E_renderTL();}});
-      document.body.appendChild(m);
-      setTimeout(function(){document.addEventListener("click",function ddd(){m.remove();document.removeEventListener("click",ddd);});},10);
-    });
-    // Drag within track
-    cl.addEventListener("mousedown",function(e){
-      if(e.button!==0||(window.E&&E.tool&&E.tool!=="select"))return;
-      e.preventDefault();
-      var sx=e.clientX,sl=cl.offsetLeft,dragging=true;
-      cl.style.zIndex="100";
-      document.onmousemove=function(me){
-        if(!dragging)return;
-        var dx=me.clientX-sx,nl=Math.max(0,sl+dx);
-        cl.style.left=nl+"px";
-        var cid2=cl.dataset.id;
-        if(window.E&&cid2)E.tracks.forEach(function(tr){tr.clips.forEach(function(c){if(c.id===cid2){var pw=cl.parentElement?cl.parentElement.offsetWidth:800;c.start=Math.max(0,nl/(pw/((window.E&&E.duration)||32)));;}});});
-      };
-      document.onmouseup=function(){dragging=false;cl.style.zIndex="";document.onmousemove=null;document.onmouseup=null;if(window.saveProject)setTimeout(saveProject,300);};
-    });
-  });
-}
-window.updateInspector=function(clip){
-  var insp=document.getElementById("e-insp");
+  window._showInspector(clip);
+};
+
+window._showInspector=function(clip){
+  var insp=document.getElementById('e-insp');
   if(!insp||!clip)return;
-  insp.innerHTML="<div style=padding:12px;color:#e2e8f0><div style=font-size:11px;color:#64748b;margin-bottom:8px>CLIP PROPERTIES</div>"+
-    "<div style=margin-bottom:6px><div style=font-size:10px;color:#64748b>NAME</div><div style=font-size:13px;font-weight:600>"+(clip.name||"Clip")+"</div></div>"+
-    "<div style=margin-bottom:6px><div style=font-size:10px;color:#64748b>DURATION</div><div style=font-size:12px>"+(clip.duration||8)+"s</div></div>"+
-    "<div style=margin-bottom:6px><div style=font-size:10px;color:#64748b>START</div><div style=font-size:12px>"+(clip.start||0).toFixed(2)+"s</div></div>"+
-    (clip.url?"<div style=margin-bottom:6px><div style=font-size:10px;color:#64748b>SOURCE</div><div style=font-size:10px;color:#00d4ff;word-break:break-all>"+clip.url.slice(0,80)+"</div></div>":"")+
-    "</div>";
+  var dur=clip.duration||0;
+  var start=clip.start||0;
+  insp.innerHTML='<div style="padding:14px"><div style="font-size:10px;color:#64748b;letter-spacing:.08em;margin-bottom:10px">CLIP PROPERTIES</div>'+
+    '<div style="margin-bottom:8px"><div style="font-size:10px;color:#64748b;margin-bottom:2px">NAME</div><div style="font-size:13px;font-weight:600;color:#e2e8f0">'+(clip.name||'Clip')+'</div></div>'+
+    '<div style="margin-bottom:8px"><div style="font-size:10px;color:#64748b;margin-bottom:2px">DURATION</div><div style="font-size:12px;color:#e2e8f0">'+dur.toFixed?dur.toFixed(1)+'s':dur+'s</div></div>'+
+    '<div style="margin-bottom:8px"><div style="font-size:10px;color:#64748b;margin-bottom:2px">START</div><div style="font-size:12px;color:#e2e8f0">'+start.toFixed(2)+'s</div></div>'+
+    (clip.url?'<div style="margin-bottom:8px"><div style="font-size:10px;color:#64748b;margin-bottom:2px">SOURCE</div><div style="font-size:10px;color:#00d4ff;word-break:break-all">'+clip.url.slice(0,80)+'</div></div>':'')+
+    '</div>';
 };
-function wireBinToSrc(){
-  document.querySelectorAll(".ebin-clip,.aab-bin-clip,[class*=clip-card]").forEach(function(c){
-    if(c.dataset.bw)return;c.dataset.bw=1;
-    c.style.cursor="pointer";
-    c.addEventListener("click",function(e){
-      if(e.target.tagName==="BUTTON")return;
-      var url=c.dataset.url||c.getAttribute("data-url")||"";
-      if(!url)return;
-      var sv=document.getElementById("e-src-vid");
-      if(sv){sv.src=url;sv.style.display="block";sv.load();}
-      document.querySelectorAll("[class*=clip-card],[class*=bin-clip]").forEach(function(x){x.style.outline="";});
-      c.style.outline="2px solid #00d4ff";
+
+// Wire clip clicks — NO stopImmediatePropagation, let native handlers also run
+function wireTLClips(){
+  document.querySelectorAll('.aab-clip').forEach(function(cl){
+    if(cl.dataset.fw2)return;
+    cl.dataset.fw2=1;
+    // Bubble-phase click — let E_selectClip also fire
+    cl.addEventListener('click',function(e){
+      var cid=cl.dataset.id;
+      if(!cid||!window.E)return;
+      var clip=null;
+      E.tracks.forEach(function(tr){tr.clips.forEach(function(c){if(c.id===cid)clip=c;});});
+      if(!clip)return;
+      // Load in source monitor
+      if(clip.url){
+        var v=document.getElementById('e-src-vid');
+        if(v){v.src=clip.url;v.style.display='block';v.load();}
+      }
+      // Update inspector
+      window._showInspector(clip);
+      // Visual selection highlight
+      document.querySelectorAll('.aab-clip').forEach(function(x){x.classList.remove('aab-clip-selected');x.style.outline='';});
+      cl.style.outline='2px solid #00d4ff';
     });
-    c.setAttribute("draggable","true");
-    c.addEventListener("dragstart",function(e){
-      e.dataTransfer.setData("text/plain",JSON.stringify({url:c.dataset.url||"",name:c.dataset.name||"Clip",type:c.dataset.type||"video"}));
-    });
-  });
-  // Make lanes drop targets
-  document.querySelectorAll(".aab-lane").forEach(function(lane){
-    if(lane.dataset.dp)return;lane.dataset.dp=1;
-    lane.addEventListener("dragover",function(e){e.preventDefault();lane.style.background="rgba(0,212,255,.1)";});
-    lane.addEventListener("dragleave",function(){lane.style.background="";});
-    lane.addEventListener("drop",function(e){
-      e.preventDefault();lane.style.background="";
-      try{
-        var data=JSON.parse(e.dataTransfer.getData("text/plain"));
-        if(!data.url)return;
-        var row=lane.closest(".aab-track-row");
-        var name=row?row.querySelector(".aab-track-name").textContent.trim():"";
-        var track=window.E&&E.tracks?E.tracks.find(function(t){return name.indexOf(t.id)>-1||(t.name&&name.indexOf(t.name)>-1);}):null;
-        if(!track&&window.E&&E.tracks)track=E.tracks[0];
-        if(!track)return;
-        var id="drop_"+Date.now();
-        var st=track.clips.reduce(function(mx,c){return Math.max(mx,(c.start||0)+(c.duration||0));},0);
-        track.clips.push({id:id,name:data.name,url:data.url,start:st,duration:8,type:data.type||"video"});
-        if(typeof E_renderTL==="function")E_renderTL();
-        if(window.saveProject)setTimeout(saveProject,300);
-      }catch(err){}
+    // Right-click context menu on clip
+    cl.addEventListener('contextmenu',function(e){
+      e.preventDefault();
+      var old=document.getElementById('aab-ctx');if(old)old.remove();
+      var cid=cl.dataset.id;var clip=null,track=null;
+      if(window.E)E.tracks.forEach(function(tr){tr.clips.forEach(function(c){if(c.id===cid){clip=c;track=tr;}});});
+      var m=document.createElement('div');
+      m.id='aab-ctx';
+      m.style.cssText='position:fixed;z-index:9999;background:#1a2335;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:6px;min-width:180px;box-shadow:0 8px 32px rgba(0,0,0,.7);font-size:12px;font-family:Sora,Inter,sans-serif;';
+      m.style.left=Math.min(e.clientX,window.innerWidth-190)+'px';
+      m.style.top=Math.min(e.clientY,window.innerHeight-240)+'px';
+      function mi(icon,label,col,fn){
+        var d=document.createElement('div');
+        d.style.cssText='padding:7px 10px;cursor:pointer;border-radius:5px;color:'+(col||'#e2e8f0')+';display:flex;align-items:center;gap:8px;';
+        d.innerHTML='<span>'+icon+'</span><span>'+label+'</span>';
+        d.onmouseenter=function(){d.style.background='rgba(255,255,255,.07)';};
+        d.onmouseleave=function(){d.style.background='';};
+        d.onclick=function(){m.remove();if(fn)fn();};
+        m.appendChild(d);
+      }
+      function ms(){var s=document.createElement('div');s.style.cssText='height:1px;background:rgba(255,255,255,.07);margin:3px 6px;';m.appendChild(s);}
+      if(clip&&clip.url)mi('▶','Preview in Source','#00d4ff',function(){if(window.E_loadSrc)E_loadSrc(clip.url,clip.name);});
+      ms();
+      mi('✂','Split at Playhead',null,function(){if(typeof E_razorAt==='function'&&window.E)E_razorAt(E.playhead);});
+      mi('⧉','Duplicate',null,function(){if(window.AABE&&AABE.duplicate)AABE.duplicate();});
+      mi('⏩','Speed / Duration…',null,function(){if(window.AABE&&AABE.speedDialog)AABE.speedDialog();});
+      ms();
+      mi('🔇','Mute / Unmute',null,function(){if(clip){clip.muted=!clip.muted;if(typeof E_renderTL==='function')E_renderTL();}});
+      mi('📌','Mark In',null,function(){if(typeof E_markIn==='function')E_markIn();});
+      mi('📌','Mark Out',null,function(){if(typeof E_markOut==='function')E_markOut();});
+      ms();
+      mi('🗑','Delete Clip','#ef4444',function(){
+        if(clip&&track){var i=track.clips.indexOf(clip);if(i>-1){track.clips.splice(i,1);if(typeof E_renderTL==='function')E_renderTL();}}
+      });
+      document.body.appendChild(m);
+      setTimeout(function(){document.addEventListener('click',function _d(){m.remove();document.removeEventListener('click',_d);},{once:true});},50);
     });
   });
 }
-window.E_startVoiceRecord=function(){
-  if(!navigator.mediaDevices){alert("Mic not supported");return;}
-  navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
-    var chunks=[],rec=new MediaRecorder(stream);
-    var vt=window.E&&E.tracks?E.tracks.find(function(t){return t.id==="voice";}):null;
-    var ui=document.createElement("div");
-    ui.style.cssText="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;background:#1e293b;border:2px solid #ef4444;border-radius:12px;padding:20px 30px;text-align:center;color:#fff;min-width:240px;";
-    ui.innerHTML="<div style=font-size:14px;margin-bottom:8px>&#127908; Recording Voice Over</div><div id=vo-t style=font-size:28px;font-weight:700;color:#ef4444;margin-bottom:16px>0:00</div><button id=vo-s style=background:#ef4444;color:#fff;border:none;padding:8px 24px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600>Stop & Add to Track</button>";
-    document.body.appendChild(ui);
-    var n=0,ti=setInterval(function(){n++;var el=document.getElementById("vo-t");if(el){var m=Math.floor(n/60),s=n%60;el.textContent=(m<10?"0":"")+m+":"+(s<10?"0":"")+s;}},1000);
-    rec.ondataavailable=function(e){if(e.data.size>0)chunks.push(e.data);};
-    rec.onstop=function(){clearInterval(ti);stream.getTracks().forEach(function(tr){tr.stop();});ui.remove();var blob=new Blob(chunks,{type:"audio/webm"});var url=URL.createObjectURL(blob);var id="vo_"+Date.now();if(vt){var st=vt.clips.reduce(function(mx,c){return Math.max(mx,(c.start||0)+(c.duration||0));},0);vt.clips.push({id:id,name:"VO "+new Date().toLocaleTimeString(),url:url,start:st,duration:n,type:"audio"});if(window.E_renderTL)E_renderTL();if(window.saveProject)setTimeout(saveProject,500);}};
-    rec.start();
-    document.getElementById("vo-s").onclick=function(){rec.stop();};
-  }).catch(function(e){alert("Mic error: "+e.message);});
-};
-function wireVOMic(){
-  var row=Array.from(document.querySelectorAll(".aab-track-row")).find(function(r){var n=r.querySelector(".aab-track-name");return n&&n.textContent.indexOf("Voice Over")>-1;});
-  if(!row||row.dataset.mv)return;row.dataset.mv=1;
-  var lbl=row.querySelector(".aab-track-lbl");if(!lbl||row.querySelector(".aab-mic-btn"))return;
-  var btn=document.createElement("button");btn.className="aab-mic-btn";
-  btn.innerHTML="&#127908;";btn.title="Record voice over";
-  btn.style.cssText="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);border-radius:4px;padding:2px 6px;cursor:pointer;color:#ef4444;font-size:11px;margin-left:4px;";
-  btn.onclick=function(e){e.stopPropagation();window.E_startVoiceRecord();};
-  lbl.appendChild(btn);
+
+// Right-click on track headers
+function wireTrackHeaders(){
+  document.querySelectorAll('.aab-track-row').forEach(function(row){
+    if(row.dataset.rhfw)return;
+    row.dataset.rhfw=1;
+    var hdr=row.querySelector('.aab-track-lbl,.aab-track-header');
+    if(!hdr)return;
+    hdr.addEventListener('contextmenu',function(e){
+      e.preventDefault();
+      var old=document.getElementById('aab-ctx');if(old)old.remove();
+      var nm=row.querySelector('.aab-track-name');var trackName=nm?nm.textContent.trim():'Track';
+      var track=window.E&&E.tracks?E.tracks.find(function(t){return trackName.indexOf(t.name||t.id)>-1||(nm&&nm.textContent.indexOf(t.name||t.id)>-1);}):null;
+      var m=document.createElement('div');
+      m.id='aab-ctx';
+      m.style.cssText='position:fixed;z-index:9999;background:#1a2335;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:6px;min-width:160px;box-shadow:0 8px 32px rgba(0,0,0,.7);font-size:12px;font-family:Sora,Inter,sans-serif;';
+      m.style.left=Math.min(e.clientX,window.innerWidth-170)+'px';
+      m.style.top=Math.min(e.clientY,window.innerHeight-150)+'px';
+      function mi(icon,label,col,fn){var d=document.createElement('div');d.style.cssText='padding:7px 10px;cursor:pointer;border-radius:5px;color:'+(col||'#e2e8f0')+';display:flex;align-items:center;gap:8px;';d.innerHTML='<span>'+icon+'</span><span>'+label+'</span>';d.onmouseenter=function(){d.style.background='rgba(255,255,255,.07)';};d.onmouseleave=function(){d.style.background='';};d.onclick=function(){m.remove();if(fn)fn();};m.appendChild(d);}
+      function ms(){var s=document.createElement('div');s.style.cssText='height:1px;background:rgba(255,255,255,.07);margin:3px 6px;';m.appendChild(s);}
+      mi('➕','Add Track Above',null,function(){if(typeof E_addTrack==='function')E_addTrack('video');});
+      mi('➕','Add Track Below',null,function(){if(typeof E_addTrack==='function')E_addTrack('video');});
+      ms();
+      if(track)mi('🔇','Mute Track',null,function(){if(typeof E_muteTrack==='function')E_muteTrack(track.id);});
+      if(track)mi('🔒','Lock Track',null,function(){if(typeof E_lockTrack==='function')E_lockTrack(track.id);});
+      ms();
+      mi('🗑','Delete Track','#ef4444',function(){if(track&&typeof E_deleteTrack==='function')E_deleteTrack(track.id);});
+      document.body.appendChild(m);
+      setTimeout(function(){document.addEventListener('click',function _d(){m.remove();document.removeEventListener('click',_d);},{once:true});},50);
+    });
+  });
 }
+
+// ── 4. TOOL BUTTON VISUAL FEEDBACK ───────────────────────────────────────
+window.E_setTool=function(tool){
+  if(window.E)E.tool=tool;
+  // Update cursor
+  var tl=document.getElementById('aab-tl-wrap');
+  var cursors={select:'default',razor:'crosshair',trim:'col-resize',slip:'ew-resize',hand:'grab'};
+  if(tl)tl.style.cursor=cursors[tool]||'default';
+  // Highlight active tool button
+  document.querySelectorAll('[id^="et-"]').forEach(function(b){
+    b.style.background='';b.style.color='';
+  });
+  var btn={select:'et-V',razor:'et-R',trim:'et-T',slip:'et-Y',hand:'et-H'}[tool];
+  if(btn){var b=document.getElementById(btn);if(b){b.style.background='rgba(0,212,255,.2)';b.style.color='#00d4ff';}}
+};
+
+// ── 5. VIDEO ELEMENTS — fill monitors properly ────────────────────────────
+function fixVideoElements(){
+  var sv=document.getElementById('e-src-vid');
+  if(sv){
+    sv.style.cssText='width:100%;height:100%;object-fit:contain;background:#000;display:block;';
+    // Wire progress bar
+    var seek=document.getElementById('e-src-seek');
+    if(seek&&!seek.dataset.fwsk){
+      seek.dataset.fwsk=1;
+      sv.addEventListener('timeupdate',function(){
+        if(sv.duration>0&&seek)seek.value=(sv.currentTime/sv.duration)*100;
+        // Update timecode
+        var tcs=document.querySelectorAll('.e-src-tc,.e-src-time,[id*="src-tc"]');
+        tcs.forEach(function(tc){var m=Math.floor(sv.currentTime/60),s=Math.floor(sv.currentTime%60);tc.textContent=(m<10?'0':'')+m+':'+(s<10?'0':'')+s;});
+      });
+      seek.addEventListener('input',function(){if(sv.duration>0)sv.currentTime=(this.value/100)*sv.duration;});
+    }
+    sv.addEventListener('ended',function(){var b=document.getElementById('e-src-play');if(b)b.textContent='▶';});
+  }
+  var pv=document.getElementById('e-prog-vid');
+  if(pv){
+    pv.style.cssText='width:100%;height:100%;object-fit:contain;background:#000;display:block;';
+    pv.addEventListener('ended',function(){window._progIdx++;window._playNextProgClip();});
+    // Wire prog seek
+    var ps=document.getElementById('e-prog-seek');
+    if(ps&&!ps.dataset.fwpsk){
+      ps.dataset.fwpsk=1;
+      pv.addEventListener('timeupdate',function(){if(pv.duration>0&&ps)ps.value=(pv.currentTime/pv.duration)*100;});
+      ps.addEventListener('input',function(){if(pv.duration>0)pv.currentTime=(this.value/100)*pv.duration;});
+    }
+  }
+}
+
+// ── 6. VOLUME CONTROLS — ALL tracks that carry audio ─────────────────────
 function wireVolumeControls(){
-  document.querySelectorAll(".aab-track-row").forEach(function(row){
-    if(row.dataset.volWired)return;
-    var nm=row.querySelector(".aab-track-name");if(!nm)return;
-    var isAudio=["Voice Over","Music","Sound FX","B-Roll","Audio"].some(function(n){return nm.textContent.indexOf(n)>-1;});
+  var audioTracks=['Main Video','B-Roll','Voice Over','Music','Sound FX'];
+  document.querySelectorAll('.aab-track-row').forEach(function(row){
+    if(row.dataset.volfw)return;
+    var nm=row.querySelector('.aab-track-name');
+    if(!nm)return;
+    var trackName=nm.textContent.trim();
+    var isAudio=audioTracks.some(function(n){return trackName.indexOf(n)>-1;});
     if(!isAudio)return;
-    row.dataset.volWired=1;
-    var lbl=row.querySelector(".aab-track-lbl");if(!lbl||row.querySelector(".aab-vol-ctrl"))return;
-    var wrap=document.createElement("div");wrap.className="aab-vol-ctrl";
-    wrap.style.cssText="display:flex;align-items:center;gap:4px;margin-top:2px;";
-    var icon=document.createElement("span");icon.textContent="&#128266;";icon.style.cssText="font-size:10px;cursor:pointer;";
-    var slider=document.createElement("input");slider.type="range";slider.min=0;slider.max=100;slider.value=80;
-    slider.style.cssText="width:60px;height:3px;accent-color:#00d4ff;cursor:pointer;";
-    var val=document.createElement("span");val.textContent="80%";val.style.cssText="font-size:9px;color:#64748b;min-width:24px;";
-    slider.oninput=function(){val.textContent=this.value+"%";var track=window.E&&E.tracks?E.tracks.find(function(t){var n2=row.querySelector(".aab-track-name");return n2&&n2.textContent.indexOf(t.name||t.id)>-1;}):null;if(track)track.volume=parseInt(this.value)/100;};
+    row.dataset.volfw=1;
+    // Find the track label control area
+    var ctrl=row.querySelector('.aab-track-lbl');
+    if(!ctrl)return;
+    if(ctrl.querySelector('.aab-vol-ctrl'))return;
+    var wrap=document.createElement('div');
+    wrap.className='aab-vol-ctrl';
+    wrap.style.cssText='display:flex;align-items:center;gap:3px;margin-top:3px;padding:0 2px;';
+    var icon=document.createElement('span');
+    icon.innerHTML='&#128266;'; // speaker emoji via innerHTML so it renders
+    icon.style.cssText='font-size:10px;';
+    var slider=document.createElement('input');
+    slider.type='range';slider.min=0;slider.max=100;slider.value=80;
+    slider.style.cssText='width:52px;height:3px;accent-color:#00d4ff;cursor:pointer;vertical-align:middle;';
+    var val=document.createElement('span');
+    val.textContent='80%';
+    val.style.cssText='font-size:9px;color:#64748b;min-width:22px;';
+    slider.oninput=function(){
+      val.textContent=this.value+'%';
+      if(window.E&&E.tracks){var t2=E.tracks.find(function(t){return nm.textContent.indexOf(t.name||t.id)>-1;});if(t2)t2.volume=parseInt(this.value)/100;}
+    };
     wrap.appendChild(icon);wrap.appendChild(slider);wrap.appendChild(val);
-    lbl.appendChild(wrap);
+    ctrl.appendChild(wrap);
   });
 }
-window.AABE_import_fixed=function(type){
-  var inp=document.createElement("input");inp.type="file";
-  if(type==="video")inp.accept="video/*";
-  else if(type==="audio")inp.accept="audio/*";
-  else if(type==="image")inp.accept="image/*";
-  inp.onchange=function(){
-    var file=inp.files[0];if(!file)return;
-    var url=URL.createObjectURL(file);
-    var name=file.name.replace(/\.[^.]+$/,"");
-    var id=type+"_"+Date.now();
-    if(window.E&&E.tracks){var tid=type==="audio"?"voice":type==="video"?"main":"overlays";var tr=E.tracks.find(function(t){return t.id===tid;});if(tr){var st=tr.clips.reduce(function(m,c){return Math.max(m,(c.start||0)+(c.duration||0));},0);tr.clips.push({id:id,name:name,url:url,start:st,duration:type==="image"?5:8,type:type});if(window.E_renderTL)E_renderTL();}}
-    if(window.saveProject)setTimeout(saveProject,500);
-  };
-  document.body.appendChild(inp);inp.click();setTimeout(function(){if(inp.parentNode)inp.parentNode.removeChild(inp);},5000);
-};
-window._aabAddTrack=function(type){type=type||"video";if(!window.E||!E.tracks)return;var id=type+"_"+Date.now();E.tracks.push({id:id,name:{video:"Video",audio:"Audio",text:"Text"}[type]+" Track",type:type,clips:[],hidden:false,muted:false,locked:false,volume:1});if(typeof E_renderTL==="function")E_renderTL();if(window.saveProject)setTimeout(saveProject,300);};
-function initAll(){
-  fixPlayhead();
-  fixSourceMonitor();
-  fixProgramMonitor();
-  wireTLClips();
-  wireBinToSrc();
-  wireVOMic();
-  wireVolumeControls();
-  if(window.AABE)AABE.import=window.AABE_import_fixed;
+
+// ── 7. MIC BUTTON — neat inline in Voice Over track controls ─────────────
+function wireVOMic(){
+  document.querySelectorAll('.aab-track-row').forEach(function(row){
+    if(row.dataset.micfw)return;
+    var nm=row.querySelector('.aab-track-name');
+    if(!nm||nm.textContent.indexOf('Voice Over')===-1)return;
+    row.dataset.micfw=1;
+    // Remove any badly placed mic buttons first
+    row.querySelectorAll('.aab-mic-btn').forEach(function(b){b.remove();});
+    var ctrl=row.querySelector('.aab-track-lbl');
+    if(!ctrl)return;
+    var micDiv=document.createElement('div');
+    micDiv.style.cssText='display:flex;align-items:center;margin-top:3px;';
+    var btn=document.createElement('button');
+    btn.className='aab-mic-btn';
+    btn.innerHTML='&#127908; Rec'; // mic emoji + text
+    btn.title='Record Voice Over';
+    btn.style.cssText='display:inline-flex;align-items:center;gap:4px;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);border-radius:4px;padding:2px 8px;cursor:pointer;color:#ef4444;font-size:10px;font-weight:600;white-space:nowrap;';
+    btn.onclick=function(e){e.stopPropagation();if(typeof E_startVoiceRecord==='function')E_startVoiceRecord();};
+    micDiv.appendChild(btn);
+    ctrl.appendChild(micDiv);
+  });
 }
-document.addEventListener("DOMContentLoaded",function(){setTimeout(initAll,800);});
+
+// ── 8. UPLOAD BUTTONS — wire + Video / + Audio / + Image ─────────────────
+function wireUploadBtns(){
+  // Wire the quick-add buttons in the top toolbar
+  document.querySelectorAll('[onclick*="E_addVideo"],[onclick*="E_addAudio"],[onclick*="E_addImage"]').forEach(function(b){
+    // These already have onclick — make sure E_addVideo etc exist
+  });
+  // Implement missing upload triggers
+  if(typeof E_addVideo!=='function'){
+    window.E_addVideo=function(){if(typeof E_triggerUpload==='function')E_triggerUpload('video');};
+  }
+  if(typeof E_addAudio!=='function'){
+    window.E_addAudio=function(){if(typeof E_triggerUpload==='function')E_triggerUpload('audio');};
+  }
+  if(typeof E_addImage!=='function'){
+    window.E_addImage=function(){if(typeof E_triggerUpload==='function')E_triggerUpload('image');};
+  }
+  // Ensure the media bin + Add button works
+  var addBtn=document.querySelector('#e-bin [onclick*="add"],[id*="bin-add"]');
+}
+
+// ── 9. SOURCE MONITOR SEEK BAR — wire clicks on the seek bar line ────────
+function wireSrcSeekClick(){
+  var seekWrap=document.querySelector('#e-src .aab-seek-wrap,.e-seek-bar-wrap');
+  if(seekWrap&&!seekWrap.dataset.fwsk2){
+    seekWrap.dataset.fwsk2=1;
+    seekWrap.addEventListener('click',function(e){
+      var v=document.getElementById('e-src-vid');
+      if(!v||!v.duration)return;
+      var rect=seekWrap.getBoundingClientRect();
+      var pct=(e.clientX-rect.left)/rect.width;
+      v.currentTime=pct*v.duration;
+    });
+  }
+}
+
+// ── INIT AND INTERVAL ─────────────────────────────────────────────────────
+function initAll(){
+  fixVideoElements();
+  wireTLClips();
+  wireTrackHeaders();
+  wireVolumeControls();
+  wireVOMic();
+  wireUploadBtns();
+  wireSrcSeekClick();
+  window._fixPlayheadPosition();
+  // Set initial tool to select
+  if(window.E&&!E.tool){window.E_setTool('select');}
+}
+
+// Run on load and periodically to catch dynamically added clips
+setTimeout(initAll,500);
 setInterval(function(){
   wireTLClips();
-  wireBinToSrc();
-  wireVOMic();
+  wireTrackHeaders();
   wireVolumeControls();
-  if(window.AABE&&AABE.import!==window.AABE_import_fixed)AABE.import=window.AABE_import_fixed;
-},1000);
-setTimeout(initAll,800);
+  wireVOMic();
+  window._fixPlayheadPosition();
+},1200);
+
+// Also wire program monitor video ended event
+var progVid=document.getElementById('e-prog-vid');
+if(progVid)progVid.addEventListener('ended',function(){window._progIdx++;window._playNextProgClip();});
+
 })();
 </script>
 
