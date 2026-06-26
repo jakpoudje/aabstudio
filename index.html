@@ -23665,6 +23665,155 @@ window.E_srcToTimeline=function(){
     });
   }
 })();
+
+// ── FIX: E_selectClip override — no flicker, direct DOM update ────────────
+// Store original so we can still call it for state (but skip renderTL)
+var _origSelectClip = window.E_selectClip;
+window.E_selectClip = function(clipId){
+  if(!clipId || !window.E) return;
+  E.selectedClipId = clipId;
+  // Find clip data
+  var clip = null, track = null;
+  E.tracks.forEach(function(tr){
+    tr.clips.forEach(function(c){ if(c.id===clipId){clip=c;track=tr;} });
+  });
+  // Update highlight directly — no innerHTML re-render
+  document.querySelectorAll('.aab-clip').forEach(function(el){
+    el.classList.remove('aab-clip-selected');
+    el.style.outline = '';
+    el.style.boxShadow = '';
+  });
+  var selEl = document.querySelector('.aab-clip[data-id="'+clipId+'"]');
+  if(selEl){
+    selEl.classList.add('aab-clip-selected');
+    selEl.style.outline = '2px solid #00d4ff';
+  }
+  // Load in source monitor
+  if(clip && clip.url && clip.url.length > 30){
+    var sv = document.getElementById('e-src-vid');
+    if(sv){
+      sv.src = clip.url;
+      sv.muted = false;
+      sv.volume = 1;
+      sv.style.display = 'block';
+      sv.load();
+    }
+    if(typeof E_loadSrc === 'function') E_loadSrc(clip.url, clip.name || 'Clip');
+  }
+  // Update inspector
+  if(typeof window._showInspector === 'function') window._showInspector(clip);
+  // Do NOT call E_renderTL — prevents the flicker
+};
+
+// ── FIX: wireVolumeControls — check for .aab-vol-ctrl specifically ─────────
+// Replaces existing wireVolumeControls — only adds where truly absent
+(function(){
+  var audioTracks = ['Main Video','B-Roll','Voice Over','Music','Sound FX'];
+  function addVolume(){
+    document.querySelectorAll('.aab-track-row').forEach(function(row){
+      var nm = row.querySelector('.aab-track-name'); if(!nm) return;
+      var isAudio = audioTracks.some(function(n){return nm.textContent.indexOf(n)>-1;});
+      if(!isAudio) return;
+      var ctrl = row.querySelector('.aab-track-lbl'); if(!ctrl) return;
+      // Only add MY slider if it's not there AND no native slider either
+      if(ctrl.querySelector('.aab-vol-ctrl')) return; // already added by me
+      var hasNativeSlider = row.querySelector('.aab-track-controls input[type="range"],.aab-track-tools input[type="range"]');
+      if(hasNativeSlider) return; // native slider exists — don't duplicate
+      // Add volume control for tracks with no slider at all (Main Video, B-Roll)
+      row.dataset.volfw = '1';
+      var wrap = document.createElement('div');
+      wrap.className = 'aab-vol-ctrl';
+      wrap.style.cssText = 'display:flex;align-items:center;gap:3px;margin-top:3px;padding:0 2px;';
+      var icon = document.createElement('span'); icon.innerHTML = '&#128266;'; icon.style.cssText = 'font-size:10px;';
+      var slider = document.createElement('input'); slider.type = 'range'; slider.min = 0; slider.max = 100; slider.value = 80;
+      slider.style.cssText = 'width:52px;height:3px;accent-color:#00d4ff;cursor:pointer;';
+      var val = document.createElement('span'); val.textContent = '80%'; val.style.cssText = 'font-size:9px;color:#64748b;min-width:22px;';
+      slider.oninput = function(){
+        val.textContent = this.value + '%';
+        var tr = window.E&&E.tracks?E.tracks.find(function(tk){return nm.textContent.indexOf(tk.name||tk.id)>-1;}):null;
+        if(tr) tr.volume = parseInt(this.value)/100;
+      };
+      wrap.appendChild(icon); wrap.appendChild(slider); wrap.appendChild(val);
+      ctrl.appendChild(wrap);
+    });
+  }
+  addVolume();
+  setInterval(addVolume, 2000);
+})();
+
+// ── FIX: Media bin click → source monitor via E_loadSrc ───────────────────
+(function wireBinClicks(){
+  var binEl = document.getElementById('e-bin'); if(!binEl) return;
+  var observer = new MutationObserver(function(){ attachBinHandlers(); });
+  observer.observe(binEl, {childList:true, subtree:true});
+  attachBinHandlers();
+  function attachBinHandlers(){
+    binEl.querySelectorAll('[class*="bin-item"],[class*="bin-clip"],[class*="clip-card"],[class*="asset-item"]').forEach(function(item){
+      if(item.dataset.binWired) return;
+      item.dataset.binWired = '1';
+      item.style.cursor = 'pointer';
+      item.addEventListener('click', function(e){
+        if(e.target.tagName==='BUTTON') return;
+        // Get URL: try data-url, then video.src, then img.src
+        var url = item.dataset.url || item.getAttribute('data-url');
+        if(!url){var vid=item.querySelector('video');if(vid&&vid.src&&vid.src.length>20)url=vid.src;}
+        if(!url){var img=item.querySelector('img');if(img&&img.src&&img.src.length>20)url=img.src;}
+        if(!url||url.length<20) return; // no valid URL
+        var name = (item.querySelector('.bin-item-name,[class*="name"]')||{}).textContent || 'Clip';
+        // Load in source monitor
+        var sv = document.getElementById('e-src-vid');
+        if(sv){
+          sv.src = url; sv.muted = false; sv.volume = 1;
+          sv.style.cssText = 'width:100%;height:100%;object-fit:contain;background:#000;display:block;';
+          sv.load();
+          sv.play().catch(function(){});
+        }
+        if(typeof E_loadSrc==='function') E_loadSrc(url, name);
+        // Highlight selected
+        binEl.querySelectorAll('[class*="bin-item"],[class*="clip-card"]').forEach(function(x){x.style.outline='';});
+        item.style.outline = '2px solid #00d4ff';
+      });
+    });
+  }
+})();
+
+// ── FIX: Unmute all video elements, ensure full audio ─────────────────────
+(function unmuteVideos(){
+  document.querySelectorAll('video').forEach(function(v){
+    v.muted = false;
+    v.volume = 1;
+  });
+  // Also patch future video loads
+  var origPlay = HTMLVideoElement.prototype.play;
+  HTMLVideoElement.prototype.play = function(){
+    this.muted = false;
+    this.volume = 1;
+    return origPlay.apply(this, arguments);
+  };
+})();
+
+// ── FIX: Wire existing clips immediately (prevent flicker from fw2-less clips)
+(function wireExistingClips(){
+  document.querySelectorAll('.aab-clip').forEach(function(cl){
+    if(cl.dataset.fw3) return;
+    cl.dataset.fw3 = '1';
+    cl.addEventListener('click', function(e){
+      var cid = cl.dataset.id;
+      if(cid && typeof E_selectClip==='function') E_selectClip(cid);
+    });
+  });
+  setInterval(function(){
+    document.querySelectorAll('.aab-clip:not([data-fw3])').forEach(function(cl){
+      cl.dataset.fw3 = '1';
+      cl.addEventListener('click', function(e){
+        var cid = cl.dataset.id;
+        if(cid && typeof E_selectClip==='function') E_selectClip(cid);
+      });
+    });
+    // Also unmute any new videos
+    document.querySelectorAll('video').forEach(function(v){ v.muted=false; v.volume=1; });
+  }, 1500);
+})();
 })();
 </script>
 
