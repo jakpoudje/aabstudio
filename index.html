@@ -24381,11 +24381,13 @@ window._apsQueue=[];window._apsDoneCallbacks={};
 
 window._apsRunQueue=async function(){
   if(!window._apsQueue||!window._apsQueue.length){
-    var st=ST();st.generating=false;apsHideProgress();
+    var st=ST();st.generating=false;
+    window._apsQueueRunning=false;
+    apsHideProgress();
     var d=window._apsQueueDone||0,e=window._apsQueueErrors||0;
     if(e===0&&d>0)apsNotify('All '+d+' scene'+(d!==1?'s':'')+' generated. Open Edit Suite to continue.','ok',9000);
-    else if(d>0)apsNotify(d+' generated, '+e+' failed. Check failed scenes and retry.','warn',9000);
-    else apsNotify('Generation failed. Check your credits and presenter settings.','error',9000);
+    else if(d>0)apsNotify(d+' generated, '+e+' failed. Retry failed scenes.','warn',9000);
+    else apsNotify('Generation failed. Check credits and presenter settings.','error',9000);
     return;
   }
   var sd=window._apsQueue.shift();
@@ -24398,35 +24400,40 @@ window._apsRunQueue=async function(){
   aps_updateSceneRow(idx,'generating','');
   st.currentIdx=idx;
   if(typeof _apsSelectScene==='function')_apsSelectScene(idx);
+  // CRITICAL: Reset generating=false so _apsGenerateScene passes its own check
+  st.generating=false;
   var sceneId=sd.id||sd.num||('idx_'+idx);
   window._apsDoneCallbacks[sceneId]=function(ok2,url){
     apsShowProgress(qPos,window._apsQueueTotal||1,ok2?'\u2705 Done':'\u274C Failed');
     aps_updateSceneRow(idx,ok2?'done':'error',url||'');
-    if(ok2){window._apsQueueDone=(window._apsQueueDone||0)+1;if(url)aps_addClipToBar(idx,url,label);}
+    if(ok2){window._apsQueueDone=(window._apsQueueDone||0)+1;if(url&&url.length>20)aps_addClipToBar(idx,url,label);}
     else window._apsQueueErrors=(window._apsQueueErrors||0)+1;
-    setTimeout(window._apsRunQueue,600);
+    // Reset generating before next scene in queue
+    if(window._apsState)window._apsState.generating=false;
+    setTimeout(window._apsRunQueue,800);
   };
-  try{if(typeof _apsGenerateScene==='function')await _apsGenerateScene(idx);}
-  catch(err){
+  try{
+    // Pass BOTH idx AND scene object — _apsGenerateScene(idx, sc) requires both
+    if(typeof _apsGenerateScene==='function')await _apsGenerateScene(idx,sd);
+  }catch(err){
     apsNotify('Scene '+(idx+1)+' error: '+(err.message||'Unknown error'),'error');
     var cb=window._apsDoneCallbacks[sceneId];
     if(cb){delete window._apsDoneCallbacks[sceneId];cb(false,'');}
   }
 };
-
 // ── Generate All/Selected/Current ─────────────────────────────────────────
 window.aps_generateAll=async function(){
+  if(window._apsQueueRunning){apsNotify('Generation already running.','warn');return;}
   apsInitScenes();
-  var st=ST();if(st.generating){apsNotify('Generation already running.','warn');return;}
+  var st=ST();
   var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
   if(!scenes.length){apsNotify('No scenes found. Create your script first.','warn');return;}
   var toGen=scenes.filter(function(s){return !s.apsVideoUrl||s.apsVideoUrl.length<20;});
   toGen.forEach(function(s){s._queueIdx=scenes.indexOf(s);});
   if(!toGen.length){apsNotify('All scenes already have videos. Use regenerate to redo specific scenes.','info');return;}
   window._apsQueue=toGen.slice();window._apsQueueTotal=toGen.length;window._apsQueueDone=0;window._apsQueueErrors=0;
-  st.generating=true;apsShowProgress(0,toGen.length,'Starting...');window._apsRunQueue();
+  window._apsQueueRunning=true;apsShowProgress(0,toGen.length,'Starting...');window._apsRunQueue();
 };
-
 window.aps_generateSelected=async function(){
   apsInitScenes();
   var st=ST();if(st.generating){apsNotify('Generation already running.','warn');return;}
