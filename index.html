@@ -24547,218 +24547,858 @@ console.log('[APS Override v4] startSegmentation + sequential polling queue + cl
 </script>
 
 
-<script id="aab-edit-suite-fix">
+
+
+<script id="aab-edit-complete">
 (function(){
 'use strict';
-if(window._editSuiteFix)return;
-window._editSuiteFix=true;
+if(window._esComplete)return;
+window._esComplete=true;
 
-/* ── 1. Bin click → source monitor ───────────────────────────────────── */
-// Wire media bin items to load into the correct source monitor video
-function wireBinClicks(){
-  var binList = document.getElementById('aab-bin-list') || document.getElementById('e-bin');
-  if(!binList||binList._esfWired)return;
-  binList._esfWired=true;
-  binList.addEventListener('click',function(e){
-    var item=e.target.closest('[class*=bin-item],[class*=aab-bin],[data-url],[data-clip]');
-    if(!item)return;
-    var url=item.dataset.url||item.dataset.clipUrl||'';
-    if(!url&&item.querySelector('video'))url=item.querySelector('video').src||'';
-    if(!url)return;
-    // Load into visible source monitor
-    var sv=document.getElementById('e-src-vid')||document.getElementById('aab-src-vid');
-    var se=document.getElementById('e-src-empty')||document.getElementById('aab-src-empty');
-    if(sv){
-      sv.src=url;sv.muted=false;sv.volume=1;
-      sv.style.display='block';
-      if(se)se.style.display='none';
-      sv.load();
-      sv.addEventListener('loadeddata',function(){
-        if(sv.paused)sv.play().catch(function(){});
-      },{once:true});
-    }
-    // Also update clip properties panel
-    if(window.E&&typeof E_showInspector==='function'){
-      // Find matching clip
-      var clip=null,track=null;
-      (window.E.tracks||[]).forEach(function(t){
-        t.clips.forEach(function(c){if(c.url===url){clip=c;track=t;}});
-      });
-      if(clip)E_showInspector(clip,track);
-    }
+// ── HELPERS ──────────────────────────────────────────────────
+var $=function(id){return document.getElementById(id);};
+var ft=function(s){s=+s||0;return Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');};
+function getTotalDur(){
+  var m=0;
+  if(window.E&&E.tracks)E.tracks.forEach(function(t){
+    t.clips.forEach(function(c){m=Math.max(m,(c.start||0)+(c.duration||0));});
   });
+  return m;
+}
+function getLaneOffset(){
+  var lane=document.querySelector('.aab-lane'),tl=$('aab-tl-scroll');
+  if(!lane||!tl)return 185;
+  return lane.getBoundingClientRect().left-tl.getBoundingClientRect().left;
+}
+function movePH(t){
+  var ph=$('aab-ph');if(!ph)return;
+  var off=getLaneOffset();
+  ph.style.left=(off+t*(window.E?E.pxPerSec:30))+'px';
 }
 
-/* ── 2. Sync source monitor seek bar ─────────────────────────────────── */
-function wireSrcSeek(){
-  var sv=document.getElementById('e-src-vid')||document.getElementById('aab-src-vid');
-  var seek=document.getElementById('e-src-seek')||document.getElementById('aab-src-seek');
-  var tc=document.getElementById('e-src-tc')||document.getElementById('aab-src-time');
-  if(!sv||!seek||sv._esfSeekWired)return;
-  sv._esfSeekWired=true;
-  sv.addEventListener('timeupdate',function(){
-    if(!sv.duration)return;
-    seek.value=(sv.currentTime/sv.duration)*100;
-    if(tc){var m=Math.floor(sv.currentTime/60),s=Math.floor(sv.currentTime%60);tc.textContent=m+':'+String(s).padStart(2,'0');}
+// ── CSS FIXES ─────────────────────────────────────────────────
+(function injectCSS(){
+  if($('aab-es-complete-css'))return;
+  var s=document.createElement('style');s.id='aab-es-complete-css';
+  s.textContent=[
+    '#e-bin > div:nth-child(2){display:flex!important;width:100%!important;}',
+    '.ebin-tab{flex:1!important;border:none!important;border-bottom:2px solid transparent!important;background:none!important;color:rgba(255,255,255,.35)!important;font-size:9px!important;font-weight:600!important;letter-spacing:.05em!important;padding:4px!important;cursor:pointer!important;transition:color .15s,border-color .15s!important;}',
+    '.ebin-tab:hover{color:rgba(255,255,255,.7)!important;}',
+    '.ebin-tab.on{color:#00d4ff!important;border-bottom-color:#00d4ff!important;}',
+    '.aab-bin-clip{display:flex!important;align-items:center!important;gap:6px!important;padding:6px 7px!important;border-radius:5px!important;cursor:pointer!important;margin-bottom:2px!important;background:rgba(255,255,255,.03)!important;border:1px solid transparent!important;transition:background .12s,border-color .12s!important;}',
+    '.aab-bin-clip:hover{background:rgba(255,255,255,.08)!important;border-color:rgba(0,212,255,.2)!important;}',
+    '.aab-bin-clip.selected{background:rgba(0,212,255,.1)!important;border-color:#00d4ff!important;}',
+    '#ebin-clips,#aab-bin-list{padding-top:2px!important;margin-top:0!important;}',
+    '.aab-clip{transition:none!important;user-select:none!important;}',
+    '.aab-clip.sel{outline:2px solid #00d4ff!important;z-index:5!important;}',
+    '#aab-ph{position:absolute!important;top:0!important;bottom:0!important;width:2px!important;background:#ef4444!important;z-index:30!important;pointer-events:none!important;box-shadow:0 0 6px rgba(239,68,68,.6)!important;}',
+    '#aab-ph::before{content:"";position:absolute;top:0;left:-5px;border-left:6px solid transparent;border-right:6px solid transparent;border-top:9px solid #ef4444;}',
+    '#aab-ruler{height:24px!important;position:sticky!important;top:0!important;z-index:15!important;}',
+    '.aab-track-vol{width:44px!important;height:3px!important;accent-color:#00d4ff!important;cursor:pointer!important;}',
+    '#aab-vu-wrap{display:flex;align-items:center;gap:2px;height:12px;margin-left:3px;}',
+    '#aab-vu-wrap .aab-vu-bar{width:3px;border-radius:1px;background:#1e293b;transition:height .08s,background .08s;}',
+    '.aab-loop-on{color:#00d4ff!important;background:rgba(0,212,255,.15)!important;}',
+    '#aab-cc-display{position:absolute;bottom:10%;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.75);color:#fff;padding:4px 12px;border-radius:4px;font-size:14px;text-align:center;pointer-events:none;z-index:50;display:none;}',
+    '#e-tools-bar button.on,.aab-tl-tool.on{background:rgba(0,212,255,.2)!important;color:#00d4ff!important;}'
+  ].join('');
+  document.head.appendChild(s);
+})();
+
+// ── 1. PLAYBACK ENGINE ────────────────────────────────────────
+window._esPlaying=false;
+window._esPH=0;
+window._esLastTs=0;
+window._esRAF=null;
+window._esLoop=false;
+window._esCC=false;
+window._esInPt=null;
+window._esOutPt=null;
+
+function _esClipAt(t){
+  if(!window.E||!E.tracks)return null;
+  var found=null;
+  E.tracks.forEach(function(tr){
+    if(tr.type!=='video'||tr.muted||tr.hidden)return;
+    tr.clips.forEach(function(c){
+      if(!c.url||c.muted)return;
+      if(t>=(c.start||0)&&t<(c.start||0)+(c.duration||0))found=c;
+    });
   });
-  sv.addEventListener('ended',function(){
-    var b=document.getElementById('e-src-play')||document.getElementById('aab-src-play');
-    if(b)b.innerHTML='&#9654;';
-  });
-  seek.addEventListener('input',function(){
-    if(!sv.duration)return;
-    sv.currentTime=(+this.value/100)*sv.duration;
-  });
+  return found;
 }
 
-/* ── 3. Program monitor — full sync with timeline state ──────────────── */
-// Override E_drawProg to fix the sync issue
-var _origDraw=window.E_drawProg;
-window.E_drawProg=function(){
-  if(typeof _origDraw==='function')_origDraw.apply(this,arguments);
-  // Also update e-src-vid seek bar
-  wireSrcSeek();
+function _esUpdateProg(){
+  var pv=$('e-prog-vid')||$('aab-prog-vid');if(!pv)return;
+  var t=window._esPH;
+  var clip=_esClipAt(t);
+  if(!clip){if(!pv.paused)pv.pause();pv.style.display='none';return;}
+  pv.style.display='block';
+  var cT=Math.max(0,t-(clip.start||0));
+  if(pv._esCurUrl!==clip.url){
+    pv._esCurUrl=clip.url;pv.src=clip.url;pv.muted=false;pv.volume=1;pv.load();
+  }
+  if(window._esPlaying){
+    var target=cT;
+    if(pv.paused){
+      if(Math.abs(pv.currentTime-target)>0.2)pv.currentTime=target;
+      pv.muted=false;pv.volume=1;
+      pv.play().catch(function(){pv.muted=false;pv.play().catch(function(){});});
+    } else {
+      if(Math.abs(pv.currentTime-target)>0.5)pv.currentTime=target;
+    }
+  } else {
+    if(!pv.paused)pv.pause();
+    if(Math.abs(pv.currentTime-cT)>0.05)pv.currentTime=cT;
+  }
+  if(window._esCC){
+    var subs=window.E&&E.tracks?E.tracks.find(function(tr){return tr.id==='subs';}):'';
+    var cc=$('aab-cc-display');
+    if(subs&&cc){
+      var sc=subs.clips.find(function(c){return t>=(c.start||0)&&t<(c.start||0)+(c.duration||0);});
+      cc.textContent=sc?(sc.narration||sc.text||sc.name||''):'';
+      cc.style.display=cc.textContent?'block':'none';
+    }
+  }
+  var tc=$('e-prog-tc2');if(tc)tc.textContent=ft(t);
+  var seek=$('e-prog-seek')||$('aab-prog-seek');
+  if(seek){var dur=getTotalDur();if(dur>0)seek.value=(t/dur)*100;}
+}
+
+function _esFrame(ts){
+  if(!window._esPlaying)return;
+  if(window._esLastTs){
+    var dt=(ts-window._esLastTs)/1000;
+    window._esPH=Math.min(window._esPH+dt,getTotalDur()+0.05);
+  }
+  window._esLastTs=ts;
+  var dur=getTotalDur();
+  if(window._esPH>=dur){
+    if(window._esLoop&&window._esInPt!=null&&window._esOutPt!=null&&window._esOutPt>window._esInPt){
+      window._esPH=window._esInPt;
+    } else if(window._esLoop){
+      window._esPH=0;
+    } else {
+      window._esPH=0;window._esPlaying=false;
+      if(window.E){E.playing=false;E.playhead=0;E.currentTime=0;}
+      var pv=$('e-prog-vid')||$('aab-prog-vid');
+      if(pv&&!pv.paused)pv.pause();if(pv){pv.currentTime=0;pv._esCurUrl='';}
+      var btn=$('e-prog-play')||$('aab-prog-play');if(btn)btn.innerHTML='&#9654;';
+      movePH(0);_esUpdateProg();return;
+    }
+  }
+  if(window._esLoop&&window._esInPt!=null&&window._esOutPt!=null&&window._esOutPt>window._esInPt){
+    if(window._esPH>=window._esOutPt)window._esPH=window._esInPt;
+  }
+  if(window.E){E.playhead=window._esPH;E.currentTime=window._esPH;}
+  movePH(window._esPH);
+  _esUpdateProg();
+  window._esRAF=requestAnimationFrame(_esFrame);
+}
+
+window.E_progToggle=function(){
+  var btn=$('e-prog-play')||$('aab-prog-play');
+  if(window._esPlaying){
+    window._esPlaying=false;if(window.E)E.playing=false;
+    if(window._esRAF){cancelAnimationFrame(window._esRAF);window._esRAF=null;}
+    var pv=$('e-prog-vid')||$('aab-prog-vid');if(pv&&!pv.paused)pv.pause();
+    if(btn)btn.innerHTML='&#9654;';return;
+  }
+  if(getTotalDur()===0){if(typeof toast==='function')toast('No clips on timeline','warn');return;}
+  if(window.E)E.playing=true;
+  window._esPlaying=true;
+  if(btn)btn.innerHTML='&#9646;&#9646;';
+  var sv=$('e-src-vid')||$('aab-src-vid');if(sv&&!sv.paused)sv.pause();
+  window._esLastTs=0;
+  window._esRAF=requestAnimationFrame(_esFrame);
 };
+if(window.AABE)AABE.progToggle=function(){E_progToggle();};
+// Alias for pNext system
+window._pNext=function(){};
 
-/* ── 4. Fix E_srcToggle for transport buttons ─────────────────────────── */
-// Source monitor transport: E_srcStep, E_srcJump
-window.E_srcStep=function(dir){
-  var v=document.getElementById('e-src-vid')||document.getElementById('aab-src-vid');
+// ── 2. SOURCE MONITOR ─────────────────────────────────────────
+window.E_srcToggle=function(){
+  var v=$('e-src-vid')||$('aab-src-vid');
   if(!v||!v.src||v.src===location.href)return;
   if(v.readyState===0)v.load();
-  v.currentTime=Math.max(0,Math.min(v.duration||0,v.currentTime+(dir||1)*(1/30)));
-  var tc=document.getElementById('e-src-tc')||document.getElementById('aab-src-time');
-  if(tc&&v.duration){var m=Math.floor(v.currentTime/60),s=Math.floor(v.currentTime%60);tc.textContent=m+':'+String(s).padStart(2,'0');}
+  var b=$('e-src-play')||$('aab-src-play');
+  if(v.paused){
+    if(window._esPlaying)E_progToggle();
+    v.muted=false;v.volume=1;
+    v.play().catch(function(){
+      v.addEventListener('loadeddata',function onl(){
+        v.removeEventListener('loadeddata',onl);v.muted=false;v.play().catch(function(){});
+      },{once:true});
+    });
+    if(b)b.innerHTML='&#9646;&#9646;';
+  } else {
+    v.pause();if(b)b.innerHTML='&#9654;';
+  }
 };
 window.E_srcJump=function(dir){
-  var v=document.getElementById('e-src-vid')||document.getElementById('aab-src-vid');
-  if(!v||!v.src||v.src===location.href)return;
+  var v=$('e-src-vid')||$('aab-src-vid');if(!v||!v.src||v.src===location.href)return;
   if(v.readyState===0)v.load();
   v.currentTime=dir<0?0:(v.duration||0);
 };
-
-/* ── 5. Program transport buttons ─────────────────────────────────────── */
-window.E_progStep=function(dir){
-  if(!window.E)return;
-  E.playhead=Math.max(0,Math.min(typeof E_dur==='function'?E_dur():0,E.playhead+(dir||1)*(1/30)));
-  E.currentTime=E.playhead;
-  if(typeof E_updatePH==='function')E_updatePH();
-  if(typeof E_drawProg==='function')E_drawProg();
+window.E_srcStep=function(dir){
+  var v=$('e-src-vid')||$('aab-src-vid');if(!v||!v.src||v.src===location.href)return;
+  if(v.readyState===0)v.load();
+  v.currentTime=Math.max(0,Math.min(v.duration||0,v.currentTime+(dir||1)*(1/30)));
 };
+window.E_srcToTimeline=function(){
+  var v=$('e-src-vid')||$('aab-src-vid');if(!v||!v.src||v.src===location.href)return;
+  var url=v.src,dur=v.duration||8;
+  if(!window.E)return;
+  var mt=E.tracks.find(function(t){return t.id==='main'||t.id==='main-video';});if(!mt)return;
+  var pos=window._esPH||E.playhead||0;
+  mt.clips.push({id:'c'+Date.now(),name:url.split('/').pop().split('?')[0].slice(0,24)||'Clip',
+    url:url,type:'video',start:pos,duration:dur,color:'#3b82f6'});
+  if(typeof E_renderTL==='function')E_renderTL();
+  if(typeof toast==='function')toast('Added at '+ft(pos),'ok');
+};
+window.E_loadSrc=function(url){
+  var v=$('e-src-vid')||$('aab-src-vid');if(!v)return;
+  var se=$('e-src-empty')||$('aab-src-empty');
+  v.src=url;v.style.display='block';v.muted=false;v.volume=1;
+  if(se)se.style.display='none';
+  v.load();
+  var lbl=$('e-src-label');if(lbl)lbl.textContent=url.split('/').pop().split('?')[0].slice(0,30);
+};
+// Source seek + timecode
+(function(){
+  function wireSrc(){
+    var v=$('e-src-vid')||$('aab-src-vid');
+    var seek=$('e-src-seek')||$('aab-src-seek');
+    var tc=$('e-src-tc')||$('aab-src-time');
+    if(!v||v._esSrcWired)return;v._esSrcWired=true;
+    v.addEventListener('timeupdate',function(){
+      if(!v.duration)return;
+      if(seek)seek.value=(v.currentTime/v.duration)*100;
+      if(tc)tc.textContent=ft(v.currentTime)+' / '+ft(v.duration||0);
+    });
+    v.addEventListener('ended',function(){var b=$('e-src-play')||$('aab-src-play');if(b)b.innerHTML='&#9654;';});
+    if(seek)seek.addEventListener('input',function(){if(v.duration)v.currentTime=(+this.value/100)*v.duration;});
+  }
+  wireSrc();setInterval(wireSrc,1000);
+})();
+
+// ── 3. PROGRAM TRANSPORT ─────────────────────────────────────
 window.E_progJump=function(dir){
-  if(!window.E)return;
-  if(dir===0||dir<0){E.playhead=0;E.currentTime=0;}
-  else{E.playhead=typeof E_dur==='function'?E_dur():0;E.currentTime=E.playhead;}
-  if(typeof E_updatePH==='function')E_updatePH();
-  if(typeof E_drawProg==='function')E_drawProg();
-  // Also seek prog video
-  var pv=document.getElementById('e-prog-vid')||document.getElementById('aab-prog-vid');
-  if(pv&&(dir===0||dir<0)){pv.currentTime=0;if(!pv.paused)pv.pause();}
+  if(dir<0||dir===0){window._esPH=0;}else{window._esPH=getTotalDur();}
+  if(window.E){E.playhead=window._esPH;E.currentTime=window._esPH;}
+  movePH(window._esPH);_esUpdateProg();
 };
+window.E_progStep=function(dir){
+  window._esPH=Math.max(0,Math.min(getTotalDur(),window._esPH+(dir||1)*(1/30)));
+  if(window.E){E.playhead=window._esPH;E.currentTime=window._esPH;}
+  movePH(window._esPH);_esUpdateProg();
+};
+// Program seek bar
+(function(){
+  function wirePSeek(){
+    var pSeek=$('e-prog-seek')||$('aab-prog-seek');
+    if(!pSeek||pSeek._esWired)return;pSeek._esWired=true;
+    pSeek.addEventListener('input',function(){
+      var d=getTotalDur();window._esPH=(+this.value/100)*d;
+      if(window.E){E.playhead=window._esPH;E.currentTime=window._esPH;}
+      movePH(window._esPH);_esUpdateProg();
+    });
+  }
+  wirePSeek();setInterval(wirePSeek,1000);
+})();
 
-/* ── 6. Ruler visibility enhancement ─────────────────────────────────── */
-// Add a ruler overlay with clear time labels using CSS
-function injectRulerCSS(){
-  if(document.getElementById('aab-ruler-fix-css'))return;
-  var s=document.createElement('style');s.id='aab-ruler-fix-css';
-  s.textContent=[
-    '#aab-ruler{background:#0a0d14;height:22px;position:sticky;top:0;z-index:10;}',
-    '.aab-track-row{position:relative;}',
-    '.aab-lane{position:relative;overflow:visible;}',
-    // Timeline time markers as CSS grid lines
-    '#aab-tl-tw{position:relative;}',
-    '#aab-ph{position:absolute;top:0;bottom:0;width:2px;background:#ef4444;z-index:20;pointer-events:none;box-shadow:0 0 4px rgba(239,68,68,.8);}',
-    '#aab-ph::before{content:"";position:absolute;top:0;left:-4px;border:5px solid transparent;border-top:8px solid #ef4444;}'
-  ].join('');
-  document.head.appendChild(s);
-}
-
-/* ── 7. Editing tools — wire toolbar buttons ──────────────────────────── */
-function wireToolbar(){
-  var tools={select:'select',razor:'razor',hand:'hand','trim':'trim'};
-  document.querySelectorAll('[onclick*="E_setTool"],[data-tool]').forEach(function(btn){
-    var tool=btn.getAttribute('data-tool')||'';
-    if(!btn._esfToolWired){
-      btn._esfToolWired=true;
-      var orig=btn.onclick;
-      btn.onclick=function(e){
-        if(orig)orig.call(this,e);
-        // Ensure visual feedback
-        document.querySelectorAll('[data-tool],[onclick*="E_setTool"]').forEach(function(b){b.classList.remove('active','on');});
-        btn.classList.add('active','on');
-      };
-    }
-  });
-}
-
-/* ── 8. Fix E_setTool ─────────────────────────────────────────────────── */
-var _origSetTool=window.E_setTool;
+// ── 4. TOOLS ─────────────────────────────────────────────────
+window._esTool='select';
 window.E_setTool=function(tool){
-  if(typeof _origSetTool==='function')_origSetTool.apply(this,arguments);
-  if(!window.E)window.E={};
-  E.activeTool=tool||'select';
-  // Update cursor on timeline
-  var tl=document.getElementById('aab-tl-scroll');
-  if(tl){
-    var cursors={select:'default',razor:'crosshair',hand:'grab',trim:'ew-resize'};
-    tl.style.cursor=cursors[E.activeTool]||'default';
+  window._esTool=tool||'select';
+  if(window.E)E.activeTool=window._esTool;
+  var tl=$('aab-tl-scroll');if(tl){
+    var cursors={select:'default',razor:'crosshair',hand:'grab',trim:'ew-resize',slip:'col-resize',text:'text'};
+    tl.style.cursor=cursors[window._esTool]||'default';
   }
-  // Visual feedback on toolbar buttons
   document.querySelectorAll('[onclick*="E_setTool"],[data-tool]').forEach(function(b){
-    var bTool=(b.getAttribute('onclick')||'').match(/E_setTool\(['"]([\w]+)['"]\)/);
-    var toolName=bTool?bTool[1]:(b.getAttribute('data-tool')||'');
-    if(toolName){
-      b.style.background=toolName===E.activeTool?'rgba(0,212,255,.2)':'';
-      b.style.color=toolName===E.activeTool?'#00d4ff':'';
-    }
+    var oc=b.getAttribute('onclick')||'';
+    var m=oc.match(/E_setTool\(['"](\w+)['"]/);
+    var t=m?m[1]:(b.getAttribute('data-tool')||'');
+    if(t)b.classList.toggle('on',t===window._esTool);
   });
 };
-
-/* ── 9. Add + Video / + Audio / + Image track upload buttons ─────────── */
-function wireAddButtons(){
-  // Wire the toolbar add buttons
-  var addVid=document.querySelector('[onclick*="E_uploadVideo"],[onclick*="edit_uploadVideo"]');
-  var addAud=document.querySelector('[onclick*="E_uploadAudio"],[onclick*="edit_uploadAudio"]');
-  
-  // Also wire track + buttons in the track headers
-  document.querySelectorAll('.aab-track-btn[title="Add track"]').forEach(function(btn){
-    if(!btn._esfAddWired){btn._esfAddWired=true;}
-  });
-}
-
-/* ── 10. Periodic init (runs after E_build creates DOM) ──────────────── */
-function init(){
-  injectRulerCSS();
-  wireBinClicks();
-  wireSrcSeek();
-  wireToolbar();
-  wireAddButtons();
-  // Make all video elements unmuted
-  document.querySelectorAll('video').forEach(function(v){v.muted=false;v.volume=1;});
-}
-init();
-setInterval(function(){
-  if(document.getElementById('edit-pg')&&document.getElementById('edit-pg').classList.contains('on')){
-    wireBinClicks();wireSrcSeek();wireToolbar();
-  }
-},800);
-
-// Re-init when edit-pg becomes active
-var editPg=document.getElementById('edit-pg');
-if(editPg){
-  new MutationObserver(function(ms){
-    ms.forEach(function(m){
-      if(m.type==='attributes'&&editPg.classList.contains('on')){
-        setTimeout(function(){init();if(typeof E_renderTL==='function')E_renderTL();},200);
+window.E_razorAt=function(t){
+  if(!window.E||!E.tracks)return;
+  t=t!=null?t:window._esPH;
+  var split=false;
+  E.tracks.forEach(function(track){
+    if(track.locked)return;
+    var toAdd=[];
+    track.clips.forEach(function(clip){
+      if(t>clip.start+0.05&&t<clip.start+clip.duration-0.05){
+        var orig=clip.duration;
+        clip.duration=t-clip.start;
+        var nc=JSON.parse(JSON.stringify(clip));
+        nc.id='c'+Date.now()+'_'+Math.random().toString(36).slice(2,5);
+        nc.start=t;nc.duration=(clip.start+orig)-t;nc.in=0;
+        toAdd.push(nc);split=true;
       }
     });
-  }).observe(editPg,{attributes:true,attributeFilter:['class','style']});
+    toAdd.forEach(function(c){track.clips.push(c);});
+  });
+  if(split){if(typeof E_renderTL==='function')E_renderTL();if(typeof toast==='function')toast('Split at '+ft(t),'ok');}
+  else if(typeof toast==='function')toast('Place playhead inside a clip','info');
+};
+
+// ── 5. TRACK CONTROLS ────────────────────────────────────────
+window.E_muteTrack=function(id){
+  var t=window.E&&E.tracks?E.tracks.find(function(x){return x.id===id;}):null;
+  if(!t)return;t.muted=!t.muted;
+  if(typeof E_renderTL==='function')E_renderTL();
+  if(typeof toast==='function')toast(t.muted?'Muted':'Unmuted','info');
+};
+window.E_lockTrack=function(id){
+  var t=window.E&&E.tracks?E.tracks.find(function(x){return x.id===id;}):null;
+  if(!t)return;t.locked=!t.locked;
+  if(typeof E_renderTL==='function')E_renderTL();
+  if(typeof toast==='function')toast(t.locked?'Locked':'Unlocked','info');
+};
+window.E_deleteTrack=function(id){
+  if(!window.E||!E.tracks)return;
+  if(id==='main'||id==='main-video'){if(typeof toast==='function')toast('Cannot delete Main Video track','warn');return;}
+  E.tracks=E.tracks.filter(function(t){return t.id!==id;});
+  if(typeof E_renderTL==='function')E_renderTL();
+  if(typeof toast==='function')toast('Track removed','ok');
+};
+window.E_addTrack=function(type){
+  if(!window.E||!E.tracks)return;
+  var id=(type||'video')+'_'+Date.now();
+  var colors={video:'#3b82f6',audio:'#10b981',text:'#8b5cf6',image:'#f59e0b'};
+  E.tracks.push({id:id,name:(type||'Video').charAt(0).toUpperCase()+(type||'video').slice(1)+' Track',
+    type:type||'video',color:colors[type]||'#64748b',clips:[],muted:false,locked:false,h:52,volume:80});
+  if(typeof E_renderTL==='function')E_renderTL();
+  if(typeof toast==='function')toast('Track added','ok');
+};
+
+// ── 6. MARK IN/OUT, LOOP, CC, SAFE ZONES ────────────────────
+window.E_setIn=function(){
+  window._esInPt=window._esPH;if(window.E)E.regionIn=window._esInPt;
+  if(typeof E_renderTL==='function')E_renderTL();
+  if(typeof toast==='function')toast('In: '+ft(window._esInPt),'ok');
+};
+window.E_setOut=function(){
+  window._esOutPt=window._esPH;if(window.E)E.regionOut=window._esOutPt;
+  if(typeof E_renderTL==='function')E_renderTL();
+  if(typeof toast==='function')toast('Out: '+ft(window._esOutPt),'ok');
+};
+window.E_toggleLoop=function(){
+  window._esLoop=!window._esLoop;
+  if(window.AABE)AABE._loop=window._esLoop;
+  var btn=document.querySelector('[onclick*="toggleLoop"],[onclick*="E_toggleLoop"],[onclick*="AABE.loop"]');
+  if(btn)btn.classList.toggle('aab-loop-on',window._esLoop);
+  if(typeof toast==='function')toast('Loop '+(window._esLoop?'ON':'OFF'),'info');
+};
+window.E_toggleCC=function(){
+  window._esCC=!window._esCC;
+  var cc=$('aab-cc-display');
+  if(!cc){
+    cc=document.createElement('div');cc.id='aab-cc-display';
+    var pmon=$('e-prog-view')||$('aab-prog-mon');
+    if(pmon){pmon.style.position='relative';pmon.appendChild(cc);}
+    else{document.body.appendChild(cc);}
+  }
+  if(!window._esCC)cc.style.display='none';
+  var btn=document.querySelector('[onclick*="E_toggleCC"],[onclick*="toggleCC"],[onclick*="AABE.cc"]');
+  if(btn)btn.classList.toggle('aab-loop-on',window._esCC);
+  if(typeof toast==='function')toast('CC '+(window._esCC?'ON':'OFF'),'info');
+};
+window.E_toggleSafeZones=function(){
+  var sv=$('e-prog-safe')||$('aab-safe');if(!sv)return;
+  var show=sv.style.display==='none';sv.style.display=show?'block':'none';
+  if(typeof toast==='function')toast('Safe zones '+(show?'ON':'OFF'),'info');
+};
+if(window.AABE){
+  AABE.safeZones=AABE.safeZones||window.E_toggleSafeZones;
+  AABE.loop=AABE.loop||window.E_toggleLoop;
+  AABE.cc=AABE.cc||window.E_toggleCC;
 }
 
-console.log('[EditSuiteFix] All transport, sync, and tool fixes applied');
+// ── 7. MEDIA BIN ─────────────────────────────────────────────
+window._esBinFiles=[];
+
+function _esBinRender(){
+  var container=$('ebin-clips');if(!container)return;
+  container.innerHTML='';
+  var clips=[],seen={};
+  var proj=window.PROJECT;
+  if(proj&&proj.apsVideos){
+    Object.entries(proj.apsVideos).forEach(function(kv){
+      var v=kv[1];if(v&&v.url&&!seen[v.url]){seen[v.url]=1;
+        clips.push({url:v.url,name:v.name||('Scene '+(clips.length+1)),type:'video',dur:v.dur||8});}
+    });
+  }
+  if(proj&&proj.scenes){
+    proj.scenes.forEach(function(s,i){
+      var url=s.apsVideoUrl||s.videoUrl||'';
+      if(url&&!seen[url]){seen[url]=1;
+        clips.push({url:url,name:s.title||('Scene '+(i+1)),type:'video',dur:s.duration||8});}
+    });
+  }
+  window._esBinFiles.forEach(function(f){if(!seen[f.url]){seen[f.url]=1;clips.push(f);}});
+  var cnt=$('ebin-count');if(cnt)cnt.textContent=clips.length+' clip'+(clips.length!==1?'s':'');
+  if(!clips.length){
+    container.innerHTML='<div style="color:rgba(255,255,255,.2);font-size:10px;padding:12px;text-align:center">No clips yet.<br>Add files or generate AI scenes.</div>';
+    return;
+  }
+  clips.forEach(function(cl){
+    var card=document.createElement('div');card.className='aab-bin-clip';
+    card.dataset.url=cl.url;card.dataset.name=cl.name;card.dataset.type=cl.type||'video';
+    var icon=cl.type==='audio'?'🎵':cl.type==='image'?'\uD83D\uDDBC':'\uD83C\uDFAC';
+    card.innerHTML='<span style="font-size:13px;flex-shrink:0">'+icon+'</span>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:9px;font-weight:600;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cl.name+'</div>'+
+        '<div style="font-size:8px;color:rgba(255,255,255,.3)">'+ft(cl.dur||8)+'</div>'+
+      '</div>'+
+      '<button class="aab-bin-del" title="Remove" style="background:none;border:none;color:rgba(255,68,68,.4);cursor:pointer;font-size:10px;padding:1px 3px;border-radius:2px;flex-shrink:0">&#10005;</button>';
+    card.addEventListener('click',function(e){
+      if(e.target.classList.contains('aab-bin-del'))return;
+      document.querySelectorAll('.aab-bin-clip').forEach(function(c){c.classList.remove('selected');});
+      card.classList.add('selected');
+      window.E_loadSrc(cl.url);
+      var sv=$('e-src-vid')||$('aab-src-vid');
+      if(sv){
+        sv.addEventListener('loadeddata',function onld(){
+          sv.removeEventListener('loadeddata',onld);
+          sv.muted=false;sv.volume=1;sv.play().catch(function(){});
+          var b=$('e-src-play');if(b)b.innerHTML='&#9646;&#9646;';
+        },{once:true});
+      }
+    });
+    card.querySelector('.aab-bin-del').addEventListener('click',function(e){
+      e.stopPropagation();
+      window._esBinFiles=window._esBinFiles.filter(function(f){return f.url!==cl.url;});
+      if(proj&&proj.apsVideos)Object.keys(proj.apsVideos).forEach(function(k){
+        if(proj.apsVideos[k].url===cl.url)delete proj.apsVideos[k];
+      });
+      if(proj&&proj.scenes)proj.scenes.forEach(function(s){if(s.apsVideoUrl===cl.url)s.apsVideoUrl='';});
+      _esBinRender();
+    });
+    card.setAttribute('draggable','true');
+    card.addEventListener('dragstart',function(de){
+      de.dataTransfer.setData('text/plain',JSON.stringify({url:cl.url,name:cl.name,type:cl.type||'video',duration:cl.dur||8}));
+      de.dataTransfer.effectAllowed='copy';
+    });
+    container.appendChild(card);
+  });
+}
+
+// + Add button
+function _wireAddBtn(){
+  var addBtn=document.querySelector('[onclick*="AABE.import"],[onclick*="E_uploadVideo"]');
+  if(addBtn&&!addBtn._esWired){
+    addBtn._esWired=true;
+    addBtn.onclick=function(ev){
+      ev.preventDefault();ev.stopPropagation();
+      var inp=document.createElement('input');inp.type='file';
+      inp.accept='video/*,audio/*,image/*';inp.multiple=true;
+      inp.onchange=function(){
+        Array.from(inp.files).forEach(function(f){
+          var url=URL.createObjectURL(f);
+          var type=f.type.startsWith('video')?'video':f.type.startsWith('audio')?'audio':'image';
+          window._esBinFiles.push({url:url,name:f.name.slice(0,30),type:type,dur:type==='video'?10:type==='audio'?60:5});
+        });
+        _esBinRender();
+        if(typeof toast==='function')toast(inp.files.length+' file'+(inp.files.length!==1?'s':'')+' added','ok');
+      };
+      inp.click();
+    };
+  }
+  if(window.AABE)AABE.import=function(){_wireAddBtn();if(document.querySelector('[onclick*="AABE.import"]'))document.querySelector('[onclick*="AABE.import"]').click();};
+}
+
+// Drop zones on timeline lanes
+function _wireDropZones(){
+  document.querySelectorAll('.aab-lane').forEach(function(lane){
+    if(lane._esDropWired)return;lane._esDropWired=true;
+    lane.addEventListener('dragover',function(e){e.preventDefault();e.dataTransfer.dropEffect='copy';lane.style.background='rgba(0,212,255,.06)';});
+    lane.addEventListener('dragleave',function(){lane.style.background='';});
+    lane.addEventListener('drop',function(e){
+      e.preventDefault();lane.style.background='';
+      var data;try{data=JSON.parse(e.dataTransfer.getData('text/plain'));}catch(err){return;}
+      if(!data||!data.url)return;
+      var tid=lane.dataset.tid||'main';
+      var track=window.E&&E.tracks?E.tracks.find(function(t){return t.id===tid;}):null;
+      if(!track)return;
+      var rect=lane.getBoundingClientRect();
+      var startT=Math.max(0,(e.clientX-rect.left)/((window.E&&E.pxPerSec)||30));
+      if(window.E&&E.snap)startT=Math.round(startT*10)/10;
+      track.clips.push({id:'c'+Date.now(),name:data.name||'Clip',url:data.url,
+        type:data.type||'video',start:startT,duration:data.duration||8,color:track.color});
+      if(typeof E_renderTL==='function')E_renderTL();
+      if(typeof toast==='function')toast('"'+(data.name||'Clip')+'" dropped at '+ft(startT),'ok');
+    });
+  });
+}
+
+// ── 8. CLIP INTERACTIONS ─────────────────────────────────────
+window._esSelClips=new Set();
+
+function _wireClips(){
+  document.querySelectorAll('.aab-clip:not([data-eswired])').forEach(function(cl){
+    cl.dataset.eswired='1';
+    cl.addEventListener('click',function(e){
+      e.stopPropagation();
+      var id=cl.dataset.id;if(!id||!window.E)return;
+      var clip=null,track=null;
+      E.tracks.forEach(function(tr){tr.clips.forEach(function(c){if(c.id===id){clip=c;track=tr;}});});
+      if(!clip)return;
+      if(!e.shiftKey&&!e.ctrlKey&&!e.metaKey){
+        window._esSelClips.clear();window._esSelClips.add(id);
+        document.querySelectorAll('.aab-clip').forEach(function(x){x.classList.remove('sel');x.style.outline='';});
+        cl.classList.add('sel');
+        if(clip.url&&clip.type==='video')window.E_loadSrc(clip.url);
+        _esInspect(clip,track);
+      } else {
+        if(window._esSelClips.has(id)){window._esSelClips.delete(id);cl.classList.remove('sel');}
+        else{window._esSelClips.add(id);cl.classList.add('sel');}
+      }
+    });
+    // Drag to move (select tool)
+    cl.addEventListener('mousedown',function(e){
+      if(window._esTool!=='select')return;
+      e.stopPropagation();
+      var id=cl.dataset.id;if(!id||!window.E)return;
+      var clip=null,track=null;
+      E.tracks.forEach(function(tr){tr.clips.forEach(function(c){if(c.id===id){clip=c;track=tr;}});});
+      if(!clip||track.locked)return;
+      var sx=e.clientX,os=clip.start,pps=(window.E&&E.pxPerSec)||30,didMove=false;
+      function onmv(e2){
+        clip.start=Math.max(0,os+(e2.clientX-sx)/pps);
+        if(window.E&&E.snap)clip.start=Math.round(clip.start*10)/10;
+        cl.style.left=(clip.start*pps)+'px';didMove=true;
+      }
+      function onup(){
+        document.removeEventListener('mousemove',onmv);document.removeEventListener('mouseup',onup);
+        if(didMove&&typeof E_renderTL==='function')E_renderTL();
+      }
+      document.addEventListener('mousemove',onmv);document.addEventListener('mouseup',onup);
+    });
+    // Right-click context menu
+    cl.addEventListener('contextmenu',function(e){
+      e.preventDefault();e.stopPropagation();
+      var id=cl.dataset.id;if(!id||!window.E)return;
+      var clip=null,track=null;
+      E.tracks.forEach(function(tr){tr.clips.forEach(function(c){if(c.id===id){clip=c;track=tr;}});});
+      if(!clip)return;
+      _esCtx(e.clientX,e.clientY,[
+        {i:'&#9986;',l:'Split at playhead',fn:function(){window.E_razorAt(window._esPH);}},
+        {i:'&#128203;',l:'Duplicate',fn:function(){var nc=JSON.parse(JSON.stringify(clip));nc.id='c'+Date.now();nc.start=clip.start+clip.duration+0.1;track.clips.push(nc);if(typeof E_renderTL==='function')E_renderTL();}},
+        '—',
+        {i:clip.muted?'&#128266;':'&#128264;',l:clip.muted?'Unmute':'Mute',fn:function(){clip.muted=!clip.muted;if(typeof E_renderTL==='function')E_renderTL();}},
+        {i:clip.locked?'&#128275;':'&#128274;',l:clip.locked?'Unlock':'Lock',fn:function(){clip.locked=!clip.locked;if(typeof E_renderTL==='function')E_renderTL();}},
+        '—',
+        {i:'&#128465;',l:'Delete',col:'#ef4444',fn:function(){track.clips=track.clips.filter(function(x){return x.id!==clip.id;});if(typeof E_renderTL==='function')E_renderTL();}}
+      ]);
+    });
+  });
+}
+
+// Timeline area click → set playhead / clear selection
+function wireTLClick(){
+  var rows=$('aab-rows');if(!rows||rows._esTLClick)return;
+  rows._esTLClick=true;
+  rows.addEventListener('click',function(e){
+    if(e.target.closest('.aab-clip,.aab-track-lbl,.aab-track-controls'))return;
+    var tl=$('aab-tl-scroll');if(!tl)return;
+    var off=getLaneOffset();
+    var rect=tl.getBoundingClientRect();
+    var x=e.clientX-rect.left-off;if(x<0)return;
+    var t=x/((window.E&&E.pxPerSec)||30);
+    window._esPH=Math.max(0,t);
+    if(window.E){E.playhead=window._esPH;E.currentTime=window._esPH;}
+    movePH(window._esPH);_esUpdateProg();
+    window._esSelClips.clear();
+    document.querySelectorAll('.aab-clip').forEach(function(c){c.classList.remove('sel');c.style.outline='';});
+  });
+}
+
+// Ruler click → set playhead
+function wireRulerClick(){
+  var ruler=$('aab-ruler');if(!ruler||ruler._esRulerClick)return;
+  ruler._esRulerClick=true;
+  ruler.addEventListener('click',function(e){
+    var off=getLaneOffset();
+    var rect=ruler.getBoundingClientRect();
+    var x=e.clientX-rect.left-off;if(x<0)return;
+    var t=x/((window.E&&E.pxPerSec)||30);
+    window._esPH=Math.max(0,t);
+    if(window.E){E.playhead=window._esPH;E.currentTime=window._esPH;}
+    movePH(window._esPH);_esUpdateProg();
+  });
+}
+
+// ── 9. INSPECTOR ─────────────────────────────────────────────
+function _esInspect(clip,track){
+  var el=$('e-insp')||$('aab-insp');if(!el||!clip)return;
+  el.innerHTML='<div style="padding:14px;font-family:Sora,Inter,sans-serif;font-size:11px">'+
+    '<div style="font-size:8px;font-weight:700;color:rgba(255,255,255,.3);letter-spacing:.1em;margin-bottom:10px">CLIP PROPERTIES</div>'+
+    '<div style="color:rgba(255,255,255,.4);font-size:8px;margin-bottom:2px">NAME</div>'+
+    '<div style="color:#e2e8f0;font-weight:600;margin-bottom:8px;overflow:hidden;text-overflow:ellipsis">'+clip.name+'</div>'+
+    '<div style="color:rgba(255,255,255,.4);font-size:8px;margin-bottom:2px">DURATION</div>'+
+    '<div style="color:#e2e8f0;margin-bottom:8px">'+clip.duration.toFixed(1)+'s</div>'+
+    '<div style="color:rgba(255,255,255,.4);font-size:8px;margin-bottom:2px">START</div>'+
+    '<div style="color:#e2e8f0;margin-bottom:8px">'+clip.start.toFixed(2)+'s</div>'+
+    '<div style="color:rgba(255,255,255,.4);font-size:8px;margin-bottom:2px">TRACK</div>'+
+    '<div style="color:#e2e8f0;margin-bottom:8px">'+(track?track.name||track.id:'—')+'</div>'+
+    (clip.url?'<div style="color:rgba(255,255,255,.4);font-size:8px;margin-bottom:2px">SOURCE</div><div style="color:#2563eb;font-size:8px;word-break:break-all;overflow:hidden;max-height:32px">'+clip.url.slice(0,60)+'...</div>':'')
+  +'</div>';
+}
+
+// ── 10. CONTEXT MENU ─────────────────────────────────────────
+function _esCtx(x,y,items){
+  var old=$('aab-ctx');if(old)old.remove();
+  var m=document.createElement('div');m.id='aab-ctx';
+  m.style.cssText='position:fixed;z-index:99999;background:#1a2335;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:5px;min-width:180px;box-shadow:0 8px 32px rgba(0,0,0,.6);font-family:Sora,Inter,sans-serif;';
+  m.style.left=Math.min(x,window.innerWidth-200)+'px';m.style.top=Math.min(y,window.innerHeight-260)+'px';
+  items.forEach(function(it){
+    if(!it||it==='—'){var sep=document.createElement('div');sep.style.cssText='border-top:1px solid rgba(255,255,255,.06);margin:4px 0;';m.appendChild(sep);return;}
+    var li=document.createElement('div');
+    li.style.cssText='padding:7px 12px;cursor:pointer;color:'+(it.col||'#e2e8f0')+';font-size:11px;display:flex;align-items:center;gap:8px;border-radius:4px;';
+    li.innerHTML='<span>'+it.i+'</span><span>'+it.l+'</span>';
+    li.onmouseenter=function(){li.style.background='rgba(0,212,255,.1)';};
+    li.onmouseleave=function(){li.style.background='';};
+    li.onclick=function(){m.remove();it.fn&&it.fn();};
+    m.appendChild(li);
+  });
+  document.body.appendChild(m);
+  setTimeout(function(){document.addEventListener('mousedown',function rem(e){if(!m.contains(e.target)){m.remove();document.removeEventListener('mousedown',rem);}},true);},10);
+}
+
+// ── 11. VOLUMES — one slider per track ───────────────────────
+function _esFixVolumes(){
+  if(!window.E||!E.tracks)return;
+  document.querySelectorAll('.aab-track-row').forEach(function(row){
+    var sliders=Array.from(row.querySelectorAll('input[type=range]'));
+    // Remove duplicates, keep first
+    for(var i=1;i<sliders.length;i++)sliders[i].remove();
+    // Add if missing
+    var ctrl=row.querySelector('.aab-track-controls');if(!ctrl)return;
+    var nm=row.querySelector('.aab-track-name');
+    var trackName=nm?nm.textContent.trim():'';
+    var track=E.tracks.find(function(t){return trackName.indexOf(t.id)>-1||trackName.indexOf(t.name||'')>-1;});
+    if(!ctrl.querySelector('input[type=range]')){
+      var sl=document.createElement('input');sl.type='range';sl.min=0;sl.max=150;sl.value=track?Math.round(track.volume||80):80;
+      sl.className='aab-track-vol';sl.title='Volume: '+(sl.value)+'%';
+      sl.addEventListener('input',function(){
+        if(track)track.volume=+sl.value;
+        sl.title='Volume: '+sl.value+'%';
+        var pv=$('e-prog-vid')||$('aab-prog-vid');
+        if(pv&&track&&(track.id==='main'||track.id==='main-video'||track.id==='broll'))pv.volume=Math.min(1,+sl.value/100);
+      });
+      var btns=ctrl.querySelectorAll('button');var last=btns[btns.length-1];
+      if(last)ctrl.insertBefore(sl,last);else ctrl.appendChild(sl);
+    }
+  });
+}
+
+// ── 12. VOICE OVER VU METER ──────────────────────────────────
+var _esMicStream=null,_esMicAA=null,_esMicAnalyser=null,_esVUraf=null;
+
+window.E_startVoiceRecord=function(){
+  if(_esMicStream){_esStopMic();return;}
+  navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+    _esMicStream=stream;
+    var ctx=new(window.AudioContext||window.webkitAudioContext)();
+    _esMicAA=ctx;
+    _esMicAnalyser=ctx.createAnalyser();
+    ctx.createMediaStreamSource(stream).connect(_esMicAnalyser);
+    _esMicAnalyser.fftSize=128;
+    var mic=document.querySelector('.aab-mic-btn');if(mic)mic.style.background='rgba(239,68,68,.7)';
+    _esVULoop();
+    if(typeof toast==='function')toast('&#127908; Mic live','ok');
+  }).catch(function(e){if(typeof toast==='function')toast('Mic: '+e.message,'error');});
+};
+function _esStopMic(){
+  if(_esMicStream){_esMicStream.getTracks().forEach(function(t){t.stop();});_esMicStream=null;}
+  if(_esMicAA){try{_esMicAA.close();}catch(e){}}_esMicAA=null;
+  if(_esVUraf){cancelAnimationFrame(_esVUraf);_esVUraf=null;}
+  document.querySelectorAll('.aab-vu-bar').forEach(function(b){b.style.height='20%';b.style.background='#1e293b';});
+  var mic=document.querySelector('.aab-mic-btn');if(mic)mic.style.background='rgba(239,68,68,.18)';
+  if(typeof toast==='function')toast('Mic off','info');
+}
+function _esVULoop(){
+  if(!_esMicAnalyser)return;
+  var buf=new Uint8Array(_esMicAnalyser.frequencyBinCount);
+  (function tick(){
+    _esVUraf=requestAnimationFrame(tick);
+    _esMicAnalyser.getByteFrequencyData(buf);
+    var avg=0;for(var i=0;i<buf.length;i++)avg+=buf[i];avg=avg/buf.length/255;
+    document.querySelectorAll('.aab-vu-bar').forEach(function(b,i){
+      var thresh=[0.02,0.10,0.22,0.40,0.60,0.80];
+      var active=avg>thresh[i];
+      b.style.height=active?'100%':'20%';
+      b.style.background=active?(avg>0.75?'#ef4444':avg>0.45?'#f59e0b':'#10b981'):'#1e293b';
+    });
+    var af=$('audio-fill');if(af)af.style.width=(avg*100)+'%';
+  })();
+}
+
+// Wire mic button + VU wrap on VO track row
+function _addVUMeter(){
+  document.querySelectorAll('.aab-track-row').forEach(function(row){
+    var nm=row.querySelector('.aab-track-name');if(!nm)return;
+    if(nm.textContent.indexOf('Voice')===-1)return;
+    var ctrl=row.querySelector('.aab-track-controls');if(!ctrl)return;
+    if(!ctrl.querySelector('#aab-vu-wrap')){
+      var wrap=document.createElement('div');wrap.id='aab-vu-wrap';
+      for(var i=0;i<6;i++){
+        var b=document.createElement('div');b.className='aab-vu-bar';
+        b.style.cssText='width:3px;height:20%;border-radius:1px;background:#1e293b;transition:height .08s,background .08s;';
+        wrap.appendChild(b);
+      }
+      var last=ctrl.querySelector('button:last-child');
+      if(last)ctrl.insertBefore(wrap,last);else ctrl.appendChild(wrap);
+    }
+    if(!ctrl.querySelector('.aab-mic-btn')){
+      var mic=document.createElement('button');mic.className='aab-mic-btn';mic.innerHTML='&#127908;';
+      mic.title='Toggle mic input for Voice Over (with VU meter)';
+      mic.style.cssText='background:rgba(239,68,68,.18);border:1px solid rgba(239,68,68,.4);border-radius:4px;padding:1px 5px;cursor:pointer;font-size:10px;color:#fca5a5;margin-left:2px;';
+      mic.addEventListener('click',function(e){e.stopPropagation();window.E_startVoiceRecord();});
+      var wrap2=ctrl.querySelector('#aab-vu-wrap');
+      if(wrap2&&wrap2.nextSibling)ctrl.insertBefore(mic,wrap2.nextSibling);
+      else ctrl.appendChild(mic);
+    }
+  });
+}
+
+// ── 13. SUBS CLEANUP ─────────────────────────────────────────
+function _cleanSubs(){
+  if(!window.E||!E.tracks)return;
+  var subs=E.tracks.find(function(t){return t.id==='subs';});
+  if(!subs||subs.clips.length<=3)return;
+  var proj=window.PROJECT;
+  var scenes=proj&&proj.scenes?proj.scenes:[];
+  if(scenes.length>0){
+    var pos=0;
+    subs.clips=scenes.map(function(s,i){
+      var dur=s.duration||8;
+      var c={id:'sub'+i,trackId:'subs',name:(s.narration||s.text||'').slice(0,40),
+        narration:s.narration||s.text||'',type:'text',start:pos,duration:dur,color:'#22d3ee'};
+      pos+=dur;return c;
+    });
+  } else {
+    var seen2={};
+    subs.clips=subs.clips.filter(function(c){if(seen2[c.start])return false;seen2[c.start]=1;return true;}).slice(0,5);
+  }
+}
+
+// ── 14. PATCH E_renderTL to re-wire after each render ────────
+(function(){
+  var orl=window.E_renderTL;
+  if(orl&&!orl._esCPatched){
+    window.E_renderTL=function(){
+      orl.apply(this,arguments);
+      setTimeout(function(){
+        _wireClips();_wireDropZones();_esFixVolumes();_addVUMeter();wireTLClick();wireRulerClick();
+      },30);
+    };
+    window.E_renderTL._esCPatched=true;
+    window.E_renderTL._orig=orl;
+  }
+})();
+
+// ── 15. KEYBOARD SHORTCUTS ───────────────────────────────────
+document.addEventListener('keydown',function(e){
+  var tag=e.target.tagName;
+  if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;
+  var ep=$('edit-pg');if(!ep||!ep.classList.contains('on'))return;
+  switch(e.key){
+    case ' ':e.preventDefault();E_progToggle();break;
+    case 's':case 'S':if(!e.ctrlKey&&!e.metaKey){e.preventDefault();E_razorAt(window._esPH);}break;
+    case 'v':case 'V':if(!e.ctrlKey&&!e.metaKey)E_setTool('select');break;
+    case 'c':case 'C':if(!e.ctrlKey&&!e.metaKey)E_setTool('razor');break;
+    case 'h':case 'H':if(!e.ctrlKey&&!e.metaKey)E_setTool('hand');break;
+    case 'Delete':case 'Backspace':
+      if(window._esSelClips&&window._esSelClips.size>0&&window.E&&E.tracks){
+        E.tracks.forEach(function(t){t.clips=t.clips.filter(function(c){return !window._esSelClips.has(c.id);});});
+        window._esSelClips.clear();if(typeof E_renderTL==='function')E_renderTL();
+      }break;
+    case 'ArrowLeft':
+      e.preventDefault();
+      window._esPH=Math.max(0,window._esPH-(e.shiftKey?1:1/30));
+      if(window.E){E.playhead=window._esPH;E.currentTime=window._esPH;}
+      movePH(window._esPH);_esUpdateProg();break;
+    case 'ArrowRight':
+      e.preventDefault();
+      window._esPH=Math.min(getTotalDur(),window._esPH+(e.shiftKey?1:1/30));
+      if(window.E){E.playhead=window._esPH;E.currentTime=window._esPH;}
+      movePH(window._esPH);_esUpdateProg();break;
+    case 'Home':window._esPH=0;if(window.E){E.playhead=0;E.currentTime=0;}movePH(0);_esUpdateProg();break;
+    case 'End':var ed=getTotalDur();window._esPH=ed;if(window.E){E.playhead=ed;E.currentTime=ed;}movePH(ed);_esUpdateProg();break;
+    case 'i':case 'I':if(!e.ctrlKey&&!e.metaKey)window.E_setIn&&window.E_setIn();break;
+    case 'o':case 'O':if(!e.ctrlKey&&!e.metaKey)window.E_setOut&&window.E_setOut();break;
+    case 'l':case 'L':if(!e.ctrlKey&&!e.metaKey)window.E_toggleLoop&&window.E_toggleLoop();break;
+    case 'z':case 'Z':
+      if((e.ctrlKey||e.metaKey)&&window.AABE&&AABE.undo)AABE.undo();break;
+  }
+},false);
+
+// ── 16. PLAYHEAD DRAG ────────────────────────────────────────
+function wirePlayheadDrag(){
+  var ph=$('aab-ph');if(!ph||ph._esDragWired)return;ph._esDragWired=true;
+  ph.style.pointerEvents='auto';ph.style.cursor='ew-resize';
+  ph.addEventListener('mousedown',function(ped){
+    ped.preventDefault();ped.stopPropagation();
+    if(window._esPlaying)E_progToggle();
+    function onmv(e2){
+      var tl=$('aab-tl-scroll');if(!tl)return;
+      var off=getLaneOffset(),rect=tl.getBoundingClientRect();
+      var x=e2.clientX-rect.left-off;
+      window._esPH=Math.max(0,Math.min(getTotalDur(),x/((window.E&&E.pxPerSec)||30)));
+      if(window.E){E.playhead=window._esPH;E.currentTime=window._esPH;}
+      movePH(window._esPH);_esUpdateProg();
+    }
+    function onup(){document.removeEventListener('mousemove',onmv);document.removeEventListener('mouseup',onup);}
+    document.addEventListener('mousemove',onmv);document.addEventListener('mouseup',onup);
+  });
+}
+
+// ── 17. BOOT ─────────────────────────────────────────────────
+function _esBoot(){
+  _cleanSubs();
+  _esBinRender();
+  _wireAddBtn();
+  _wireClips();
+  _wireDropZones();
+  _esFixVolumes();
+  _addVUMeter();
+  wireTLClick();
+  wireRulerClick();
+  wirePlayheadDrag();
+  // Sync _esPH from E.playhead
+  if(window.E&&E.playhead&&Math.abs(window._esPH-E.playhead)>0.5&&!window._esPlaying){
+    window._esPH=E.playhead;movePH(window._esPH);
+  }
+}
+
+// Run boot, and every 600ms re-wire dynamic elements
+_esBoot();
+setInterval(function(){
+  var ep=$('edit-pg');
+  if(ep&&ep.classList.contains('on')){
+    _wireClips();_wireDropZones();_addVUMeter();wirePlayheadDrag();
+    if(!window._esPlaying&&window.E&&E.playhead!==undefined&&Math.abs(window._esPH-E.playhead)>0.5){
+      window._esPH=E.playhead;movePH(window._esPH);
+    }
+  }
+},600);
+
+// Re-boot when edit-pg activates
+(function(){
+  var ep=$('edit-pg');if(!ep)return;
+  new MutationObserver(function(ms){
+    ms.forEach(function(m){if(m.type==='attributes'&&ep.classList.contains('on'))setTimeout(_esBoot,300);});
+  }).observe(ep,{attributes:true,attributeFilter:['class','style']});
+})();
+
+console.log('[EditComplete v2] Full edit suite wired: playback, tools, bin, volumes, mic VU, drag-drop, keyboard');
 })();
 </script>
-
 </body>
 </html>
 
