@@ -5203,11 +5203,20 @@ function E_loadSrc(url,type){
   }
 }
 function E_srcToggle(){
-  var v=document.getElementById("aab-src-vid");if(!v||!v.src)return;
-  var b=document.getElementById("aab-src-play");
+  // Target both source video elements (aab-src-vid = built by E_build, e-src-vid = static HTML)
+  var v=document.getElementById("e-src-vid")||document.getElementById("aab-src-vid");
+  if(!v||!v.src||v.src===location.href)return;
+  var b=document.getElementById("e-src-play")||document.getElementById("aab-src-play");
+  // Ensure video is loaded before playing
+  if(v.readyState===0&&v.src){v.load();}
   if(v.paused){
     if(E&&E.playing)E_progToggle(); // pause program first
-    v.play();if(b)b.innerHTML="&#9646;&#9646;";
+    v.muted=false;v.volume=1;
+    v.play().catch(function(err){
+      // Retry after load if autoplay blocked
+      v.addEventListener('loadeddata',function onld(){v.removeEventListener('loadeddata',onld);v.play().catch(function(){});},{once:true});
+    });
+    if(b)b.innerHTML="&#9646;&#9646;";
   } else {
     v.pause();if(b)b.innerHTML="&#9654;";
   }
@@ -5237,10 +5246,17 @@ function E_drawProg(){
     pvid.load();
   }
   if(E.playing){
+    var cT=Math.max(0,t-(vc.start||0));
     if(pvid.paused){
-      var cT=Math.max(0,t-(vc.start||0));
-      if(Math.abs(pvid.currentTime-cT)>0.5)pvid.currentTime=cT;
-      pvid.play().catch(function(){});
+      // Always seek to correct position before playing
+      if(Math.abs(pvid.currentTime-cT)>0.15)pvid.currentTime=cT;
+      pvid.muted=false;pvid.volume=1;
+      pvid.play().catch(function(e){pvid.muted=false;pvid.play().catch(function(){});});
+    } else {
+      // Video is playing - check if it has drifted more than 0.5s from expected position
+      if(Math.abs(pvid.currentTime-cT)>0.5){
+        pvid.currentTime=cT; // Re-sync if drifted
+      }
     }
   } else {
     if(pvid.playing)pvid.pause();
@@ -5330,10 +5346,10 @@ function E_progToggle(){
     E.currentTime=Math.min(E.currentTime+dt,_dur);
     E.playhead=E.currentTime;
     var ph=document.getElementById("e-tl-ph")||document.getElementById("aab-ph");
-    if(ph)ph.style.left=(E.currentTime*(E.pxPerSec||60))+"px";
+    if(ph)ph.style.left=(200+E.currentTime*(E.pxPerSec||60))+"px";
     var pt2=document.getElementById("e-prog-tc2")||document.getElementById("aab-prog-time");
     if(pt2){var m2=Math.floor(E.currentTime/60),s2=Math.floor(E.currentTime%60);pt2.textContent=m2+":"+String(s2).padStart(2,"0");}
-    if(!E._lastDraw||now-E._lastDraw>=100){E._lastDraw=now;if(typeof E_drawProg==="function")E_drawProg();}
+    if(!E._lastDraw||now-E._lastDraw>=33){E._lastDraw=now;if(typeof E_drawProg==="function")E_drawProg();}
     // Loop between marked In/Out points if Loop is active
     var AB=window.AABE;
     var loopActive=AB&&AB._loop&&AB.inPoint!=null&&AB.outPoint!=null&&AB.outPoint>AB.inPoint;
@@ -5344,8 +5360,8 @@ function E_progToggle(){
     }
     if(E.currentTime>=_dur){
       E.playing=false;clearInterval(E.playInterval);E.playInterval=null;
-      E.currentTime=0;E.playhead=0;
-      if(ph)ph.style.left="0px";
+      E.currentTime=0;E.playhead=0;var _pv=document.getElementById("e-prog-vid")||document.getElementById("aab-prog-vid");if(_pv&&!_pv.paused)_pv.pause();if(_pv){_pv.currentTime=0;}
+      if(ph)ph.style.left="200px";
       if(btn)btn.innerHTML="&#9654;";
       if(typeof E_drawProg==="function")E_drawProg();
     }
@@ -5370,7 +5386,7 @@ function E_renderTL(){
       var x=200+s*E.pxPerSec;
       rc.strokeStyle=s%5===0?"#2d3748":"#1a202c";rc.lineWidth=1;
       rc.beginPath();rc.moveTo(x,s%5===0?8:14);rc.lineTo(x,22);rc.stroke();
-      if(s%5===0){rc.fillStyle="#4b5563";rc.font="9px monospace";rc.textAlign="left";rc.fillText(_ft(s),x+2,11);}
+      if(s%5===0){rc.fillStyle=s===0?"#e2e8f0":"#9ca3af";rc.font="bold 9px monospace";rc.textAlign="left";rc.fillText(_ft(s),x+2,11);}
     }
   }
   rows.innerHTML="";  E.tracks.forEach(function(track){
@@ -24527,6 +24543,219 @@ setTimeout(function(){
 // ── BOOT ──────────────────────────────────────────────────────────────────────
 setTimeout(apsInitScenes,400);
 console.log('[APS Override v4] startSegmentation + sequential polling queue + clean clips bar');
+})();
+</script>
+
+
+<script id="aab-edit-suite-fix">
+(function(){
+'use strict';
+if(window._editSuiteFix)return;
+window._editSuiteFix=true;
+
+/* ── 1. Bin click → source monitor ───────────────────────────────────── */
+// Wire media bin items to load into the correct source monitor video
+function wireBinClicks(){
+  var binList = document.getElementById('aab-bin-list') || document.getElementById('e-bin');
+  if(!binList||binList._esfWired)return;
+  binList._esfWired=true;
+  binList.addEventListener('click',function(e){
+    var item=e.target.closest('[class*=bin-item],[class*=aab-bin],[data-url],[data-clip]');
+    if(!item)return;
+    var url=item.dataset.url||item.dataset.clipUrl||'';
+    if(!url&&item.querySelector('video'))url=item.querySelector('video').src||'';
+    if(!url)return;
+    // Load into visible source monitor
+    var sv=document.getElementById('e-src-vid')||document.getElementById('aab-src-vid');
+    var se=document.getElementById('e-src-empty')||document.getElementById('aab-src-empty');
+    if(sv){
+      sv.src=url;sv.muted=false;sv.volume=1;
+      sv.style.display='block';
+      if(se)se.style.display='none';
+      sv.load();
+      sv.addEventListener('loadeddata',function(){
+        if(sv.paused)sv.play().catch(function(){});
+      },{once:true});
+    }
+    // Also update clip properties panel
+    if(window.E&&typeof E_showInspector==='function'){
+      // Find matching clip
+      var clip=null,track=null;
+      (window.E.tracks||[]).forEach(function(t){
+        t.clips.forEach(function(c){if(c.url===url){clip=c;track=t;}});
+      });
+      if(clip)E_showInspector(clip,track);
+    }
+  });
+}
+
+/* ── 2. Sync source monitor seek bar ─────────────────────────────────── */
+function wireSrcSeek(){
+  var sv=document.getElementById('e-src-vid')||document.getElementById('aab-src-vid');
+  var seek=document.getElementById('e-src-seek')||document.getElementById('aab-src-seek');
+  var tc=document.getElementById('e-src-tc')||document.getElementById('aab-src-time');
+  if(!sv||!seek||sv._esfSeekWired)return;
+  sv._esfSeekWired=true;
+  sv.addEventListener('timeupdate',function(){
+    if(!sv.duration)return;
+    seek.value=(sv.currentTime/sv.duration)*100;
+    if(tc){var m=Math.floor(sv.currentTime/60),s=Math.floor(sv.currentTime%60);tc.textContent=m+':'+String(s).padStart(2,'0');}
+  });
+  sv.addEventListener('ended',function(){
+    var b=document.getElementById('e-src-play')||document.getElementById('aab-src-play');
+    if(b)b.innerHTML='&#9654;';
+  });
+  seek.addEventListener('input',function(){
+    if(!sv.duration)return;
+    sv.currentTime=(+this.value/100)*sv.duration;
+  });
+}
+
+/* ── 3. Program monitor — full sync with timeline state ──────────────── */
+// Override E_drawProg to fix the sync issue
+var _origDraw=window.E_drawProg;
+window.E_drawProg=function(){
+  if(typeof _origDraw==='function')_origDraw.apply(this,arguments);
+  // Also update e-src-vid seek bar
+  wireSrcSeek();
+};
+
+/* ── 4. Fix E_srcToggle for transport buttons ─────────────────────────── */
+// Source monitor transport: E_srcStep, E_srcJump
+window.E_srcStep=function(dir){
+  var v=document.getElementById('e-src-vid')||document.getElementById('aab-src-vid');
+  if(!v||!v.src||v.src===location.href)return;
+  if(v.readyState===0)v.load();
+  v.currentTime=Math.max(0,Math.min(v.duration||0,v.currentTime+(dir||1)*(1/30)));
+  var tc=document.getElementById('e-src-tc')||document.getElementById('aab-src-time');
+  if(tc&&v.duration){var m=Math.floor(v.currentTime/60),s=Math.floor(v.currentTime%60);tc.textContent=m+':'+String(s).padStart(2,'0');}
+};
+window.E_srcJump=function(dir){
+  var v=document.getElementById('e-src-vid')||document.getElementById('aab-src-vid');
+  if(!v||!v.src||v.src===location.href)return;
+  if(v.readyState===0)v.load();
+  v.currentTime=dir<0?0:(v.duration||0);
+};
+
+/* ── 5. Program transport buttons ─────────────────────────────────────── */
+window.E_progStep=function(dir){
+  if(!window.E)return;
+  E.playhead=Math.max(0,Math.min(typeof E_dur==='function'?E_dur():0,E.playhead+(dir||1)*(1/30)));
+  E.currentTime=E.playhead;
+  if(typeof E_updatePH==='function')E_updatePH();
+  if(typeof E_drawProg==='function')E_drawProg();
+};
+window.E_progJump=function(dir){
+  if(!window.E)return;
+  if(dir===0||dir<0){E.playhead=0;E.currentTime=0;}
+  else{E.playhead=typeof E_dur==='function'?E_dur():0;E.currentTime=E.playhead;}
+  if(typeof E_updatePH==='function')E_updatePH();
+  if(typeof E_drawProg==='function')E_drawProg();
+  // Also seek prog video
+  var pv=document.getElementById('e-prog-vid')||document.getElementById('aab-prog-vid');
+  if(pv&&(dir===0||dir<0)){pv.currentTime=0;if(!pv.paused)pv.pause();}
+};
+
+/* ── 6. Ruler visibility enhancement ─────────────────────────────────── */
+// Add a ruler overlay with clear time labels using CSS
+function injectRulerCSS(){
+  if(document.getElementById('aab-ruler-fix-css'))return;
+  var s=document.createElement('style');s.id='aab-ruler-fix-css';
+  s.textContent=[
+    '#aab-ruler{background:#0a0d14;height:22px;position:sticky;top:0;z-index:10;}',
+    '.aab-track-row{position:relative;}',
+    '.aab-lane{position:relative;overflow:visible;}',
+    // Timeline time markers as CSS grid lines
+    '#aab-tl-tw{position:relative;}',
+    '#aab-ph{position:absolute;top:0;bottom:0;width:2px;background:#ef4444;z-index:20;pointer-events:none;box-shadow:0 0 4px rgba(239,68,68,.8);}',
+    '#aab-ph::before{content:"";position:absolute;top:0;left:-4px;border:5px solid transparent;border-top:8px solid #ef4444;}'
+  ].join('');
+  document.head.appendChild(s);
+}
+
+/* ── 7. Editing tools — wire toolbar buttons ──────────────────────────── */
+function wireToolbar(){
+  var tools={select:'select',razor:'razor',hand:'hand','trim':'trim'};
+  document.querySelectorAll('[onclick*="E_setTool"],[data-tool]').forEach(function(btn){
+    var tool=btn.getAttribute('data-tool')||'';
+    if(!btn._esfToolWired){
+      btn._esfToolWired=true;
+      var orig=btn.onclick;
+      btn.onclick=function(e){
+        if(orig)orig.call(this,e);
+        // Ensure visual feedback
+        document.querySelectorAll('[data-tool],[onclick*="E_setTool"]').forEach(function(b){b.classList.remove('active','on');});
+        btn.classList.add('active','on');
+      };
+    }
+  });
+}
+
+/* ── 8. Fix E_setTool ─────────────────────────────────────────────────── */
+var _origSetTool=window.E_setTool;
+window.E_setTool=function(tool){
+  if(typeof _origSetTool==='function')_origSetTool.apply(this,arguments);
+  if(!window.E)window.E={};
+  E.activeTool=tool||'select';
+  // Update cursor on timeline
+  var tl=document.getElementById('aab-tl-scroll');
+  if(tl){
+    var cursors={select:'default',razor:'crosshair',hand:'grab',trim:'ew-resize'};
+    tl.style.cursor=cursors[E.activeTool]||'default';
+  }
+  // Visual feedback on toolbar buttons
+  document.querySelectorAll('[onclick*="E_setTool"],[data-tool]').forEach(function(b){
+    var bTool=(b.getAttribute('onclick')||'').match(/E_setTool\(['"]([\w]+)['"]\)/);
+    var toolName=bTool?bTool[1]:(b.getAttribute('data-tool')||'');
+    if(toolName){
+      b.style.background=toolName===E.activeTool?'rgba(0,212,255,.2)':'';
+      b.style.color=toolName===E.activeTool?'#00d4ff':'';
+    }
+  });
+};
+
+/* ── 9. Add + Video / + Audio / + Image track upload buttons ─────────── */
+function wireAddButtons(){
+  // Wire the toolbar add buttons
+  var addVid=document.querySelector('[onclick*="E_uploadVideo"],[onclick*="edit_uploadVideo"]');
+  var addAud=document.querySelector('[onclick*="E_uploadAudio"],[onclick*="edit_uploadAudio"]');
+  
+  // Also wire track + buttons in the track headers
+  document.querySelectorAll('.aab-track-btn[title="Add track"]').forEach(function(btn){
+    if(!btn._esfAddWired){btn._esfAddWired=true;}
+  });
+}
+
+/* ── 10. Periodic init (runs after E_build creates DOM) ──────────────── */
+function init(){
+  injectRulerCSS();
+  wireBinClicks();
+  wireSrcSeek();
+  wireToolbar();
+  wireAddButtons();
+  // Make all video elements unmuted
+  document.querySelectorAll('video').forEach(function(v){v.muted=false;v.volume=1;});
+}
+init();
+setInterval(function(){
+  if(document.getElementById('edit-pg')&&document.getElementById('edit-pg').classList.contains('on')){
+    wireBinClicks();wireSrcSeek();wireToolbar();
+  }
+},800);
+
+// Re-init when edit-pg becomes active
+var editPg=document.getElementById('edit-pg');
+if(editPg){
+  new MutationObserver(function(ms){
+    ms.forEach(function(m){
+      if(m.type==='attributes'&&editPg.classList.contains('on')){
+        setTimeout(function(){init();if(typeof E_renderTL==='function')E_renderTL();},200);
+      }
+    });
+  }).observe(editPg,{attributes:true,attributeFilter:['class','style']});
+}
+
+console.log('[EditSuiteFix] All transport, sync, and tool fixes applied');
 })();
 </script>
 
