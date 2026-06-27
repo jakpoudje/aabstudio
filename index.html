@@ -24174,24 +24174,23 @@ function authTab(t) {
 (function(){
 'use strict';
 
-// ── STATE ACCESSOR ────────────────────────────────────────────────────────
+// ── STATE ACCESSOR ────────────────────────────────────────────────────────────
 function ST(){return window._apsState||(window._apsState={currentIdx:0,scenes:[],generating:false});}
 
-// ── PROFESSIONAL NOTIFICATION ─────────────────────────────────────────────
+// ── NOTIFICATION ──────────────────────────────────────────────────────────────
 window.apsNotify=function(msg,type,dur){
   var e=document.getElementById('aps-notify');if(e)e.remove();
   var n=document.createElement('div');n.id='aps-notify';
-  var colors={ok:'#10b981',error:'#ef4444',info:'#00d4ff',warn:'#f59e0b'};
-  var icons={ok:'\u2705',error:'\u26A0\uFE0F',info:'\u2139\uFE0F',warn:'\u26A0\uFE0F'};
-  var c=colors[type||'info']||colors.info;
+  var c={ok:'#10b981',error:'#ef4444',info:'#00d4ff',warn:'#f59e0b'}[type||'info']||'#00d4ff';
+  var i={ok:'\u2705',error:'\u26A0\uFE0F',info:'\u2139\uFE0F',warn:'\u26A0\uFE0F'}[type||'info']||'\u2139\uFE0F';
   n.style.cssText='position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:99999;background:#1e293b;border:1px solid '+c+';border-radius:10px;padding:14px 24px;color:#f1f5f9;font-family:Sora,Inter,sans-serif;font-size:13px;font-weight:500;box-shadow:0 8px 32px rgba(0,0,0,.6);display:flex;align-items:center;gap:10px;max-width:520px;';
-  n.innerHTML='<span style="font-size:16px;flex-shrink:0">'+(icons[type||'info'])+'</span><span>'+msg+'</span>';
+  n.innerHTML='<span style="font-size:16px;flex-shrink:0">'+i+'</span><span>'+msg+'</span>';
   document.body.appendChild(n);
   if(dur!==0)setTimeout(function(){if(n.parentNode)n.remove();},(dur||6000));
   return n;
 };
 
-// ── SCENE PROGRESS BAR ────────────────────────────────────────────────────
+// ── PROGRESS BAR ──────────────────────────────────────────────────────────────
 window.apsShowProgress=function(done,total,label){
   var bar=document.getElementById('aps-gen-progress');
   if(!bar){bar=document.createElement('div');bar.id='aps-gen-progress';
@@ -24209,7 +24208,7 @@ window.apsHideProgress=function(){
   if(bar){bar.style.opacity='0';bar.style.transition='opacity .4s';setTimeout(function(){if(bar.parentNode)bar.remove();},400);}
 };
 
-// ── INIT: Populate _apsState.scenes from PROJECT.scenes ───────────────────
+// ── INIT SCENES FROM PROJECT ──────────────────────────────────────────────────
 function apsInitScenes(){
   var st=ST();
   if(st.scenes&&st.scenes.length>0)return;
@@ -24222,37 +24221,29 @@ function apsInitScenes(){
   console.log('[APS] Initialized',st.scenes.length,'scenes from PROJECT');
 }
 
-// ── aps_selectScene ───────────────────────────────────────────────────────
-window.aps_selectScene=function(idx){
-  var st=ST();st.currentIdx=idx;
-  if(typeof _apsSelectScene==='function')_apsSelectScene(idx);
-};
+// ── SCENE SELECTION ───────────────────────────────────────────────────────────
+window.aps_selectScene=function(idx){var st=ST();st.currentIdx=idx;if(typeof _apsSelectScene==='function')_apsSelectScene(idx);};
 
-// ── aps_selectAll / aps_filterScenes ─────────────────────────────────────
+// ── FILTER / SELECT ALL ───────────────────────────────────────────────────────
 window.aps_selectAll=function(all){
-  var st=ST();
-  if(st.scenes)st.scenes.forEach(function(s){s._selected=!!all;});
+  var st=ST();if(st.scenes)st.scenes.forEach(function(s){s._selected=!!all;});
   document.querySelectorAll('[class*=aps-check],[class*=scene-check]').forEach(function(cb){if(cb.type==='checkbox')cb.checked=!!all;});
 };
 window.aps_filterScenes=function(filter){
-  var st=ST();
-  if(!st.scenes)return;
+  var st=ST();if(!st.scenes)return;
   var q=document.getElementById('aps-search')||document.querySelector('[id*=aps-search]');
   var term=q?q.value.toLowerCase():'';
-  var rows=document.querySelectorAll('[class*=aps-scene-item],[class*=scene-card],[class*=aps-scene-row]');
-  rows.forEach(function(row,i){
-    var s=st.scenes[i];
-    if(!s){row.style.display='';return;}
-    var matchSearch=!term||s.narration.toLowerCase().indexOf(term)>-1;
-    var matchFilter=filter==='all'||(filter==='none'&&!s.apsVideoUrl)||(filter==='failed'&&s._failed);
-    row.style.display=(matchSearch&&matchFilter)?'':'none';
+  document.querySelectorAll('[class*=aps-scene-item],[class*=scene-card],[class*=aps-scene-row]').forEach(function(row,i){
+    var s=st.scenes[i];if(!s){row.style.display='';return;}
+    var ms=!term||s.narration.toLowerCase().indexOf(term)>-1;
+    var mf=filter==='all'||(filter==='none'&&!s.apsVideoUrl)||(filter==='failed'&&s._failed);
+    row.style.display=(ms&&mf)?'':'none';
   });
 };
 
-// ── aps_setBg: set background ─────────────────────────────────────────────
+// ── BACKGROUND ────────────────────────────────────────────────────────────────
 window.aps_setBg=function(bgName,imgUrl){
-  var st=ST();
-  var scene=st.scenes&&st.scenes[st.currentIdx];
+  var st=ST();var scene=st.scenes&&st.scenes[st.currentIdx];
   if(scene){scene.background=bgName;scene.backgroundUrl=imgUrl||'';}
   var lock=document.querySelector('[id*=lock-bg],[name*=lock]');
   if(lock&&lock.checked&&st.scenes)st.scenes.forEach(function(s){s.background=bgName;s.backgroundUrl=imgUrl||'';});
@@ -24264,130 +24255,110 @@ window.aps_setBg=function(bgName,imgUrl){
 };
 window.aps_triggerCustomBg=function(){
   var inp=document.createElement('input');inp.type='file';inp.accept='image/*';
-  inp.onchange=function(){
-    var f=inp.files[0];if(!f)return;
-    var r=new FileReader();r.onload=function(e){aps_setBg('custom',e.target.result);};r.readAsDataURL(f);
-  };inp.click();
+  inp.onchange=function(){var f=inp.files[0];if(!f)return;var r=new FileReader();r.onload=function(e){aps_setBg('custom',e.target.result);};r.readAsDataURL(f);};
+  inp.click();
 };
 window.aps_loadCustomBg=window.aps_triggerCustomBg;
 
-// ── aps_previewVoice: preview voice with SpeechSynthesis ─────────────────
+// ── VOICE ─────────────────────────────────────────────────────────────────────
 window.aps_previewVoice=function(voiceId,voiceName){
-  if(window.speechSynthesis){
-    window.speechSynthesis.cancel();
-    var u=new SpeechSynthesisUtterance('Hello, this is a preview of your selected voice.');
-    var voices=window.speechSynthesis.getVoices();
-    var match=voices.find(function(v){return v.name.toLowerCase().indexOf((voiceName||'').toLowerCase())>-1;});
-    if(match)u.voice=match;
-    window.speechSynthesis.speak(u);
-  }
+  if(window.speechSynthesis){window.speechSynthesis.cancel();var u=new SpeechSynthesisUtterance('Hello, this is a preview of your selected voice.');var vv=window.speechSynthesis.getVoices();var mv=vv.find(function(v){return v.name.toLowerCase().indexOf((voiceName||'').toLowerCase())>-1;});if(mv)u.voice=mv;window.speechSynthesis.speak(u);}
   apsNotify('Previewing: '+(voiceName||voiceId||'selected voice'),'info',2500);
 };
-
-// ── aps_updateVoiceList / aps_applyVoiceAll ───────────────────────────────
-window.aps_updateVoiceList=function(provider){
-  if(typeof aps_onProviderChange==='function')aps_onProviderChange(provider||(document.getElementById('aps-provider')||{}).value||'heygen');
-};
+window.aps_updateVoiceList=function(provider){if(typeof aps_onProviderChange==='function')aps_onProviderChange(provider||(document.getElementById('aps-provider')||{}).value||'heygen');};
 window.aps_applyVoiceAll=function(){
   var sel=document.getElementById('aps-voice-sel')||document.querySelector('select[id*=voice]');
-  if(!sel||!sel.value)return;
-  var st=ST();if(st.scenes)st.scenes.forEach(function(s){s.voice=sel.value;});
+  if(!sel||!sel.value)return;var st=ST();if(st.scenes)st.scenes.forEach(function(s){s.voice=sel.value;});
   apsNotify('Voice applied to all scenes','ok',2500);
 };
 
-// ── aps_clearPhoto / aps_presenter_photo ─────────────────────────────────
-window.aps_clearPhoto=function(){
-  var p=document.getElementById('aps-photo-preview')||document.querySelector('[id*=photo-preview]');
-  if(p){p.src='';p.style.display='none';}
-  var st=ST();if(st.photoUrl)delete st.photoUrl;
-};
+// ── PHOTO ─────────────────────────────────────────────────────────────────────
+window.aps_clearPhoto=function(){var p=document.getElementById('aps-photo-preview')||document.querySelector('[id*=photo-preview]');if(p){p.src='';p.style.display='none';}var st=ST();if(st.photoUrl)delete st.photoUrl;};
 window.aps_presenter_photo=function(){if(typeof aps_loadPhoto==='function')aps_loadPhoto();};
 
-// ── aps_updateSceneRow: update sidebar scene card status ──────────────────
+// ── SCENE ROW UPDATE ──────────────────────────────────────────────────────────
 window.aps_updateSceneRow=function(idx,status,videoUrl){
   var rows=document.querySelectorAll('[class*=aps-scene-item],[class*=scene-card],[class*=aps-scene-row]');
   var row=rows[idx];if(!row)return;
   var badge=row.querySelector('.aps-status-badge');
-  if(!badge){
-    badge=document.createElement('span');badge.className='aps-status-badge';
-    badge.style.cssText='margin-left:4px;font-size:11px;';
-    var nm=row.querySelector('p,span,[class*=title],[class*=text]');
-    if(nm)nm.appendChild(badge);
-  }
-  var icons={generating:'\u23F3',done:'\u2705',error:'\u274C'};
-  badge.textContent=icons[status]||'';
+  if(!badge){badge=document.createElement('span');badge.className='aps-status-badge';badge.style.cssText='margin-left:4px;font-size:11px;';
+    var nm=row.querySelector('p,span,[class*=title],[class*=text]');if(nm)nm.appendChild(badge);}
+  badge.textContent={generating:'\u23F3',done:'\u2705',error:'\u274C'}[status]||'';
   row.style.outline=status==='generating'?'2px solid #00d4ff':status==='done'?'1px solid #10b981':status==='error'?'1px solid #ef4444':'';
   row.style.background=status==='generating'?'rgba(0,212,255,.06)':'';
 };
-
-// ── aps_updateProgress ────────────────────────────────────────────────────
 window.aps_updateProgress=function(done,total,label){if(typeof apsShowProgress==='function')apsShowProgress(done,total,label);};
 
-// ── aps_addClipToBar: add generated clip thumbnail to bottom bar ──────────
+// ── CLIPS BAR ─────────────────────────────────────────────────────────────────
 window.aps_addClipToBar=function(idx,videoUrl,sceneName){
-  var bar=document.getElementById('aps-clips-bar')||document.querySelector('[id*=aps-clips],[class*=aps-clips],[class*=generated-clips]');
+  // Only add clips from THIS project session (must have real URL)
+  if(!videoUrl||videoUrl.length<50)return;
+  var bar=document.getElementById('aps-clips-list')||document.getElementById('aps-clips-bar');
   if(!bar)return;
-  // Remove placeholder text
-  var placeholder=bar.querySelector('[class*=placeholder],[class*=empty]');
-  if(placeholder)placeholder.style.display='none';
-  var existing=bar.querySelector('[data-scene-idx="'+idx+'"]');
-  if(existing)existing.remove();
-  var wrap=document.createElement('div');
-  wrap.dataset.sceneIdx=idx;
+  var empty=document.getElementById('aps-clips-empty');if(empty)empty.style.display='none';
+  var existing=bar.querySelector('[data-scene-idx="'+idx+'"]');if(existing)existing.remove();
+  var wrap=document.createElement('div');wrap.dataset.sceneIdx=idx;wrap.dataset.sessionClip='1';
   wrap.style.cssText='display:inline-flex;flex-direction:column;align-items:center;gap:4px;padding:6px;background:#1e293b;border-radius:8px;cursor:pointer;border:1px solid rgba(255,255,255,.08);min-width:80px;flex-shrink:0;';
-  var vid=document.createElement('video');
-  vid.src=videoUrl;vid.muted=false;vid.volume=1;
+  var vid=document.createElement('video');vid.src=videoUrl;vid.muted=false;vid.volume=1;
   vid.style.cssText='width:70px;height:42px;object-fit:cover;border-radius:4px;background:#000;';
-  var lbl=document.createElement('span');
-  lbl.textContent=(sceneName||('Scene '+(idx+1))).slice(0,10);
+  var lbl=document.createElement('span');lbl.textContent=(sceneName||('Scene '+(idx+1))).slice(0,10);
   lbl.style.cssText='font-size:9px;color:#94a3b8;text-align:center;white-space:nowrap;';
   wrap.appendChild(vid);wrap.appendChild(lbl);
-  wrap.onclick=function(){
-    var sv=document.getElementById('e-src-vid')||document.getElementById('aab-src-vid');
-    if(sv){sv.src=videoUrl;sv.muted=false;sv.volume=1;sv.style.display='block';sv.load();sv.play().catch(function(){});}
-  };
+  wrap.onclick=function(){var sv=document.getElementById('e-src-vid')||document.getElementById('aab-src-vid');if(sv){sv.src=videoUrl;sv.muted=false;sv.volume=1;sv.style.display='block';sv.load();sv.play().catch(function(){});}};
   bar.appendChild(wrap);
 };
 
-// ── aps_showSceneImagePreview ─────────────────────────────────────────────
-window.aps_showSceneImagePreview=function(imgUrl){
-  var p=document.getElementById('aps-preview-img')||document.querySelector('.aps-preview-img');
-  if(p&&imgUrl){p.src=imgUrl;p.style.display='block';}
-};
+// ── CLEAN CLIPS BAR (remove stale/non-session clips) ─────────────────────────
+function fixApsClipsBar(){
+  var bar=document.getElementById('aps-clips-list');
+  var apsBar=document.getElementById('aps-clips-bar');
+  // Remove native-rendered clips (not from our session) from the parent bar
+  if(apsBar){
+    Array.from(apsBar.children).forEach(function(child){
+      if(child.id==='aps-clips-list'||child.id==='aps-clips-empty')return;
+      // Remove if it's a native-rendered clip (no data-session-clip attr)
+      if(!child.dataset||!child.dataset.sessionClip)child.remove();
+    });
+  }
+  // Also clean aps-clips-list of stale entries
+  if(bar){
+    Array.from(bar.querySelectorAll('[data-scene-idx]')).forEach(function(c){
+      if(!c.dataset.sessionClip)c.remove();
+    });
+  }
+}
+setInterval(fixApsClipsBar,1500);
 
-// ── aps_regenerateScene / aps_regenerateCurrent ───────────────────────────
+// ── MISC ──────────────────────────────────────────────────────────────────────
+window.aps_showSceneImagePreview=function(imgUrl){var p=document.getElementById('aps-preview-img')||document.querySelector('.aps-preview-img');if(p&&imgUrl){p.src=imgUrl;p.style.display='block';}};
 window.aps_regenerateScene=function(idx){
-  var st=ST();if(st.generating){apsNotify('Generation already running.','warn');return;}
+  var st=ST();if(window._apsQueueRunning){apsNotify('Generation already running.','warn');return;}
   var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
   var scene=scenes[idx];if(!scene)return;
-  scene._queueIdx=idx;scene.apsVideoUrl=''; // clear old URL to force regeneration
+  scene._queueIdx=idx;scene.apsVideoUrl='';
   window._apsQueue=[scene];window._apsQueueTotal=1;window._apsQueueDone=0;window._apsQueueErrors=0;
-  st.generating=true;
-  apsShowProgress(0,1,(scene.narration||'Scene '+(idx+1)).slice(0,40));
-  window._apsRunQueue();
+  window._apsQueueRunning=true;apsShowProgress(0,1,(scene.narration||'Scene '+(idx+1)).slice(0,40));window._apsRunQueue();
 };
 window.aps_regenerateCurrent=function(){var st=ST();aps_regenerateScene(st.currentIdx||0);};
-
-// ── aps_stopQueue ─────────────────────────────────────────────────────────
 window.aps_stopQueue=function(){
-  window._apsQueue=[];window._apsDoneCallbacks={};
-  var st=ST();st.generating=false;
-  apsHideProgress();
-  apsNotify('Generation stopped.','info',3000);
+  window._apsQueue=[];window._apsQueueRunning=false;
+  if(window._apsState)window._apsState.generating=false;
+  apsHideProgress();apsNotify('Generation stopped.','info',3000);
 };
 
-// ── Sequential queue ──────────────────────────────────────────────────────
-window._apsQueue=[];window._apsDoneCallbacks={};
+// ── SEQUENTIAL QUEUE — POLLING APPROACH ──────────────────────────────────────
+window._apsQueue=[];
+window._apsQueueRunning=false;
 
 window._apsRunQueue=async function(){
   if(!window._apsQueue||!window._apsQueue.length){
-    var st=ST();st.generating=false;
     window._apsQueueRunning=false;
+    if(window._apsState)window._apsState.generating=false;
     apsHideProgress();
     var d=window._apsQueueDone||0,e=window._apsQueueErrors||0;
-    if(e===0&&d>0)apsNotify('All '+d+' scene'+(d!==1?'s':'')+' generated. Open Edit Suite to continue.','ok',9000);
-    else if(d>0)apsNotify(d+' generated, '+e+' failed. Retry failed scenes.','warn',9000);
-    else apsNotify('Generation failed. Check credits and presenter settings.','error',9000);
+    if(e===0&&d>0)apsNotify('All '+d+' scene'+(d!==1?'s':'')+' generated! Open Edit Suite to continue.','ok',9000);
+    else if(d>0)apsNotify(d+' generated, '+e+' failed. Check failed scenes.','warn',9000);
+    else apsNotify('Generation failed — check your credits and presenter settings.','error',9000);
     return;
   }
   var sd=window._apsQueue.shift();
@@ -24396,254 +24367,166 @@ window._apsRunQueue=async function(){
   var idx=sd._queueIdx!=null?sd._queueIdx:scenes.indexOf(sd);if(idx<0)idx=0;
   var qPos=(window._apsQueueTotal||1)-(window._apsQueue.length+1)+1;
   var label=(sd.narration||sd.text||'Scene '+(idx+1)).slice(0,40);
+
   apsShowProgress(qPos-1,window._apsQueueTotal||1,label);
   aps_updateSceneRow(idx,'generating','');
   st.currentIdx=idx;
   if(typeof _apsSelectScene==='function')_apsSelectScene(idx);
-  // CRITICAL: Reset generating=false so _apsGenerateScene passes its own check
+
+  // CRITICAL: reset generating=false — _apsGenerateScene checks this and bails if true
   st.generating=false;
-  var sceneId=sd.id||sd.num||('idx_'+idx);
-  window._apsDoneCallbacks[sceneId]=function(ok2,url){
-    apsShowProgress(qPos,window._apsQueueTotal||1,ok2?'\u2705 Done':'\u274C Failed');
-    aps_updateSceneRow(idx,ok2?'done':'error',url||'');
-    if(ok2){window._apsQueueDone=(window._apsQueueDone||0)+1;if(url&&url.length>20)aps_addClipToBar(idx,url,label);}
-    else window._apsQueueErrors=(window._apsQueueErrors||0)+1;
-    // Reset generating before next scene in queue
-    if(window._apsState)window._apsState.generating=false;
-    setTimeout(window._apsRunQueue,800);
-  };
+
+  // Snapshot URL before gen — poll until it changes to a real value
+  var urlBefore=sd.apsVideoUrl||'';
+  var started=Date.now();
+
   try{
-    // Pass BOTH idx AND scene object — _apsGenerateScene(idx, sc) requires both
+    // Pass BOTH args: _apsGenerateScene(idx, sceneObject)
     if(typeof _apsGenerateScene==='function')await _apsGenerateScene(idx,sd);
   }catch(err){
-    apsNotify('Scene '+(idx+1)+' error: '+(err.message||'Unknown error'),'error');
-    var cb=window._apsDoneCallbacks[sceneId];
-    if(cb){delete window._apsDoneCallbacks[sceneId];cb(false,'');}
+    console.warn('[APS Queue] _apsGenerateScene threw:',err.message);
   }
+
+  // Poll for URL to appear in either the scene object or PROJECT.scenes[idx]
+  var pollId=setInterval(function(){
+    var elapsed=Date.now()-started;
+    var sc2=st.scenes&&st.scenes[idx];
+    var projSc=window.PROJECT&&PROJECT.scenes&&PROJECT.scenes[idx];
+    var url=(sc2&&sc2.apsVideoUrl&&sc2.apsVideoUrl.length>50&&sc2.apsVideoUrl!==urlBefore)?sc2.apsVideoUrl:
+            (sd.apsVideoUrl&&sd.apsVideoUrl.length>50&&sd.apsVideoUrl!==urlBefore)?sd.apsVideoUrl:
+            (projSc&&projSc.apsVideoUrl&&projSc.apsVideoUrl.length>50&&projSc.apsVideoUrl!==urlBefore)?projSc.apsVideoUrl:'';
+    if(url){
+      clearInterval(pollId);
+      apsShowProgress(qPos,window._apsQueueTotal||1,'\u2705 Done');
+      aps_updateSceneRow(idx,'done',url);
+      aps_addClipToBar(idx,url,label);
+      window._apsQueueDone=(window._apsQueueDone||0)+1;
+      st.generating=false;
+      setTimeout(window._apsRunQueue,800);
+    } else if(elapsed>120000){
+      clearInterval(pollId);
+      apsShowProgress(qPos,window._apsQueueTotal||1,'\u274C Timed out');
+      aps_updateSceneRow(idx,'error','');
+      sd._failed=true;
+      window._apsQueueErrors=(window._apsQueueErrors||0)+1;
+      st.generating=false;
+      setTimeout(window._apsRunQueue,800);
+    }
+  },2000);
 };
-// ── Generate All/Selected/Current ─────────────────────────────────────────
+
+// ── GENERATE ALL / SELECTED / CURRENT ────────────────────────────────────────
 window.aps_generateAll=async function(){
   if(window._apsQueueRunning){apsNotify('Generation already running.','warn');return;}
   apsInitScenes();
   var st=ST();
   var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
   if(!scenes.length){apsNotify('No scenes found. Create your script first.','warn');return;}
-  var toGen=scenes.filter(function(s){return !s.apsVideoUrl||s.apsVideoUrl.length<20;});
+  var toGen=scenes.filter(function(s){return !s.apsVideoUrl||s.apsVideoUrl.length<50;});
   toGen.forEach(function(s){s._queueIdx=scenes.indexOf(s);});
   if(!toGen.length){apsNotify('All scenes already have videos. Use regenerate to redo specific scenes.','info');return;}
   window._apsQueue=toGen.slice();window._apsQueueTotal=toGen.length;window._apsQueueDone=0;window._apsQueueErrors=0;
   window._apsQueueRunning=true;apsShowProgress(0,toGen.length,'Starting...');window._apsRunQueue();
 };
 window.aps_generateSelected=async function(){
+  if(window._apsQueueRunning){apsNotify('Generation already running.','warn');return;}
   apsInitScenes();
-  var st=ST();if(st.generating){apsNotify('Generation already running.','warn');return;}
-  var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
+  var st=ST();var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
   var sel=scenes.filter(function(s){return s._selected||s.selected||s._checked;});
   if(!sel.length){apsNotify('Select scenes first using the checkboxes.','info');return;}
   sel.forEach(function(s){s._queueIdx=scenes.indexOf(s);});
   window._apsQueue=sel.slice();window._apsQueueTotal=sel.length;window._apsQueueDone=0;window._apsQueueErrors=0;
-  st.generating=true;apsShowProgress(0,sel.length,'Starting...');window._apsRunQueue();
+  window._apsQueueRunning=true;apsShowProgress(0,sel.length,'Starting...');window._apsRunQueue();
 };
-
 window.aps_generateCurrent=async function(){
+  if(window._apsQueueRunning){apsNotify('Generation already running.','warn');return;}
   apsInitScenes();
-  var st=ST();if(st.generating){apsNotify('Generation already running.','warn');return;}
-  var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
+  var st=ST();var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
   var idx=st.currentIdx||0;var scene=scenes[idx];if(!scene)return;
   scene._queueIdx=idx;
   window._apsQueue=[scene];window._apsQueueTotal=1;window._apsQueueDone=0;window._apsQueueErrors=0;
-  st.generating=true;apsShowProgress(0,1,(scene.narration||'Scene '+(idx+1)).slice(0,40));window._apsRunQueue();
+  window._apsQueueRunning=true;apsShowProgress(0,1,(scene.narration||'Scene '+(idx+1)).slice(0,40));window._apsRunQueue();
 };
 window.aps_generateScene=window.aps_generateCurrent;
 
-// ── _apsSceneDone wrapper ─────────────────────────────────────────────────
-var _origSD=window._apsSceneDone;
-window._apsSceneDone=function(sceneIdx,videoUrl,errMsg){
-  if(typeof _origSD==='function')_origSD.apply(this,arguments);
-  var st=ST();
-  var scene=st.scenes&&st.scenes[sceneIdx];
-  if(scene&&videoUrl&&videoUrl.length>20)scene.apsVideoUrl=videoUrl;
-  var sceneId=scene?(scene.id||scene.num||('idx_'+sceneIdx)):('idx_'+sceneIdx);
-  var success=!!(videoUrl&&videoUrl.length>20);
-  var cb=window._apsDoneCallbacks&&window._apsDoneCallbacks[sceneId];
-  if(cb){delete window._apsDoneCallbacks[sceneId];cb(success,videoUrl||'');}
-};
-
-// ── aps_goToEditSuite ─────────────────────────────────────────────────────
+// ── EDIT SUITE ────────────────────────────────────────────────────────────────
 var _origGoEdit=window.aps_goToEditSuite;
 window.aps_goToEditSuite=function(){
   apsInitScenes();
-  var st=ST();
-  var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
-  var ready=scenes.filter(function(s){return s.apsVideoUrl&&s.apsVideoUrl.length>20;});
+  var st=ST();var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
+  var ready=scenes.filter(function(s){return s.apsVideoUrl&&s.apsVideoUrl.length>50;});
   if(!ready.length){apsNotify('No generated videos yet. Generate scenes first.','warn');return;}
   if(typeof _loadApsIntoTL==='function')_loadApsIntoTL();
   else if(typeof _origGoEdit==='function')_origGoEdit.apply(this,arguments);
   apsNotify(ready.length+' scene'+(ready.length!==1?'s':'')+' sent to Edit Suite.','ok',6000);
 };
 
-// ── Toast suppression during generation ───────────────────────────────────
+// ── TOAST SUPPRESSION DURING GENERATION ──────────────────────────────────────
 var _origToast=window.toast;
 window.toast=function(msg,type){
-  var st=ST();
-  if(st.generating&&msg&&(msg.indexOf('Generat')>-1||msg.indexOf('scene')>-1||msg.indexOf('video')>-1||msg.indexOf('done')>-1||msg.indexOf('Done')>-1))return;
+  if(window._apsQueueRunning&&msg&&(msg.indexOf('Generat')>-1||msg.indexOf('scene')>-1||msg.indexOf('video')>-1||msg.indexOf('done')>-1||msg.indexOf('Done')>-1))return;
   if(typeof _origToast==='function')_origToast.apply(this,arguments);
 };
 
-// ── Boot ─────────────────────────────────────────────────────────────────
-setTimeout(apsInitScenes,400);
-console.log('[APS Override v3] All 18 missing functions + sequential queue + scene init');
-
-// ── FIX 1: startSegmentation — implement the broken function ─────────────────
-window.startSegmentation = function(){
-  var titleEl = document.getElementById('proj-title');
-  var title = titleEl ? titleEl.value.trim() : '';
-  if(!title || title === 'My Video') title = (window.PROJECT && PROJECT.title) || 'My Video';
-
-  // Get script content from active tab
-  var upTab = document.getElementById('tab-upload');
-  var paTab = document.getElementById('tab-paste');
-  var script = '';
-  if(upTab && upTab.style.display !== 'none'){
-    script = (document.getElementById('t-extracted')||{}).value || '';
-  } else if(paTab && paTab.style.display !== 'none'){
-    script = (document.getElementById('t-paste')||{}).value || '';
-  } else {
-    script = (document.getElementById('t-write')||{}).value || '';
+// ── startSegmentation: Split script into scenes ───────────────────────────────
+window.startSegmentation=function(){
+  var titleEl=document.getElementById('proj-title');
+  var title=titleEl?titleEl.value.trim():'';
+  if(!title||title==='My Video')title=(window.PROJECT&&PROJECT.title)||'My Video';
+  var script='';
+  var upTab=document.getElementById('tab-upload');var paTab=document.getElementById('tab-paste');
+  if(upTab&&upTab.style.display!=='none')script=(document.getElementById('t-extracted')||{}).value||'';
+  else if(paTab&&paTab.style.display!=='none')script=(document.getElementById('t-paste')||{}).value||'';
+  else script=(document.getElementById('t-write')||{}).value||'';
+  script=script.trim();
+  if(!script||script.length<20){
+    if(typeof toast==='function')toast('Please write your script first.','err');return;
   }
-  script = script.trim();
-
-  if(!script || script.length < 20){
-    if(typeof apsNotify==='function') apsNotify('Please write your script first.','warn');
-    else if(typeof toast==='function') toast('Please write your script first.','err');
-    return;
-  }
-  if(!window.PROJECT) window.PROJECT = {};
-  PROJECT.id = PROJECT.id || ('p_'+Date.now());
-  PROJECT.title = title;
-  PROJECT.script = script;
-  PROJECT.updatedAt = new Date().toISOString();
-
-  // Update scenes title display
-  var st = document.getElementById('scenes-title');
-  if(st) st.textContent = title;
-
-  // Parse script into scenes by double-newline
-  var wpm = parseInt((document.getElementById('s-wpm')||{}).textContent||'150') || 150;
-  var dur = parseInt((document.querySelector('.dur-opt.on')||{}).dataset&&(document.querySelector('.dur-opt.on')||{}).dataset.sec||'8') || 8;
-  
-  // Split by paragraph (double newline)
-  var paras = script.split(/\n\s*\n/).map(function(p){return p.trim();}).filter(function(p){return p.length>0;});
-  if(paras.length === 0) paras = [script];
-
-  var types = ['intro','main','main','conclusion'];
-  PROJECT.scenes = paras.map(function(text,i){
-    var wordCount = text.split(/\s+/).length;
-    var sceneDur = Math.max(5, Math.round((wordCount/wpm)*60));
-    return {
-      id: 'sc_'+Date.now()+'_'+i,
-      num: i+1,
-      text: text,
-      narration: text,
-      script: text,
-      type: types[Math.min(i, types.length-1)]||'main',
-      duration: sceneDur,
-      wpm: wpm,
-      apsVideoUrl: ''
-    };
+  if(!window.PROJECT)window.PROJECT={};
+  PROJECT.id=PROJECT.id||('p_'+Date.now());PROJECT.title=title;PROJECT.script=script;
+  PROJECT.apsVideos={};// clear stale videos on re-segmentation
+  var wpm=150,dur=8;
+  var durEl=document.querySelector('.dur-opt.on,.s-dur-opt.on,[class*=dur-opt][class*=on]');
+  if(durEl&&durEl.dataset&&durEl.dataset.sec)dur=parseInt(durEl.dataset.sec)||8;
+  var paras=script.split(/\n\s*\n/).map(function(p){return p.trim();}).filter(function(p){return p.length>0;});
+  if(!paras.length)paras=[script];
+  var types=['intro','main','main','conclusion'];
+  PROJECT.scenes=paras.map(function(text,i){
+    return {id:'sc_'+Date.now()+'_'+i,num:i+1,text:text,narration:text,script:text,
+      type:types[Math.min(i,types.length-1)]||'main',duration:dur,wpm:wpm,apsVideoUrl:''};
   });
-  PROJECT.wpm = wpm;
-  PROJECT.status = 'segmented';
-
-  // Save
-  if(typeof ap_save==='function') ap_save(true);
-  else if(typeof saveProject==='function') saveProject();
-
-  // Navigate to scenes
+  PROJECT.status='segmented';
+  if(typeof ap_save==='function')ap_save(true);else if(typeof saveProject==='function')saveProject();
+  var stEl=document.getElementById('scenes-title');if(stEl)stEl.textContent=title;
   if(typeof nav==='function'){
     nav('scenes-pg');
     setTimeout(function(){
-      var st2 = document.getElementById('scenes-title');
-      if(st2) st2.textContent = PROJECT.title;
-      if(typeof renderSceneBoard==='function') renderSceneBoard();
-      else if(typeof _aabRenderAPSScenes==='function'){
-        var sl=document.getElementById('scenes-list');
-        if(sl) _aabRenderAPSScenes(sl);
-      }
-    }, 300);
+      var st2=document.getElementById('scenes-title');if(st2)st2.textContent=PROJECT.title;
+      if(typeof renderSceneBoard==='function')renderSceneBoard();
+    },300);
   }
 };
 
-// ── FIX 2: Project title — update #proj-title + #scenes-title with real PROJECT.title ──
+// ── PROJECT TITLE FIX ─────────────────────────────────────────────────────────
 function fixProjectTitle(){
-  var proj = window.PROJECT;
-  if(!proj) return;
-  var title = proj.title && proj.title !== 'My Video' ? proj.title : null;
-  if(!title) return;
-  var ptEl = document.getElementById('proj-title');
-  var stEl = document.getElementById('scenes-title');
-  if(ptEl && ptEl.value === 'My Video') ptEl.value = title;
-  if(stEl && stEl.textContent === 'My Video') stEl.textContent = title;
+  var proj=window.PROJECT;if(!proj||!proj.title||proj.title==='My Video')return;
+  var ptEl=document.getElementById('proj-title');var stEl=document.getElementById('scenes-title');
+  if(ptEl&&ptEl.value==='My Video')ptEl.value=proj.title;
+  if(stEl&&stEl.textContent==='My Video')stEl.textContent=proj.title;
 }
-setInterval(fixProjectTitle, 800);
-
-// ── FIX 3: APS clips bar — only show valid generated clips, not stale/test ones ──
-function fixApsClipsBar(){
-  var list = document.getElementById('aps-clips-list');
-  var empty = document.getElementById('aps-clips-empty');
-  var goBtn = document.getElementById('aps-go-edit-btn');
-  if(!list) return;
-
-  // Remove clips with fake/test URLs (less than 100 chars or contains 'test_scene')
-  Array.from(list.children).forEach(function(child){
-    var vid = child.querySelector('video');
-    var url = vid ? vid.src : '';
-    var isReal = url && url.length > 100 && url.indexOf('test_scene') === -1 && url.indexOf('placeholder') === -1;
-    if(!isReal && url) {
-      child.remove();
-    }
-  });
-
-  // Remove our own aps_addClipToBar items that are stale (from previous project)
-  Array.from(list.querySelectorAll('[data-scene-idx]')).forEach(function(child){
-    var vid = child.querySelector('video');
-    var url = vid ? vid.src : (child.dataset.url||'');
-    var isReal = url && url.length > 100 && url.indexOf('test_scene') === -1;
-    if(!isReal) child.remove();
-  });
-
-  var hasReal = list.children.length > 0;
-  if(empty) empty.style.display = hasReal ? 'none' : 'block';
-  if(goBtn) goBtn.style.display = hasReal ? 'inline-flex' : 'none';
-}
-setInterval(fixApsClipsBar, 1000);
-
-// Also clean clips bar when APS first opens
-var _origOpenAPS = window.openAIPresenterStudio || window.openAIPresenter;
-var _apsOpenKey = window.openAIPresenterStudio ? 'openAIPresenterStudio' : 'openAIPresenter';
-if(_apsOpenKey && window[_apsOpenKey]) {
-  var _apsOrigFn = window[_apsOpenKey];
-  window[_apsOpenKey] = function(){
-    // Clear stale clips list before opening
-    setTimeout(fixApsClipsBar, 500);
-    return _apsOrigFn.apply(this, arguments);
-  };
-}
-
-// ── FIX 4: On script page load, update title display ──────────────────────────
+setInterval(fixProjectTitle,800);
 setTimeout(function(){
   fixProjectTitle();
-  // Also wire title input to update PROJECT live
-  var ptEl = document.getElementById('proj-title');
-  if(ptEl && !ptEl.dataset.titleWired){
-    ptEl.dataset.titleWired = '1';
-    ptEl.addEventListener('input', function(){
-      if(window.PROJECT) PROJECT.title = this.value;
-      var stEl = document.getElementById('scenes-title');
-      if(stEl) stEl.textContent = this.value;
-    });
+  var ptEl=document.getElementById('proj-title');
+  if(ptEl&&!ptEl.dataset.titleWired){
+    ptEl.dataset.titleWired='1';
+    ptEl.addEventListener('input',function(){if(window.PROJECT)PROJECT.title=this.value;var s=document.getElementById('scenes-title');if(s)s.textContent=this.value;});
   }
-}, 600);
+},600);
+
+// ── BOOT ──────────────────────────────────────────────────────────────────────
+setTimeout(apsInitScenes,400);
+console.log('[APS Override v4] startSegmentation + sequential polling queue + clean clips bar');
 })();
 </script>
 
