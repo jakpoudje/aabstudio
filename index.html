@@ -25797,6 +25797,701 @@ setInterval(()=>{var ep=$('edit-pg');if(!ep||!ep.classList.contains('on'))return
 console.log('[AABStudio v2.0] Edit Suite: source/program separated, preload engine, Web Audio, VU meter, mixer, transitions, undo/redo, sign-out');
 })();
 </script>
+<script id="aab-transitions">
+(function(){
+'use strict';
+if(window._transLoaded)return;
+window._transLoaded=true;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   AABStudio — 40 Professional Transitions Module
+   - Transition zones between clips on timeline (visual blocks, clickable)
+   - Canvas rendering all 40 types during playback using preloaded video
+   - Inspector integration (type, duration, easing, delete)
+   - Transitions ▾ dropdown shows all 40 organized by category
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+// ── 40 Transitions definition ──────────────────────────────────────────────
+window.AAB_TRANS = {
+  // GROUP 1: Basic
+  cut:           {n:'Cut',            i:'—',    cat:'Basic',       dur:0},
+  dissolve:      {n:'Cross Dissolve', i:'◌',    cat:'Basic',       dur:0.5},
+  'fade-black':  {n:'Fade to Black',  i:'▬',    cat:'Basic',       dur:0.8},
+  'fade-white':  {n:'Fade to White',  i:'▭',    cat:'Basic',       dur:0.8},
+  'dip-black':   {n:'Dip to Black',   i:'⬛',   cat:'Basic',       dur:0.3},
+  'dip-white':   {n:'Dip to White',   i:'⬜',   cat:'Basic',       dur:0.3},
+  // GROUP 2: Blur / Zoom
+  'blur-dis':    {n:'Blur Dissolve',  i:'〰',   cat:'Blur/Zoom',   dur:0.6},
+  'zoom-in':     {n:'Zoom In',        i:'⊕',    cat:'Blur/Zoom',   dur:0.5},
+  'zoom-out':    {n:'Zoom Out',       i:'⊖',    cat:'Blur/Zoom',   dur:0.5},
+  // GROUP 3: Push
+  'push-left':   {n:'Push Left',      i:'⇐',    cat:'Push',        dur:0.5},
+  'push-right':  {n:'Push Right',     i:'⇒',    cat:'Push',        dur:0.5},
+  'push-up':     {n:'Push Up',        i:'⇑',    cat:'Push',        dur:0.5},
+  'push-down':   {n:'Push Down',      i:'⇓',    cat:'Push',        dur:0.5},
+  // GROUP 4: Slide
+  'slide-left':  {n:'Slide Left',     i:'←',    cat:'Slide',       dur:0.5},
+  'slide-right': {n:'Slide Right',    i:'→',    cat:'Slide',       dur:0.5},
+  'slide-up':    {n:'Slide Up',       i:'↑',    cat:'Slide',       dur:0.5},
+  'slide-down':  {n:'Slide Down',     i:'↓',    cat:'Slide',       dur:0.5},
+  // GROUP 5: Wipe
+  'wipe-left':   {n:'Wipe Left',      i:'⊣',    cat:'Wipe',        dur:0.5},
+  'wipe-right':  {n:'Wipe Right',     i:'⊢',    cat:'Wipe',        dur:0.5},
+  'wipe-up':     {n:'Wipe Up',        i:'⊤',    cat:'Wipe',        dur:0.5},
+  'wipe-down':   {n:'Wipe Down',      i:'⊥',    cat:'Wipe',        dur:0.5},
+  // GROUP 6: Reveals
+  'circle':      {n:'Circle Reveal',  i:'◎',    cat:'Reveal',      dur:0.6},
+  'iris-open':   {n:'Iris Open',      i:'◉',    cat:'Reveal',      dur:0.6},
+  'iris-close':  {n:'Iris Close',     i:'⊙',    cat:'Reveal',      dur:0.6},
+  // GROUP 7: Flash / Light
+  flash:         {n:'Flash',          i:'⚡',   cat:'Flash',       dur:0.2},
+  whip:          {n:'Whip Pan',       i:'〜',   cat:'Flash',       dur:0.4},
+  'light-leak':  {n:'Light Leak',     i:'✦',    cat:'Flash',       dur:0.7},
+  'lens-flare':  {n:'Lens Flare',     i:'✨',   cat:'Flash',       dur:0.5},
+  'film-burn':   {n:'Film Burn',      i:'🔥',   cat:'Flash',       dur:0.6},
+  // GROUP 8: Digital / Glitch
+  glitch:        {n:'Glitch',         i:'▓',    cat:'Digital',     dur:0.4},
+  mosaic:        {n:'Mosaic',         i:'⊞',    cat:'Digital',     dur:0.5},
+  'pixel-dis':   {n:'Pixel Dissolve', i:'⋮⋮',   cat:'Digital',     dur:0.6},
+  // GROUP 9: Motion
+  spin:          {n:'Spin',           i:'↻',    cat:'Motion',      dur:0.5},
+  flip:          {n:'Flip',           i:'⇄',    cat:'Motion',      dur:0.4},
+  ripple:        {n:'Ripple',         i:'〜〜', cat:'Motion',      dur:0.6},
+  // GROUP 10: Cinema
+  'doc-dissolve':{n:'Documentary',    i:'◌◌',   cat:'Cinema',      dur:1.2},
+  'broadcast':   {n:'Broadcast Swipe',i:'▶▶',  cat:'Cinema',      dur:0.4},
+  'cam-shutter': {n:'Camera Shutter', i:'◉',    cat:'Cinema',      dur:0.5},
+  'page-curl':   {n:'Page Curl',      i:'↷',    cat:'Cinema',      dur:0.7},
+  'cube-rot':    {n:'Cube Rotate',    i:'⬡',    cat:'Cinema',      dur:0.6}
+};
+
+// ── CSS for transition zones ───────────────────────────────────────────────
+(function(){
+  if(document.getElementById('aab-trans-css')) return;
+  var s = document.createElement('style');
+  s.id = 'aab-trans-css';
+  s.textContent = `
+    .aab-trans-zone {
+      position:absolute; z-index:20; display:flex; align-items:center; justify-content:center;
+      cursor:pointer; overflow:hidden; transform:translateX(-50%);
+      border-radius:3px; border:1px solid rgba(0,212,255,.5);
+      background:linear-gradient(135deg,rgba(0,212,255,.15),rgba(139,92,246,.2));
+      min-width:20px; min-height:20px; user-select:none;
+      transition:background .12s, transform .12s;
+    }
+    .aab-trans-zone:hover { background:linear-gradient(135deg,rgba(0,212,255,.3),rgba(139,92,246,.4)); transform:translateX(-50%) scaleY(1.05); }
+    .aab-trans-zone .tz-icon { font-size:11px; line-height:1; }
+    .aab-trans-zone .tz-dur  { font-size:8px; color:rgba(255,255,255,.5); margin-top:1px; }
+    .aab-trans-zone.tz-none  { border-color:rgba(255,255,255,.15); background:rgba(255,255,255,.04); }
+    #dd-tr { max-height:400px; overflow-y:auto; width:220px; background:#0d1526; border:1px solid rgba(255,255,255,.12); border-radius:8px; padding:6px; }
+    .dd-tr-cat { font-size:8px; font-weight:700; color:rgba(255,255,255,.3); letter-spacing:.08em; padding:6px 6px 3px; }
+    .dd-tr-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:3px; margin-bottom:4px; }
+    .dd-tr-item { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07); border-radius:4px; padding:5px 3px; cursor:pointer; text-align:center; transition:all .1s; }
+    .dd-tr-item:hover { background:rgba(0,212,255,.12); border-color:rgba(0,212,255,.3); }
+    .dd-tr-item.active { background:rgba(139,92,246,.2); border-color:#8b5cf6; }
+    .dd-tr-item .ti { font-size:16px; display:block; }
+    .dd-tr-item .tn { font-size:7px; color:rgba(255,255,255,.5); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    #aab-trans-insp { padding:12px; font-size:11px; }
+    .ti-label { font-size:8px; font-weight:700; color:rgba(255,255,255,.3); letter-spacing:.08em; margin-bottom:3px; }
+    .ti-row { margin-bottom:10px; }
+    .ti-dur-btns { display:flex; gap:4px; flex-wrap:wrap; margin-top:4px; }
+    .ti-dur-btn { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1); color:rgba(255,255,255,.6); border-radius:4px; padding:3px 7px; cursor:pointer; font-size:9px; }
+    .ti-dur-btn:hover,.ti-dur-btn.active { background:rgba(0,212,255,.15); border-color:#00d4ff; color:#00d4ff; }
+  `;
+  document.head.appendChild(s);
+})();
+
+// ── Build the dd-tr dropdown with all 40 transitions ──────────────────────
+function _buildTransDropdown() {
+  var dd = document.getElementById('dd-tr');
+  if(!dd) return;
+
+  // Group transitions by category
+  var cats = {};
+  Object.entries(window.AAB_TRANS).forEach(function(kv){
+    var key=kv[0], def=kv[1];
+    if(!cats[def.cat]) cats[def.cat] = [];
+    cats[def.cat].push({key:key, def:def});
+  });
+
+  var html = '';
+  Object.entries(cats).forEach(function(ckv){
+    var catName=ckv[0], items=ckv[1];
+    html += '<div class="dd-tr-cat">' + catName.toUpperCase() + '</div><div class="dd-tr-grid">';
+    items.forEach(function(item){
+      var key=item.key, def=item.def;
+      html += '<div class="dd-tr-item" onclick="window._applyTransOp(\'' + key + '\')" title="' + def.n + '">' +
+              '<span class="ti">' + def.i + '</span><div class="tn">' + def.n + '</div></div>';
+    });
+    html += '</div>';
+  });
+
+  // Apply All / Clear buttons
+  html += '<div style="border-top:1px solid rgba(255,255,255,.06);padding-top:6px;margin-top:2px;display:flex;gap:4px">' +
+          '<button onclick="window._applyTransAll(window._esSelTrans)" style="flex:1;background:rgba(0,212,255,.08);border:1px solid rgba(0,212,255,.2);color:#67e8f9;border-radius:4px;padding:4px;cursor:pointer;font-size:8px;font-weight:600">⚡ Apply All</button>' +
+          '<button onclick="window._applyTransAll(\'cut\')" style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.4);border-radius:4px;padding:4px;cursor:pointer;font-size:8px">✂ Clear All</button>' +
+          '</div>';
+  dd.innerHTML = html;
+}
+
+// Apply transition to selected or all
+window._applyTransOp = function(type) {
+  window._esSelTrans = type;
+  // Highlight active in dropdown
+  document.querySelectorAll('.dd-tr-item').forEach(function(el){
+    el.classList.remove('active');
+    if(el.getAttribute('onclick') && el.getAttribute('onclick').indexOf("'"+type+"'") > -1) el.classList.add('active');
+  });
+  // Apply to selected clips or last clicked transition zone
+  if(window._selTransClipId) {
+    // Apply to specific clip
+    if(window.E && E.tracks) E.tracks.forEach(function(tr){ tr.clips.forEach(function(c){
+      if(c.id === window._selTransClipId) { c.transitionOut = type==='cut'?null:type; c.transitionDur = AAB_TRANS[type]?AAB_TRANS[type].dur:0.5; }
+    }); });
+    _wireTransZones();
+    if(typeof toast === 'function') toast((AAB_TRANS[type]||{n:type}).n + ' applied','ok');
+  } else {
+    // Apply to all selected clips
+    var sel = window._esSelClips && window._esSelClips.size > 0 ? window._esSelClips : null;
+    var n = 0;
+    if(window.E && E.tracks) E.tracks.forEach(function(tr){ tr.clips.forEach(function(c){
+      if(!sel || sel.has(c.id)) { c.transitionOut=type==='cut'?null:type; c.transitionDur=AAB_TRANS[type]?AAB_TRANS[type].dur:0.5; n++; }
+    }); });
+    _wireTransZones();
+    if(typeof toast === 'function') toast((AAB_TRANS[type]||{n:type}).n + ' → ' + n + ' clip(s)','ok');
+  }
+  // Close dropdown
+  var dd = document.getElementById('dd-tr');
+  if(dd) dd.style.display = 'none';
+};
+window._applyTransAll = function(type) {
+  var mt = window.E&&E.tracks ? E.tracks.find(function(t){return t.id==='main'||t.id==='main-video';}) : null;
+  if(mt) mt.clips.forEach(function(c){ c.transitionOut=type==='cut'?null:type; c.transitionDur=AAB_TRANS[type]?AAB_TRANS[type].dur:0.5; });
+  _wireTransZones();
+  if(typeof toast==='function') toast((AAB_TRANS[type]||{n:type}).n+' applied to all','ok');
+  var dd = document.getElementById('dd-tr'); if(dd) dd.style.display='none';
+};
+// Also update AABE.transition
+if(window.AABE) {
+  AABE.transition = function(t) { window._applyTransOp(t); };
+  AABE.transitionAll = function(t) { window._applyTransAll(t); };
+}
+
+// ── Transition zones on timeline ──────────────────────────────────────────
+function _wireTransZones() {
+  // Remove old zones
+  document.querySelectorAll('.aab-trans-zone').forEach(function(el){ el.remove(); });
+  if(!window.E || !E.tracks) return;
+  var pps = (window.E && E.pxPerSec) || 60;
+
+  // For each video track, add zones between adjacent clips
+  E.tracks.forEach(function(tr) {
+    if(tr.type !== 'video' && tr.id !== 'main' && tr.id !== 'main-video' && tr.id !== 'broll') return;
+    var lane = document.querySelector('[data-tid="' + tr.id + '"]');
+    if(!lane) return;
+
+    // Sort clips by start time
+    var sorted = tr.clips.slice().sort(function(a,b){ return (a.start||0)-(b.start||0); });
+
+    for(var i = 0; i < sorted.length - 1; i++) {
+      var clipA = sorted[i];
+      var clipB = sorted[i+1];
+      var boundary = (clipA.start||0) + (clipA.duration||0);
+      var gap = (clipB.start||0) - boundary;
+      if(gap > 0.5) continue; // too large gap — skip
+
+      var trans = clipA.transitionOut;
+      var tdef = trans && window.AAB_TRANS[trans] ? window.AAB_TRANS[trans] : null;
+      var tdur = (clipA.transitionDur || (tdef?tdef.dur:0.5) || 0.5);
+      var zoneW = Math.max(20, tdur * pps);
+      var zoneX = boundary * pps; // position of boundary in lane
+
+      var zone = document.createElement('div');
+      zone.className = 'aab-trans-zone' + (trans ? '' : ' tz-none');
+      zone.style.cssText = 'left:' + zoneX + 'px;width:' + zoneW + 'px;top:2px;bottom:2px;';
+      zone.dataset.clipId = clipA.id;
+      zone.dataset.transType = trans || 'cut';
+      zone.title = (tdef ? tdef.n : 'Cut') + ' — click to change';
+
+      zone.innerHTML = '<div class="tz-icon">' + (tdef ? tdef.i : '—') + '</div>' +
+                       (trans ? '<div class="tz-dur">' + (tdur*1000|0) + 'ms</div>' : '');
+
+      // Click → show transition inspector
+      (function(cA, cB, z) {
+        z.addEventListener('click', function(e) {
+          e.stopPropagation();
+          window._selTransClipId = cA.id;
+          _showTransInspector(cA, cB, z);
+        });
+      })(clipA, clipB, zone);
+
+      lane.appendChild(zone);
+    }
+  });
+}
+
+// ── Transition Inspector ───────────────────────────────────────────────────
+function _showTransInspector(clipA, clipB, zoneEl) {
+  var insp = document.getElementById('e-insp') || document.getElementById('e-insp-body') || document.getElementById('aab-insp');
+  if(!insp) return;
+  var trans = clipA.transitionOut || 'cut';
+  var tdef = window.AAB_TRANS[trans] || {n:'Cut', i:'—', dur:0};
+  var tdur = clipA.transitionDur || tdef.dur || 0.5;
+
+  // Group transitions for the type picker
+  var cats = {};
+  Object.entries(window.AAB_TRANS).forEach(function(kv){
+    var key=kv[0], def=kv[1];
+    if(!cats[def.cat]) cats[def.cat] = [];
+    cats[def.cat].push({key:key, def:def});
+  });
+  var transGrid = '';
+  Object.entries(cats).forEach(function(ckv){
+    var catName=ckv[0], items=ckv[1];
+    transGrid += '<div style="font-size:7px;color:rgba(255,255,255,.25);font-weight:700;letter-spacing:.08em;padding:4px 0 2px">' + catName + '</div>';
+    transGrid += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin-bottom:4px">';
+    items.forEach(function(item){
+      var k=item.key, d=item.def;
+      var active = k === trans;
+      transGrid += '<div onclick="window._transInspSet(\'' + clipA.id + '\',\'' + k + '\')" title="' + d.n + '" ' +
+                   'style="background:' + (active?'rgba(139,92,246,.25)':'rgba(255,255,255,.04)') + ';border:1px solid ' + (active?'#8b5cf6':'rgba(255,255,255,.07)') + ';border-radius:3px;padding:4px 2px;cursor:pointer;text-align:center">' +
+                   '<div style="font-size:14px">' + d.i + '</div>' +
+                   '<div style="font-size:6px;color:rgba(255,255,255,.4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + d.n + '</div></div>';
+    });
+    transGrid += '</div>';
+  });
+
+  var durBtns = [0.2, 0.5, 1.0, 1.5, 2.0].map(function(d){
+    var active = Math.abs(tdur - d) < 0.05;
+    return '<button class="ti-dur-btn' + (active?' active':'') + '" onclick="window._transInspDur(\'' + clipA.id + '\',' + d + ')">' + d + 's</button>';
+  }).join('');
+
+  insp.innerHTML = '<div id="aab-trans-insp">' +
+    '<div style="font-size:8px;font-weight:700;color:rgba(255,255,255,.3);letter-spacing:.1em;margin-bottom:8px">TRANSITION PROPERTIES</div>' +
+    '<div class="ti-row"><div class="ti-label">CURRENT TYPE</div>' +
+    '<div style="font-size:14px;font-weight:600;color:#e2e8f0;display:flex;align-items:center;gap:6px">' +
+    '<span>' + tdef.i + '</span><span>' + tdef.n + '</span></div></div>' +
+    '<div class="ti-row"><div class="ti-label">DURATION</div><div class="ti-dur-btns">' + durBtns + '</div></div>' +
+    '<div class="ti-row"><div class="ti-label">BETWEEN</div>' +
+    '<div style="font-size:9px;color:rgba(255,255,255,.4)">' + (clipA.name||'Clip A') + ' → ' + (clipB.name||'Clip B') + '</div></div>' +
+    '<div class="ti-label" style="margin-bottom:6px">TRANSITION TYPE</div>' +
+    '<div style="max-height:260px;overflow-y:auto">' + transGrid + '</div>' +
+    '<div style="margin-top:10px;display:flex;gap:6px">' +
+    '<button onclick="window._transInspSet(\'' + clipA.id + '\',\'cut\')" style="flex:1;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);color:#fca5a5;border-radius:4px;padding:5px;cursor:pointer;font-size:9px">✂ Remove</button>' +
+    '<button onclick="window._transInspPreview(\'' + clipA.id + '\')" style="flex:1;background:rgba(0,212,255,.1);border:1px solid rgba(0,212,255,.2);color:#67e8f9;border-radius:4px;padding:5px;cursor:pointer;font-size:9px">▶ Preview</button>' +
+    '</div></div>';
+}
+
+window._transInspSet = function(clipId, type) {
+  if(!window.E || !E.tracks) return;
+  var clip = null;
+  E.tracks.forEach(function(tr){ tr.clips.forEach(function(c){ if(c.id===clipId) clip=c; }); });
+  if(!clip) return;
+  clip.transitionOut = type === 'cut' ? null : type;
+  clip.transitionDur = AAB_TRANS[type] ? AAB_TRANS[type].dur : 0.5;
+  window._selTransClipId = clipId;
+  _wireTransZones();
+  // Refresh inspector
+  var clipA = clip;
+  var track = null;
+  E.tracks.forEach(function(tr){ tr.clips.forEach(function(c,i){ if(c.id===clipId){ track=tr; } }); });
+  if(track) {
+    var sorted = track.clips.slice().sort(function(a,b){return a.start-b.start;});
+    var idx = sorted.findIndex(function(c){ return c.id===clipId; });
+    if(idx >= 0 && idx < sorted.length-1) _showTransInspector(sorted[idx], sorted[idx+1], null);
+  }
+  if(typeof toast==='function') toast((AAB_TRANS[type]||{n:'Cut'}).n+' set','ok');
+};
+
+window._transInspDur = function(clipId, dur) {
+  if(!window.E || !E.tracks) return;
+  E.tracks.forEach(function(tr){ tr.clips.forEach(function(c){ if(c.id===clipId){ c.transitionDur=dur; } }); });
+  _wireTransZones();
+  if(typeof toast==='function') toast('Duration: '+dur+'s','ok');
+};
+
+window._transInspPreview = function(clipId) {
+  // Seek to 1s before clip boundary and play
+  if(!window.E || !E.tracks) return;
+  var clip = null;
+  E.tracks.forEach(function(tr){ tr.clips.forEach(function(c){ if(c.id===clipId) clip=c; }); });
+  if(!clip) return;
+  var boundary = (clip.start||0) + (clip.duration||0);
+  var dur = clip.transitionDur || 0.5;
+  window._esPH = Math.max(0, boundary - dur - 0.3);
+  if(window.E) { E.playhead=window._esPH; E.currentTime=window._esPH; }
+  if(typeof movePH==='function') movePH(window._esPH);
+  if(!window._esPlaying && typeof E_progToggle==='function') E_progToggle();
+};
+
+// ── Canvas transition rendering (all 40 types) ────────────────────────────
+window._esApplyTransEffect = function(t) {
+  var oc = document.getElementById('aab-overlay-canvas');
+  if(!oc || !oc.getContext) return;
+  var ctx = oc.getContext('2d');
+  if(!window.E || !E.tracks) return;
+
+  var mt = E.tracks.find(function(tr){ return tr.id==='main'||tr.id==='main-video'; });
+  if(!mt) return;
+
+  var sorted = mt.clips.slice().sort(function(a,b){ return (a.start||0)-(b.start||0); });
+  var cw = oc.width || 1280, ch = oc.height || 720;
+
+  for(var i = 0; i < sorted.length; i++) {
+    var clip = sorted[i];
+    var trans = clip.transitionOut;
+    if(!trans || trans === 'cut') continue;
+
+    var boundary = (clip.start||0) + (clip.duration||0);
+    var tdef = window.AAB_TRANS[trans];
+    var halfDur = (clip.transitionDur || (tdef?tdef.dur:0.5) || 0.5) * 0.5;
+    var dist = t - boundary; // negative = before, positive = after
+    if(Math.abs(dist) > halfDur + 0.1) continue;
+
+    // progress: 0 at start of transition, 0.5 at boundary, 1 at end
+    var prog = (dist + halfDur) / (halfDur * 2);
+    prog = Math.max(0, Math.min(1, prog));
+
+    // Get next clip for push/slide effects
+    var nextClip = sorted[i+1];
+    var nextVid = null;
+    if(nextClip && nextClip.url) {
+      nextVid = window._preVids && window._preVids[nextClip.url];
+    }
+
+    ctx.save();
+    _drawTransition(ctx, trans, prog, cw, ch, nextVid);
+    ctx.restore();
+  }
+};
+
+function _drawTransition(ctx, type, prog, cw, ch, nextVid) {
+  // prog: 0=start, 0.5=boundary, 1=end
+  // For most effects: peak at 0.5, ease in/out
+  var peak = 1 - Math.abs(prog - 0.5) * 2; // 0→1→0 curve
+  // For reveal effects: 0→1 (clip A hidden, clip B revealed)
+
+  switch(type) {
+    case 'dissolve':
+      ctx.fillStyle = 'rgba(0,0,0,' + (peak * 0.55) + ')';
+      ctx.fillRect(0,0,cw,ch);
+      break;
+
+    case 'fade-black':
+      ctx.fillStyle = 'rgba(0,0,0,' + Math.min(1, peak * 1.3) + ')';
+      ctx.fillRect(0,0,cw,ch);
+      break;
+
+    case 'fade-white':
+      ctx.fillStyle = 'rgba(255,255,255,' + Math.min(1, peak * 1.3) + ')';
+      ctx.fillRect(0,0,cw,ch);
+      break;
+
+    case 'dip-black':
+      if(peak > 0.7) { ctx.fillStyle='#000'; ctx.fillRect(0,0,cw,ch); }
+      else { ctx.fillStyle='rgba(0,0,0,'+(peak/0.7)+')'; ctx.fillRect(0,0,cw,ch); }
+      break;
+
+    case 'dip-white':
+      if(peak > 0.7) { ctx.fillStyle='#fff'; ctx.fillRect(0,0,cw,ch); }
+      else { ctx.fillStyle='rgba(255,255,255,'+(peak/0.7)+')'; ctx.fillRect(0,0,cw,ch); }
+      break;
+
+    case 'blur-dis':
+      // Simulate blur with layered semi-transparent rectangles
+      for(var bi=0; bi<5; bi++){
+        ctx.fillStyle='rgba(0,0,0,'+(peak*0.12)+')';
+        ctx.fillRect(bi*3-6,bi*2-4,cw,ch);
+      }
+      ctx.fillStyle='rgba(0,0,0,'+(peak*0.3)+')';
+      ctx.fillRect(0,0,cw,ch);
+      break;
+
+    case 'zoom-in':
+      // Draw a growing dark frame border (simulates zoom camera movement)
+      if(prog < 0.5) {
+        // Clip A zooming out (going smaller — dark vignette expanding)
+        var scale = 1 + prog * 0.2;
+        var gr = ctx.createRadialGradient(cw/2,ch/2,cw*0.2, cw/2,ch/2,cw*0.7);
+        gr.addColorStop(0,'rgba(0,0,0,0)');
+        gr.addColorStop(1,'rgba(0,0,0,'+prog+')');
+        ctx.fillStyle=gr; ctx.fillRect(0,0,cw,ch);
+      } else {
+        // Clip B zooming in (getting closer)
+        var fadeIn = (prog-0.5)*2;
+        if(nextVid && nextVid._ready && nextVid.readyState>=2){
+          try {
+            var zs = 1 + (1-fadeIn) * 0.3;
+            ctx.save();
+            ctx.translate(cw/2, ch/2); ctx.scale(zs, zs); ctx.translate(-cw/2,-ch/2);
+            ctx.globalAlpha = fadeIn;
+            ctx.drawImage(nextVid,0,0,cw,ch);
+            ctx.globalAlpha = 1; ctx.restore();
+          } catch(e){}
+        }
+      }
+      break;
+
+    case 'zoom-out':
+      if(prog < 0.5) {
+        var gr2 = ctx.createRadialGradient(cw/2,ch/2,0, cw/2,ch/2,cw*0.7);
+        gr2.addColorStop(0,'rgba(0,0,0,'+(prog*1.5)+')');
+        gr2.addColorStop(1,'rgba(0,0,0,0)');
+        ctx.fillStyle=gr2; ctx.fillRect(0,0,cw,ch);
+      } else if(nextVid && nextVid._ready && nextVid.readyState>=2){
+        try {
+          var fadeIn2=(prog-0.5)*2;
+          var zs2=1+(1-fadeIn2)*0.15;
+          ctx.save(); ctx.translate(cw/2,ch/2); ctx.scale(zs2,zs2); ctx.translate(-cw/2,-ch/2);
+          ctx.globalAlpha=fadeIn2; ctx.drawImage(nextVid,0,0,cw,ch); ctx.globalAlpha=1; ctx.restore();
+        } catch(e){}
+      }
+      break;
+
+    // Push: clip B physically pushes clip A off screen
+    case 'push-left':
+      if(nextVid && nextVid._ready && nextVid.readyState>=2){
+        try{ctx.drawImage(nextVid, cw*(1-prog), 0, cw, ch);}catch(e){}
+        ctx.fillStyle='rgba(0,0,0,'+prog*0.15+')'; ctx.fillRect(0,0,cw*(1-prog),ch);
+      } else { ctx.fillStyle='rgba(0,0,0,'+(prog*0.6)+')'; ctx.fillRect(cw*(1-prog),0,cw*prog,ch); }
+      break;
+    case 'push-right':
+      if(nextVid && nextVid._ready && nextVid.readyState>=2){
+        try{ctx.drawImage(nextVid, -cw*(1-prog), 0, cw, ch);}catch(e){}
+        ctx.fillStyle='rgba(0,0,0,'+prog*0.15+')'; ctx.fillRect(cw*prog,0,cw*(1-prog),ch);
+      } else { ctx.fillStyle='rgba(0,0,0,'+(prog*0.6)+')'; ctx.fillRect(0,0,cw*prog,ch); }
+      break;
+    case 'push-up':
+      if(nextVid && nextVid._ready && nextVid.readyState>=2){
+        try{ctx.drawImage(nextVid, 0, ch*(1-prog), cw, ch);}catch(e){}
+      } else { ctx.fillStyle='rgba(0,0,0,'+(prog*0.7)+')'; ctx.fillRect(0,ch*(1-prog),cw,ch*prog); }
+      break;
+    case 'push-down':
+      if(nextVid && nextVid._ready && nextVid.readyState>=2){
+        try{ctx.drawImage(nextVid, 0, -ch*(1-prog), cw, ch);}catch(e){}
+      } else { ctx.fillStyle='rgba(0,0,0,'+(prog*0.7)+')'; ctx.fillRect(0,0,cw,ch*prog); }
+      break;
+
+    // Slide: clip B slides in while clip A stays
+    case 'slide-left':
+      if(nextVid && nextVid._ready && nextVid.readyState>=2){
+        try{ctx.drawImage(nextVid, cw*(1-prog), 0, cw, ch);}catch(e){}
+      } else { ctx.fillStyle='rgba(30,30,60,'+(prog)+')'; ctx.fillRect(cw*(1-prog),0,cw*prog,ch); }
+      break;
+    case 'slide-right':
+      if(nextVid && nextVid._ready && nextVid.readyState>=2){
+        try{ctx.drawImage(nextVid, -cw*(1-prog), 0, cw, ch);}catch(e){}
+      } else { ctx.fillStyle='rgba(30,30,60,'+(prog)+')'; ctx.fillRect(0,0,cw*prog,ch); }
+      break;
+    case 'slide-up':
+      if(nextVid && nextVid._ready && nextVid.readyState>=2){
+        try{ctx.drawImage(nextVid, 0, ch*(1-prog), cw, ch);}catch(e){}
+      } else { ctx.fillStyle='rgba(30,30,60,'+(prog)+')'; ctx.fillRect(0,ch*(1-prog),cw,ch*prog); }
+      break;
+    case 'slide-down':
+      if(nextVid && nextVid._ready && nextVid.readyState>=2){
+        try{ctx.drawImage(nextVid, 0, -ch*(1-prog), cw, ch);}catch(e){}
+      } else { ctx.fillStyle='rgba(30,30,60,'+(prog)+')'; ctx.fillRect(0,0,cw,ch*prog); }
+      break;
+
+    // Wipes: reveal edge
+    case 'wipe-left':
+      ctx.fillStyle='rgba(0,0,0,0.85)'; ctx.fillRect(0,0,cw*(1-prog),ch);
+      if(nextVid&&nextVid._ready&&nextVid.readyState>=2){ctx.globalAlpha=1;try{ctx.save();ctx.beginPath();ctx.rect(cw*(1-prog),0,cw*prog,ch);ctx.clip();ctx.drawImage(nextVid,0,0,cw,ch);ctx.restore();}catch(e){}}
+      ctx.fillStyle='rgba(0,212,255,0.8)'; ctx.fillRect(cw*(1-prog)-1,0,2,ch);
+      break;
+    case 'wipe-right':
+      ctx.fillStyle='rgba(0,0,0,0.85)'; ctx.fillRect(cw*prog,0,cw*(1-prog),ch);
+      if(nextVid&&nextVid._ready&&nextVid.readyState>=2){try{ctx.save();ctx.beginPath();ctx.rect(0,0,cw*prog,ch);ctx.clip();ctx.drawImage(nextVid,0,0,cw,ch);ctx.restore();}catch(e){}}
+      ctx.fillStyle='rgba(0,212,255,0.8)'; ctx.fillRect(cw*prog-1,0,2,ch);
+      break;
+    case 'wipe-up':
+      ctx.fillStyle='rgba(0,0,0,0.85)'; ctx.fillRect(0,0,cw,ch*(1-prog));
+      ctx.fillStyle='rgba(0,212,255,0.8)'; ctx.fillRect(0,ch*(1-prog)-1,cw,2);
+      break;
+    case 'wipe-down':
+      ctx.fillStyle='rgba(0,0,0,0.85)'; ctx.fillRect(0,ch*prog,cw,ch*(1-prog));
+      ctx.fillStyle='rgba(0,212,255,0.8)'; ctx.fillRect(0,ch*prog-1,cw,2);
+      break;
+
+    // Circle/Iris
+    case 'circle':
+      ctx.fillStyle='rgba(0,0,0,0.9)';
+      ctx.fillRect(0,0,cw,ch);
+      ctx.globalCompositeOperation='destination-out';
+      ctx.beginPath(); ctx.arc(cw/2,ch/2, Math.max(cw,ch)*prog*0.75, 0, Math.PI*2);
+      ctx.fill(); ctx.globalCompositeOperation='source-over';
+      break;
+    case 'iris-open':
+      ctx.fillStyle='rgba(0,0,0,0.95)'; ctx.fillRect(0,0,cw,ch);
+      ctx.globalCompositeOperation='destination-out';
+      var r=Math.max(cw,ch)*0.6*prog; ctx.beginPath(); ctx.arc(cw/2,ch/2,r,0,Math.PI*2); ctx.fill();
+      ctx.globalCompositeOperation='source-over';
+      break;
+    case 'iris-close':
+      var rc=Math.max(cw,ch)*0.6*(1-prog);
+      ctx.fillStyle='rgba(0,0,0,0.95)'; ctx.fillRect(0,0,cw,ch);
+      ctx.globalCompositeOperation='destination-out';
+      ctx.beginPath(); ctx.arc(cw/2,ch/2,rc,0,Math.PI*2); ctx.fill();
+      ctx.globalCompositeOperation='source-over';
+      break;
+
+    // Flash
+    case 'flash':
+      if(peak>0.5) { ctx.fillStyle='rgba(255,255,255,'+Math.min(1,peak*2)+')'; ctx.fillRect(0,0,cw,ch); }
+      break;
+
+    case 'whip':
+      // Horizontal motion smear
+      var strips=12;
+      for(var wi=0;wi<strips;wi++){
+        var alpha=peak*(1-wi/strips)*0.7;
+        var offset=peak*cw*0.08*(wi+1);
+        ctx.fillStyle='rgba(255,255,255,'+alpha+')';
+        ctx.fillRect(offset,wi*(ch/strips),cw,ch/strips+2);
+      }
+      ctx.fillStyle='rgba(255,255,255,'+(peak*0.3)+')'; ctx.fillRect(0,0,cw,ch);
+      break;
+
+    case 'light-leak':
+      var llg=ctx.createLinearGradient(0,0,cw,ch);
+      llg.addColorStop(0,'rgba(255,200,100,0)');
+      llg.addColorStop(0.4,'rgba(255,180,50,'+peak*0.6+')');
+      llg.addColorStop(1,'rgba(255,120,0,0)');
+      ctx.fillStyle=llg; ctx.fillRect(0,0,cw,ch);
+      break;
+
+    case 'lens-flare':
+      var lfg=ctx.createRadialGradient(cw*0.3,ch*0.3,0, cw*0.3,ch*0.3,Math.max(cw,ch)*0.5);
+      lfg.addColorStop(0,'rgba(255,255,220,'+peak*0.9+')');
+      lfg.addColorStop(0.3,'rgba(255,220,100,'+peak*0.5+')');
+      lfg.addColorStop(1,'rgba(255,180,0,0)');
+      ctx.fillStyle=lfg; ctx.fillRect(0,0,cw,ch);
+      break;
+
+    case 'film-burn':
+      ctx.fillStyle='rgba(180,60,0,'+peak*0.5+')'; ctx.fillRect(0,0,cw,ch);
+      var fbg=ctx.createRadialGradient(cw*0.7,ch*0.3,0,cw*0.7,ch*0.3,cw*0.6);
+      fbg.addColorStop(0,'rgba(255,140,0,'+peak*0.8+')');
+      fbg.addColorStop(1,'rgba(180,60,0,0)');
+      ctx.fillStyle=fbg; ctx.fillRect(0,0,cw,ch);
+      break;
+
+    case 'glitch':
+      var numSlices=Math.floor(5+peak*10);
+      for(var gi=0;gi<numSlices;gi++){
+        var gy=Math.random()*ch, gh2=Math.random()*20+2, gx=((Math.random()-0.5)*peak*60)|0;
+        ctx.fillStyle='rgba('+(Math.random()*255|0)+','+(Math.random()*100|0)+','+(255)+','+(peak*0.4)+')';
+        ctx.fillRect(gx,gy,cw,gh2);
+      }
+      ctx.fillStyle='rgba(0,255,255,'+peak*0.15+')'; ctx.fillRect(Math.random()*20-10,0,cw,ch);
+      break;
+
+    case 'mosaic':
+      var tileSize=Math.max(4,Math.round(50*peak));
+      ctx.fillStyle='rgba(0,0,0,'+peak*0.3+')'; ctx.fillRect(0,0,cw,ch);
+      if(peak>0.1){
+        for(var mx=0;mx<cw;mx+=tileSize){for(var my=0;my<ch;my+=tileSize){
+          if(Math.random()<peak*0.4){ctx.fillStyle='rgba('+(Math.random()*50|0)+','+(Math.random()*50|0)+','+(80+Math.random()*80|0)+','+peak*0.6+')';ctx.fillRect(mx,my,tileSize,tileSize);}
+        }}
+      }
+      break;
+
+    case 'pixel-dis':
+      var ps=Math.max(3,Math.round(30*peak));
+      for(var px=0;px<cw;px+=ps){for(var py=0;py<ch;py+=ps){
+        if(Math.random()<peak*0.7){ctx.fillStyle='rgba(0,0,0,'+peak+')';ctx.fillRect(px,py,ps,ps);}
+      }}
+      break;
+
+    case 'spin':
+      ctx.translate(cw/2,ch/2); ctx.rotate(peak*Math.PI*0.15);
+      ctx.fillStyle='rgba(0,0,0,'+peak*0.7+')'; ctx.fillRect(-cw*2,-ch*2,cw*4,ch*4);
+      break;
+
+    case 'flip':
+      ctx.translate(cw/2,ch/2); ctx.scale(1-peak*1.8,1); ctx.translate(-cw/2,-ch/2);
+      if(peak>0.5){ctx.fillStyle='rgba(255,255,255,0.3)';ctx.fillRect(0,0,cw,ch);}
+      break;
+
+    case 'ripple':
+      ctx.fillStyle='rgba(0,0,0,'+peak*0.6+')'; ctx.fillRect(0,0,cw,ch);
+      for(var ri=0;ri<3;ri++){
+        ctx.strokeStyle='rgba(0,212,255,'+(peak*0.4)+')';
+        ctx.lineWidth=3; ctx.beginPath();
+        ctx.arc(cw/2,ch/2,peak*(Math.max(cw,ch)/2)*(0.3+ri*0.35),0,Math.PI*2); ctx.stroke();
+      }
+      break;
+
+    case 'doc-dissolve':
+      ctx.fillStyle='rgba(0,0,0,'+peak*0.4+')'; ctx.fillRect(0,0,cw,ch);
+      ctx.fillStyle='rgba(20,20,20,'+peak*0.2+')'; ctx.fillRect(0,0,cw,ch);
+      break;
+
+    case 'broadcast':
+      var bx=cw*(1-prog)*1.1;
+      ctx.fillStyle='rgba(0,0,0,0.9)'; ctx.fillRect(0,0,bx,ch);
+      ctx.fillStyle='rgba(0,212,255,0.9)'; ctx.fillRect(bx-3,0,3,ch);
+      ctx.fillStyle='rgba(139,92,246,0.9)'; ctx.fillRect(bx-6,0,3,ch);
+      break;
+
+    case 'cam-shutter':
+      var sh=peak; var topH=ch*sh*0.5, btH=ch*sh*0.5;
+      ctx.fillStyle='rgba(0,0,0,0.95)'; ctx.fillRect(0,0,cw,topH); ctx.fillRect(0,ch-btH,cw,btH);
+      break;
+
+    case 'page-curl':
+      var pcx=cw*(1-prog);
+      ctx.fillStyle='rgba(0,0,0,0.9)'; ctx.fillRect(0,0,pcx,ch);
+      var pcg=ctx.createLinearGradient(pcx,0,pcx+30,0);
+      pcg.addColorStop(0,'rgba(255,255,255,0.4)'); pcg.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=pcg; ctx.fillRect(pcx,0,30,ch);
+      break;
+
+    case 'cube-rot':
+      var ang=peak*Math.PI*0.5;
+      ctx.translate(cw/2,ch/2);
+      ctx.transform(Math.cos(ang),0,0,1,-cw/2,-ch/2);
+      ctx.fillStyle='rgba(30,30,60,'+peak*0.8+')'; ctx.fillRect(0,0,cw,ch);
+      break;
+  }
+}
+
+// ── Patch E_renderTL to wire transition zones after render ─────────────────
+(function(){
+  var orig = window.E_renderTL;
+  if(orig && !orig._transPatch) {
+    window.E_renderTL = function() {
+      orig.apply(this, arguments);
+      setTimeout(_wireTransZones, 50);
+    };
+    window.E_renderTL._transPatch = true;
+    window.E_renderTL._orig = orig;
+  }
+  // Also patch _esApplyTransEffect on the existing rAF loop
+  // (already patched by the module assignment above)
+})();
+
+// ── Populate the dd-tr dropdown now ──────────────────────────────────────
+_buildTransDropdown();
+
+// Wire existing transitions items to new handler
+if(window.AABE && AABE.dd) {
+  var origDd = window.AABE.dd;
+  // When dd-tr opens, rebuild it
+  window.AABE.dd = function(pid) {
+    if(pid === 'dd-tr') _buildTransDropdown();
+    origDd(pid);
+  };
+}
+
+// Wire transition zones on load
+setTimeout(_wireTransZones, 500);
+
+console.log('[AABStudio Transitions] 40 professional transitions loaded');
+
+})();
+</script>
 
 </body>
 </html>
