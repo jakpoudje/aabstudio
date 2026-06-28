@@ -24555,10 +24555,11 @@ var clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   if($('aab-ov-css'))return;
   var s=document.createElement('style');s.id='aab-ov-css';
   s.textContent=`
-/* Track volume sliders removed — use Mixer panel */
+/* Track volume sliders + labels removed — use Mixer panel */
 .aab-track-row input[type=range]{display:none!important;}
 .aab-track-controls input[type=range]{display:none!important;}
 .aab-track-vol{display:none!important;}
+.aab-track-vol-pct,.aab-vol-pct,.e-track-vol-val,.aab-vol-val{display:none!important;}
 /* Playhead */
 #aab-ph{position:absolute!important;top:0!important;bottom:0!important;width:2px!important;
   background:#ef4444!important;z-index:30!important;pointer-events:auto!important;cursor:ew-resize!important;
@@ -24897,20 +24898,80 @@ function _esUpdateOvl(t){
 /* ── Transitions canvas rendering ─────────────────────────────────────────── */
 function _esApplyTransEffect(t){
   if(!_ovlCanvas||!_ovlCtx||!window.E||!E.tracks)return;
-  var mt=E.tracks.find(tr=>tr.id==='main'||tr.id==='main-video');
+  var mt=E.tracks.find(function(tr){return tr.id==='main'||tr.id==='main-video';});
   if(!mt)return;
-  var dur=0.5; // transition duration in seconds
-  mt.clips.forEach(c=>{
+  var dur=0.8; // transition window in seconds each side
+  var cw=_ovlCanvas.width,ch=_ovlCanvas.height;
+  mt.clips.forEach(function(c){
     var trans=c.transitionOut; if(!trans||trans==='cut')return;
-    var end=(c.start||0)+(c.duration||0); var dist=Math.abs(t-end);
-    if(dist>dur)return;
-    var prog=dist/dur; // 1=at boundary, 0=dur away
-    var phase=t>end?prog:1-prog; // 0→1 for fade out, 1→0 for fade in
-    var cw=_ovlCanvas.width,ch=_ovlCanvas.height;
+    var end=(c.start||0)+(c.duration||0);
+    var dist=t-end; // negative=before boundary, positive=after
+    if(Math.abs(dist)>dur)return;
+    var progress=clamp((dist+dur)/(2*dur),0,1); // 0 at start of transition, 1 at end
     _ovlCtx.save();
-    if(trans==='fade-black'){_ovlCtx.fillStyle=`rgba(0,0,0,${1-phase})`;_ovlCtx.fillRect(0,0,cw,ch);}
-    else if(trans==='fade-white'){_ovlCtx.fillStyle=`rgba(255,255,255,${1-phase})`;_ovlCtx.fillRect(0,0,cw,ch);}
-    else if(trans==='dissolve'){_ovlCtx.fillStyle=`rgba(0,0,0,${Math.sin((1-phase)*Math.PI)*0.5})`;_ovlCtx.fillRect(0,0,cw,ch);}
+    switch(trans){
+      case 'fade-black':
+        // peak darkness at the boundary
+        var darkness=1-Math.abs(progress-0.5)*2;
+        _ovlCtx.fillStyle='rgba(0,0,0,'+clamp(darkness*1.2,0,1)+')';
+        _ovlCtx.fillRect(0,0,cw,ch);
+        break;
+      case 'fade-white':
+        var whiteness=1-Math.abs(progress-0.5)*2;
+        _ovlCtx.fillStyle='rgba(255,255,255,'+clamp(whiteness*1.2,0,1)+')';
+        _ovlCtx.fillRect(0,0,cw,ch);
+        break;
+      case 'dissolve':
+        var dis=1-Math.abs(progress-0.5)*2;
+        _ovlCtx.fillStyle='rgba(0,0,0,'+clamp(dis*0.7,0,1)+')';
+        _ovlCtx.fillRect(0,0,cw,ch);
+        break;
+      case 'slide-left':
+        // Black bar sliding left
+        var slx=cw*(1-progress);
+        _ovlCtx.fillStyle='#000';
+        _ovlCtx.fillRect(0,0,slx,ch);
+        break;
+      case 'slide-right':
+        var srx=cw*progress;
+        _ovlCtx.fillStyle='#000';
+        _ovlCtx.fillRect(srx,0,cw-srx,ch);
+        break;
+      case 'zoom-in':
+        var scale=1+(1-Math.abs(progress-0.5)*2)*0.15;
+        _ovlCtx.globalAlpha=Math.abs(progress-0.5)*2*0.3;
+        _ovlCtx.fillStyle='#000';_ovlCtx.fillRect(0,0,cw,ch);
+        _ovlCtx.globalAlpha=1;
+        break;
+      case 'zoom-out':
+        var zout=Math.abs(progress-0.5)*2*0.3;
+        _ovlCtx.globalAlpha=zout;
+        _ovlCtx.fillStyle='#000';_ovlCtx.fillRect(0,0,cw,ch);
+        _ovlCtx.globalAlpha=1;
+        break;
+      case 'whip':
+        // White flash + blur effect
+        var whip=1-Math.abs(progress-0.5)*2;
+        _ovlCtx.fillStyle='rgba(255,255,255,'+clamp(whip*0.8,0,1)+')';
+        _ovlCtx.fillRect(0,0,cw,ch);
+        break;
+      case 'blur':
+        // Dark vignette pulse
+        var blr=1-Math.abs(progress-0.5)*2;
+        var grad=_ovlCtx.createRadialGradient(cw/2,ch/2,0,cw/2,ch/2,Math.max(cw,ch)/2);
+        grad.addColorStop(0,'rgba(0,0,0,0)');
+        grad.addColorStop(1,'rgba(0,0,0,'+clamp(blr*0.9,0,1)+')');
+        _ovlCtx.fillStyle=grad;_ovlCtx.fillRect(0,0,cw,ch);
+        break;
+      case 'wipe':
+        // Vertical wipe
+        var wipeX=cw*progress;
+        _ovlCtx.fillStyle='rgba(0,0,0,0.7)';
+        _ovlCtx.fillRect(wipeX-2,0,4,ch); // thin edge line
+        _ovlCtx.fillStyle='rgba(0,212,255,0.6)';
+        _ovlCtx.fillRect(wipeX-1,0,2,ch);
+        break;
+    }
     _ovlCtx.restore();
   });
 }
@@ -25128,7 +25189,7 @@ window._applyTransAll=function(type){
 if(window.AABE){
   AABE.transition=t=>{window._esSelTrans=t;_applyTransSelected(t);};
   AABE.transitionAll=t=>_applyTransAll(t);
-  AABE.dd=AABE.dd||function(pid){var p=$(pid);if(!p)return;document.querySelectorAll('.emenu-panel').forEach(x=>{if(x.id!==pid)x.style.display='none';});p.style.display=p.style.display==='none'?'block':'none';if(p.style.display==='block'){setTimeout(()=>{document.addEventListener('mousedown',function r(ev){if(!p.contains(ev.target)){p.style.display='none';document.removeEventListener('mousedown',r);}});},50);}};
+  AABE.dd=function(pid){var p=$(pid);if(!p)return;document.querySelectorAll('.emenu-panel').forEach(function(x){if(x.id!==pid)x.style.display='none';});p.style.display=p.style.display==='none'?'block':'none';if(p.style.display==='block'){setTimeout(function(){document.addEventListener('mousedown',function r(ev){if(!p.contains(ev.target)){p.style.display='none';document.removeEventListener('mousedown',r);}});},50);}};
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -25578,8 +25639,8 @@ function _injectNav(){
   nav.innerHTML=`
     <button onclick="nav&&nav('dashboard-pg')">🏠 Dashboard</button>
     <button onclick="nav&&nav('scenes-pg')">🎬 Scenes</button>
-    <button onclick="typeof aps_openStudio==='function'&&aps_openStudio()">🤖 AI Presenter</button>
-    <button onclick="nav&&nav('record-pg')">🎙 Record</button>
+    <button onclick="typeof openAIPresenter==='function'?openAIPresenter():nav&&nav('script-pg')">🤖 AI Presenter</button>
+    <button onclick="typeof openRecordingStudio==='function'?openRecordingStudio():nav&&nav('record-pg')">🎙 Record</button>
     <div style="width:1px;height:16px;background:rgba(255,255,255,.08);margin:0 4px"></div>
     <button class="on">✂ Edit Suite</button>
     <div style="flex:1"></div>
@@ -25681,6 +25742,10 @@ function _boot(){
   if(window.E&&E.playhead&&Math.abs(window._esPH-E.playhead)>.5&&!window._esPlaying){window._esPH=E.playhead;movePH(window._esPH);}
   var nm=$('aab-proj-name');if(nm&&window.PROJECT)nm.textContent=PROJECT.title||'Untitled';
   if(typeof E_renderTL==='function')setTimeout(E_renderTL,100);
+  // Force AABE.dd to always be the dropdown toggle (re-apply every boot in case original overrides)
+  if(window.AABE){
+    AABE.dd=function(pid){var p=document.getElementById(pid);if(!p)return;document.querySelectorAll('.emenu-panel').forEach(function(x){if(x.id!==pid)x.style.display='none';});p.style.display=p.style.display==='none'?'block':'none';if(p.style.display==='block'){setTimeout(function(){document.addEventListener('mousedown',function r(ev){if(!p.contains(ev.target)){p.style.display='none';document.removeEventListener('mousedown',r);}});},50);}};
+  }
 }
 _boot();
 setInterval(()=>{var ep=$('edit-pg');if(!ep||!ep.classList.contains('on'))return;killTimers();_wireClips();_wireDropZones();_addVOControls();_wirePHDrag();_wireTrackCtx();_wireExport();if(!window._esPlaying&&window.E&&E.playhead!=null&&Math.abs(window._esPH-E.playhead)>.5){window._esPH=E.playhead;movePH(window._esPH);}},800);
