@@ -24942,7 +24942,7 @@ window.E_razorAt=function(t){
 /* ═══════════════════════════════════════════════════════════════════════════
    8. TRACK CONTROLS — volume wired to audio engine
    ═══════════════════════════════════════════════════════════════════════════ */
-window.E_muteTrack=function(id){ var t=window.E&&E.tracks?E.tracks.find(x=>x.id===id):null; if(t){t.muted=!t.muted; if(typeof E_renderTL==='function')E_renderTL(); if(typeof toast==='function')toast(t.muted?'Muted':'Unmuted','info'); stopAllAudio(); } };
+window.E_muteTrack=function(id){ var t=window.E&&E.tracks?E.tracks.find(x=>x.id===id):null; if(t){t.muted=!t.muted; if(typeof E_renderTL==='function')E_renderTL(); if(typeof toast==='function')toast(t.muted?'Muted':'Unmuted','info'); stopAllAudio(); if(typeof window._rebuildMixer==='function')window._rebuildMixer(); } };
 window.E_lockTrack=function(id){ var t=window.E&&E.tracks?E.tracks.find(x=>x.id===id):null; if(t){t.locked=!t.locked; if(typeof E_renderTL==='function')E_renderTL(); if(typeof toast==='function')toast(t.locked?'Locked':'Unlocked','info');} };
 window.E_deleteTrack=function(id){ if(!window.E||!E.tracks)return; if(id==='main'||id==='main-video'){if(typeof toast==='function')toast('Cannot delete Main Video','warn');return;} E.tracks=E.tracks.filter(t=>t.id!==id); if(typeof E_renderTL==='function')E_renderTL(); };
 window.E_addTrackClip=function(trackId, mediaType){
@@ -24976,7 +24976,7 @@ function _fixVolumeSliders(){
       var val=+this.value; if(!track)return;
       track.volume=val;
       // Update audio gain node for this track
-      if(_trackGains[track.id]) _trackGains[track.id].gain.value=Math.min(1,val/100);
+      if(!_trackGains[track.id]){var gx=getAC().createGain();gx.connect(_masterGain);_trackGains[track.id]=gx;} _trackGains[track.id].gain.value=Math.min(1.5,Math.max(0,val/100));
       // Also update HTML audio elements for any clip audio elements
       if(track.clips) track.clips.forEach(c=>{ if(c._audioEl) c._audioEl.volume=Math.min(1,val/100); });
       // Video track: control prog video
@@ -25038,34 +25038,210 @@ if(window.AABE){
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   11. MIXER PANEL (track level balancer)
+   11. MIXER PANEL — draggable, colour-coded, signal-wired, auto-syncs
    ═══════════════════════════════════════════════════════════════════════════ */
-function _buildMixerPanel(){
-  var existing=$('aab-mixer-panel'); if(existing)existing.remove();
-  var panel=document.createElement('div'); panel.id='aab-mixer-panel';
-  var hdr='<div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.6);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center"><span>🎚 Track Mixer</span><button onclick="document.getElementById(\'aab-mixer-panel\').style.display=\'none\'" style="background:none;border:none;color:rgba(255,255,255,.4);cursor:pointer;font-size:12px">✕</button></div>';
-  var rows='';
-  if(window.E&&E.tracks){
-    E.tracks.forEach(tr=>{
-      var vol=tr.volume!=null?tr.volume:80;
-      var db=Math.round(20*Math.log10(Math.max(0.001,vol/100)));
-      rows+=`<div class="aab-mix-track"><div class="aab-mix-label">${tr.name||tr.id}</div><input id="mix-${tr.id}" class="aab-mix-fader" type="range" min=0 max=150 value="${vol}" oninput="_esMixVol('${tr.id}',+this.value)"><div id="mixdb-${tr.id}" class="aab-mix-db">${db}dB</div></div>`;
-    });
-  }
-  panel.innerHTML=hdr+rows;
-  document.body.appendChild(panel);
+
+// Pre-create a GainNode for every track and ensure it is wired to signal
+function _ensureGainNodes(){
+  if(!window.E||!E.tracks) return;
+  var ac=getAC();
+  E.tracks.forEach(function(tr){
+    if(!_trackGains[tr.id]){
+      var g=ac.createGain();
+      g.gain.value=Math.min(1.5,Math.max(0,(tr.volume!=null?tr.volume:80)/100));
+      g.connect(_masterGain);
+      _trackGains[tr.id]=g;
+    }
+  });
 }
-window._esMixVol=function(trackId,val){
-  var tr=window.E&&E.tracks?E.tracks.find(t=>t.id===trackId):null; if(!tr)return;
-  tr.volume=val;
-  if(_trackGains[trackId]) _trackGains[trackId].gain.value=Math.min(1,val/100);
-  if(tr.clips) tr.clips.forEach(c=>{ if(c._audioEl)c._audioEl.volume=Math.min(1,val/100); });
-  var pv=$('e-prog-vid')||$('aab-prog-vid'); if(pv&&(trackId==='main'||trackId==='main-video'))pv.volume=Math.min(1,val/100);
-  var mxdb=$('mixdb-'+trackId); if(mxdb)mxdb.textContent=Math.round(20*Math.log10(Math.max(0.001,val/100)))+'dB';
-  // sync track slider
-  document.querySelectorAll('.aab-track-row').forEach(row=>{var nm=row.querySelector('.aab-track-name');if(!nm)return;var tnm=nm.textContent.trim();if(tnm.indexOf(tr.name||tr.id)>-1){var sl=row.querySelector('input[type=range]');if(sl)sl.value=val;}});
+
+function _buildMixerPanel(){
+  _ensureGainNodes();   // wire ALL tracks before building UI
+
+  // Remove old panel but remember its position
+  var existing=$('aab-mixer-panel');
+  var savedLeft=existing?existing.style.left:'';
+  var savedTop=existing?existing.style.top:'';
+  if(existing) existing.remove();
+
+  var panel=document.createElement('div');
+  panel.id='aab-mixer-panel';
+  panel.style.cssText='position:fixed;right:16px;bottom:80px;width:248px;'
+    +'background:#0d1526;border:1px solid rgba(255,255,255,.12);border-radius:10px;'
+    +'padding:0;z-index:9999;box-shadow:0 8px 32px rgba(0,0,0,.65);user-select:none;';
+  // Restore saved position if panel was already dragged
+  if(savedLeft) { panel.style.left=savedLeft; panel.style.right='auto'; }
+  if(savedTop)  { panel.style.top=savedTop;   panel.style.bottom='auto'; }
+
+  // ── Drag handle / header ────────────────────────────────────────────────
+  var hdr=document.createElement('div');
+  hdr.style.cssText='display:flex;align-items:center;justify-content:space-between;'
+    +'padding:9px 12px 8px;cursor:grab;border-bottom:1px solid rgba(255,255,255,.07);'
+    +'border-radius:10px 10px 0 0;';
+  hdr.innerHTML='<span style="font-size:10px;font-weight:700;color:rgba(255,255,255,.7)">🎚 Track Mixer</span>'
+    +'<div style="display:flex;gap:6px;align-items:center">'
+    +'<button title="Reset all faders to 80%" onclick="_esMixVolAll(80)" style="background:none;border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.4);cursor:pointer;font-size:8px;padding:2px 6px;border-radius:3px">Reset</button>'
+    +'<button title="Close mixer" onclick="document.getElementById('aab-mixer-panel').style.display='none'" style="background:none;border:none;color:rgba(255,255,255,.4);cursor:pointer;font-size:16px;line-height:1;padding:0 2px;">×</button>'
+    +'</div>';
+  panel.appendChild(hdr);
+
+  // ── Track rows ──────────────────────────────────────────────────────────
+  var body=document.createElement('div');
+  body.style.cssText='padding:10px 12px;max-height:320px;overflow-y:auto;';
+  if(window.E&&E.tracks&&E.tracks.length){
+    E.tracks.forEach(function(tr){
+      var vol=tr.volume!=null?tr.volume:80;
+      var dbVal=vol>0?Math.round(20*Math.log10(Math.max(0.001,vol/100))):-99;
+      var dbStr=dbVal<=-99?'-∞':dbVal+'dB';
+
+      var row=document.createElement('div');
+      row.style.cssText='display:flex;align-items:center;gap:7px;margin-bottom:10px;';
+
+      // Colour swatch — matches timeline track colour
+      var sw=document.createElement('div');
+      sw.style.cssText='width:3px;height:30px;border-radius:2px;flex-shrink:0;background:'+(tr.color||'#64748b')+';';
+
+      // Track name label
+      var lbl=document.createElement('div');
+      lbl.style.cssText='font-size:9px;color:rgba(255,255,255,.5);width:58px;overflow:hidden;'
+        +'text-overflow:ellipsis;white-space:nowrap;flex-shrink:0;';
+      lbl.textContent=(tr.name||tr.id).replace(/^[^\w\s]+\s*/,'');  // strip leading emoji
+
+      // Fader + dB column
+      var col=document.createElement('div');
+      col.style.cssText='flex:1;display:flex;flex-direction:column;gap:2px;min-width:0;';
+
+      var fader=document.createElement('input');
+      fader.type='range'; fader.id='mix-'+tr.id;
+      fader.min=0; fader.max=150; fader.value=vol;
+      fader.style.cssText='width:100%;height:3px;accent-color:'+(tr.color||'#00d4ff')+';cursor:pointer;';
+      fader.setAttribute('oninput',"_esMixVol('"+tr.id+"',+this.value)");
+
+      var dbEl=document.createElement('div');
+      dbEl.id='mixdb-'+tr.id;
+      dbEl.style.cssText='font-size:7px;color:rgba(255,255,255,.3);text-align:right;';
+      dbEl.textContent=dbStr;
+
+      col.appendChild(fader); col.appendChild(dbEl);
+
+      // Mute button
+      var mBtn=document.createElement('button');
+      mBtn.title='Mute / unmute'; mBtn.textContent='M';
+      mBtn.style.cssText='width:18px;height:18px;border-radius:3px;flex-shrink:0;cursor:pointer;font-size:8px;font-weight:700;'
+        +'border:1px solid rgba(255,255,255,.15);background:'+(tr.muted?tr.color||'#ef4444':'none')
+        +';color:'+(tr.muted?'#fff':'rgba(255,255,255,.4)')+';';
+      mBtn.setAttribute('onclick',"E_muteTrack('"+tr.id+"');_rebuildMixer();");
+
+      row.appendChild(sw); row.appendChild(lbl); row.appendChild(col); row.appendChild(mBtn);
+      body.appendChild(row);
+    });
+  } else {
+    body.innerHTML='<div style="color:rgba(255,255,255,.3);font-size:10px;padding:8px 0">No tracks loaded.</div>';
+  }
+  panel.appendChild(body);
+
+  // ── Master fader ─────────────────────────────────────────────────────────
+  var foot=document.createElement('div');
+  foot.style.cssText='padding:8px 12px;border-top:1px solid rgba(255,255,255,.07);'
+    +'display:flex;align-items:center;gap:7px;border-radius:0 0 10px 10px;';
+  foot.innerHTML='<div style="width:3px;height:18px;background:#fff;border-radius:2px;flex-shrink:0;opacity:.25;"></div>'
+    +'<span style="font-size:9px;color:rgba(255,255,255,.4);width:58px;flex-shrink:0;">Master</span>'
+    +'<input id="mix-master" type="range" min=0 max=150 value=100 '
+    +'  oninput="_esSetMasterVol(+this.value)" '
+    +'  style="flex:1;height:3px;accent-color:#fff;cursor:pointer;">'
+    +'<span id="mixdb-master" style="font-size:7px;color:rgba(255,255,255,.3);">0dB</span>';
+  panel.appendChild(foot);
+
+  document.body.appendChild(panel);
+
+  // ── Drag implementation ───────────────────────────────────────────────────
+  hdr.addEventListener('mousedown', function(e){
+    if(e.target.tagName==='BUTTON'||e.target.closest('button')) return;
+    e.preventDefault();
+    hdr.style.cursor='grabbing';
+    var rect=panel.getBoundingClientRect();
+    var startX=e.clientX, startY=e.clientY;
+    var origL=rect.left, origT=rect.top;
+    function onMove(ev){
+      var dx=ev.clientX-startX, dy=ev.clientY-startY;
+      var newL=Math.max(0,Math.min(window.innerWidth-panel.offsetWidth,  origL+dx));
+      var newT=Math.max(0,Math.min(window.innerHeight-panel.offsetHeight, origT+dy));
+      panel.style.left=newL+'px'; panel.style.top=newT+'px';
+      panel.style.right='auto';   panel.style.bottom='auto';
+    }
+    function onUp(){
+      hdr.style.cursor='grab';
+      document.removeEventListener('mousemove',onMove);
+      document.removeEventListener('mouseup',onUp);
+    }
+    document.addEventListener('mousemove',onMove);
+    document.addEventListener('mouseup',onUp);
+  });
+}
+
+// Rebuild in-place (keeps position, called after track/mute changes)
+window._rebuildMixer=function(){
+  var p=$('aab-mixer-panel');
+  if(p&&p.style.display!=='none'){ _buildMixerPanel(); $('aab-mixer-panel').style.display='block'; }
 };
-window.E_toggleMixer=function(){ _buildMixerPanel(); var p=$('aab-mixer-panel'); if(p){p.style.display=p.style.display==='none'||!p.style.display?'block':'none';} };
+
+// Reset all faders
+window._esMixVolAll=function(vol){
+  if(window.E&&E.tracks) E.tracks.forEach(function(tr){
+    tr.volume=vol;
+    if(_trackGains[tr.id]) _trackGains[tr.id].gain.value=Math.min(1.5,vol/100);
+    var pv=$('e-prog-vid')||$('aab-prog-vid');
+    if(pv&&(tr.id==='main'||tr.id==='main-video')) pv.volume=Math.min(1,vol/100);
+    var sl=$('mix-'+tr.id); if(sl)sl.value=vol;
+    var db=$('mixdb-'+tr.id);
+    if(db) db.textContent=(Math.round(20*Math.log10(Math.max(0.001,vol/100))))+'dB';
+  });
+  if(typeof toast==='function') toast('All tracks reset to '+vol+'%','ok');
+};
+
+// Master volume
+window._esSetMasterVol=function(val){
+  if(_masterGain) _masterGain.gain.value=Math.min(2,Math.max(0,val/100));
+  var db=val>0?Math.round(20*Math.log10(Math.max(0.001,val/100))):-99;
+  var el=$('mixdb-master'); if(el) el.textContent=(db<=-99?'-∞':db)+'dB';
+};
+if(window.AABE) AABE.masterVol=function(v){ window._esSetMasterVol(v||100); };
+
+// Per-track fader — always creates gain node if missing
+window._esMixVol=function(trackId,val){
+  var tr=window.E&&E.tracks?E.tracks.find(function(t){return t.id===trackId;}):null;
+  if(!tr) return;
+  tr.volume=val;
+  // Ensure gain node exists (it should be, but guard anyway)
+  if(!_trackGains[trackId]){
+    var g2=getAC().createGain(); g2.connect(_masterGain); _trackGains[trackId]=g2;
+  }
+  _trackGains[trackId].gain.value=Math.min(1.5,Math.max(0,val/100));
+  // Update any HTML audio elements on this track
+  if(tr.clips) tr.clips.forEach(function(c){ if(c._audioEl) c._audioEl.volume=Math.min(1,val/100); });
+  // Main/broll: control prog video volume too
+  var pv=$('e-prog-vid')||$('aab-prog-vid');
+  if(pv&&(trackId==='main'||trackId==='main-video'||trackId==='broll')) pv.volume=Math.min(1,val/100);
+  // Update dB readout
+  var db=val>0?Math.round(20*Math.log10(Math.max(0.001,val/100))):-99;
+  var dbEl=$('mixdb-'+trackId); if(dbEl) dbEl.textContent=(db<=-99?'-∞':db)+'dB';
+  // Sync timeline track slider
+  document.querySelectorAll('.aab-track-row').forEach(function(row){
+    var nm=row.querySelector('.aab-track-name'); if(!nm) return;
+    var tnm=nm.textContent.trim();
+    if(tnm.indexOf(tr.name||'')>-1||tnm.indexOf(tr.id||'')>-1){
+      var sl=row.querySelector('input[type=range]'); if(sl) sl.value=val;
+    }
+  });
+};
+
+// Toggle: always rebuild fresh so colours / tracks are current
+window.E_toggleMixer=function(){
+  var p=$('aab-mixer-panel');
+  if(p&&p.style.display!=='none'){ p.style.display='none'; return; }
+  _buildMixerPanel();
+  $('aab-mixer-panel').style.display='block';
+};
 
 /* ═══════════════════════════════════════════════════════════════════════════
    12. CONTEXT MENUS (right-click)
