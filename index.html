@@ -25128,6 +25128,511 @@ setInterval(function(){
 console.log('[EditComplete v4] Wired: all AABE transport, razor-on-click, trim handles, VU visible, mic on name row, transitions, replay fix, no-flicker');
 })();
 </script>
+<script id="aab-edit-v5">
+(function(){
+'use strict';
+if(window._esV5)return;
+window._esV5=true;
+
+var $=function(id){return document.getElementById(id);};
+var ft=function(s){s=+s||0;return Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');};
+
+// ── V5 CSS ────────────────────────────────────────────────────────────────
+(function(){
+  if($('aab-v5-css'))return;
+  var s=document.createElement('style');s.id='aab-v5-css';
+  s.textContent=[
+    // Track label panel - consistent 195px for all, 210px for VO
+    '.aab-track-lbl{width:185px!important;min-width:185px!important;flex-shrink:0!important;}',
+    // Track controls - same height, consistent button sizing
+    '.aab-track-controls{display:flex!important;align-items:center!important;gap:2px!important;padding:0 3px!important;flex-wrap:nowrap!important;min-height:22px!important;}',
+    '.aab-track-controls>button{width:18px!important;height:18px!important;min-width:18px!important;border-radius:3px!important;font-size:9px!important;padding:0!important;border:none!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;cursor:pointer!important;flex-shrink:0!important;}',
+    // Vol slider consistent
+    '.aab-track-controls input[type=range]{width:40px!important;flex-shrink:0!important;height:3px!important;}',
+    // VU wrap consistent
+    '#aab-vu-wrap{flex-shrink:0!important;}',
+    // Record button on VO track name
+    '.aab-rec-btn{display:inline-flex!important;align-items:center!important;justify-content:center!important;width:18px!important;height:18px!important;border-radius:50%!important;border:1px solid rgba(239,68,68,.5)!important;background:rgba(239,68,68,.15)!important;cursor:pointer!important;font-size:8px!important;margin-left:3px!important;flex-shrink:0!important;color:#fca5a5!important;}',
+    '.aab-rec-btn.recording{background:#ef4444!important;border-color:#ef4444!important;color:white!important;animation:rec-pulse .8s ease-in-out infinite alternate!important;}',
+    '@keyframes rec-pulse{from{box-shadow:0 0 4px rgba(239,68,68,.4);}to{box-shadow:0 0 12px rgba(239,68,68,.9);}}',
+    // Image overlay on program monitor
+    '#aab-overlay-canvas{position:absolute!important;top:0!important;left:0!important;width:100%!important;height:100%!important;pointer-events:auto!important;z-index:20!important;}',
+    // Overlay selection handles
+    '.aab-ovl-handle{position:absolute;width:10px;height:10px;background:#00d4ff;border:1px solid #fff;border-radius:2px;cursor:nwse-resize;z-index:30;}',
+    // Export progress overlay
+    '#aab-export-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:99998;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-family:Sora,sans-serif;}',
+    '#aab-export-bar{width:320px;height:6px;background:rgba(255,255,255,.1);border-radius:3px;margin:12px 0;}',
+    '#aab-export-fill{height:100%;background:#00d4ff;border-radius:3px;transition:width .3s;}',
+    // Timeline ruler extend fix
+    '#aab-ruler{min-width:100%!important;}',
+    // Audio clip waveform color
+    '.aab-clip[data-type="audio"]{background:linear-gradient(135deg,#065f46,#047857)!important;}',
+    '.aab-clip[data-type="image"]{background:linear-gradient(135deg,#1e1b4b,#312e81)!important;}',
+    // Bin type tabs
+    '.aab-bin-type-section{margin-bottom:4px;}',
+    '.aab-bin-type-hdr{font-size:8px;font-weight:700;color:rgba(255,255,255,.3);letter-spacing:.1em;padding:4px 6px 2px;text-transform:uppercase;}'
+  ].join('');
+  document.head.appendChild(s);
+})();
+
+// ── 1. FIX pxPerSec — default to Fit ─────────────────────────────────────
+(function fixZoom(){
+  if(!window.E)return;
+  // If pxPerSec is too low (10), set it to fit the content
+  if(E.pxPerSec<=10){
+    var tl=$('aab-tl-scroll');
+    if(!tl)return;
+    var totalDur=0;
+    if(E.tracks)E.tracks.forEach(function(t){t.clips.forEach(function(c){totalDur=Math.max(totalDur,(c.start||0)+(c.duration||0));});});
+    var availW=tl.clientWidth-20;
+    if(totalDur>0)E.pxPerSec=Math.min(60,Math.max(20,Math.floor(availW/totalDur)));
+    else E.pxPerSec=40;
+    if(typeof E_renderTL==='function')setTimeout(E_renderTL,80);
+  }
+})();
+
+// ── 2. RULER FIX — extend to fill full viewport always ────────────────────
+var _origERLv5=window.E_renderTL;
+if(_origERLv5&&!_origERLv5._v5Patch){
+  window.E_renderTL=function(){
+    _origERLv5.apply(this,arguments);
+    // After render, make ruler canvas fill full width
+    setTimeout(function(){
+      var ruler=$('aab-ruler');
+      var tl=$('aab-tl-scroll');
+      if(!ruler||!tl)return;
+      var pps=(window.E&&E.pxPerSec)||30;
+      var totalDur=0;
+      if(window.E&&E.tracks)E.tracks.forEach(function(t){t.clips.forEach(function(c){totalDur=Math.max(totalDur,(c.start||0)+(c.duration||0));});});
+      // Canvas must cover full content width
+      var needPx=Math.max(totalDur*pps+600,tl.scrollWidth,tl.clientWidth);
+      if(ruler.tagName==='CANVAS'){
+        if(ruler.width<needPx){
+          ruler.width=Math.ceil(needPx);
+          // Re-draw ruler
+          var ctx=ruler.getContext('2d');
+          ctx.clearRect(0,0,ruler.width,ruler.height);
+          ctx.fillStyle='rgba(255,255,255,.15)';
+          var step=pps>=40?5:(pps>=20?10:30);
+          var totalSec=Math.ceil(needPx/pps)+step;
+          for(var t2=0;t2<=totalSec;t2+=1){
+            var x2=t2*pps;if(x2>ruler.width)break;
+            var isMajor=(t2%step===0);
+            ctx.fillRect(x2,isMajor?8:14,1,isMajor?14:8);
+            if(isMajor){
+              ctx.fillStyle='rgba(255,255,255,.5)';
+              ctx.font='9px Sora,Inter,sans-serif';
+              ctx.fillText(ft(t2),x2+2,10);
+              ctx.fillStyle='rgba(255,255,255,.15)';
+            }
+          }
+        }
+      } else {
+        // div ruler — ensure width covers content
+        ruler.style.minWidth=Math.ceil(needPx)+'px';
+      }
+    },60);
+  };
+  window.E_renderTL._v5Patch=true;
+  window.E_renderTL._origv5=_origERLv5;
+}
+
+// ── 3. RECORD BUTTON ON VO TRACK ──────────────────────────────────────────
+var _recStream=null,_recRec=null,_recChunks=[];
+
+function _startTrackRecord(){
+  if(_recStream){_stopTrackRecord();return;}
+  navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+    _recStream=stream;_recChunks=[];
+    _recRec=new MediaRecorder(stream,{mimeType:'audio/webm'});
+    _recRec.ondataavailable=function(e){if(e.data.size>0)_recChunks.push(e.data);};
+    _recRec.onstop=function(){
+      var blob=new Blob(_recChunks,{type:'audio/webm'});
+      var url=URL.createObjectURL(blob);
+      var dur=_recDurS||5;
+      // Add to VO track
+      var vo=window.E&&E.tracks?E.tracks.find(function(t){return t.id==='voice'||t.id==='vo'||t.id==='voice-over';}):{clips:[]};
+      if(vo){vo.clips.push({id:'rec'+Date.now(),name:'Recording',url:url,type:'audio',start:window._esPH||0,duration:dur,color:'#dc2626'});}
+      // Add to bin
+      (window._esBinFiles=window._esBinFiles||[]).push({url:url,name:'Recording.webm',type:'audio',dur:dur});
+      if(typeof window._esBinRender==='function')window._esBinRender();
+      if(typeof E_renderTL==='function')E_renderTL();
+      if(typeof toast==='function')toast('Recording saved ('+ft(dur)+')','ok');
+    };
+    _recRec.start();
+    _recDurS=0;_recDurInt=setInterval(function(){_recDurS++;},1000);
+    document.querySelectorAll('.aab-rec-btn').forEach(function(b){b.classList.add('recording');b.innerHTML='⏹';});
+    if(typeof toast==='function')toast('🔴 Recording... click ⏹ to stop','ok');
+  }).catch(function(e){if(typeof toast==='function')toast('Mic error: '+e.message,'error');});
+}
+function _stopTrackRecord(){
+  if(_recDurInt){clearInterval(_recDurInt);_recDurInt=null;}
+  if(_recRec&&_recRec.state!=='inactive')_recRec.stop();
+  if(_recStream){_recStream.getTracks().forEach(function(t){t.stop();});_recStream=null;}
+  document.querySelectorAll('.aab-rec-btn').forEach(function(b){b.classList.remove('recording');b.innerHTML='⏺';});
+}
+window.E_toggleRecord=function(){if(_recStream)_stopTrackRecord();else _startTrackRecord();};
+
+function _addRecordBtn(){
+  document.querySelectorAll('.aab-track-row').forEach(function(row){
+    var nm=row.querySelector('.aab-track-name');if(!nm||nm.textContent.indexOf('Voice')===-1)return;
+    if(nm.querySelector('.aab-rec-btn'))return;
+    var btn=document.createElement('div');btn.className='aab-rec-btn';btn.title='Record Voice Over (click to start/stop)';btn.innerHTML='⏺';
+    btn.addEventListener('click',function(e){e.stopPropagation();window.E_toggleRecord();});
+    nm.appendChild(btn);
+  });
+}
+
+// ── 4. IMAGE OVERLAY SYSTEM ───────────────────────────────────────────────
+window._esOverlays=[]; // [{id,url,img,x,y,w,h,trackId,clipId}]
+var _ovlCanvas=null,_ovlCtx=null,_ovlRAF=null,_ovlSel=null,_ovlDrag=null;
+
+function _initOverlayCanvas(){
+  var progMon=$('e-prog-view')||$('aab-prog-mon')||document.querySelector('.e-prog-mon');
+  if(!progMon||$('aab-overlay-canvas'))return;
+  progMon.style.position='relative';
+  _ovlCanvas=document.createElement('canvas');_ovlCanvas.id='aab-overlay-canvas';
+  progMon.appendChild(_ovlCanvas);
+  _ovlCtx=_ovlCanvas.getContext('2d');
+  // Resize canvas to match container
+  function resizeOvl(){
+    _ovlCanvas.width=progMon.offsetWidth||1280;_ovlCanvas.height=progMon.offsetHeight||720;
+  }
+  resizeOvl();
+  new ResizeObserver(resizeOvl).observe(progMon);
+  // Start overlay render loop
+  function renderOvl(){
+    _ovlRAF=requestAnimationFrame(renderOvl);
+    if(!_ovlCtx)return;
+    _ovlCtx.clearRect(0,0,_ovlCanvas.width,_ovlCanvas.height);
+    // Draw overlays for current playhead time
+    var t=window._esPH||0;
+    if(window.E&&E.tracks){
+      E.tracks.forEach(function(tr){
+        if(tr.type!=='image'&&tr.id!=='image'&&tr.id!=='overlay'&&tr.id!=='text-overlay')return;
+        tr.clips.forEach(function(clip){
+          if(t<clip.start||t>=clip.start+clip.duration)return;
+          if(!clip._imgEl&&clip.url){
+            var img=new Image();img.src=clip.url;img.onload=function(){clip._imgEl=img;};
+          }
+          if(!clip._imgEl)return;
+          var cw=_ovlCanvas.width,ch=_ovlCanvas.height;
+          // Normalize position (0-1 range stored in clip)
+          var x=(clip.ovlX||0.65)*cw;
+          var y=(clip.ovlY||0.05)*ch;
+          var w=(clip.ovlW||0.3)*cw;
+          var h=w*(clip._imgEl.naturalHeight/clip._imgEl.naturalWidth)||w*0.5625;
+          _ovlCtx.drawImage(clip._imgEl,x,y,w,h);
+          // Selection handles
+          if(_ovlSel===clip.id){
+            _ovlCtx.strokeStyle='#00d4ff';_ovlCtx.lineWidth=2;
+            _ovlCtx.strokeRect(x-1,y-1,w+2,h+2);
+            // Corners
+            [[x,y],[x+w,y],[x,y+h],[x+w,y+h]].forEach(function(pt){
+              _ovlCtx.fillStyle='#00d4ff';_ovlCtx.fillRect(pt[0]-4,pt[1]-4,8,8);
+            });
+          }
+        });
+      });
+    }
+  }
+  renderOvl();
+  // Mouse interaction on overlay canvas
+  _ovlCanvas.addEventListener('mousedown',function(e){
+    var rect=_ovlCanvas.getBoundingClientRect();
+    var mx=e.clientX-rect.left,my=e.clientY-rect.top;
+    var cw=_ovlCanvas.width,ch=_ovlCanvas.height;
+    // Find clicked overlay
+    var found=null;
+    if(window.E&&E.tracks){
+      E.tracks.forEach(function(tr){
+        if(tr.type!=='image'&&tr.id!=='image'&&tr.id!=='overlay'&&tr.id!=='text-overlay')return;
+        var t=window._esPH||0;
+        tr.clips.forEach(function(clip){
+          if(t<clip.start||t>=clip.start+clip.duration)return;
+          var x=(clip.ovlX||0.65)*cw,y=(clip.ovlY||0.05)*ch,w=(clip.ovlW||0.3)*cw;
+          var h=clip._imgEl?(w*(clip._imgEl.naturalHeight/clip._imgEl.naturalWidth)):w*0.5625;
+          if(mx>=x&&mx<=x+w&&my>=y&&my<=y+h){found=clip;}
+        });
+      });
+    }
+    if(found){
+      _ovlSel=found.id;
+      var x=(found.ovlX||0.65)*cw,y=(found.ovlY||0.05)*ch,w=(found.ovlW||0.3)*cw;
+      var h=found._imgEl?(w*(found._imgEl.naturalHeight/found._imgEl.naturalWidth)):w*0.5625;
+      // Check if near corner (resize) or interior (drag)
+      var nearCorner=[[x,y],[x+w,y],[x,y+h],[x+w,y+h]].some(function(pt){return Math.abs(mx-pt[0])<8&&Math.abs(my-pt[1])<8;});
+      _ovlDrag={clip:found,startX:mx,startY:my,origX:found.ovlX||0.65,origY:found.ovlY||0.05,origW:found.ovlW||0.3,resize:nearCorner};
+    } else {_ovlSel=null;_ovlDrag=null;}
+  });
+  _ovlCanvas.addEventListener('mousemove',function(e){
+    if(!_ovlDrag)return;
+    var rect=_ovlCanvas.getBoundingClientRect();
+    var mx=e.clientX-rect.left,my=e.clientY-rect.top;
+    var dx=(mx-_ovlDrag.startX)/_ovlCanvas.width;
+    var dy=(my-_ovlDrag.startY)/_ovlCanvas.height;
+    if(_ovlDrag.resize){
+      _ovlDrag.clip.ovlW=Math.max(0.05,Math.min(1,_ovlDrag.origW+dx));
+    } else {
+      _ovlDrag.clip.ovlX=Math.max(0,Math.min(0.9,_ovlDrag.origX+dx));
+      _ovlDrag.clip.ovlY=Math.max(0,Math.min(0.9,_ovlDrag.origY+dy));
+    }
+  });
+  document.addEventListener('mouseup',function(){_ovlDrag=null;});
+}
+
+// Load image into source monitor + show it
+function _esLoadImage(url,name){
+  var sv=$('e-src-vid')||$('aab-src-vid');
+  var se=$('e-src-empty')||$('aab-src-empty');
+  // Show image in source monitor area via a temporary img element
+  var srcMon=sv?sv.parentElement:null;
+  if(!srcMon)return;
+  var existing=$('e-src-img');
+  if(!existing){existing=document.createElement('img');existing.id='e-src-img';existing.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:5;display:none;';srcMon.style.position='relative';srcMon.appendChild(existing);}
+  if(sv)sv.style.display='none';
+  if(se)se.style.display='none';
+  existing.src=url;existing.style.display='block';
+  existing._imgUrl=url;existing._imgName=name;
+  var lbl=$('e-src-label');if(lbl)lbl.textContent=name||'Image';
+}
+window.E_loadImage=_esLoadImage;
+
+// Wire + Image toolbar button
+function _wireImageBtn(){
+  var imgBtns=document.querySelectorAll('[onclick*="+Image"],[onclick*="importImage"],[onclick*="AABE.import(\'image\')"]');
+  var addImageBtn=document.querySelector('[class*="etb-btn"][onclick*="Image"]');
+  // Also check for the + Image button in toolbar
+  var allBtns=Array.from(document.querySelectorAll('button')).filter(function(b){return b.textContent.trim().indexOf('Image')>-1||b.textContent.trim()==='+Image';});
+  allBtns.forEach(function(btn){
+    if(btn._esImgWired)return;btn._esImgWired=true;
+    btn.onclick=function(ev){ev.preventDefault();ev.stopPropagation();_pickImage();};
+  });
+}
+function _pickImage(){
+  var inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.multiple=true;
+  inp.onchange=function(){
+    Array.from(inp.files).forEach(function(f){
+      var url=URL.createObjectURL(f);
+      var name=f.name.slice(0,30);
+      // Load into source monitor
+      _esLoadImage(url,name);
+      // Add to bin
+      (window._esBinFiles=window._esBinFiles||[]).push({url:url,name:name,type:'image',dur:5});
+      if(typeof window._esBinRender==='function')window._esBinRender();
+      if(typeof toast==='function')toast('"'+name+'" loaded — drag to timeline or click → TL','ok');
+    });
+  };
+  inp.click();
+}
+
+// Override E_loadSrc to handle images
+var _origLoadSrc=window.E_loadSrc;
+window.E_loadSrc=function(url,name){
+  var ext=(url||'').split('?')[0].split('.').pop().toLowerCase();
+  if(['jpg','jpeg','png','gif','webp','svg','bmp'].indexOf(ext)>-1||(url||'').startsWith('blob:')&&name&&/\.(jpg|jpeg|png|gif|webp|svg)$/i.test(name)){
+    _esLoadImage(url,name);return;
+  }
+  if(_origLoadSrc)_origLoadSrc(url,name);
+};
+
+// When image clip is added to timeline, set up overlay defaults
+var _origDropZones=window._wireDropZones;
+function _wireDropV5(){
+  document.querySelectorAll('.aab-lane').forEach(function(lane){
+    if(lane._esDZv5)return;lane._esDZv5=true;
+    lane.addEventListener('drop',function(e){
+      // After a drop, check if the new clip is an image and set overlay defaults
+      setTimeout(function(){
+        if(window.E&&E.tracks){
+          E.tracks.forEach(function(tr){
+            tr.clips.forEach(function(c){
+              if(c.type==='image'&&c.ovlX==null){c.ovlX=0.65;c.ovlY=0.05;c.ovlW=0.3;}
+            });
+          });
+        }
+      },100);
+    },true);
+  });
+}
+
+// ── 5. EXPORT via MediaRecorder ────────────────────────────────────────────
+window.E_exportVideo=function(){
+  var pv=$('e-prog-vid')||$('aab-prog-vid');
+  if(!pv){if(typeof toast==='function')toast('No video to export','warn');return;}
+  // Create export overlay
+  var ovl=document.createElement('div');ovl.id='aab-export-overlay';
+  ovl.innerHTML='<div style="font-size:18px;font-weight:700;margin-bottom:8px">Exporting Video</div>'+
+    '<div style="font-size:12px;color:rgba(255,255,255,.5);margin-bottom:16px">Recording timeline playback...</div>'+
+    '<div id="aab-export-bar"><div id="aab-export-fill" style="width:0%"></div></div>'+
+    '<div id="aab-export-tc" style="font-size:12px;color:rgba(255,255,255,.4);margin-top:8px">0:00 / '+ft((function(){var m=0;if(window.E&&E.tracks)E.tracks.forEach(function(t){t.clips.forEach(function(c){m=Math.max(m,(c.start||0)+(c.duration||0));});});return m;})())+'</div>'+
+    '<button onclick="document.getElementById(\'aab-export-overlay\').remove();window._esExporting=false;if(window._esPlaying)E_progToggle();" style="margin-top:20px;padding:8px 20px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:6px;color:#fff;cursor:pointer;font-size:12px;">Cancel</button>';
+  document.body.appendChild(ovl);
+  // Try to use canvas capture stream; fallback to download links
+  var dur=(function(){var m=0;if(window.E&&E.tracks)E.tracks.forEach(function(t){t.clips.forEach(function(c){m=Math.max(m,(c.start||0)+(c.duration||0));});});return m;})();
+  // Create a canvas to capture from
+  var cap=document.createElement('canvas');cap.width=1280;cap.height=720;
+  var capCtx=cap.getContext('2d');
+  var stream=cap.captureStream(30);
+  // Try to add audio track from prog video
+  var supported=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(function(t){return MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t);})||'video/webm';
+  var rec=new MediaRecorder(stream,{mimeType:supported,videoBitsPerSecond:5000000});
+  var chunks=[];
+  rec.ondataavailable=function(e){if(e.data.size>0)chunks.push(e.data);};
+  rec.onstop=function(){
+    var blob=new Blob(chunks,{type:'video/webm'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');a.href=url;a.download='AABStudio_Export_'+Date.now()+'.webm';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    setTimeout(function(){URL.revokeObjectURL(url);},5000);
+    ovl.remove();window._esExporting=false;
+    if(typeof toast==='function')toast('Export downloaded!','ok');
+  };
+  // Frame capture loop
+  var startT=Date.now();
+  window._esExporting=true;
+  function captureFrame(){
+    if(!window._esExporting){rec.stop();return;}
+    var fill=$('aab-export-fill');var tc=$('aab-export-tc');
+    var elapsed=(Date.now()-startT)/1000;
+    var prog=Math.min(1,elapsed/dur);
+    if(fill)fill.style.width=(prog*100)+'%';
+    if(tc)tc.textContent=ft(elapsed)+' / '+ft(dur);
+    // Draw prog video to canvas
+    if(pv&&pv.readyState>=2){
+      try{capCtx.drawImage(pv,0,0,cap.width,cap.height);}catch(e){}
+    }
+    // Draw overlays
+    if(_ovlCanvas&&_ovlCtx){
+      try{capCtx.drawImage(_ovlCanvas,0,0,cap.width,cap.height);}catch(e){}
+    }
+    if(elapsed>=dur){
+      window._esExporting=false;rec.stop();
+      if(typeof E_progToggle==='function'&&window._esPlaying)E_progToggle();
+      return;
+    }
+    requestAnimationFrame(captureFrame);
+  }
+  // Reset to start and play
+  window._esPH=0;if(window.E){E.playhead=0;E.currentTime=0;}
+  var pv2=$('e-prog-vid')||$('aab-prog-vid');if(pv2){pv2._esCurUrl='';pv2._esReady=false;}
+  if(typeof E_progToggle==='function'){if(window._esPlaying)E_progToggle();}
+  rec.start(100);
+  setTimeout(function(){
+    if(typeof E_progToggle==='function')E_progToggle();
+    requestAnimationFrame(captureFrame);
+  },200);
+};
+
+// Wire Export button
+(function wireExport(){
+  var expBtn=document.querySelector('[onclick*="exportFullScript"],[onclick*="E_exportVideo"]');
+  if(expBtn&&!expBtn._esExWired){expBtn._esExWired=true;expBtn.onclick=function(e){e.preventDefault();e.stopPropagation();window.E_exportVideo();};expBtn.title='Export full video as .webm';}
+  // Also make the Export button visible
+  var expBtns2=Array.from(document.querySelectorAll('button')).filter(function(b){return b.textContent.trim().indexOf('Export')>-1;});
+  expBtns2.forEach(function(b){
+    if(b._esExWired2)return;b._esExWired2=true;
+    b.addEventListener('click',function(e){e.stopPropagation();e.preventDefault();window.E_exportVideo();});
+  });
+})();
+
+// ── 6. AUDIO DURATION AUTO-DETECT ─────────────────────────────────────────
+// Patch _esBinRender to auto-detect audio duration from blob URLs
+var _origBinRender=window._esBinRender;
+if(_origBinRender&&!_origBinRender._v5Patch){
+  window._esBinRender=function(){
+    // Pre-process: load audio durations for files that don't have them
+    var files=window._esBinFiles||[];
+    var pending=0;
+    files.forEach(function(f){
+      if(f.dur>1||f.type==='image')return;
+      if(f._durLoading)return;
+      f._durLoading=true;pending++;
+      var el=f.type==='audio'?new Audio():document.createElement('video');
+      el.src=f.url;
+      el.addEventListener('loadedmetadata',function(){
+        f.dur=el.duration>0?el.duration:60;
+        pending--;if(!pending&&typeof _origBinRender==='function')_origBinRender();
+      });
+      el.load();
+    });
+    _origBinRender.apply(this,arguments);
+  };
+  window._esBinRender._v5Patch=true;
+}
+
+// ── 7. WIDEN BIN CARD for long audio files ────────────────────────────────
+// Patch inspector to show image overlay controls when image clip selected
+var _origInspect=window._esInspect2||null;
+
+// ── 8. KEYBOARD SHORTCUT COMPLETENESS ─────────────────────────────────────
+// Ensure Delete key works for timeline clips
+document.addEventListener('keydown',function(e){
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
+  var ep=document.getElementById('edit-pg');if(!ep||!ep.classList.contains('on'))return;
+  // Ctrl+A = select all clips
+  if((e.ctrlKey||e.metaKey)&&(e.key==='a'||e.key==='A')){
+    e.preventDefault();
+    if(window.E&&E.tracks&&window._esSelClips){
+      window._esSelClips.clear();
+      E.tracks.forEach(function(t){t.clips.forEach(function(c){window._esSelClips.add(c.id);});});
+      document.querySelectorAll('.aab-clip').forEach(function(cl){cl.classList.add('sel');});
+      if(typeof toast==='function')toast('All clips selected','info');
+    }
+  }
+  // Escape = deselect all
+  if(e.key==='Escape'){
+    if(window._esSelClips)window._esSelClips.clear();
+    document.querySelectorAll('.aab-clip').forEach(function(cl){cl.classList.remove('sel');});
+    _ovlSel=null;
+  }
+  // + = zoom in
+  if(e.key==='+'||e.key==='='){ 
+    if(window.E){E.pxPerSec=Math.min(120,E.pxPerSec*1.25);if(typeof E_renderTL==='function')E_renderTL();}
+  }
+  // - = zoom out
+  if(e.key==='-'||e.key==='_'){
+    if(window.E){E.pxPerSec=Math.max(5,E.pxPerSec*0.8);if(typeof E_renderTL==='function')E_renderTL();}
+  }
+},false);
+
+// ── 9. BOOT ───────────────────────────────────────────────────────────────
+function _v5Boot(){
+  _addRecordBtn();
+  _wireImageBtn();
+  _wireDropV5();
+  _initOverlayCanvas();
+  wireExportFinal();
+  fixZoomOnBoot();
+}
+function wireExportFinal(){
+  var expBtns=Array.from(document.querySelectorAll('button')).filter(function(b){return b.textContent.trim().indexOf('Export')>-1;});
+  expBtns.forEach(function(b){if(!b._esExW){b._esExW=true;b.addEventListener('click',function(ev){ev.stopPropagation();ev.preventDefault();window.E_exportVideo();});}});
+}
+function fixZoomOnBoot(){
+  if(!window.E)return;
+  if(E.pxPerSec<15){
+    var tl=document.getElementById('aab-tl-scroll');
+    if(!tl)return;
+    var totalDur=0;if(E.tracks)E.tracks.forEach(function(t){t.clips.forEach(function(c){totalDur=Math.max(totalDur,(c.start||0)+(c.duration||0));});});
+    var avail=tl.clientWidth-20;
+    if(totalDur>0)E.pxPerSec=Math.min(60,Math.max(20,Math.floor(avail/totalDur)));
+    else E.pxPerSec=40;
+    if(typeof E_renderTL==='function')setTimeout(E_renderTL,100);
+  }
+}
+_v5Boot();
+setInterval(function(){
+  var ep=document.getElementById('edit-pg');if(!ep||!ep.classList.contains('on'))return;
+  _addRecordBtn();_wireImageBtn();wireExportFinal();
+},800);
+(function(){
+  var ep=document.getElementById('edit-pg');if(!ep)return;
+  new MutationObserver(function(ms){ms.forEach(function(m){if(m.type==='attributes'&&ep.classList.contains('on'))setTimeout(_v5Boot,500);});}).observe(ep,{attributes:true,attributeFilter:['class','style']});
+})();
+console.log('[V5] Image overlays, export, record, ruler fix, audio duration, keyboard shortcuts + zoom');
+})();
+</script>
 </body>
 </html>
 
