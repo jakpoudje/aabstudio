@@ -5314,8 +5314,8 @@ function E_drawTextLayers(ctx,canvas,t){
   });
 }
 
-function E_progToggle_LEGACY(){
-  /* neutralised - RAF engine at bottom overrides window.E_progToggle */
+function E_progToggle(){
+  /* legacy setInterval version - overridden by RAF engine below */
   if(false){
     E.playing=false;window._esPlaying=false;
     if(E.playInterval){clearInterval(E.playInterval);E.playInterval=null;}
@@ -7275,9 +7275,11 @@ body{max-width:100vw;overflow-x:hidden}
   overflow: hidden !important;
 }
 #edit-pg.on .aab-tl-wrap {
-  flex: 0 0 240px !important;
-  height: 240px !important;
-  overflow: hidden !important;
+  flex: 0 0 auto !important;
+  min-height: 220px !important;
+  max-height: calc(100vh - 390px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
 }
 #edit-pg.on .aab-monitors {
   flex: 1 1 0 !important;
@@ -10171,7 +10173,7 @@ window.aabConfirm = function(msg, onYes, onNo, opts) {
   box.querySelector('#aab-cn').onclick = function() { close(); if (typeof onNo === 'function') onNo(); };
   overlay.onclick = function(e) { if (e.target === overlay) { close(); if (typeof onNo === 'function') onNo(); } };
 };
-function aabConfirm(msg, onYes, onNo, opts) { window.aabConfirm(msg, onYes, onNo, opts); }
+function aabConfirm(msg, onYes, onNo, opts) { if(window.aabConfirm && window.aabConfirm !== aabConfirm){window.aabConfirm(msg, onYes, onNo, opts);}else{if(typeof onYes==='function')onYes();} }
 
 // ── dash_uploadAsset ─────────────────────────────────────────────────────
 window.dash_uploadAsset = function(file, type) {
@@ -24654,7 +24656,7 @@ var clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 /* Playhead */
 #aab-ph{position:absolute!important;top:0!important;bottom:0!important;width:2px!important;
   background:#ef4444!important;z-index:30!important;pointer-events:auto!important;cursor:ew-resize!important;
-  box-shadow:0 0 4px rgba(239,68,68,.5)!important;}
+  box-shadow:0 0 4px rgba(239,68,68,.5)!important;transition:none!important;animation:none!important;will-change:left;}
 #aab-ph::before{content:"";position:absolute;top:0;left:-5px;
   border:5px solid transparent;border-top:9px solid #ef4444;border-bottom:none;}
 /* Track layout */
@@ -24777,6 +24779,17 @@ function tGain(id){
 }
 function stopClip(id){var s=_clipSrcs[id];if(s){try{s.stop();}catch(e){}delete _clipSrcs[id];}}
 function stopAllAudio(){Object.keys(_clipSrcs).forEach(stopClip);}
+// ── Expose audio engine globally ────────────────────────────────────────────
+window.getAC=getAC; window.tGain=tGain; window.stopClip=stopClip; window.stopAllAudio=stopAllAudio;
+window._getProgVid=function(){return document.getElementById('e-prog-vid')||document.getElementById('aab-prog-vid')||null;};
+try{
+  Object.defineProperty(window,'_AC',{get:function(){return _AC;},configurable:true,enumerable:false});
+  Object.defineProperty(window,'_masterGain',{get:function(){return _masterGain;},configurable:true,enumerable:false});
+  Object.defineProperty(window,'_masterAnalyser',{get:function(){return _masterAnalyser;},configurable:true,enumerable:false});
+  Object.defineProperty(window,'_analyserBuf',{get:function(){return _analyserBuf;},configurable:true,enumerable:false});
+  Object.defineProperty(window,'_trackGains',{get:function(){return _trackGains;},configurable:true,enumerable:false});
+  Object.defineProperty(window,'_clipSrcs',{get:function(){return _clipSrcs;},configurable:true,enumerable:false});
+}catch(e){}
 function _esUpdateAudio(t){
   if(!window.E||!E.tracks)return;
   var _pv=typeof _getProgVid==='function'?_getProgVid():null;
@@ -24809,7 +24822,8 @@ function _esUpdateAudio(t){
 }
 
 /* ── Master VU Meter ──────────────────────────────────────────────────────── */
-var _vuRAFId=null;
+var _vuRAFId=null;window._esUpdateAudio=_esUpdateAudio;
+
 function startVUDraw(){
   if(_vuRAFId)return;
   var vuEl=$('aab-vu-master');
@@ -24836,6 +24850,7 @@ function startVUDraw(){
   })();
 }
 function stopVUDraw(){if(_vuRAFId){cancelAnimationFrame(_vuRAFId);_vuRAFId=null;}}
+window.startVUDraw=startVUDraw; window.stopVUDraw=stopVUDraw;
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PLAYHEAD — single authority
