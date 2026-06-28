@@ -24932,19 +24932,30 @@ function _esVULoop(){if(!_esMicAnalyser)return;var buf=new Uint8Array(_esMicAnal
 
 function _addVOControls(){
   document.querySelectorAll('.aab-track-row').forEach(function(row){
-    var nm=row.querySelector('.aab-track-name');if(!nm||nm.textContent.indexOf('Voice')===-1)return;
-    // Add mic button INSIDE the track name (same row as "Voice Over" text)
+    var nm=row.querySelector('.aab-track-name');
+    if(!nm||nm.textContent.indexOf('Voice')===-1)return;
+    // Mic button in name row
     if(!nm.querySelector('.aab-mic-name-btn')){
-      var micBtn=document.createElement('div');micBtn.className='aab-mic-name-btn';micBtn.title='Toggle mic input (VU meter)';micBtn.innerHTML='🎙';
+      var micBtn=document.createElement('div');micBtn.className='aab-mic-name-btn';micBtn.title='Toggle mic input (VU meter)';micBtn.innerHTML='\uD83C\uDF99';
       micBtn.addEventListener('click',function(e){e.stopPropagation();window.E_startVoiceRecord();});
       nm.appendChild(micBtn);
     }
-    // Add VU bars to controls
-    var ctrl=row.querySelector('.aab-track-controls');if(!ctrl)return;
-    if(!ctrl.querySelector('#aab-vu-wrap')){
+    // VU bars in NAME ROW (not controls) — keeps controls row same width as all other tracks
+    if(!nm.querySelector('#aab-vu-wrap')){
       var wrap=document.createElement('div');wrap.id='aab-vu-wrap';
-      for(var i=0;i<6;i++){var b=document.createElement('div');b.className='aab-vu-bar';b.style.cssText='width:4px;height:20%;border-radius:2px;background:rgba(16,185,129,.3);';wrap.appendChild(b);}
-      var lastBtn=ctrl.querySelector('button:last-child');if(lastBtn)ctrl.insertBefore(wrap,lastBtn);else ctrl.appendChild(wrap);
+      wrap.style.cssText='display:inline-flex;align-items:flex-end;gap:1px;height:14px;margin:0 3px;background:rgba(0,0,0,.25);border-radius:2px;padding:2px 2px;vertical-align:middle;';
+      for(var i=0;i<6;i++){
+        var b=document.createElement('div');b.className='aab-vu-bar';
+        b.style.cssText='width:3px;height:20%;border-radius:1px;background:rgba(16,185,129,.4);transition:height .07s,background .07s;';
+        wrap.appendChild(b);
+      }
+      nm.appendChild(wrap);
+    }
+    // Remove VU wrap from controls if it got added there accidentally
+    var ctrl=row.querySelector('.aab-track-controls');
+    if(ctrl){
+      var oldWrap=ctrl.querySelector('#aab-vu-wrap');
+      if(oldWrap)oldWrap.remove();
     }
   });
 }
