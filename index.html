@@ -5554,7 +5554,7 @@ function E_renderTL(){
 
 function E_fit(){var scroll=document.getElementById("aab-tl-scroll");if(!scroll)return;var dur=E_dur()||60;var w=scroll.offsetWidth-120;E.pxPerSec=Math.max(10,Math.floor(w/dur));E_renderTL();}
 
-function E_updatePH(){var ph=document.getElementById("aab-ph");if(ph)ph.style.left=(200+E.playhead*E.pxPerSec)+"px";}
+function E_updatePH(){if(typeof movePH==="function"){movePH(E.playhead||0);}else{var ph=document.getElementById("aab-ph");if(ph)ph.style.left=(200+E.playhead*(E.pxPerSec||60))+"px";}}
 
 function E_addClip(clipData,trackId,startT){
   var track=E.tracks.find(function(t){return t.id===trackId;})||E.tracks[0];
@@ -5871,6 +5871,7 @@ if(typeof _origNavE==="function"&&!window._navEng){window._navEng=true;
       document.querySelectorAll(".pg.on").forEach(function(el){el.classList.remove("on");});
       var tgt=document.getElementById(pg);if(tgt)tgt.classList.add("on");
     }
+    var _mxp=document.getElementById("aab-mixer-panel");if(_mxp)_mxp.style.display=(pg==="edit-pg"?"block":"none");
     if(pg==="edit-pg"){setTimeout(function(){
       var ep=document.getElementById("edit-pg");if(!ep)return;
       if(!ep.querySelector(".aab-edit-body")){E_build();}
@@ -24725,6 +24726,15 @@ function stopClip(id){var s=_clipSrcs[id];if(s){try{s.stop();}catch(e){}delete _
 function stopAllAudio(){Object.keys(_clipSrcs).forEach(stopClip);}
 function _esUpdateAudio(t){
   if(!window.E||!E.tracks)return;
+  var _pv=typeof _getProgVid==='function'?_getProgVid():null;
+  E.tracks.forEach(function(tr){
+    if(tr.type==='video'){
+      if(_pv&&!tr.muted){_pv.volume=clamp((tr.volume!=null?tr.volume:100)/100,0,1);}
+      if(_pv&&!_pv.paused&&!_pv._acWired&&typeof getAC==='function'&&typeof _masterGain!=='undefined'){
+        try{var _ac2=getAC();if(_ac2&&_masterGain){_ac2.createMediaElementSource(_pv).connect(_masterGain);_pv._acWired=true;}}catch(e){}
+      }
+    }
+  });
   E.tracks.forEach(tr=>{
     if(tr.type!=='audio')return;
     var g=tGain(tr.id); g.gain.value=tr.muted?0:clamp((tr.volume||80)/100,0,1.5);
@@ -24787,7 +24797,7 @@ function movePH(t){
   var sk=$('e-prog-seek')||$('aab-prog-seek');
   if(sk){var d=totalDur();if(d>0)sk.value=(t/d)*100;}
 }
-window._movePH=()=>{};
+window._movePH=function(pt){if(typeof movePH==="function")movePH(pt);};
 function killTimers(){
   if(window.E&&E.playInterval){clearInterval(E.playInterval);E.playInterval=null;}
   if(window.AABE&&AABE._playInterval){clearInterval(AABE._playInterval);AABE._playInterval=null;}
@@ -25061,6 +25071,7 @@ var _esFrame=function(ts){
     }
   }
   if(window._esLoop&&window._esInPt!=null&&window._esOutPt!=null&&window._esPH>=window._esOutPt)window._esPH=window._esInPt;
+  if(window.E){E.playhead=window._esPH;E.currentTime=window._esPH;}
   if(window.E){E.playhead=window._esPH;E.currentTime=window._esPH;}
   movePH(window._esPH); _esUpdateProg(window._esPH); _esUpdateAudio(window._esPH);
   _esUpdateOvl(window._esPH); _esApplyTransEffect(window._esPH);
@@ -25354,7 +25365,7 @@ function _startMixerVU(vuMeter){
 window._mixMasterMute=()=>{window._mixMuted=!window._mixMuted;if(_masterGain)_masterGain.gain.value=window._mixMuted?0:clamp(+($('mix-master')||{value:100}).value/100,0,1.5);var b=$('mix-master-m');if(b){b.classList.toggle('muted',window._mixMuted);}};
 window._mixResetAll=v=>{if(window.E&&E.tracks)E.tracks.forEach(tr=>{tr.volume=v;var f=$('mix-'+tr.id);if(f)f.value=v;if(_trackGains[tr.id])_trackGains[tr.id].gain.value=clamp(v/100,0,1.5);var db=$('mixdb-'+tr.id);if(db)db.textContent=Math.round(20*Math.log10(Math.max(.001,v/100)))+'dB';});};
 function _rebuildMixer(){var p=$('aab-mixer-panel');if(p&&p.style.display!=='none'){_buildMixer();p=$('aab-mixer-panel');p.style.display='block';}}
-window.E_toggleMixer=()=>{var p=$('aab-mixer-panel');if(!p){_buildMixer();p=$('aab-mixer-panel');}if(p.style.display==='none'||!p.style.display){
+window.E_toggleMixer=()=>{var _epx=document.getElementById('edit-pg');if(!_epx||(!_epx.classList.contains('on')&&!_epx.style.display)){if(typeof toast==='function')toast('Open Edit Suite first','info');return;}var p=$('aab-mixer-panel');if(!p){_buildMixer();p=$('aab-mixer-panel');}if(p.style.display==='none'||!p.style.display){
     try{
       getAC(); // Create AudioContext on user gesture
       // Route program video audio through Web Audio if not already done
