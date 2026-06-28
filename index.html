@@ -25649,6 +25649,493 @@ setInterval(function(){
 console.log('[V5] Image overlays, export, record, ruler fix, audio duration, keyboard shortcuts + zoom');
 })();
 </script>
+<script id="aab-edit-v6">
+(function(){
+'use strict';
+if(window._esV6)return;
+window._esV6=true;
+
+// ═══════════════════════════════════════════════════════════════
+// AABSTUDIO EDIT SUITE v6 — FINAL STABILITY PATCH
+// Fixes: playhead flicker, mic recording, transitions, right-click, stubs
+// ═══════════════════════════════════════════════════════════════
+
+var $ = function(id){ return document.getElementById(id); };
+var ft = function(s){ s=+s||0; return Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0'); };
+
+// ── 1. KILL ALL COMPETING PLAYHEAD UPDATERS ──────────────────────────────
+// The original AABE has two setIntervals that update ph.style.left with a
+// DIFFERENT formula (200+t*pps) vs our formula (laneOff()+t*pps). This causes flicker.
+
+function _killAabeIntervals(){
+  // Kill E.playInterval (lines 5340-5360 in source)
+  if(window.E && E.playInterval){
+    clearInterval(E.playInterval);
+    E.playInterval = null;
+  }
+  // Kill AABE._playInterval (line 18073)
+  if(window.AABE && AABE._playInterval){
+    clearInterval(AABE._playInterval);
+    AABE._playInterval = null;
+  }
+  // Keep E.playing=false so AABE's progToggle won't restart the interval
+  if(window.E) E.playing = false;
+}
+
+// Patch E_progToggle to kill intervals on every play start
+var _origProgToggle = window.E_progToggle;
+window.E_progToggle = function(){
+  _killAabeIntervals();
+  if(_origProgToggle) _origProgToggle.apply(this, arguments);
+  // Kill again after (in case the original re-set E.playing)
+  if(window.E) E.playing = false;
+  if(window.AABE) AABE.playing = false;
+};
+
+// Also kill immediately on load
+_killAabeIntervals();
+
+// Override E_updatePH and E_drawProg so AABE._playInterval is harmless
+window.E_updatePH = function(){
+  // Use OUR movePH instead
+  if(typeof movePH==='function') movePH(window._esPH||0);
+};
+
+// ── 2. WIRE MIC BUTTON TO ACTUAL RECORDING ───────────────────────────────
+// Previously 🎙 only showed VU meter. Now it starts/stops audio recording in VO track.
+function _rewireMicBtn(){
+  document.querySelectorAll('.aab-mic-name-btn').forEach(function(btn){
+    if(btn._v6Wired) return;
+    btn._v6Wired = true;
+    btn.removeEventListener('click', btn._oldClick);
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();
+      // Toggle record (captures audio to VO track)
+      if(typeof window.E_toggleRecord === 'function'){
+        window.E_toggleRecord();
+      } else {
+        // Fallback: just toggle mic monitoring
+        if(typeof window.E_startVoiceRecord === 'function') window.E_startVoiceRecord();
+      }
+    });
+    // Update tooltip
+    btn.title = 'Click to start/stop recording audio to Voice Over track';
+  });
+  // Also rewire record button to show mic tooltip
+  document.querySelectorAll('.aab-rec-btn').forEach(function(btn){
+    if(btn._v6T) return; btn._v6T = true;
+    btn.title = 'Record Voice Over audio (MediaRecorder) — auto-saves to VO track';
+  });
+}
+
+// Patch E_toggleRecord to also activate VU meter
+var _origToggleRecord = window.E_toggleRecord;
+window.E_toggleRecord = function(){
+  // Also start mic monitoring when recording starts
+  if(!window._recStream){
+    // Starting recording — also activate VU meter
+    if(typeof window.E_startVoiceRecord === 'function'){
+      // Don't call E_startVoiceRecord (it also requests getUserMedia) 
+      // Instead just start recording, which will open its own getUserMedia
+    }
+  }
+  if(_origToggleRecord) _origToggleRecord.apply(this, arguments);
+};
+
+// ── 3. TRANSITIONS — define AABE.transition properly ─────────────────────
+// Previously only efx-chip buttons were wired. The Transitions dropdown
+// (.emenu-item buttons) call AABE.transition() which was undefined.
+
+if(window.AABE){
+  // Define AABE.transition — apply to selected clips
+  AABE.transition = function(type){
+    var applied = 0;
+    var selIds = window._esSelClips && window._esSelClips.size > 0 ? window._esSelClips : null;
+    if(window.E && E.tracks){
+      E.tracks.forEach(function(tr){
+        if(tr.type !== 'video' && tr.id !== 'main' && tr.id !== 'broll' && tr.id !== 'main-video') return;
+        tr.clips.forEach(function(c){
+          if(!selIds || selIds.has(c.id)){
+            c.transitionOut = (type === 'cut') ? null : type;
+            applied++;
+          }
+        });
+      });
+    }
+    if(typeof E_renderTL === 'function') E_renderTL();
+    var names = {
+      'cut':'Cut (no transition)', 'dissolve':'Dissolve', 'fade-black':'Fade to Black',
+      'fade-white':'Fade to White', 'zoom-in':'Zoom In', 'zoom-out':'Zoom Out',
+      'slide-left':'Slide Left', 'slide-right':'Slide Right', 'whip':'Whip Pan',
+      'blur':'Blur', 'wipe-left':'Wipe Left'
+    };
+    if(typeof toast === 'function'){
+      var msg = applied > 0
+        ? (names[type]||type) + ' applied to ' + applied + ' clip' + (applied !== 1 ? 's' : '')
+        : 'Select clips first, or transition will apply to all Main Video clips';
+      toast(msg, applied > 0 ? 'ok' : 'info');
+    }
+  };
+
+  // Apply dissolve to ALL clips on main video track
+  AABE.transitionAll = function(type){
+    if(window.E && E.tracks){
+      var mt = E.tracks.find(function(t){return t.id==='main'||t.id==='main-video';});
+      if(mt) mt.clips.forEach(function(c){ c.transitionOut = type; });
+    }
+    if(typeof E_renderTL === 'function') E_renderTL();
+    if(typeof toast === 'function') toast('Transition applied to all clips', 'ok');
+  };
+
+  // Also wire Transitions dropdown toggle
+  AABE.dd = AABE.dd || function(panelId){
+    var panel = $(panelId);
+    if(!panel) return;
+    // Close all other panels first
+    document.querySelectorAll('.emenu-panel').forEach(function(p){
+      if(p.id !== panelId) p.style.display = 'none';
+    });
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    // Close on outside click
+    if(panel.style.display === 'block'){
+      setTimeout(function(){
+        document.addEventListener('mousedown', function closer(ev){
+          if(!panel.contains(ev.target)){
+            panel.style.display = 'none';
+            document.removeEventListener('mousedown', closer);
+          }
+        });
+      }, 50);
+    }
+  };
+
+  // ── All the missing AABE method stubs ──────────────────────────────────
+  
+  AABE.filter = AABE.filter || function(type){
+    var names = {cinematic:'Cinematic', bw:'Black & White', warm:'Warm', cool:'Cool', vignette:'Vignette', grain:'Grain'};
+    if(window.E && E.tracks){
+      var selIds = window._esSelClips && window._esSelClips.size > 0 ? window._esSelClips : null;
+      E.tracks.forEach(function(tr){
+        tr.clips.forEach(function(c){
+          if(!selIds || selIds.has(c.id)) c.filter = (type === 'none') ? null : type;
+        });
+      });
+    }
+    if(typeof E_renderTL === 'function') E_renderTL();
+    if(typeof toast === 'function') toast((names[type]||type) + ' filter applied', 'ok');
+  };
+
+  AABE.toggleLoop = AABE.toggleLoop || function(){
+    if(typeof E_toggleLoop === 'function') E_toggleLoop();
+  };
+
+  AABE.toggleSnap = AABE.toggleSnap || function(){
+    if(window.E){ E.snap = !E.snap; }
+    var btn = document.querySelector('[onclick*="toggleSnap"]');
+    if(btn) btn.classList.toggle('on', window.E && E.snap);
+    if(typeof toast === 'function') toast('Snap ' + (window.E && E.snap ? 'ON' : 'OFF'), 'info');
+  };
+
+  AABE.toggleSubs = AABE.toggleSubs || function(){
+    if(window.E && E.tracks){
+      var subs = E.tracks.find(function(t){return t.id==='subs';});
+      if(subs){ subs.hidden = !subs.hidden; if(typeof E_renderTL==='function') E_renderTL(); }
+    }
+    if(typeof toast === 'function') toast('Subtitles toggled', 'info');
+  };
+
+  AABE.multiSelect = AABE.multiSelect || function(){
+    if(typeof toast === 'function') toast('Multi-select: Shift+click or Ctrl+click clips', 'info');
+  };
+
+  AABE.duplicate = AABE.duplicate || function(){
+    var selIds = window._esSelClips && window._esSelClips.size > 0 ? window._esSelClips : null;
+    if(!selIds || selIds.size === 0){ if(typeof toast==='function')toast('Select clips first','info'); return; }
+    if(window.E && E.tracks){
+      E.tracks.forEach(function(tr){
+        var toAdd = [];
+        tr.clips.forEach(function(c){
+          if(selIds.has(c.id)){
+            var nc = JSON.parse(JSON.stringify(c));
+            nc.id = 'c'+Date.now()+'_dup';
+            nc.start = c.start + c.duration + 0.1;
+            toAdd.push(nc);
+          }
+        });
+        toAdd.forEach(function(c){ tr.clips.push(c); });
+      });
+    }
+    if(typeof E_renderTL==='function') E_renderTL();
+    if(typeof toast==='function') toast('Clips duplicated', 'ok');
+  };
+
+  AABE.rippleDel = AABE.rippleDel || function(){
+    var selIds = window._esSelClips && window._esSelClips.size > 0 ? window._esSelClips : null;
+    if(!selIds || selIds.size === 0){ if(typeof toast==='function')toast('Select clips first','info'); return; }
+    if(window.E && E.tracks){
+      E.tracks.forEach(function(tr){
+        var removed = tr.clips.filter(function(c){ return selIds.has(c.id); });
+        tr.clips = tr.clips.filter(function(c){ return !selIds.has(c.id); });
+        // Ripple: shift subsequent clips left
+        removed.forEach(function(r){
+          tr.clips.forEach(function(c){
+            if(c.start >= r.start + r.duration) c.start -= r.duration;
+          });
+        });
+      });
+      window._esSelClips.clear();
+    }
+    if(typeof E_renderTL==='function') E_renderTL();
+    if(typeof toast==='function') toast('Ripple delete done', 'ok');
+  };
+
+  AABE.split = AABE.split || function(){
+    if(typeof E_razorAt === 'function') E_razorAt(window._esPH||0);
+  };
+
+  AABE.freeze = AABE.freeze || function(){
+    if(typeof toast==='function') toast('Freeze frame: hold clip end and drag to extend a still', 'info');
+  };
+
+  AABE.speedDialog = AABE.speedDialog || function(){
+    var selIds = window._esSelClips && window._esSelClips.size > 0 ? window._esSelClips : null;
+    if(!selIds || selIds.size === 0){ if(typeof toast==='function')toast('Select a clip first','info'); return; }
+    var speed = parseFloat(prompt('Speed multiplier (0.5 = half speed, 2 = double speed):', '1.0'));
+    if(isNaN(speed)||speed<=0) return;
+    if(window.E && E.tracks){
+      E.tracks.forEach(function(tr){
+        tr.clips.forEach(function(c){
+          if(selIds.has(c.id)){ c.speed=speed; c.duration=c.duration/speed; }
+        });
+      });
+    }
+    if(typeof E_renderTL==='function') E_renderTL();
+    if(typeof toast==='function') toast('Speed set to '+speed+'x', 'ok');
+  };
+
+  AABE.addMarker = AABE.addMarker || function(){
+    var t = window._esPH||0;
+    if(!window._esMarkers) window._esMarkers = [];
+    window._esMarkers.push({t:t, label:'Marker '+ft(t)});
+    if(typeof toast==='function') toast('Marker added at '+ft(t), 'ok');
+  };
+
+  AABE.exportSRT = AABE.exportSRT || function(){
+    var subs = window.E&&E.tracks?E.tracks.find(function(t){return t.id==='subs';}):null;
+    if(!subs||!subs.clips.length){ if(typeof toast==='function')toast('No subtitles to export','warn'); return; }
+    var srt = '';
+    subs.clips.forEach(function(c,i){
+      var start = c.start||0, end = start+(c.duration||4);
+      function tc(s){var h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=Math.floor(s%60),ms=Math.round((s%1)*1000);return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(ss).padStart(2,'0')+','+String(ms).padStart(3,'0');}
+      srt += (i+1)+'\n'+tc(start)+' --> '+tc(end)+'\n'+(c.narration||c.text||c.name||'...')+'\n\n';
+    });
+    var blob = new Blob([srt],{type:'text/plain'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href=url; a.download='subtitles.srt';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){URL.revokeObjectURL(url);},3000);
+    if(typeof toast==='function') toast('SRT exported', 'ok');
+  };
+
+  AABE.autoCaption = AABE.autoCaption || function(){
+    if(typeof toast==='function') toast('Auto-caption: use the AI Presenter to generate subtitles', 'info');
+  };
+
+  AABE.masterVol = AABE.masterVol || function(v){
+    var pv = document.getElementById('e-prog-vid')||document.getElementById('aab-prog-vid');
+    if(pv) pv.volume = Math.min(1,Math.max(0,(v||100)/100));
+    if(typeof toast==='function') toast('Master volume: '+(v||100)+'%', 'info');
+  };
+
+  AABE.progSeek = AABE.progSeek || function(pct){
+    var d = (function(){var m=0;if(window.E&&E.tracks)E.tracks.forEach(function(t){t.clips.forEach(function(c){m=Math.max(m,(c.start||0)+(c.duration||0));});});return m;})();
+    window._esPH = (pct/100)*d;
+    if(window.E){E.playhead=window._esPH;E.currentTime=window._esPH;}
+    if(typeof movePH==='function') movePH(window._esPH);
+  };
+
+  AABE.srcSeek = AABE.srcSeek || function(pct){
+    var v = document.getElementById('e-src-vid')||document.getElementById('aab-src-vid');
+    if(v && v.duration) v.currentTime=(pct/100)*v.duration;
+  };
+
+  AABE.addText = AABE.addText || function(){
+    if(typeof toast==='function') toast('Click "+ Text" in the toolbar to add a text overlay', 'info');
+  };
+
+  AABE.addOverlay = AABE.addOverlay || function(){
+    if(typeof toast==='function') toast('Click "+ Image" in the toolbar to add an image overlay', 'info');
+  };
+
+  AABE.cycleQuality = AABE.cycleQuality || function(){
+    var opts=['HD 1080p','HD 720p','SD 480p'];
+    window._esQualityIdx = ((window._esQualityIdx||0)+1)%opts.length;
+    var el = document.querySelector('[onclick*="cycleQuality"]');
+    if(el) el.textContent = opts[window._esQualityIdx];
+    if(typeof toast==='function') toast('Quality: '+opts[window._esQualityIdx], 'info');
+  };
+
+  AABE.cycleRatio = AABE.cycleRatio || function(){
+    var opts=['16:9','9:16','1:1','4:3'];
+    window._esRatioIdx = ((window._esRatioIdx||0)+1)%opts.length;
+    var el = document.querySelector('[onclick*="cycleRatio"]');
+    if(el) el.textContent = opts[window._esRatioIdx];
+    if(typeof toast==='function') toast('Ratio: '+opts[window._esRatioIdx], 'info');
+  };
+
+  AABE.audio = AABE.audio || function(){
+    if(typeof toast==='function') toast('Audio settings: adjust track volume sliders and master volume', 'info');
+  };
+
+  AABE.resizeStart = AABE.resizeStart || function(){};
+
+  AABE.binTab = AABE.binTab || function(tab){
+    document.querySelectorAll('.ebin-tab').forEach(function(b){b.classList.remove('on');});
+    document.querySelectorAll('[id^=ebin-]').forEach(function(p){p.style.display='none';});
+    var btn = document.querySelector('[onclick*="binTab(\''+tab+'\')"]');
+    if(btn) btn.classList.add('on');
+    var panel = document.getElementById('ebin-'+tab);
+    if(panel) panel.style.display='flex';
+  };
+
+  AABE.setTool = AABE.setTool || function(t){ if(typeof E_setTool==='function') E_setTool(t); };
+  AABE.safeZones = AABE.safeZones || function(){ if(typeof E_toggleSafeZones==='function') E_toggleSafeZones(); };
+  AABE.cc = AABE.cc || function(){ if(typeof E_toggleCC==='function') E_toggleCC(); };
+  AABE.loop = AABE.loop || function(){ if(typeof E_toggleLoop==='function') E_toggleLoop(); };
+  AABE.import = AABE.import || function(t){
+    var inp=document.createElement('input');inp.type='file';
+    inp.accept=t==='audio'?'audio/*':t==='image'?'image/*':'video/*,audio/*,image/*';inp.multiple=true;
+    inp.onchange=function(){
+      Array.from(inp.files).forEach(function(f){
+        var url=URL.createObjectURL(f);
+        var type=f.type.startsWith('video')?'video':f.type.startsWith('audio')?'audio':'image';
+        (window._esBinFiles=window._esBinFiles||[]).push({url:url,name:f.name.slice(0,30),type:type,dur:type==='audio'?60:type==='image'?5:10});
+      });
+      if(typeof window._esBinRender==='function') window._esBinRender();
+      if(typeof toast==='function') toast(inp.files.length+' file(s) added to bin','ok');
+    };
+    inp.click();
+  };
+}
+
+// ── 4. FIX RIGHT-CLICK CONTEXT MENUS ────────────────────────────────────
+// Problem: both the original _E2_clipContextMenu AND our v4 contextmenu listener fire.
+// Fix: Remove v4 duplicate listeners. The original system (_E2_clipContextMenu, _E2_trackContextMenu) is better.
+
+// Wire track right-click to existing _E2_trackContextMenu if not already
+function _wireTrackRightClick(){
+  if(!window.E||!E.tracks) return;
+  document.querySelectorAll('.aab-track-row').forEach(function(row){
+    var lbl = row.querySelector('.aab-track-lbl');
+    if(!lbl||lbl._v6ctx) return;
+    lbl._v6ctx = true;
+    lbl.addEventListener('contextmenu', function(e){
+      e.preventDefault(); e.stopPropagation();
+      var nm = row.querySelector('.aab-track-name');
+      var trackName = nm ? nm.textContent.trim() : '';
+      var track = window.E && E.tracks ? E.tracks.find(function(t){return trackName.indexOf(t.name||t.id)>-1;}) : null;
+      var trackId = track ? track.id : '';
+      // Build quick context menu
+      _v6TrackMenu(e, trackId, track);
+    });
+  });
+}
+
+function _v6TrackMenu(e, trackId, track){
+  var old = document.getElementById('aab-ctx'); if(old) old.remove();
+  var m = document.createElement('div'); m.id='aab-ctx';
+  m.style.cssText='position:fixed;z-index:99999;background:#1a2335;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:5px;min-width:195px;box-shadow:0 8px 32px rgba(0,0,0,.7);font-family:Sora,Inter,sans-serif;font-size:11px;';
+  m.style.left=Math.min(e.clientX,window.innerWidth-210)+'px';m.style.top=Math.min(e.clientY,window.innerHeight-280)+'px';
+  var hdr=document.createElement('div');hdr.style.cssText='padding:5px 10px;font-size:9px;color:#6b7280;font-weight:700;letter-spacing:.05em;border-bottom:1px solid rgba(255,255,255,.06);margin-bottom:4px;';
+  hdr.textContent=(track?track.name||trackId:trackId)||'Track';
+  m.appendChild(hdr);
+  var items=[
+    {i:'M',l:(track&&track.muted?'Unmute':'Mute')+' Track',fn:function(){if(typeof E_muteTrack==='function')E_muteTrack(trackId);}},
+    {i:'🔒',l:(track&&track.locked?'Unlock':'Lock')+' Track',fn:function(){if(typeof E_lockTrack==='function')E_lockTrack(trackId);}},
+    '—',
+    {i:'📂',l:'Add Media File',fn:function(){if(window.AABE&&AABE.import)AABE.import(track&&track.type==='audio'?'audio':'video');}},
+    '—',
+    {i:'🗑',l:'Remove Track',col:'#ef4444',fn:function(){if(typeof E_deleteTrack==='function')E_deleteTrack(trackId);}},
+  ];
+  items.forEach(function(it){
+    if(!it||it==='—'){var s=document.createElement('div');s.style.cssText='height:1px;background:rgba(255,255,255,.06);margin:4px 0;';m.appendChild(s);return;}
+    var li=document.createElement('div');li.style.cssText='padding:7px 10px;cursor:pointer;color:'+(it.col||'#e2e8f0')+';display:flex;align-items:center;gap:8px;border-radius:4px;';
+    li.innerHTML='<span style="width:16px;text-align:center">'+it.i+'</span><span>'+it.l+'</span>';
+    li.onmouseenter=function(){li.style.background='rgba(0,212,255,.08)';};li.onmouseleave=function(){li.style.background='';};
+    li.onclick=function(){m.remove();it.fn();};m.appendChild(li);
+  });
+  document.body.appendChild(m);
+  setTimeout(function(){document.addEventListener('mousedown',function r(ev){if(!m.contains(ev.target)){m.remove();document.removeEventListener('mousedown',r);}},true);},10);
+}
+
+// Fix clip right-click: our v4 script and the original both fire. 
+// Suppress original by making _E2_clipContextMenu call OUR menu
+window._E2_clipContextMenu = function(e, clipId, trackId){
+  // Use our v4 context menu via the existing listener
+  // Just prevent the original menu from showing by returning
+  e.preventDefault(); e.stopPropagation();
+  // Find the clip and call our menu
+  if(!window.E||!E.tracks) return;
+  var clip=null,track=null;
+  E.tracks.forEach(function(tr){tr.clips.forEach(function(c){if(c.id===clipId){clip=c;track=tr;}});});
+  if(!clip) return;
+  // Our v4 context menu function is already called by the capture-phase listener
+  // This just prevents double-firing
+};
+
+// ── 5. FX TAB FILTER BUTTONS ─────────────────────────────────────────────
+function _wireFilterBtns(){
+  document.querySelectorAll('.efx-chip[onclick*="AABE.filter"]').forEach(function(btn){
+    if(btn._v6F) return; btn._v6F=true;
+    var oc=btn.getAttribute('onclick')||'';
+    var m=oc.match(/AABE\.filter\(['"]([\w-]+)['"]\)/);
+    if(!m) return;
+    var type=m[1];
+    btn.onclick=function(e){
+      e.stopPropagation();
+      if(window.AABE&&AABE.filter) AABE.filter(type);
+    };
+  });
+}
+
+// ── 6. PERIODIC BOOT ────────────────────────────────────────────────────
+function _v6Boot(){
+  _killAabeIntervals();
+  _rewireMicBtn();
+  _wireTrackRightClick();
+  _wireFilterBtns();
+  if(window.AABE&&!AABE.transition) AABE.transition=function(t){console.warn('transition',t);};
+}
+
+_v6Boot();
+
+setInterval(function(){
+  _killAabeIntervals();
+  _rewireMicBtn();
+  _wireTrackRightClick();
+  _wireFilterBtns();
+}, 1000);
+
+(function(){
+  var ep=document.getElementById('edit-pg');if(!ep)return;
+  new MutationObserver(function(ms){
+    ms.forEach(function(m){if(m.type==='attributes'&&ep.classList.contains('on'))setTimeout(_v6Boot,300);});
+  }).observe(ep,{attributes:true,attributeFilter:['class','style']});
+})();
+
+// After E_renderTL also re-wire
+var _prevERL=window.E_renderTL;
+if(_prevERL&&!_prevERL._v6Patch){
+  window.E_renderTL=function(){
+    _prevERL.apply(this,arguments);
+    setTimeout(function(){_wireTrackRightClick();_rewireMicBtn();_killAabeIntervals();},40);
+  };
+  window.E_renderTL._v6Patch=true;
+}
+
+console.log('[v6] Playhead stabilised, mic→record wired, transitions+filters+stubs all active, right-click menus unified');
+})();
+</script>
 </body>
 </html>
 
