@@ -24555,11 +24555,19 @@ var clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   if($('aab-ov-css'))return;
   var s=document.createElement('style');s.id='aab-ov-css';
   s.textContent=`
-/* Track volume sliders + labels removed — use Mixer panel */
+/* Remove AABE duplicate track controls — Mixer handles all volume */
 .aab-track-row input[type=range]{display:none!important;}
 .aab-track-controls input[type=range]{display:none!important;}
 .aab-track-vol{display:none!important;}
 .aab-track-vol-pct,.aab-vol-pct,.e-track-vol-val,.aab-vol-val{display:none!important;}
+/* Remove .aab-vol-ctrl container (holds "80%" span labels) */
+.aab-vol-ctrl{display:none!important;}
+/* Remove AABE original M/L/+/× duplicate buttons (we render our own) */
+.aab-track-tool-btn{display:none!important;}
+/* Remove AABE original 🎤 mic button (our 🎙 replaces it) */
+.aab-mic-btn{display:none!important;}
+/* Remove e-track-tools secondary row if it appears */
+.e-track-tools{display:none!important;}
 /* Playhead */
 #aab-ph{position:absolute!important;top:0!important;bottom:0!important;width:2px!important;
   background:#ef4444!important;z-index:30!important;pointer-events:auto!important;cursor:ew-resize!important;
@@ -24804,6 +24812,14 @@ function _esUpdateProg(t){
   var pe2=$('e-prog-empty')||$('aab-prog-empty');
   if(pe2){pe2.style.display='none';pe2.classList.add('hidden');}
   pv.style.display='block';
+  // Route video audio through Web Audio for VU metering (only once per element)
+  if(!pv._mediaSrc && window._AC && _masterGain){
+    try{
+      var mediaSrc=_AC.createMediaElementSource(pv);
+      mediaSrc.connect(_masterGain);
+      pv._mediaSrc=mediaSrc;
+    }catch(e){}
+  }
   var cT=Math.max(0,t-(clip.start||0));
   
   if(pv._curUrl!==clip.url){
@@ -25309,7 +25325,17 @@ function _startMixerVU(vuMeter){
 window._mixMasterMute=()=>{window._mixMuted=!window._mixMuted;if(_masterGain)_masterGain.gain.value=window._mixMuted?0:clamp(+($('mix-master')||{value:100}).value/100,0,1.5);var b=$('mix-master-m');if(b){b.classList.toggle('muted',window._mixMuted);}};
 window._mixResetAll=v=>{if(window.E&&E.tracks)E.tracks.forEach(tr=>{tr.volume=v;var f=$('mix-'+tr.id);if(f)f.value=v;if(_trackGains[tr.id])_trackGains[tr.id].gain.value=clamp(v/100,0,1.5);var db=$('mixdb-'+tr.id);if(db)db.textContent=Math.round(20*Math.log10(Math.max(.001,v/100)))+'dB';});};
 function _rebuildMixer(){var p=$('aab-mixer-panel');if(p&&p.style.display!=='none'){_buildMixer();p=$('aab-mixer-panel');p.style.display='block';}}
-window.E_toggleMixer=()=>{var p=$('aab-mixer-panel');if(!p){_buildMixer();p=$('aab-mixer-panel');}if(p.style.display==='none'||!p.style.display){try{getAC();}catch(e){}p.style.display='block';}else{_mixPos.x=parseInt(p.style.left)||null;_mixPos.y=parseInt(p.style.top)||null;p.style.display='none';}};
+window.E_toggleMixer=()=>{var p=$('aab-mixer-panel');if(!p){_buildMixer();p=$('aab-mixer-panel');}if(p.style.display==='none'||!p.style.display){
+    try{
+      getAC(); // Create AudioContext on user gesture
+      // Route program video audio through Web Audio if not already done
+      var pv2=document.getElementById('e-prog-vid')||document.getElementById('aab-prog-vid');
+      if(pv2&&!pv2._mediaSrc&&_AC&&_masterGain){
+        try{var ms=_AC.createMediaElementSource(pv2);ms.connect(_masterGain);pv2._mediaSrc=ms;}catch(e){}
+      }
+    }catch(e){}
+    p.style.display='block';
+  }else{_mixPos.x=parseInt(p.style.left)||null;_mixPos.y=parseInt(p.style.top)||null;p.style.display='none';}};
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CONTEXT MENUS
@@ -25525,10 +25551,14 @@ window.E_toggleRecord=()=>{
   navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{_recSt=stream;_recChunks=[];_recDur=0;var sup=['audio/webm;codecs=opus','audio/webm','audio/ogg'].find(t=>MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t))||'audio/webm';_recRec=new MediaRecorder(stream,{mimeType:sup});_recRec.ondataavailable=e=>{if(e.data.size>0)_recChunks.push(e.data);};_recRec.onstop=()=>{var blob=new Blob(_recChunks,{type:'audio/webm'});var url=URL.createObjectURL(blob);var dur=_recDur||3;var vo=window.E&&E.tracks?E.tracks.find(t=>t.id==='voice'):null;if(vo)vo.clips.push({id:'rec'+Date.now(),name:'Recording '+ft(dur),url,type:'audio',start:window._esPH||0,duration:dur,color:'#dc2626'});(window._esBinFiles=window._esBinFiles||[]).push({url,name:'Recording.webm',type:'audio',dur});_binRender();_renderTLSafe();toast&&toast('Recording saved ('+ft(dur)+')','ok');};_recRec.start();_recInt=setInterval(()=>_recDur++,1000);document.querySelectorAll('.aab-rec-btn').forEach(b=>{b.classList.add('recording');b.innerHTML='⏹';});toast&&toast('🔴 Recording…','ok');}).catch(e=>toast&&toast('Mic: '+e.message,'error'));
 };
 function _addVOControls(){
-  document.querySelectorAll('.aab-track-row').forEach(row=>{
+  document.querySelectorAll('.aab-track-row').forEach(function(row){
     var nm=row.querySelector('.aab-track-name');if(!nm||nm.textContent.indexOf('Voice')===-1)return;
-    if(!nm.querySelector('.aab-mic-name-btn')){var mic=document.createElement('div');mic.className='aab-mic-name-btn';mic.title='Toggle mic monitoring';mic.innerHTML='🎙';mic.addEventListener('click',e=>{e.stopPropagation();window.E_startVoiceRecord();});nm.appendChild(mic);}
-    if(!nm.querySelector('.aab-rec-btn')){var rec=document.createElement('div');rec.className='aab-rec-btn';rec.title='Record voice over';rec.innerHTML='⏺';rec.addEventListener('click',e=>{e.stopPropagation();window.E_toggleRecord();});nm.appendChild(rec);}
+    // Hide AABE's original mic button (we replace it)
+    var aabeMic=nm.querySelector('.aab-mic-btn');if(aabeMic)aabeMic.style.display='none';
+    // Add our mic monitoring button (only once)
+    if(!nm.querySelector('.aab-mic-name-btn')){var mic=document.createElement('div');mic.className='aab-mic-name-btn';mic.title='Mic monitoring (VU)';mic.innerHTML='🎙';mic.addEventListener('click',function(e){e.stopPropagation();window.E_startVoiceRecord();});nm.appendChild(mic);}
+    // Add record button (only once)
+    if(!nm.querySelector('.aab-rec-btn')){var rec=document.createElement('div');rec.className='aab-rec-btn';rec.title='Record to VO track';rec.innerHTML='⏺';rec.addEventListener('click',function(e){e.stopPropagation();window.E_toggleRecord();});nm.appendChild(rec);}
     var ctrl=row.querySelector('.aab-track-controls');if(!ctrl)return;
     if(!ctrl.querySelector('#aab-vu-wrap')){var wrap=document.createElement('div');wrap.id='aab-vu-wrap';wrap.style.cssText='display:flex;align-items:flex-end;gap:2px;height:14px;';for(var i=0;i<6;i++){var b=document.createElement('div');b.className='aab-vu-bar';b.style.cssText='width:2px;height:20%;border-radius:1px;background:rgba(16,185,129,.35);transition:height .07s;';wrap.appendChild(b);}var last=ctrl.querySelector('button:last-child');if(last)ctrl.insertBefore(wrap,last);else ctrl.appendChild(wrap);}
   });
@@ -25678,12 +25708,17 @@ function _cleanSubs(){
   var proj=window.PROJECT;var scenes=proj&&proj.scenes?proj.scenes:[];if(!scenes.length||subs.clips.length<=scenes.length)return;
   var pos=0,nc=[];scenes.forEach((s,i)=>{var dur=s.duration||8;nc.push({id:'sub'+i,trackId:'subs',name:(s.narration||s.text||'').slice(0,40),narration:s.narration||s.text||'',type:'text',start:pos,duration:dur,color:'#22d3ee'});pos+=dur;});subs.clips=nc;
 }
-function _fixVolSliders(){document.querySelectorAll('.aab-track-row input[type=range]').forEach(s=>s.remove());}
-
-/* Safe E_renderTL wrapper (no re-entrant calls) */
-var _tlPending=false;
-function _renderTLSafe(){
-  if(!_tlPending){_tlPending=true;requestAnimationFrame(()=>{_tlPending=false;if(typeof E_renderTL==='function')E_renderTL();});}
+function _fixVolSliders(){
+  // Remove sliders
+  document.querySelectorAll('.aab-track-row input[type=range]').forEach(function(s){s.remove();});
+  // Remove aab-vol-ctrl containers (contain "80%" percentage labels)
+  document.querySelectorAll('.aab-vol-ctrl').forEach(function(el){el.style.display='none';});
+  // Hide AABE duplicate tool buttons (M/L/+/× set, we have our own M/🔓/👁/➕/🗑)
+  document.querySelectorAll('.aab-track-tool-btn').forEach(function(b){b.style.display='none';});
+  // Hide AABE original mic button (replaced by our 🎙)
+  document.querySelectorAll('.aab-mic-btn').forEach(function(b){b.style.display='none';});
+  // Hide e-track-tools secondary rows
+  document.querySelectorAll('.e-track-tools').forEach(function(el){el.style.display='none';});
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -25742,10 +25777,19 @@ function _boot(){
   if(window.E&&E.playhead&&Math.abs(window._esPH-E.playhead)>.5&&!window._esPlaying){window._esPH=E.playhead;movePH(window._esPH);}
   var nm=$('aab-proj-name');if(nm&&window.PROJECT)nm.textContent=PROJECT.title||'Untitled';
   if(typeof E_renderTL==='function')setTimeout(E_renderTL,100);
-  // Force AABE.dd to always be the dropdown toggle (re-apply every boot in case original overrides)
-  if(window.AABE){
-    AABE.dd=function(pid){var p=document.getElementById(pid);if(!p)return;document.querySelectorAll('.emenu-panel').forEach(function(x){if(x.id!==pid)x.style.display='none';});p.style.display=p.style.display==='none'?'block':'none';if(p.style.display==='block'){setTimeout(function(){document.addEventListener('mousedown',function r(ev){if(!p.contains(ev.target)){p.style.display='none';document.removeEventListener('mousedown',r);}});},50);}};
-  }
+  // Force AABE.dd to always be the dropdown toggle (re-apply every boot)
+    if(window.AABE){
+      AABE.dd=function(pid){
+        document.querySelectorAll('.emenu-panel').forEach(function(x){if(x.id!==pid)x.style.display='none';});
+        var p=document.getElementById(pid);if(!p)return;
+        if(p.style.display==='block'){p.style.display='none';return;}
+        if(p.parentElement!==document.body){document.body.appendChild(p);}
+        var btn=document.querySelector('[onclick*="'+pid+'"]');
+        if(btn){var r=btn.getBoundingClientRect();p.style.cssText='display:block;position:fixed;top:'+(r.bottom+2)+'px;left:'+Math.min(r.left,window.innerWidth-200)+'px;z-index:99999;min-width:160px;';}
+        else{p.style.display='block';}
+        setTimeout(function(){document.addEventListener('mousedown',function ro(ev){if(!p.contains(ev.target)){p.style.display='none';document.removeEventListener('mousedown',ro);}});},50);
+      };
+    }
 }
 _boot();
 setInterval(()=>{var ep=$('edit-pg');if(!ep||!ep.classList.contains('on'))return;killTimers();_wireClips();_wireDropZones();_addVOControls();_wirePHDrag();_wireTrackCtx();_wireExport();if(!window._esPlaying&&window.E&&E.playhead!=null&&Math.abs(window._esPH-E.playhead)>.5){window._esPH=E.playhead;movePH(window._esPH);}},800);
