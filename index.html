@@ -15428,6 +15428,13 @@ function aps_loadSavedPhotos() {
       } catch (e) { }
     }
     window.openAIPresenterStudio = openAIPresenterStudio;
+// Close APS - stub that calls the internal function or falls back
+window.closeAIPresenterStudio=function(){
+  var studio=document.getElementById('ai-presenter-studio');
+  if(studio){studio.classList.remove('on');studio.style.display='none';}
+  if(window.APS){window.APS.stopRequested=true;window.APS.generating=false;}
+  var stopBtn=document.getElementById('aps-stop-btn');if(stopBtn)stopBtn.style.display='none';
+};
 
     // Keep backward compat — openAIPresenter now opens studio
     function openAIPresenter() {
@@ -22347,6 +22354,23 @@ window.dash_filterAssets=window.dash_filterAssets||function(filter,btn){
 // aps_loadSavedPhotos — load saved character photos into grid
 window.aps_loadSavedPhotos=window.aps_loadSavedPhotos||function(){if(typeof aps_renderCharGrid==='function')aps_renderCharGrid();};
 
+  // Additional stubs for color picker and regenerate
+  window.aps_generateFailed = window.aps_generateFailed || function(){
+    if(!window.APS||!window.aps_generateSelected)return;
+    (window.APS.scenes||[]).forEach(function(s){if(s.status==='failed'||!s.videoUrl)s.selected=true;});
+    window.aps_generateSelected();
+    typeof toast==='function'&&toast('Retrying failed scenes…','info');
+  };
+  window.aps_pickBgColor = window.aps_pickBgColor || function(btn){
+    var inp=document.createElement('input');inp.type='color';inp.value='#1a1a2e';
+    inp.onchange=function(){
+      if(window.APS&&window.APS.settings){window.APS.settings.bg='solid';window.APS.settings.bgColor=inp.value;}
+      document.querySelectorAll('.aps-bg-btn').forEach(function(b){b.classList.remove('active');});
+      if(btn){btn.classList.add('active');btn.textContent='🎨 '+inp.value;}
+      var prev=document.getElementById('aps-preview-bg');if(prev)prev.style.background=inp.value;
+      typeof toast==='function'&&toast('BG: '+inp.value,'ok');
+    };inp.click();
+  };
 console.log('[AABStudio] Stubs loaded: sidebarTab, aps_goToEditSuite, aps_setBg, aps_filterScenes, aps_selectAll, aps_regenerateCurrent, aps_previewVoice, aps_applyVoiceAll, aps_stopQueue, aps_triggerCustomBg, aps_clearPhoto');
 
 // ── AABE TOOLBAR EXTENSIONS ─────────────────────────────────────
