@@ -4556,20 +4556,7 @@
     /* Footer never overlaps content */
     body { padding-bottom: 0 !important; }
 
-  
-/* ══ AABStudio Timeline Nuclear Override ══ */
-#edit-pg .aab-tl-wrap,
-#edit-pg.on .aab-tl-wrap,
-.aab-tl-wrap {
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  max-height: calc(100vh - 380px) !important;
-  height: auto !important;
-  flex: 0 1 auto !important;
-}
-/* Slide + Zoom tool buttons */
-.aab-tool-slide { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2'%3E%3Cpath d='M5 12h14M15 8l4 4-4 4M9 8l-4 4 4 4'/%3E%3C/svg%3E"); }
-</style>
+  </style>
 <!-- removed:tp-smooth-css -->
 
 <!-- removed:studio-layout-override -->
@@ -5455,6 +5442,25 @@ function E_renderTL(){
     row.appendChild(lbl);
     var lane=_el("div","aab-lane"+(track.locked?" locked":""));lane.dataset.tid=track.id;
     lane.style.height=track.h+"px";
+    // Drop target for bin clips
+    if(!track.locked){
+      lane.addEventListener("dragover",function(ev){ev.preventDefault();ev.dataTransfer.dropEffect="copy";lane.style.outline="1px dashed rgba(0,212,255,.6)";});
+      lane.addEventListener("dragleave",function(){lane.style.outline="";});
+      lane.addEventListener("drop",function(ev){
+        ev.preventDefault();lane.style.outline="";
+        var raw=ev.dataTransfer.getData("application/aab-clip");
+        if(!raw)return;
+        var cl=JSON.parse(raw);
+        // Calculate drop time from pixel offset
+        var laneRect=lane.getBoundingClientRect();
+        var dropX=ev.clientX-laneRect.left;
+        var dropTime=Math.max(0,dropX/getPPS());
+        if(typeof E_addClip==="function"){
+          E_addClip({url:cl.url,name:cl.name,type:cl.type,duration:cl.dur},track.id,dropTime);
+          if(typeof toast==="function")toast("Added: "+cl.name,"ok");
+        }
+      });
+    };
     lane.addEventListener("contextmenu",function(e){e.preventDefault();_aabTrackCtx(e,track);});
     lane.addEventListener("dragover",function(e){e.preventDefault();this.classList.add("drop-active");});
     lane.addEventListener("dragleave",function(){this.classList.remove("drop-active");});
@@ -7318,7 +7324,7 @@ body{max-width:100vw;overflow-x:hidden}
 @media(max-width:768px){
   #edit-pg.on .aab-bin, #edit-pg.on .aab-inspector { display: none !important; }
   #edit-pg.on .aab-monitors-row { flex-direction: column !important; }
-  #edit-pg.on .aab-tl-wrap { flex: 0 0 auto !important; min-height: 200px !important; max-height: calc(100vh - 380px) !important; overflow-y: auto !important; }
+  #edit-pg.on .aab-tl-wrap { flex: 0 0 180px !important; height: 180px !important; }
 }
 
 /* ═══ Page scroll — only non-layout pages ═══ */
@@ -8598,9 +8604,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
     <button id="et-R" onclick="AABE.setTool('razor')" class="etl" title="Razor [R]">✂</button>
     <button id="et-T" onclick="AABE.setTool('trim')" class="etl" title="Trim [T]">↔</button>
     <button id="et-Y" onclick="AABE.setTool('slip')" class="etl" title="Slip [Y]">⇆</button>
-    <button id="et-S" onclick="AABE.setTool('slide')" class="etl" title="Slide [S] — Slide clip preserving neighbours">↦</button>
     <button id="et-H" onclick="AABE.setTool('hand')" class="etl" title="Pan [H]">✋</button>
-    <button id="et-Z" onclick="(function(e){if(window.AABE){if(e.altKey||e.shiftKey)AABE.tlZoom(-1);else AABE.tlZoom(1);}}).call(this,event)" class="etl" title="Zoom In [+] / Zoom Out [Alt+click]">🔍</button>
   </div>
   <!-- Video dropdown -->
   <div class="emenu-wrap" style="height:100%;border-right:.5px solid rgba(255,255,255,.05);flex-shrink:0;">
@@ -14654,6 +14658,7 @@ window._reapplyNav=function(){
       var v = document.getElementById('edit-video');
       if (!v) return;
       v.ontimeupdate = function () {
+        if(window._editEngineV1) return; // neutralised: E-engine handles playhead
         TL.playhead = v.currentTime;
         var tc = document.getElementById('edit-time-display');
         if (tc) tc.textContent = formatDur(v.currentTime) + ' / ' + formatDur(v.duration || 0);
@@ -19837,7 +19842,7 @@ s.textContent=`
   .aab-edit-body{flex-direction:column!important;}
   .aab-monitors-row{flex-direction:column!important;height:auto!important;}
   .aab-monitor{height:200px!important;flex:none!important;}
-  .aab-tl-wrap{max-height:calc(100vh - 380px)!important;min-height:180px!important;overflow-y:auto!important;}
+  .aab-tl-wrap{height:calc(100vh - 520px)!important;min-height:180px!important;}
   .aab-track-lbl{flex:0 0 100px!important;min-width:100px!important;}
   .aab-track-name{font-size:8px!important;max-width:80px!important;}
   #aab-insp-panel,#aab-inspector{display:none!important;}
@@ -19857,7 +19862,7 @@ s.textContent=`
 }
 
 @media(min-width:769px)and(max-width:1024px){.aab-monitors-row{height:220px!important;}.aab-monitor{height:220px!important;}.aab-tl-wrap{height:calc(100dvh - 370px)!important;min-height:200px!important;}#aab-inspector,.aab-inspector{width:180px!important;}.aab-track-lbl{flex:0 0 130px!important;min-width:130px!important;}}
-@media(max-width:768px){.aab-edit-body{flex-direction:column!important;}.aab-monitors-row{flex-direction:column!important;height:auto!important;}#aab-src-mon{display:none!important;}#aab-prog-mon{height:220px!important;flex:none!important;}.aab-tl-wrap{max-height:calc(100dvh - 380px)!important;min-height:180px!important;overflow-y:auto!important;}#aab-inspector,.aab-inspector{display:none!important;}.aab-track-lbl{flex:0 0 85px!important;min-width:85px!important;}.aab-track-name{font-size:8px!important;}.aab-tl-tool{min-width:22px!important;height:22px!important;font-size:11px!important;}.studio-wrap,.studio-body{flex-direction:column!important;}#studio-canvas,video.studio-preview{width:100vw!important;height:56.25vw!important;order:0!important;}.studio-tp-panel,.tp-panel{order:1!important;height:130px!important;}.studio-scenes-col,.studio-scenes{order:2!important;display:flex!important;flex-direction:row!important;overflow-x:auto!important;height:90px!important;}.dash-grid,.projects-grid{grid-template-columns:1fr!important;}}
+@media(max-width:768px){.aab-edit-body{flex-direction:column!important;}.aab-monitors-row{flex-direction:column!important;height:auto!important;}#aab-src-mon{display:none!important;}#aab-prog-mon{height:220px!important;flex:none!important;}.aab-tl-wrap{height:calc(100dvh - 460px)!important;min-height:180px!important;}#aab-inspector,.aab-inspector{display:none!important;}.aab-track-lbl{flex:0 0 85px!important;min-width:85px!important;}.aab-track-name{font-size:8px!important;}.aab-tl-tool{min-width:22px!important;height:22px!important;font-size:11px!important;}.studio-wrap,.studio-body{flex-direction:column!important;}#studio-canvas,video.studio-preview{width:100vw!important;height:56.25vw!important;order:0!important;}.studio-tp-panel,.tp-panel{order:1!important;height:130px!important;}.studio-scenes-col,.studio-scenes{order:2!important;display:flex!important;flex-direction:row!important;overflow-x:auto!important;height:90px!important;}.dash-grid,.projects-grid{grid-template-columns:1fr!important;}}
 /* ── Stability: prevent layout thrashing ── */
 .aab-tl-area{will-change:scroll-position!important;contain:strict!important;}
 .aab-tl-tracks{contain:layout style!important;}
@@ -22403,15 +22408,6 @@ window.aps_loadSavedPhotos=window.aps_loadSavedPhotos||function(){if(typeof aps_
     };inp.click();
   };
 console.log('[AABStudio] Stubs loaded: sidebarTab, aps_goToEditSuite, aps_setBg, aps_filterScenes, aps_selectAll, aps_regenerateCurrent, aps_previewVoice, aps_applyVoiceAll, aps_stopQueue, aps_triggerCustomBg, aps_clearPhoto');
-  // closeAIPresenterStudio - inline version (function may be in inner IIFE)
-  if(!window.closeAIPresenterStudio){
-    window.closeAIPresenterStudio=function(){
-      var s=document.getElementById('ai-presenter-studio');
-      if(s){s.classList.remove('on');s.style.display='none';}
-      if(window.APS){APS.stopRequested=true;APS.generating=false;}
-      var sb=document.getElementById('aps-stop-btn');if(sb)sb.style.display='none';
-    };
-  }
 
 // ── AABE TOOLBAR EXTENSIONS ─────────────────────────────────────
 window.tlZoom = function(d){ if(window.AABE&&AABE.tlZoom) AABE.tlZoom(d); };
@@ -23417,7 +23413,7 @@ window.addEventListener('load',function(){
 #edit-pg.on #e-tools-bar{display:flex!important;flex-shrink:0!important;}
 #edit-pg.on #e-main{display:flex!important;flex:1 1 0!important;min-height:0!important;}
 #edit-pg.on #e-resize{display:block!important;flex-shrink:0!important;}
-#edit-pg.on #aab-tl-wrap{display:block!important;flex:0 0 auto!important;min-height:200px!important;max-height:calc(100vh - 380px)!important;overflow-y:auto!important;}
+#edit-pg.on #aab-tl-wrap{display:flex!important;flex:1 1 0!important;min-height:0!important;}
 #edit-pg.on #e-timeline{display:none!important;}
 </style>
 
@@ -23631,13 +23627,7 @@ function fixVideoElements(){
 }
 
 // ── ADDED: Playhead positioning ────────────────────────────────────────────
-function fixPlayhead(){
-  var ph=document.getElementById('aab-ph');if(!ph)return;
-  var lane=document.querySelector('.aab-lane');if(!lane)return;
-  var parent=ph.parentElement;if(!parent)return;
-  var correctLeft=Math.round(lane.getBoundingClientRect().left-parent.getBoundingClientRect().left);
-  if(parseInt(ph.style.left||0)!==correctLeft)ph.style.left=correctLeft+'px';
-}
+function fixPlayhead(){ /* neutralised: was resetting aab-ph to lane offset every 1500ms, causing playhead flicker */ }
 
 // ── ADDED: Volume controls on ALL audio tracks ─────────────────────────────
 function wireVolumeControls(){
@@ -23791,6 +23781,8 @@ window.E_srcToTimeline=function(){
 var _origSelectClip = window.E_selectClip;
 window.E_selectClip = function(clipId){
   if(!clipId || !window.E) return;
+  // Accept either a clip object or a string id
+  if(typeof clipId === 'object' && clipId !== null) clipId = clipId.id;
   E.selectedClipId = clipId;
   // Find clip data
   var clip = null, track = null;
@@ -25190,13 +25182,6 @@ window.E_progToggle=function(){
   // Ensure AudioContext is running (requires user gesture)
   try{getAC();}catch(e){}
   startVUDraw();
-  // Wire program video audio into AudioContext → master gain → VU analyser
-  (function(){try{
-    var pv=_getProgVid();var ac=getAC();
-    if(pv&&ac&&!pv._vuWired&&_masterGain){
-      try{ac.createMediaElementSource(pv).connect(_masterGain);pv._vuWired=true;}catch(e){}
-    }
-  }catch(e){}})();
   window._esPlaying=true; _esLT=0;
   if(btn)btn.innerHTML='&#9646;&#9646;';
   var sv=$('e-src-vid')||$('aab-src-vid');if(sv&&!sv.paused)sv.pause();
@@ -25688,6 +25673,14 @@ function _binRender(){
   clips.forEach(cl=>{
     var card=document.createElement('div');card.className='aab-bin-clip';
     card.dataset.url=cl.url;card.dataset.name=cl.name;card.dataset.type=cl.type||'video';
+    // Drag from bin to timeline
+    card.draggable=true;
+    card.addEventListener('dragstart',function(ev){
+      ev.dataTransfer.effectAllowed='copy';
+      ev.dataTransfer.setData('application/aab-clip',JSON.stringify({url:cl.url,name:cl.name,type:cl.type||'video',dur:cl.dur||8}));
+      card.style.opacity='0.5';
+    });
+    card.addEventListener('dragend',function(){card.style.opacity='';});
     var icon=cl.type==='audio'?'🎵':cl.type==='image'?'🖼':'🎬';
     card.innerHTML=`<span style="font-size:13px;flex-shrink:0">${icon}</span><div style="flex:1;min-width:0"><div style="font-size:9px;font-weight:600;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${cl.name}</div><div style="font-size:8px;color:rgba(255,255,255,.3)">${ft(cl.dur||8)}</div></div><button class="aab-bin-del" style="background:none;border:none;color:rgba(255,68,68,.4);cursor:pointer;font-size:10px;padding:0 3px;flex-shrink:0">✕</button>`;
     // Bin clip click → SOURCE MONITOR ONLY
@@ -25716,16 +25709,40 @@ function _wireAddBtn(){
 function _pickFiles(type){
   var inp=document.createElement('input');inp.type='file';inp.multiple=true;
   inp.accept=type==='audio'?'audio/*':type==='image'?'image/*':'video/*,audio/*,image/*';
-  inp.onchange=()=>{
-    Array.from(inp.files).forEach(f=>{
+  inp.onchange=function(){
+    Array.from(inp.files).forEach(function(f){
       var url=URL.createObjectURL(f);
       var tp=f.type.startsWith('video')?'video':f.type.startsWith('audio')?'audio':'image';
-      var dur=tp==='audio'?60:tp==='image'?5:10;
-      if(tp==='audio'){var ae=new Audio(url);ae.addEventListener('loadedmetadata',()=>{(window._esBinFiles||[]).filter(x=>x.url===url).forEach(x=>x.dur=ae.duration||60);_binRender();},{once:true});ae.load();}
-      (window._esBinFiles=window._esBinFiles||[]).push({url,name:f.name.slice(0,30),type:tp,dur});
+      var entry={url:url,name:f.name.slice(0,30),type:tp,dur:tp==='audio'?60:tp==='image'?5:10};
+      (window._esBinFiles=window._esBinFiles||[]).push(entry);
+      // Read REAL duration for all types, not just audio
+      if(tp==='video'||tp==='audio'){
+        var probe=tp==='audio'?new Audio(url):document.createElement('video');
+        probe.preload='metadata';
+        probe.addEventListener('loadedmetadata',function(){
+          var realDur=probe.duration;
+          if(realDur&&isFinite(realDur)&&realDur>0){
+            entry.dur=realDur;
+            // Also update any clip in timeline that came from this file
+            if(window.E&&E.tracks){
+              E.tracks.forEach(function(tr){
+                tr.clips.forEach(function(c){if(c.url===url&&(!c._durLocked))c.duration=realDur;});
+              });
+            }
+          }
+          _binRender();
+          try{URL.revokeObjectURL?null:null;}catch(e){}
+        },{once:true});
+        probe.src=url;
+      } else {
+        // image: use 5s default but allow override via drag
+        _binRender();
+      }
     });
-    _binRender();if(typeof toast==='function')toast(inp.files.length+' file(s) added to bin','ok');
-  };inp.click();
+    _binRender();
+    if(typeof toast==='function')toast(inp.files.length+' file(s) added to bin','ok');
+  };
+  inp.click();
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -25839,8 +25856,7 @@ document.addEventListener('keydown',e=>{
     case 'o':case 'O':if(!e.ctrlKey)E_setOut();break;
     case 'l':case 'L':if(!e.ctrlKey)E_toggleLoop();break;
     case 'z':case 'Z':if(e.ctrlKey||e.metaKey){e.preventDefault();e.shiftKey?E_redo():E_undo();}break;
-    case 'y':case 'Y':if(e.ctrlKey||e.metaKey){e.preventDefault();E_redo();}else{AABE&&AABE.setTool('slip');}break;
-    case 'z':case 'Z':if(!e.ctrlKey&&!e.metaKey&&!e.metaKey){if(e.altKey||e.shiftKey){AABE&&AABE.tlZoom(-1);}else{AABE&&AABE.tlZoom(1);}}break;
+    case 'y':case 'Y':if(e.ctrlKey||e.metaKey){e.preventDefault();E_redo();}break;
     case '+':case '=':if(window.E){E.pxPerSec=Math.min(120,E.pxPerSec*1.25);(typeof E_renderTL==="function"?E_renderTL():null);}break;
     case '-':case '_':if(window.E){E.pxPerSec=Math.max(5,E.pxPerSec*.8);(typeof E_renderTL==="function"?E_renderTL():null);}break;
     case 'a':case 'A':if(e.ctrlKey||e.metaKey){e.preventDefault();if(window.E&&E.tracks&&window._esSelClips){window._esSelClips.clear();E.tracks.forEach(t=>t.clips.forEach(c=>window._esSelClips.add(c.id)));document.querySelectorAll('.aab-clip').forEach(c=>c.classList.add('sel'));}}break;
