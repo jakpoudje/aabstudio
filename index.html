@@ -6167,6 +6167,8 @@ window.E_lockTrack=E_lockTrack;
 window.E_delClipFromTrack=E_delClipFromTrack;
 
 function E_razorAt(t){
+  // Snapshot for undo before cutting
+  if(window.AABE&&typeof AABE.snapshot==='function')AABE.snapshot();
   var split=false;
   E.tracks.forEach(function(tr){
     if(tr.locked)return;
@@ -6186,6 +6188,7 @@ window.E_razorAt=E_razorAt;
 
 function E_deleteSelected(){
   if(!E.selectedClipId)return;
+  if(window.AABE&&typeof AABE.snapshot==='function')AABE.snapshot();
   E.tracks.forEach(function(t){
     var i=t.clips.findIndex(function(c){return c.id===E.selectedClipId;});
     if(i>-1){t.clips.splice(i,1);}
@@ -15472,6 +15475,11 @@ function aps_loadSavedPhotos() {
       } catch (e) { }
     }
     window.openAIPresenterStudio = openAIPresenterStudio;
+window.closeAIPresenterStudio = window.closeAIPresenterStudio || function(){
+  var s=document.getElementById('ai-presenter-studio');
+  if(s){s.classList.remove('on');s.style.display='none';}
+  if(window.APS){APS.stopRequested=true;APS.generating=false;}
+};
 // Close APS - stub that calls the internal function or falls back
 window.closeAIPresenterStudio=function(){
   var studio=document.getElementById('ai-presenter-studio');
