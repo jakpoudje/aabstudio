@@ -5910,12 +5910,26 @@ if(typeof _origNavE==="function"&&!window._navEng){window._navEng=true;
 
 window.E=E;window.AABE=E;window.E_build=E_build;window.E_loadClips=E_loadClips;
 E.fit=E_fit; E.selectClip=E_selectClip; E.addClip=E_addClip;
+// Deduplicate clip IDs when timeline renders (catches stale duplicate ids)
+function _deduplicateClipIds(){
+  if(!window.E||!E.tracks)return;
+  var seen={};
+  E.tracks.forEach(function(tr){
+    tr.clips.forEach(function(c){
+      if(seen[c.id]){
+        // give duplicate a new unique id
+        c.id="clip_"+Date.now()+"_"+Math.random().toString(36).slice(2,6);
+      }
+      seen[c.id]=true;
+    });
+  });
+}
 // Debounced wrapper - prevents flicker on rapid calls
 var _rtlTimer=null;
 var _E_renderTL_raw=E_renderTL;
 window.E_renderTL=function(){
   if(_rtlTimer)clearTimeout(_rtlTimer);
-  _rtlTimer=setTimeout(function(){_rtlTimer=null;_E_renderTL_raw();},16);
+  _rtlTimer=setTimeout(function(){_rtlTimer=null;_deduplicateClipIds();_E_renderTL_raw();},16);
 };
 E_renderTL=window.E_renderTL;window.E_fit=E_fit;
 window.E_selectClip=E_selectClip;/* ─── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────── */
@@ -8612,6 +8626,8 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
     <button id="et-T" onclick="AABE.setTool('trim')" class="etl" title="Trim [T]">↔</button>
     <button id="et-Y" onclick="AABE.setTool('slip')" class="etl" title="Slip [Y]">⇆</button>
     <button id="et-H" onclick="AABE.setTool('hand')" class="etl" title="Pan [H]">✋</button>
+    <button id="et-S" onclick="AABE.setTool('slide')" class="etl" title="Slide [S]">↦</button>
+    <button id="et-Z" onclick="(function(e){if(window.AABE){if(e.altKey||e.shiftKey)AABE.tlZoom(-1);else AABE.tlZoom(1);}}).call(this,event)" class="etl" title="Zoom [Z / Alt+Z]">🔍</button>
   </div>
   <!-- Video dropdown -->
   <div class="emenu-wrap" style="height:100%;border-right:.5px solid rgba(255,255,255,.05);flex-shrink:0;">
@@ -25875,7 +25891,9 @@ document.addEventListener('keydown',e=>{
     case 'o':case 'O':if(!e.ctrlKey)E_setOut();break;
     case 'l':case 'L':if(!e.ctrlKey)E_toggleLoop();break;
     case 'z':case 'Z':if(e.ctrlKey||e.metaKey){e.preventDefault();e.shiftKey?E_redo():E_undo();}break;
-    case 'y':case 'Y':if(e.ctrlKey||e.metaKey){e.preventDefault();E_redo();}break;
+    case 'y':case 'Y':if(e.ctrlKey||e.metaKey){e.preventDefault();E_redo();}else if(window.AABE){AABE.setTool('slip');}break;
+    case 's':case 'S':if(!e.ctrlKey&&!e.metaKey&&!e.metaKey&&window.AABE){AABE.setTool('slide');}break;
+    case 'z':case 'Z':if(!e.ctrlKey&&!e.metaKey&&window.AABE){if(e.altKey||e.shiftKey)AABE.tlZoom(-1);else AABE.tlZoom(1);}break;
     case '+':case '=':if(window.E){E.pxPerSec=Math.min(120,E.pxPerSec*1.25);(typeof E_renderTL==="function"?E_renderTL():null);}break;
     case '-':case '_':if(window.E){E.pxPerSec=Math.max(5,E.pxPerSec*.8);(typeof E_renderTL==="function"?E_renderTL():null);}break;
     case 'a':case 'A':if(e.ctrlKey||e.metaKey){e.preventDefault();if(window.E&&E.tracks&&window._esSelClips){window._esSelClips.clear();E.tracks.forEach(t=>t.clips.forEach(c=>window._esSelClips.add(c.id)));document.querySelectorAll('.aab-clip').forEach(c=>c.classList.add('sel'));}}break;
