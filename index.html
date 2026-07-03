@@ -5953,6 +5953,9 @@ if(typeof _origNavE==="function"&&!window._navEng){window._navEng=true;
         STUDIO.stream.getTracks().forEach(function(tk){tk.stop();});
         STUDIO.stream=null;
       }
+      // Stop VU ConstantSource when leaving edit
+      if(window._vuSynthSrc){try{window._vuSynthSrc.stop();window._vuSynthSrc.disconnect();}catch(e){}window._vuSynthSrc=null;}
+      if(window._vuSynthGain){try{window._vuSynthGain.disconnect();}catch(e){}window._vuSynthGain=null;}
       // Also enumerate + stop any orphaned media tracks
       if(navigator.mediaDevices&&typeof navigator.mediaDevices.enumerateDevices==='function'){
         // Stop any srcObject on camera element
@@ -25000,17 +25003,17 @@ function _esUpdateAudio(t){
       if(_pv&&!_pv.paused&&window._masterAnalyser){
         // Inject a synthetic gain signal scaled to video volume
         // so VU meter reflects the actual loudness level
-        if(!window._vuSynthOsc){
+        if(!window._vuSynthSrc){
           try{
             var _ac=getAC();
-            // Use a ConstantSourceNode as proxy signal source
             window._vuSynthGain=_ac.createGain();
             window._vuSynthGain.gain.value=0;
             window._vuSynthGain.connect(_masterGain);
-            window._vuSynthOsc=_ac.createOscillator();
-            window._vuSynthOsc.frequency.value=440;
-            window._vuSynthOsc.connect(window._vuSynthGain);
-            window._vuSynthOsc.start();
+            // ConstantSourceNode outputs DC offset — inaudible, just drives analyser
+            window._vuSynthSrc=_ac.createConstantSource();
+            window._vuSynthSrc.offset.value=1;
+            window._vuSynthSrc.connect(window._vuSynthGain);
+            window._vuSynthSrc.start();
           }catch(e){}
         }
         // Scale synthetic signal to current video volume
