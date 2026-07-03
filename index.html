@@ -5322,8 +5322,8 @@ function E_progToggle(){
     var pv=document.getElementById("e-prog-vid");if(pv&&!pv.paused)pv.pause();
     if(typeof stopAllAudio==="function")stopAllAudio();
     if(typeof stopVUDraw==="function")stopVUDraw();
-    // Silence VU proxy signal on stop
-    try{if(window._vuSynthGain&&typeof getAC==="function")window._vuSynthGain.gain.setTargetAtTime(0,getAC().currentTime,0.05);}catch(e){}
+    // Silence VU proxy instantly on stop
+    try{if(window._vuSynthGain&&typeof getAC==="function"){var _ac3=getAC();window._vuSynthGain.gain.cancelScheduledValues(_ac3.currentTime);window._vuSynthGain.gain.setValueAtTime(0,_ac3.currentTime);}}catch(e){}
     if(btn)btn.innerHTML="&#9654;";
     return;
   }
@@ -5945,7 +5945,7 @@ if(typeof _origNavE==="function"&&!window._navEng){window._navEng=true;
     // Stop VU draw when leaving edit suite
     if(pg!=="edit-pg"&&typeof stopVUDraw==="function")stopVUDraw();
     // Silence VU proxy
-    try{if(pg!=="edit-pg"&&window._vuSynthGain&&typeof getAC==="function")window._vuSynthGain.gain.setTargetAtTime(0,getAC().currentTime,0.05);}catch(e){}
+    try{if(pg!=="edit-pg"&&window._vuSynthGain&&typeof getAC==="function"){var _ac4=getAC();window._vuSynthGain.gain.cancelScheduledValues(_ac4.currentTime);window._vuSynthGain.gain.setValueAtTime(0,_ac4.currentTime);}}catch(e){}
     // Stop mic/camera stream when leaving recording studio
     if(pg!=="record-pg"){
       // Stop STUDIO stream
@@ -25015,10 +25015,11 @@ function _esUpdateAudio(t){
         }
         // Scale synthetic signal to current video volume
         if(window._vuSynthGain){
-          window._vuSynthGain.gain.setTargetAtTime(vol*0.1,getAC().currentTime,0.05);
+          // Responsive level update
+          try{window._vuSynthGain.gain.cancelScheduledValues(getAC().currentTime);window._vuSynthGain.gain.setValueAtTime(vol*0.1,getAC().currentTime);}catch(e){}
         }
       } else if(window._vuSynthGain){
-        window._vuSynthGain.gain.setTargetAtTime(0,getAC().currentTime,0.05);
+        try{window._vuSynthGain.gain.cancelScheduledValues(getAC().currentTime);window._vuSynthGain.gain.setValueAtTime(0,getAC().currentTime);}catch(e){}
       }
     }
   });
