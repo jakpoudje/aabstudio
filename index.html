@@ -5322,6 +5322,8 @@ function E_progToggle(){
     var pv=document.getElementById("e-prog-vid");if(pv&&!pv.paused)pv.pause();
     if(typeof stopAllAudio==="function")stopAllAudio();
     if(typeof stopVUDraw==="function")stopVUDraw();
+    // Silence VU proxy signal on stop
+    try{if(window._vuSynthGain&&typeof getAC==="function")window._vuSynthGain.gain.setTargetAtTime(0,getAC().currentTime,0.05);}catch(e){}
     if(btn)btn.innerHTML="&#9654;";
     return;
   }
@@ -5940,12 +5942,27 @@ if(typeof _origNavE==="function"&&!window._navEng){window._navEng=true;
     }
     var _mxp=document.getElementById("aab-mixer-panel");
     if(_mxp){var _isEdit=(pg==="edit-pg");if(!_isEdit)_mxp.style.display="none";}
+    // Stop VU draw when leaving edit suite
+    if(pg!=="edit-pg"&&typeof stopVUDraw==="function")stopVUDraw();
+    // Silence VU proxy
+    try{if(pg!=="edit-pg"&&window._vuSynthGain&&typeof getAC==="function")window._vuSynthGain.gain.setTargetAtTime(0,getAC().currentTime,0.05);}catch(e){}
     // Stop mic/camera stream when leaving recording studio
-    if(pg!=="record-pg"&&window.STUDIO&&STUDIO.stream){
-      STUDIO.stream.getTracks().forEach(function(tk){tk.stop();});
-      STUDIO.stream=null;
-      var camEl=document.getElementById('studio-cam');if(camEl){camEl.srcObject=null;}
-      if(STUDIO.recording&&typeof stopRec==="function")stopRec();
+    if(pg!=="record-pg"){
+      // Stop STUDIO stream
+      if(window.STUDIO&&STUDIO.stream){
+        STUDIO.stream.getTracks().forEach(function(tk){tk.stop();});
+        STUDIO.stream=null;
+      }
+      // Also enumerate + stop any orphaned media tracks
+      if(navigator.mediaDevices&&typeof navigator.mediaDevices.enumerateDevices==='function'){
+        // Stop any srcObject on camera element
+        var camEl=document.getElementById('studio-cam');
+        if(camEl&&camEl.srcObject){
+          camEl.srcObject.getTracks().forEach(function(tk){tk.stop();});
+          camEl.srcObject=null;
+        }
+      }
+      if(window.STUDIO&&STUDIO.recording&&typeof stopRec==="function")stopRec();
     }
     if(pg==="edit-pg"){setTimeout(function(){
       var ep=document.getElementById("edit-pg");if(!ep)return;
@@ -24976,9 +24993,32 @@ function _esUpdateAudio(t){
   var _pv=typeof _getProgVid==='function'?_getProgVid():null;
   E.tracks.forEach(function(tr){
     if(tr.type==='video'){
-      if(_pv&&!tr.muted){_pv.volume=clamp((tr.volume!=null?tr.volume:100)/100,0,1);}
-      if(_pv&&!_pv.paused&&!_pv._acWired&&typeof getAC==='function'&&typeof _masterGain!=='undefined'){
-        try{var _ac2=getAC();if(_ac2&&_masterGain){_ac2.createMediaElementSource(_pv).connect(_masterGain);_pv._acWired=true;}}catch(e){}
+      // HTML5 volume control (works cross-origin, no CORS needed)
+      var vol=tr.muted?0:clamp((tr.volume!=null?tr.volume:100)/100,0,1);
+      if(_pv){_pv.volume=vol;_pv.muted=tr.muted||false;}
+      // Drive VU meter from video element volume as a proxy signal
+      if(_pv&&!_pv.paused&&window._masterAnalyser){
+        // Inject a synthetic gain signal scaled to video volume
+        // so VU meter reflects the actual loudness level
+        if(!window._vuSynthOsc){
+          try{
+            var _ac=getAC();
+            // Use a ConstantSourceNode as proxy signal source
+            window._vuSynthGain=_ac.createGain();
+            window._vuSynthGain.gain.value=0;
+            window._vuSynthGain.connect(_masterGain);
+            window._vuSynthOsc=_ac.createOscillator();
+            window._vuSynthOsc.frequency.value=440;
+            window._vuSynthOsc.connect(window._vuSynthGain);
+            window._vuSynthOsc.start();
+          }catch(e){}
+        }
+        // Scale synthetic signal to current video volume
+        if(window._vuSynthGain){
+          window._vuSynthGain.gain.setTargetAtTime(vol*0.1,getAC().currentTime,0.05);
+        }
+      } else if(window._vuSynthGain){
+        window._vuSynthGain.gain.setTargetAtTime(0,getAC().currentTime,0.05);
       }
     }
   });
@@ -25592,6 +25632,15 @@ function _buildMixer(){
         dbe.textContent=nd+'dB';dbe.style.color=v>110?'#f97316':v<20?'rgba(255,255,255,.15)':'rgba(255,255,255,.35)';
         // sync track slider
         document.querySelectorAll('.aab-track-row').forEach(row2=>{var nm2=row2.querySelector('.aab-track-name');if(!nm2)return;if(nm2.textContent.trim().indexOf(tr.name||tr.id)>-1){var sl2=row2.querySelector('input[type=range]');if(sl2)sl2.value=v;}});
+        // Directly control video/audio element volume for this track
+        if(tr.id==='main'||tr.id==='broll'||tr.id==='main-video'){
+          var pv=typeof _getProgVid==='function'?_getProgVid():null;
+          if(pv)pv.volume=clamp(v/100,0,1);
+        }
+        // Synthetic VU proxy for video tracks
+        if(window._vuSynthGain&&(tr.id==='main'||tr.id==='broll')){
+          window._vuSynthGain.gain.setTargetAtTime(clamp(v/100,0,1)*0.1,getAC().currentTime,0.05);
+        }
       });
       row.appendChild(sw);row.appendChild(lbl);row.appendChild(mb);row.appendChild(fdr);row.appendChild(dbe);
       p.appendChild(row);
