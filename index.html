@@ -5432,7 +5432,23 @@ function E_renderTL(){
     }
     // Add track button
     var addTrk=_el("button","aab-track-btn");addTrk.textContent="➕";addTrk.style.cssText="font-size:9px;padding:1px 3px;cursor:pointer;opacity:.5;margin-left:auto;";
-    addTrk.title="Add track";addTrk.onclick=function(e){e.stopPropagation();_aabAddTrack(track.type);};ctrl.appendChild(addTrk);
+    addTrk.title="Add clip to track / Add track (Alt+click)";addTrk.onclick=function(e){e.stopPropagation();
+      if(e.altKey){
+        _aabAddTrack(track.type); // Alt+click adds new track
+      } else {
+        // Click opens file picker to add clip to THIS track
+        var inp=document.createElement('input');inp.type='file';inp.accept=track.type==='audio'?'audio/*':track.type==='video'?'video/*':'image/*,video/*,audio/*';
+        inp.onchange=function(){
+          var f=inp.files[0];if(!f)return;
+          var url=URL.createObjectURL(f);
+          var tp=f.type.startsWith('video')?'video':f.type.startsWith('audio')?'audio':'image';
+          var entry={url:url,name:f.name.slice(0,30),type:tp,dur:10};
+          var probe=tp!=='image'?document.createElement(tp==='audio'?'audio':'video'):null;
+          if(probe){probe.preload='metadata';probe.addEventListener('loadedmetadata',function(){entry.dur=probe.duration||10;E_addClip&&E_addClip(entry,track.id,window._esPH||0);E_renderTL&&E_renderTL();},{once:true});probe.src=url;}else{E_addClip&&E_addClip(entry,track.id,window._esPH||0);E_renderTL&&E_renderTL();}
+          if(typeof toast==="function")toast(f.name+' added to '+track.name,'ok');
+        };inp.click();
+      }
+    };ctrl.appendChild(addTrk);
     // Delete track button (not for main video)
     if(track.id!=="main"){
       var delTrk=_el("button","aab-track-btn");delTrk.textContent="\uD83D\uDDD1";delTrk.style.cssText="font-size:9px;padding:1px 3px;cursor:pointer;opacity:.4;";
@@ -5517,6 +5533,31 @@ function E_renderTL(){
         ti2.onclick=function(e){e.stopPropagation();E_transPicker(clip,e);};ce2.appendChild(ti2);
       }
       ce2.onclick=function(e){e.stopPropagation();E_selectClip(clip,track);};
+      // Right-click context menu on clips
+      ce2.addEventListener('contextmenu',function(e){
+        e.preventDefault();e.stopPropagation();
+        var old=document.getElementById('aab-clip-ctx');if(old)old.remove();
+        var menu=document.createElement('div');menu.id='aab-clip-ctx';
+        menu.style.cssText='position:fixed;z-index:9999;background:#1e293b;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:4px 0;min-width:160px;box-shadow:0 8px 24px rgba(0,0,0,.5);';
+        menu.style.left=Math.min(e.clientX,window.innerWidth-180)+'px';menu.style.top=Math.min(e.clientY,window.innerHeight-200)+'px';
+        [
+          {icon:'✂',label:'Split at playhead',fn:function(){AABE.snapshot&&AABE.snapshot();E_razorAt(window._esPH);E_renderTL&&E_renderTL();}},
+          {icon:'🗑',label:'Delete clip',fn:function(){AABE.snapshot&&AABE.snapshot();track.clips=track.clips.filter(function(c){return c.id!==clip.id;});E_renderTL&&E_renderTL();toast&&toast('Clip deleted','ok');}},
+          {icon:'⧉',label:'Duplicate',fn:function(){AABE.snapshot&&AABE.snapshot();var nc=JSON.parse(JSON.stringify(clip));nc.id='c'+Date.now();nc.start=clip.start+clip.duration+0.1;track.clips.push(nc);E_renderTL&&E_renderTL();}},
+          {icon:'🔇',label:clip.muted?'Unmute clip':'Mute clip',fn:function(){clip.muted=!clip.muted;E_renderTL&&E_renderTL();}},
+          {icon:'⟿',label:'Transition…',fn:function(){E_selectClip(clip,track);E_transPicker&&E_transPicker(clip,null);}}
+        ].forEach(function(item){
+          var mi=document.createElement('div');
+          mi.style.cssText='padding:8px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:12px;color:#e2e8f0;transition:background .1s;';
+          mi.innerHTML='<span>'+item.icon+'</span><span>'+item.label+'</span>';
+          mi.onmouseenter=function(){this.style.background='rgba(255,255,255,.07)';};
+          mi.onmouseleave=function(){this.style.background='';};
+          mi.onclick=function(){item.fn();menu.remove();};
+          menu.appendChild(mi);
+        });
+        document.body.appendChild(menu);
+        setTimeout(function(){document.addEventListener('click',function rm(){menu.remove();document.removeEventListener('click',rm);});},10);
+      });
       ce2.addEventListener("mousedown",function(e){
         var _t=E.activeTool||"select";
         if(_t==="hand"){e.stopPropagation();return;}
@@ -5899,6 +5940,13 @@ if(typeof _origNavE==="function"&&!window._navEng){window._navEng=true;
     }
     var _mxp=document.getElementById("aab-mixer-panel");
     if(_mxp){var _isEdit=(pg==="edit-pg");if(!_isEdit)_mxp.style.display="none";}
+    // Stop mic/camera stream when leaving recording studio
+    if(pg!=="record-pg"&&window.STUDIO&&STUDIO.stream){
+      STUDIO.stream.getTracks().forEach(function(tk){tk.stop();});
+      STUDIO.stream=null;
+      var camEl=document.getElementById('studio-cam');if(camEl){camEl.srcObject=null;}
+      if(STUDIO.recording&&typeof stopRec==="function")stopRec();
+    }
     if(pg==="edit-pg"){setTimeout(function(){
       var ep=document.getElementById("edit-pg");if(!ep)return;
       if(!ep.querySelector(".aab-edit-body")){E_build();}
@@ -19438,6 +19486,33 @@ window.closeAIPresenterStudio=function(){
   var sb=document.getElementById('aps-stop-btn');if(sb)sb.style.display='none';
 };
 
+// ── Global functions wired to UI buttons ─────────────────────────────────
+// Transition panel builder — called by ⬌ Transitions toolbar button
+window._buildTransPanel = window._buildTransPanel || function(){
+  // Toggle the transitions dropdown
+  if(window.AABE&&typeof AABE.dd==='function')AABE.dd('dd-tr');
+  else{var dd=document.getElementById('dd-tr');if(dd)dd.style.display=dd.style.display==='block'?'none':'block';}
+};
+
+// Recording studio settings toggle — called by ⚙ button
+window.toggleStudioSettings = window.toggleStudioSettings || function(){
+  var panel=document.getElementById('studio-settings')||document.querySelector('.studio-settings-panel');
+  if(panel){panel.style.display=panel.style.display==='flex'?'none':'flex';return;}
+  // Settings don't have a dedicated panel yet — show available settings in a toast menu
+  toast&&toast('Settings: Use Background, Lighting, and Annotate controls below','info');
+};
+
+// Pricing / checkout — called by upgrade buttons
+window.startCheckout = window.startCheckout || function(plan){
+  // Redirect to pricing page or open modal
+  var pricingUrl='/pricing';
+  try{
+    if(window.location.href.includes('aabstudio.ai'))
+      pricingUrl='https://aabstudio.ai/pricing';
+  }catch(e){}
+  window.open(pricingUrl,'_blank');
+};
+
 /* ── Edit Suite: CSS fixes for track names, monitors, performance ── */
 setTimeout(function(){
   if(typeof E_build==='function'&&document.getElementById('edit-pg')&&
@@ -25443,7 +25518,8 @@ function _buildMixer(){
   if(_mixPos.x!=null){p.style.left=_mixPos.x+'px';p.style.top=_mixPos.y+'px';}
   else{p.style.right='16px';p.style.bottom='80px';}
   // Pre-wire all gains
-  if(window.E&&E.tracks)E.tracks.forEach(tr=>{var g=tGain(tr.id);g.gain.value=tr.muted?0:clamp((tr.volume!=null?tr.volume:100)/100,0,1.5);});
+  // Pre-wire gain nodes for audio tracks only
+  if(window.E&&E.tracks)E.tracks.filter(function(tr){return ['main','broll','voice','music','sfx'].includes(tr.id)||tr.type==='audio'||tr.type==='video';}).forEach(function(tr){var g=typeof tGain==='function'?tGain(tr.id):null;if(g)g.gain.value=tr.muted?0:clamp((tr.volume!=null?tr.volume:100)/100,0,1.5);});
   // Header with drag
   var hdr=document.createElement('div');hdr.className='mix-drag';
   hdr.innerHTML='<span style="font-size:10px;font-weight:700;color:rgba(255,255,255,.55);display:flex;align-items:center;gap:6px"><span style="opacity:.35;font-size:16px">⠿⠿</span>🎚 MIXER</span><button onclick="this.closest(\'#aab-mixer-panel\').style.display=\'none\'" style="background:none;border:none;color:rgba(255,255,255,.4);cursor:pointer;font-size:16px;line-height:1">✕</button>';
@@ -25490,8 +25566,10 @@ function _buildMixer(){
   vuRow.appendChild(resetBtn);
   p.appendChild(vuRow);
   // Track rows
+  // Tracks that carry audio (skip visual-only tracks)
+  var AUDIO_TRACKS=['main','broll','voice','music','sfx'];
   if(window.E&&E.tracks){
-    E.tracks.forEach(tr=>{
+    E.tracks.filter(function(tr){return AUDIO_TRACKS.includes(tr.id)||tr.type==='audio'||tr.type==='video';}).forEach(tr=>{
       var vol=tr.volume!=null?tr.volume:80;
       var db=Math.round(20*Math.log10(Math.max(.001,vol/100)));
       var col=tr.color||'#64748b';
@@ -25505,7 +25583,9 @@ function _buildMixer(){
       var dbe=document.createElement('div');dbe.id='mixdb-'+tr.id;dbe.className='mix-db';dbe.textContent=db+'dB';
       fdr.addEventListener('input',()=>{
         var v=+fdr.value;tr.volume=v;
-        if(_trackGains[tr.id])_trackGains[tr.id].gain.value=tr.muted?0:clamp(v/100,0,1.5);
+        // Ensure gain node exists via tGain(), then update it
+        var _g=typeof tGain==='function'?tGain(tr.id):(_trackGains&&_trackGains[tr.id]);
+        if(_g)_g.gain.value=tr.muted?0:clamp(v/100,0,1.5);
         if(tr.clips)tr.clips.forEach(c=>{if(c._audioEl)c._audioEl.volume=clamp(v/100,0,1);});
         var pv=_getProgVid();if(pv&&(tr.id==='main'||tr.id==='main-video'))pv.volume=clamp(v/100,0,1);
         var nd=Math.round(20*Math.log10(Math.max(.001,v/100)));
@@ -25858,24 +25938,99 @@ function _wireExport(){Array.from(document.querySelectorAll('button')).filter(b=
    AABE METHOD STUBS
    ═══════════════════════════════════════════════════════════════════════════ */
 if(window.AABE){
-  AABE.filter=t=>{toast&&toast('Filter: '+t+' (applies on export)','info');};
+  AABE.filter=function(filt){
+    var selId=window.E&&E.selectedClipId;
+    if(!selId){toast&&toast('Select a clip first','info');return;}
+    var clip=null;E.tracks.forEach(function(tr){tr.clips.forEach(function(c){if(c.id===selId)clip=c;});});
+    if(!clip){toast&&toast('Select a clip first','info');return;}
+    if(window.AABE&&typeof AABE.snapshot==='function')AABE.snapshot();
+    clip.filter=filt;
+    // Apply visual CSS filter to clip element
+    var el=document.querySelector('[data-cid="'+selId+'"]');
+    var filterMap={cinematic:'contrast(1.2) saturate(0.8) brightness(0.9)',
+      warm:'sepia(0.3) saturate(1.4) hue-rotate(-10deg)',
+      cool:'saturate(0.8) hue-rotate(20deg) brightness(1.05)',
+      bw:'grayscale(1)',vignette:'brightness(0.85)',grain:'contrast(1.1)'};
+    if(el&&filterMap[filt])el.style.filter=filterMap[filt];
+    E_renderTL&&E_renderTL();
+    toast&&toast('Filter: '+filt,'ok');
+  };
   AABE.toggleSnap=()=>{if(window.E)E.snap=!E.snap;toast&&toast('Snap '+(window.E&&E.snap?'ON':'OFF'),'info');};
   AABE.toggleSubs=()=>E_toggleCC();
   AABE.multiSelect=()=>{toast&&toast('Multi-select: Shift+click or Ctrl+A','info');};
   AABE.duplicate=()=>window._esSelClips&&window._esSelClips.size>0?(()=>{if(window.E&&E.tracks){_snapshotTracks();E.tracks.forEach(tr=>{var add=[];tr.clips.forEach(c=>{if(window._esSelClips.has(c.id)){var nc=JSON.parse(JSON.stringify(c));nc.id='c'+Date.now();nc.start=c.start+c.duration+.1;add.push(nc);}});add.forEach(c=>tr.clips.push(c));});(typeof E_renderTL==="function"?E_renderTL():null);}})():toast&&toast('Select clips first','info');
   AABE.rippleDel=()=>{var sel=window._esSelClips;if(!sel||!sel.size){toast&&toast('Select clips first','info');return;}_snapshotTracks();if(window.E&&E.tracks){E.tracks.forEach(tr=>{var rem=tr.clips.filter(c=>sel.has(c.id));tr.clips=tr.clips.filter(c=>!sel.has(c.id));rem.forEach(r=>{tr.clips.forEach(c=>{if(c.start>=r.start+r.duration)c.start-=r.duration;});});});sel.clear();(typeof E_renderTL==="function"?E_renderTL():null);}};
   AABE.split=()=>E_razorAt(window._esPH);
-  AABE.freeze=()=>{toast&&toast('Freeze: extend clip end for still','info');};
+  AABE.freeze=function(){
+    var selId=window.E&&E.selectedClipId;
+    if(!selId){toast&&toast('Select a clip first','info');return;}
+    var clip=null,track=null;
+    E.tracks.forEach(function(tr){tr.clips.forEach(function(c){if(c.id===selId){clip=c;track=tr;}});});
+    if(!clip||!track){toast&&toast('Select a clip first','info');return;}
+    if(window.AABE&&typeof AABE.snapshot==='function')AABE.snapshot();
+    // Insert a 2-second freeze (same url, frozen at current playhead)
+    var freezeTime=window._esPH||0;
+    var freezeClip={id:'frz'+Date.now(),name:'Freeze: '+clip.name,url:clip.url,
+      type:'video',start:freezeTime,duration:2,frozen:true,frozenAt:freezeTime-clip.start,
+      color:clip.color||'#94a3b8'};
+    // Insert after selected clip
+    var idx=track.clips.indexOf(clip);
+    track.clips.splice(idx+1,0,freezeClip);
+    // Shift subsequent clips
+    track.clips.slice(idx+2).forEach(function(c){c.start+=2;});
+    E_renderTL&&E_renderTL();
+    toast&&toast('Freeze frame (2s) inserted','ok');
+  };
   AABE.speedDialog=()=>{var s=parseFloat(prompt('Speed multiplier (0.5=half, 2=double):','1'));if(isNaN(s)||s<=0)return;var sel=window._esSelClips;if(sel&&sel.size&&window.E&&E.tracks){_snapshotTracks();E.tracks.forEach(tr=>tr.clips.forEach(c=>{if(sel.has(c.id)){c.speed=s;c.duration=c.duration/s;}}));(typeof E_renderTL==="function"?E_renderTL():null);toast&&toast('Speed: '+s+'x','ok');}};
   AABE.addMarker=()=>{if(!window._esMarkers)window._esMarkers=[];window._esMarkers.push({t:window._esPH,l:'M'+ft(window._esPH)});toast&&toast('Marker at '+ft(window._esPH),'ok');};
   AABE.exportSRT=()=>{var subs=window.E&&E.tracks?E.tracks.find(t=>t.id==='subs'):null;if(!subs||!subs.clips.length){toast&&toast('No subtitles','warn');return;}var s='';subs.clips.forEach((c,i)=>{var st=c.start||0,en=st+(c.duration||4);function tc(t){var h=Math.floor(t/3600),m=Math.floor((t%3600)/60),ss=Math.floor(t%60),ms=Math.round((t%1)*1000);return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(ss).padStart(2,'0')+','+String(ms).padStart(3,'0');}s+=(i+1)+'\n'+tc(st)+' --> '+tc(en)+'\n'+(c.narration||c.text||c.name||'...')+'\n\n';});var url=URL.createObjectURL(new Blob([s],{type:'text/plain'}));var a=document.createElement('a');a.href=url;a.download='subtitles.srt';document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(()=>URL.revokeObjectURL(url),3000);toast&&toast('SRT exported','ok');};
-  AABE.autoCaption=()=>{toast&&toast('Auto-caption: generate from AI Presenter','info');};
+  AABE.autoCaption=function(){
+    if(!window.E||!E.tracks){toast&&toast('No timeline','warn');return;}
+    var subTrack=E.tracks.find(function(t){return t.id==='subs';});
+    if(!subTrack){toast&&toast('No subtitle track','warn');return;}
+    var mainTrack=E.tracks.find(function(t){return t.id==='main';});
+    if(!mainTrack||!mainTrack.clips.length){toast&&toast('No clips to caption','warn');return;}
+    if(window.AABE&&typeof AABE.snapshot==='function')AABE.snapshot();
+    var added=0;
+    mainTrack.clips.forEach(function(c){
+      if(c.narration||c.name){
+        var existing=subTrack.clips.some(function(s){return Math.abs(s.start-c.start)<0.1;});
+        if(!existing){
+          subTrack.clips.push({id:'cc_'+c.id,name:c.narration||c.name,
+            narration:c.narration||c.name,type:'subtitle',
+            start:c.start,duration:c.duration,color:'#ffffff'});
+          added++;
+        }
+      }
+    });
+    subTrack.clips.sort(function(a,b){return a.start-b.start;});
+    E_renderTL&&E_renderTL();
+    toast&&toast(added>0?added+' captions generated':'Captions already exist','ok');
+  };
   AABE.masterVol=v=>{if(_masterGain)_masterGain.gain.value=clamp(v/100,0,1.5);};
   AABE.addText=()=>{var txt=prompt('Text overlay:','Your text here');if(!txt)return;var ovlTr=window.E&&E.tracks?E.tracks.find(t=>t.id==='overlays'):null;if(!ovlTr){toast&&toast('No Text Overlays track','warn');return;}_snapshotTracks();ovlTr.clips.push({id:'txt'+Date.now(),name:txt,text:txt,type:'text',start:window._esPH||0,duration:4,color:'#ffffff',ovlX:.5,ovlY:.8,align:'center'});(typeof E_renderTL==="function"?E_renderTL():null);toast&&toast('Text overlay added','ok');};
   AABE.addOverlay=()=>AABE.import('image');
   AABE.cycleQuality=()=>{var o=['HD 1080p','HD 720p','SD 480p'];window._esQIdx=((window._esQIdx||0)+1)%3;var el=document.querySelector('[onclick*="cycleQuality"]');if(el)el.textContent=o[window._esQIdx];toast&&toast('Quality: '+o[window._esQIdx],'info');};
   AABE.cycleRatio=()=>{var o=['16:9','9:16','1:1','4:3'];window._esRIdx=((window._esRIdx||0)+1)%4;var el=document.querySelector('[onclick*="cycleRatio"]');if(el)el.textContent=o[window._esRIdx];toast&&toast('Ratio: '+o[window._esRIdx],'info');};
-  AABE.audio=()=>{toast&&toast('Use Mixer panel for audio levels','info');};
+  AABE.audio=function(op){
+    var selId=window.E&&E.selectedClipId;
+    if(!selId){toast&&toast('Select a clip first','info');return;}
+    var clip=null,track=null;
+    E.tracks.forEach(function(tr){tr.clips.forEach(function(c){if(c.id===selId){clip=c;track=tr;}});});
+    if(!clip){toast&&toast('Select a clip first','info');return;}
+    if(window.AABE&&typeof AABE.snapshot==='function')AABE.snapshot();
+    if(op==='mute'){clip.muted=!clip.muted;toast&&toast(clip.muted?'Clip muted':'Clip unmuted','ok');}
+    else if(op==='normalize'){clip.volume=100;toast&&toast('Normalized to 100%','ok');}
+    else if(op==='fade-in'){clip.fadeIn=true;toast&&toast('Fade in added','ok');}
+    else if(op==='fade-out'){clip.fadeOut=true;toast&&toast('Fade out added','ok');}
+    else if(op==='crossfade'){clip.transitionIn='crossfade';clip.transitionOut='crossfade';toast&&toast('Crossfade added','ok');}
+    // Update gain node if track is in audio engine
+    if(track&&typeof tGain==='function'){
+      var g=tGain(track.id);
+      if(g)g.gain.value=clip.muted?0:clamp((clip.volume||100)/100,0,1.5);
+    }
+    E_renderTL&&E_renderTL();
+  };
   AABE.binTab=AABE.binTab||function(tab){document.querySelectorAll('.ebin-tab').forEach(b=>b.classList.remove('on'));document.querySelectorAll('[id^=ebin-]').forEach(p=>p.style.display='none');var b2=document.querySelector('[onclick*="binTab(\''+tab+'\')"]');if(b2)b2.classList.add('on');var p2=$('ebin-'+tab);if(p2)p2.style.display='flex';};
   AABE.setTool=t=>E_setTool(t);AABE.safeZones=()=>E_toggleSafeZones();AABE.cc=()=>E_toggleCC();
   AABE.import=t=>_pickFiles(t);AABE.resizeStart=()=>{};
@@ -25883,6 +26038,15 @@ if(window.AABE){
   AABE.srcToggle=()=>E_srcToggle();AABE.srcJump=d=>E_srcJump(d);AABE.srcStep=d=>E_srcStep(d);
   AABE.srcToTimeline=()=>E_srcToTimeline();AABE.srcFullscreen=()=>{var v=$('e-src-vid');if(v&&v.requestFullscreen)v.requestFullscreen();};
   AABE.progFullscreen=()=>{var v=_getProgVid();if(v&&v.requestFullscreen)v.requestFullscreen();};
+  AABE.tlZoom=function(dir){
+    if(!window.E)return;
+    var step=1.3;
+    E.pxPerSec=Math.max(5,Math.min(300,dir>0?E.pxPerSec*step:E.pxPerSec/step));
+    E_renderTL&&E_renderTL();
+    // Update zoom display
+    var zd=document.getElementById('e-zoom-level');
+    if(zd)zd.textContent=Math.round(E.pxPerSec/60*100)+'%';
+  };
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
