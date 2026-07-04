@@ -6009,7 +6009,7 @@ function _wireTimelineEvents() {
 
   // RIGHT-CLICK CONTEXT MENU
   tl.addEventListener('contextmenu', function(ev) {
-    var ce = ev.target.closest('.ce2'); if (!ce) return;
+    var ce = ev.target.closest('.ce2,.aab-clip'); if (!ce) return;
     ev.preventDefault(); ev.stopPropagation();
     var clipId = ce.dataset.clipId, trackId = ce.dataset.trackId;
     if (!clipId || !window.E) return;
@@ -6098,7 +6098,13 @@ var _rtlTimer=null;
 var _E_renderTL_raw=E_renderTL;
 window.E_renderTL=function(){
   if(_rtlTimer)clearTimeout(_rtlTimer);
-  _rtlTimer=setTimeout(function(){_rtlTimer=null;_deduplicateClipIds();_E_renderTL_raw();},16);
+  _rtlTimer=setTimeout(function(){
+    _rtlTimer=null;
+    _deduplicateClipIds();
+    _E_renderTL_raw();
+    // Re-wire delegation after clips re-render (reset flag so it re-attaches if tl-wrap was replaced)
+    if(typeof _wireTimelineEvents==='function')_wireTimelineEvents();
+  },16);
 };
 E_renderTL=window.E_renderTL;window.E_fit=E_fit;
 window.E_selectClip=E_selectClip;/* ─── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────── */
@@ -6217,7 +6223,7 @@ setTimeout(function(){
     // Post-nav hooks
     if(pg==='record-pg'){setTimeout(function(){if(typeof startCamera==='function'&&typeof STUDIO!=='undefined'&&!STUDIO.stream)startCamera();},600);}
     if(pg==='edit-pg'){setTimeout(function(){
-    if(typeof E_build==='function')E_build();
+    if(typeof E_build==='function'){window._tlEventsWired=false;E_build();}
     // Reset playhead to 0 if past all clips
     var _td=typeof totalDur==='function'?totalDur():0;
     if(window._esPH>0&&window._esPH>=_td){window._esPH=0;if(window.E){E.playhead=0;E.currentTime=0;}if(typeof movePH==='function')movePH(0);}
