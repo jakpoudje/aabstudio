@@ -5462,8 +5462,8 @@ function E_renderTL(){
     lane.style.height=track.h+"px";
     // Drop target for bin clips
     if(!track.locked){
-      lane.addEventListener("dragover",function(ev){ev.preventDefault();ev.dataTransfer.dropEffect="copy";lane.style.outline="1px dashed rgba(0,212,255,.6)";});
-      lane.addEventListener("dragleave",function(){lane.style.outline="";});
+      lane.addEventListener("dragover",function(ev){ev.preventDefault();ev.dataTransfer.dropEffect="copy";lane.style.cursor='copy';});
+      lane.addEventListener("dragleave",function(){lane.style.cursor='';});
       lane.addEventListener("drop",function(ev){
         ev.preventDefault();lane.style.outline="";
         var raw = ev.dataTransfer.getData("application/aab-clip");
@@ -5564,9 +5564,9 @@ function E_renderTL(){
           clipId:clip.id, trackId:track.id, url:clip.url, name:clip.name,
           type:clip.type||track.type, duration:clip.duration, start:clip.start
         }));
-        ce2.style.opacity = '0.5';
+        // Don't change opacity — browser drag ghost handles visual feedback
       });
-      ce2.addEventListener('dragend', function(){ce2.style.opacity='';});
+      ce2.addEventListener('dragend', function(){window._draggingClipId=null;});
       // Context menu → delegation in _wireTimelineEvents
       ce2.addEventListener("mousedown",function(e){
         var _t=E.activeTool||"select";
@@ -24050,8 +24050,8 @@ window.E_selectClip = function(clipId){
     selEl.classList.add('aab-clip-selected');
     selEl.style.outline = '2px solid #00d4ff';
   }
-  // Load in source monitor
-  if(clip && clip.url && clip.url.length > 30){
+  // Load in source monitor (only when not dragging — prevents flash during drag)
+  if(!window._draggingClipId && clip && clip.url && clip.url.length > 30){
     var sv = document.getElementById('e-src-vid');
     if(sv){
       sv.src = clip.url;
@@ -25241,7 +25241,7 @@ function _esClipAt(t){
   E.tracks.forEach(tr=>{
     if(tr.type==='audio'||tr.type==='subtitle'||tr.type==='text')return;
     if((tr.type!=='video'&&tr.id!=='main'&&tr.id!=='main-video'&&tr.id!=='broll')||tr.muted||tr.hidden)return;
-    tr.clips.forEach(c=>{if(c.url&&c.url.length>10&&!c.muted&&t>=(c.start||0)&&t<(c.start||0)+(c.duration||0))found=c;});
+    tr.clips.forEach(c=>{if(c.url&&c.url.length>10&&!c.muted&&t>=(c.start||0)-0.01&&t<(c.start||0)+(c.duration||0)+0.01)found=c;});
   });
   return found;
 }
@@ -25253,7 +25253,8 @@ function _esUpdateProg(t){
   var pv=_getProgVid(); if(!pv)return;
   var clip=_esClipAt(t);
   if(!clip){
-    pv.style.display='none'; if(!pv.paused)pv.pause();
+    // Keep video visible with last frame — only pause, don't hide (avoids flash between clips)
+    if(!pv.paused)pv.pause();
     var pe=$('e-prog-empty')||$('aab-prog-empty');
     if(pe){pe.style.display='';pe.classList.remove('hidden');}
     return;
@@ -25290,7 +25291,7 @@ function _esUpdateProg(t){
   if(window._esPlaying){
     if(!pv._rdy)return;
     if(pv.paused){pv.currentTime=cT;pv.muted=false;pv.volume=1;pv.play().catch(()=>{});}
-    else if(Math.abs(pv.currentTime-cT)>0.6)pv.currentTime=cT;
+    else if(Math.abs(pv.currentTime-cT)>2.0)pv.currentTime=cT; // Only seek if badly off-sync
   } else {
     if(!pv.paused)pv.pause();
     if(Math.abs(pv.currentTime-cT)>0.05)pv.currentTime=cT;
@@ -25977,9 +25978,9 @@ function _binRender(){
     card.addEventListener('dragstart',function(ev){
       ev.dataTransfer.effectAllowed='copy';
       ev.dataTransfer.setData('application/aab-clip',JSON.stringify({url:cl.url,name:cl.name,type:cl.type||'video',dur:cl.dur||8}));
-      card.style.opacity='0.5';
+      card.style.cursor='grabbing';
     });
-    card.addEventListener('dragend',function(){card.style.opacity='';});
+    card.addEventListener('dragend',function(){card.style.cursor='';});
     var icon=cl.type==='audio'?'🎵':cl.type==='image'?'🖼':'🎬';
     // Build card with video thumbnail for video clips
     if(cl.type==='video'&&cl.url){
