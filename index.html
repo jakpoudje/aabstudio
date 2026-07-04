@@ -6346,6 +6346,37 @@ function E_delClipFromTrack(trackId,clipId){
 }
 window.E_muteTrack=E_muteTrack;
 window.E_soloTrack=E_soloTrack;
+
+// ── Patch mute+solo to instantly update tGain nodes ──────────────────────
+(function(){
+  var _origMute=window.E_muteTrack;
+  window.E_muteTrack=function(tid){
+    _origMute(tid);
+    if(typeof tGain==='function'&&window.E){
+      var _tr=E.tracks.find(function(t){return t.id===tid;});
+      if(_tr){
+        var g=tGain(tid);
+        if(g)g.gain.value=_tr.muted?0:clamp((_tr.volume!=null?_tr.volume:100)/100,0,1.5);
+        // Video track: also update pv.volume immediately
+        if(_tr.type==='video'&&typeof _getProgVid==='function'){
+          var _pv=_getProgVid();
+          if(_pv)_pv.muted=!!_tr.muted;
+        }
+      }
+    }
+  };
+  var _origSolo=window.E_soloTrack;
+  window.E_soloTrack=function(tid){
+    _origSolo(tid);
+    // Update all tGain nodes instantly after solo change
+    if(typeof tGain==='function'&&window.E&&typeof clamp==='function'){
+      E.tracks.forEach(function(tr){
+        var g=tGain(tr.id);
+        if(g)g.gain.value=tr.muted?0:clamp((tr.volume!=null?tr.volume:100)/100,0,1.5);
+      });
+    }
+  };
+}());
 window.E_lockTrack=E_lockTrack;
 window.E_delClipFromTrack=E_delClipFromTrack;
 
@@ -6425,19 +6456,150 @@ function E_renderWaveform(clip,canvas){
 window.E_renderWaveform=E_renderWaveform;
 /* ── Timeline Export ── */
 window.E_exportTimeline=async function(){
+  if(!window.E){toast&&toast('No timeline','error');return;}
   var has=E.tracks.some(function(t){return t.clips&&t.clips.length>0;});
-  if(!has){if(typeof toast==='function')toast('No clips on timeline','error');return;}
-  var clips=[];
-  E.tracks.forEach(function(tr){(tr.clips||[]).forEach(function(c){if(c.url&&c.url.match(/^https?:/))clips.push({url:c.url,start:c.start,duration:c.duration,track:tr.id});});});
-  if(!clips.length){if(typeof toast==='function')toast('No cloud clips to export — generate AI videos first','error');return;}
-  clips.sort(function(a,b){return a.start-b.start;});
-  if(typeof toast==='function')toast('Preparing export...','info');
+  if(!has){toast&&toast('No clips on timeline','error');return;}
+
+  // Build full timeline manifest — all tracks, all data
+  var manifest={
+    title:(window.PROJECT&&window.PROJECT.title)||'export',
+    totalDuration:typeof totalDur==='function'?totalDur():0,
+    tracks:E.tracks.map(function(tr){
+      return {
+        id:tr.id, type:tr.type||'video',
+        muted:!!tr.muted, volume:(tr.volume!=null?tr.volume:100),
+        clips:(tr.clips||[]).map(function(c){
+          return {
+            id:c.id, url:c.url||'', name:c.name||'',
+            type:c.type||tr.type||'video',
+            start:c.start||0, duration:c.duration||0,
+            muted:!!c.muted, volume:c.volume!=null?c.volume:100,
+            transitionIn:c.transitionIn||null,
+            transitionOut:c.transitionOut||null,
+            filter:c.filter||null,
+            narration:c.narration||null,
+            opacity:c.opacity!=null?c.opacity:1
+          };
+        })
+      };
+    })
+  };
+
+  toast&&toast('Preparing export...','info');
+
+  // Try backend first
   try{
-    var resp=await fetch((window.API||'https://aabstudio-production.up.railway.app')+'/api/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clips:clips,title:(window.PROJECT&&window.PROJECT.title)||'export'})});
-    if(resp.ok){var d=await resp.json();if(d.url){var a=document.createElement('a');a.href=d.url;a.download='export.mp4';a.target='_blank';a.click();if(typeof toast==='function')toast('Export ready!','ok');return;}}
-  }catch(e){}
-  var a2=document.createElement('a');a2.href=clips[0].url;a2.download='clip.mp4';a2.target='_blank';a2.click();
-  if(typeof toast==='function')toast('Downloading first clip...','info');
+    var resp=await fetch((window.API||'https://aabstudio-production.up.railway.app')+'/api/export',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+(window._sbSession?.access_token||'')},
+      body:JSON.stringify(manifest)
+    });
+    if(resp.ok){
+      var d=await resp.json();
+      if(d.url){
+        var a=document.createElement('a');a.href=d.url;a.download=(manifest.title||'export').replace(/[^a-z0-9]/gi,'_')+'.mp4';
+        document.body.appendChild(a);a.click();document.body.removeChild(a);
+        toast&&toast('Export ready — downloading!','ok');return;
+      }
+    } else {
+      console.warn('[Export] Backend returned',resp.status,'— falling back to MediaRecorder');
+    }
+  }catch(e){console.warn('[Export] Backend error:',e.message);}
+
+  // === FALLBACK: MediaRecorder screen capture of the program monitor ===
+  // This captures exactly what you see — video + overlays + subtitles
+  toast&&toast('Backend export unavailable — recording screen ('+Math.round(manifest.totalDuration)+'s)...','info',5000);
+
+  var progVid=typeof _getProgVid==='function'?_getProgVid():null;
+  if(!progVid){toast&&toast('No program video found','error');return;}
+
+  try{
+    // Capture the program monitor canvas
+    var canvas=document.createElement('canvas');
+    canvas.width=1280;canvas.height=720;
+    var ctx=canvas.getContext('2d');
+    var ac=typeof getAC==='function'?getAC():null;
+    var dest=ac?ac.createMediaStreamDestination():null;
+
+    // Wire audio into the recording stream
+    if(ac&&dest&&typeof _masterGain!=='undefined'&&_masterGain){
+      try{_masterGain.connect(dest);}catch(e){}
+    }
+
+    var canvasStream=canvas.captureStream(30);
+    var audioTracks=dest?dest.stream.getAudioTracks():[];
+    var combinedStream=new MediaStream([...canvasStream.getVideoTracks(),...audioTracks]);
+
+    var recorder=new MediaRecorder(combinedStream,{mimeType:'video/webm;codecs=vp9'});
+    var chunks=[];
+    recorder.ondataavailable=function(e){if(e.data.size>0)chunks.push(e.data);};
+    recorder.onstop=function(){
+      var blob=new Blob(chunks,{type:'video/webm'});
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement('a');
+      a.href=url;a.download=(manifest.title||'export').replace(/[^a-z0-9]/gi,'_')+'.webm';
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+      setTimeout(function(){URL.revokeObjectURL(url);},30000);
+      toast&&toast('Export complete — saved as .webm','ok',8000);
+      if(ac&&dest&&_masterGain){try{_masterGain.disconnect(dest);}catch(e){}}
+    };
+
+    // Play the timeline and draw each frame to canvas
+    window._esPH=0;
+    if(window.E){E.playhead=0;E.currentTime=0;}
+    if(typeof movePH==='function')movePH(0);
+
+    recorder.start(100); // collect in 100ms chunks
+
+    // Draw loop — render program video + overlays to canvas
+    var drawing=true;
+    var lastT=0;
+    function drawFrame(ts){
+      if(!drawing)return;
+      if(ts-lastT>=33){ // ~30fps
+        lastT=ts;
+        ctx.fillStyle='#000';ctx.fillRect(0,0,1280,720);
+        if(progVid&&progVid.readyState>=2&&!progVid.paused){
+          try{ctx.drawImage(progVid,0,0,1280,720);}catch(e){}
+        }
+        // Draw subtitles
+        var subs=window.E.tracks.find(function(tr){return tr.id==='subs';});
+        var esPH=window._esPH||0;
+        if(subs){
+          var activeSub=subs.clips.find(function(c){return esPH>=(c.start||0)&&esPH<(c.start||0)+(c.duration||4);});
+          if(activeSub&&activeSub.narration){
+            ctx.font='bold 32px sans-serif';ctx.fillStyle='rgba(0,0,0,0.6)';
+            ctx.fillRect(60,640,1160,64);
+            ctx.fillStyle='#ffffff';ctx.textAlign='center';
+            ctx.fillText(activeSub.narration.slice(0,80),640,682);
+            ctx.textAlign='left';
+          }
+        }
+      }
+      if(window._esPlaying&&window._esPH<manifest.totalDuration){
+        requestAnimationFrame(drawFrame);
+      } else {
+        drawing=false;
+        setTimeout(function(){recorder.stop();E_progToggle&&E_progToggle();},500);
+      }
+    }
+
+    // Start playback
+    E_progToggle&&E_progToggle();
+    requestAnimationFrame(drawFrame);
+    toast&&toast('Recording... do not navigate away','info');
+
+  }catch(e){
+    toast&&toast('Export error: '+e.message,'error');
+    // Last resort: download first video clip directly
+    var mainClips=window.E.tracks[0]?.clips||[];
+    var firstCloud=mainClips.find(function(c){return c.url&&c.url.match(/^https?:/);});
+    if(firstCloud){
+      var a3=document.createElement('a');a3.href=firstCloud.url;a3.download='clip.mp4';
+      document.body.appendChild(a3);a3.click();document.body.removeChild(a3);
+      toast&&toast('Downloaded Scene 1 only (full export unavailable)','warn');
+    }
+  }
 };
 /* ── Marker CSS ── */
 
@@ -25136,9 +25298,14 @@ function _esUpdateAudio(t){
   var _pv=typeof _getProgVid==='function'?_getProgVid():null;
   E.tracks.forEach(function(tr){
     if(tr.type==='video'){
-      // HTML5 volume control (works cross-origin, no CORS needed)
-      var vol=tr.muted?0:clamp((tr.volume!=null?tr.volume:100)/100,0,1);
-      if(_pv){_pv.volume=vol;_pv.muted=tr.muted||false;}
+      // Only the active clip's track controls the program video volume
+      // (multiple video tracks share one _pv element — last-writer-wins bug fixed here)
+      var _activeTrClip=tr.clips&&tr.clips.find(function(c){return !c.muted&&t>=(c.start||0)&&t<(c.start||0)+(c.duration||0);});
+      if(_pv&&_activeTrClip){
+        var vol=tr.muted?0:clamp((tr.volume!=null?tr.volume:100)/100,0,1);
+        _pv.volume=vol;
+        _pv.muted=!!(tr.muted);
+      }
       // Drive VU meter from video element volume as a proxy signal
       if(_pv&&!_pv.paused&&window._masterAnalyser){
         // Inject a synthetic gain signal scaled to video volume
