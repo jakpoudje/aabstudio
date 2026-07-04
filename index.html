@@ -9796,6 +9796,31 @@ window.ap_open = function(projectId) {
   }
   window.PROJECT = proj;
 
+  // ── Full runtime state reset on project switch ──────────────────
+  // Clear edit suite timeline
+  if(window.E){
+    E.tracks = E.tracks ? E.tracks.map(function(tr){return Object.assign({},tr,{clips:[]});}) : [];
+    E.selectedClipId = null;
+    E.playhead = 0;
+    E.currentTime = 0;
+    window._esPH = 0;
+    window._esPlaying = false;
+  }
+  // Clear media bin
+  window._esBinFiles = [];
+  // Clear APS — close if open, will reinit from new PROJECT on next open
+  if(typeof closeAIPresenterStudio==='function') closeAIPresenterStudio();
+  // Stop any playing audio/video
+  if(typeof stopAllAudio==='function') stopAllAudio();
+  if(typeof stopVUDraw==='function') stopVUDraw();
+  var _pv = typeof _getProgVid==='function' ? _getProgVid() : null;
+  if(_pv){_pv.pause(); _pv.src=''; _pv._curUrl=''; _pv._rdy=false;}
+  // Reset playhead visually
+  if(typeof movePH==='function') movePH(0);
+  // Reset delegation flag so it rewires for new project's DOM
+  window._tlEventsWired = false;
+  // ────────────────────────────────────────────────────────────────
+
   // Navigate to the CORRECT page based on project state — never reset paid work
   localStorage.setItem('aab_active_project_id', proj.id);
   
@@ -25964,6 +25989,10 @@ function _esInspect(clip,track){
 window._esBinFiles=window._esBinFiles||[];
 function _binRender(){
   var cont=$('ebin-clips');if(!cont)return;cont.innerHTML='';
+  // Filter out stale clips from a previous project (keep only user-added uploads)
+  window._esBinFiles=(window._esBinFiles||[]).filter(function(f){
+    return f._userAdded===true;
+  });
   var clips=[],seen={};var proj=window.PROJECT||{};
   if(proj.scenes)proj.scenes.forEach((s,i)=>{var url=s.apsVideoUrl||s.videoUrl||'';if(url&&url.length>20&&!seen[url]){seen[url]=1;clips.push({url:url,name:s.name||('Scene '+(i+1)),type:'video',dur:s.duration||s.dur||8,sceneIdx:i,id:'sc_'+i+'_'+(s.id||Date.now())});}});
   if(proj.apsVideos)Object.values(proj.apsVideos).forEach(v=>{if(v&&v.url&&!seen[v.url]){seen[v.url]=1;clips.push({url:v.url,name:v.name||'Clip',type:'video',dur:v.dur||8});}});
@@ -26029,7 +26058,7 @@ function _pickFiles(type){
     Array.from(inp.files).forEach(function(f){
       var url=URL.createObjectURL(f);
       var tp=f.type.startsWith('video')?'video':f.type.startsWith('audio')?'audio':'image';
-      var entry={url:url,name:f.name.slice(0,30),type:tp,dur:tp==='audio'?60:tp==='image'?5:10};
+      var entry={url:url,name:f.name.slice(0,30),type:tp,dur:tp==='audio'?60:tp==='image'?5:10,_userAdded:true};
       (window._esBinFiles=window._esBinFiles||[]).push(entry);
       // Read REAL duration for all types, not just audio
       if(tp==='video'||tp==='audio'){
