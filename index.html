@@ -25039,9 +25039,19 @@ window.aps_goToEditSuite=function(){
   var st=ST();var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
   var ready=scenes.filter(function(s){return s.apsVideoUrl&&s.apsVideoUrl.length>50;});
   if(!ready.length){apsNotify('No generated videos yet. Generate scenes first.','warn');return;}
+  // Transfer clips to timeline
   if(typeof _loadApsIntoTL==='function')_loadApsIntoTL();
   else if(typeof _origGoEdit==='function')_origGoEdit.apply(this,arguments);
-  apsNotify(ready.length+' scene'+(ready.length!==1?'s':'')+' sent to Edit Suite.','ok',6000);
+  // Close APS panel and navigate to Edit Suite
+  setTimeout(function(){
+    if(typeof closeAIPresenterStudio==='function')closeAIPresenterStudio();
+    if(typeof nav==='function')nav('edit-pg');
+    // Rewire delegation events for the new timeline
+    setTimeout(function(){
+      if(typeof _wireTimelineEvents==='function'){window._tlEventsWired=false;_wireTimelineEvents();}
+    },600);
+  },200);
+  apsNotify(ready.length+' scene'+(ready.length!==1?'s':'')+' sent to Edit Suite — opening...','ok',4000);
 };
 
 // ── TOAST SUPPRESSION DURING GENERATION ──────────────────────────────────────
