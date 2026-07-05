@@ -6161,66 +6161,7 @@ window.E_renderTL=function(){
   },16);
 };
 E_renderTL=window.E_renderTL;window.E_fit=E_fit;
-window.E_selectClip=E_selectClip;
-// ── edit_buildPlaylist: load PROJECT.clips (recordings) into timeline ──────
-window.edit_buildPlaylist=function(){
-  var clips=window.PROJECT?.clips||{};
-  var entries=Object.keys(clips);
-  if(!entries.length)return;
-  if(!window.E)return;
-  if(AABE&&AABE.snapshot)AABE.snapshot();
-  // Find best target track for recorded video
-  var voiceTr=E.tracks.find(function(tr){return tr.id==='voice';});
-  var brollTr=E.tracks.find(function(tr){return tr.id==='broll';});
-  var targetTr=voiceTr||brollTr||E.tracks[1];
-  if(!targetTr)return;
-  var added=0;
-  entries.forEach(function(sid){
-    var clip=clips[sid];
-    if(!clip||!clip.url)return;
-    // Don't add duplicates
-    var alreadyAdded=E.tracks.some(function(tr){return tr.clips.some(function(c){return c.url===clip.url;});});
-    if(alreadyAdded)return;
-    var t2=targetTr.clips.reduce(function(s,c){return Math.max(s,(c.start||0)+(c.duration||0));},0);
-    targetTr.clips.push({
-      id:'rec_'+sid+'_'+Date.now(),url:clip.url,
-      name:clip.sceneName||('Recording '+(clip.sceneNum||added+1)),
-      type:'video',start:t2,duration:clip.duration||10,volume:100,
-      narration:clip.narration||''
-    });
-    // Also add to bin
-    if(window._esBinFiles&&!window._esBinFiles.some(function(f){return f.url===clip.url;})){
-      window._esBinFiles.push({url:clip.url,name:clip.sceneName||'Recording',type:'video',dur:clip.duration||10,_userAdded:true});
-    }
-    added++;
-  });
-  if(added>0){
-    if(typeof _binRender==='function')_binRender();
-    E_renderTL&&E_renderTL();
-    toast&&toast(added+' recording'+(added!==1?'s':'')+' added to timeline','ok',4000);
-  }
-};
-
-// ── _renderStudioRecordings: show clips in recording studio right panel ─────
-window._renderStudioRecordings=function(){
-  var clips=window.PROJECT?.clips||{};
-  var entries=Object.keys(clips);
-  // Find the recordings panel in the studio
-  var panel=document.querySelector('#studio-recordings,[id*="studio-clip"],[class*="studio-rec"]');
-  if(!panel)return;
-  panel.innerHTML='';
-  entries.forEach(function(sid){
-    var clip=clips[sid];
-    if(!clip||!clip.url)return;
-    var item=document.createElement('div');
-    item.style.cssText='display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,.05);margin:4px 0;cursor:pointer;';
-    item.innerHTML='<video src="'+clip.url+'" style="width:48px;height:32px;border-radius:3px;object-fit:cover" muted></video><div style="flex:1;min-width:0"><div style="font-size:11px;font-weight:600;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(clip.sceneName||'Recording')+'</div><div style="font-size:10px;color:#64748b">'+(clip.duration||0).toFixed(0)+'s &bull; '+Math.round((clip.size||0)/1024/1024)+'MB</div></div>';
-    item.onclick=function(){if(typeof E_loadSrc==='function'&&clip.url)E_loadSrc(clip.url,clip.sceneName);};
-    panel.appendChild(item);
-  });
-};
-
-/* ─── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────── */
+window.E_selectClip=E_selectClip;/* ─── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────── */
 document.addEventListener('keydown',function(e){
   if(!document.getElementById('edit-pg')||!document.getElementById('edit-pg').classList.contains('on'))return;
   if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
@@ -6334,17 +6275,7 @@ setTimeout(function(){
       if(d==='none'||d==='')target.style.display='';
     }
     // Post-nav hooks
-    if(pg==='record-pg'){setTimeout(function(){
-    if(typeof startCamera==='function'&&typeof STUDIO!=='undefined'&&!STUDIO.stream)startCamera();
-    // Ensure STUDIO knows which scene to record
-    if(typeof STUDIO!=='undefined'&&window.PROJECT?.scenes?.length){
-      if(STUDIO.currentScene==null)STUDIO.currentScene=0;
-      // Load scenes list into STUDIO
-      if(!STUDIO.scenes||!STUDIO.scenes.length){
-        STUDIO.scenes=window.PROJECT.scenes.map(function(s,i){return {id:s.id,num:i+1,narration:s.narration||'',duration:s.duration||10};});
-      }
-    }
-  },600);}
+    if(pg==='record-pg'){setTimeout(function(){if(typeof startCamera==='function'&&typeof STUDIO!=='undefined'&&!STUDIO.stream)startCamera();},600);}
     if(pg==='edit-pg'){setTimeout(function(){
     if(typeof E_build==='function'){window._tlEventsWired=false;E_build();}
     // Reset playhead to 0 if past all clips
@@ -6619,16 +6550,6 @@ window.E_exportTimeline=async function(){
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+(window._sbSession?.access_token||'')},
       body:JSON.stringify(manifest)
     });
-    // Show export manifest panel so user can see what would be sent
-    var expPanel=document.getElementById('aab-export-panel');
-    if(!expPanel){
-      expPanel=document.createElement('div');
-      expPanel.id='aab-export-panel';
-      expPanel.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1e2a3b;border:1px solid #334155;border-radius:12px;padding:24px;z-index:10000;max-width:600px;width:90%;font-family:sans-serif;color:#e2e8f0;box-shadow:0 20px 60px rgba(0,0,0,0.5)';
-      document.body.appendChild(expPanel);
-    }
-    expPanel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h3 style="margin:0;color:#00d4ff;font-size:16px">📦 Export Manifest</h3><button onclick="document.getElementById('aab-export-panel').remove()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:18px">✕</button></div><div style="background:#0f172a;padding:12px;border-radius:6px;font-size:11px;color:#94a3b8;margin-bottom:12px"><div>📹 <strong>'+manifest.tracks.filter(function(t2){return t2.id==="main";}).reduce(function(s,t2){return s+t2.clips.length;},0)+' video clips</strong> · 🎵 music · 🎤 voice · 🔊 sfx · 💬 subtitles</div><div style="margin-top:6px">⏱ Total: '+Math.round(manifest.totalDuration)+'s · '+(manifest.tracks.reduce(function(s,t2){return s+t2.clips.length;},0))+' total clips across all tracks</div></div><div style="font-size:11px;color:#64748b;margin-bottom:12px">Backend <code>/api/export</code> returned 404 — implement FFmpeg stitch on Railway to enable full export.</div><button onclick="var b=new Blob([JSON.stringify(manifest,null,2)],{type:'application/json'});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='export-manifest.json';a.click();document.getElementById('aab-export-panel').remove();" style="background:#00d4ff;color:#000;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:600;width:100%">⬇ Download Export Manifest JSON</button>';
-    
     if(resp.ok){
       var d=await resp.json();
       if(d.url){
@@ -6643,13 +6564,7 @@ window.E_exportTimeline=async function(){
 
   // === FALLBACK: MediaRecorder screen capture of the program monitor ===
   // This captures exactly what you see — video + overlays + subtitles
-  // Kill any previous export before starting new one
-    window._exportRunning=false;
-    window._exportToken=null;
-    await new Promise(function(r){setTimeout(r,100);}); // let previous RAF die
-    // HeyGen videos are cross-origin — canvas capture will be blank
-    // Show a proper export panel instead
-    toast&&toast('Generating export manifest ('+Math.round(manifest.totalDuration)+'s timeline)...','info',3000);
+  toast&&toast('Backend export unavailable — recording screen ('+Math.round(manifest.totalDuration)+'s)...','info',5000);
 
   var progVid=typeof _getProgVid==='function'?_getProgVid():null;
   if(!progVid){toast&&toast('No program video found','error');return;}
@@ -6681,7 +6596,7 @@ window.E_exportTimeline=async function(){
       a.href=url;a.download=(manifest.title||'export').replace(/[^a-z0-9]/gi,'_')+'.webm';
       document.body.appendChild(a);a.click();document.body.removeChild(a);
       setTimeout(function(){URL.revokeObjectURL(url);},30000);
-      toast&&toast('Export manifest ready — download is a placeholder (.webm with audio track only, video requires backend)','info',8000);
+      toast&&toast('Export complete — saved as .webm','ok',8000);
       if(ac&&dest&&_masterGain){try{_masterGain.disconnect(dest);}catch(e){}}
     };
 
@@ -6695,18 +6610,10 @@ window.E_exportTimeline=async function(){
     // Draw loop — render program video + overlays to canvas
     var drawing=true;
     var lastT=0;
-    var _exportLastT=0;
     function drawFrame(ts){
-      try{
-      if(!_exportStartTS)_exportStartTS=ts;
       if(!drawing)return;
-      var elapsed=(ts-_exportStartTS)/1000; // real seconds elapsed
-      // Advance playhead based on real time (not relying on _esFrame)
-      window._esPH=elapsed;
-      if(window.E){E.playhead=elapsed;E.currentTime=elapsed;}
-      if(typeof movePH==='function')movePH(elapsed);
-      if(ts-_exportLastT>=33){ // ~30fps
-        _exportLastT=ts;
+      if(ts-lastT>=33){ // ~30fps
+        lastT=ts;
         ctx.fillStyle='#000';ctx.fillRect(0,0,1280,720);
         if(progVid&&progVid.readyState>=2&&!progVid.paused){
           try{ctx.drawImage(progVid,0,0,1280,720);}catch(e){}
@@ -6721,43 +6628,33 @@ window.E_exportTimeline=async function(){
             ctx.font='bold 32px sans-serif';ctx.fillStyle='rgba(0,0,0,0.6)';
             ctx.fillRect(60,640,1160,64);
             ctx.fillStyle='#ffffff';ctx.textAlign='center';
-            ctx.fillText((subText2||'...').slice(0,80),640,682);
+            ctx.fillText(subText.slice(0,80),640,682);
             ctx.textAlign='left';
           }
         }
       }
-      }catch(e){console.warn('[Export drawFrame]',e.message);}
-      var _td=manifest.totalDuration>0?manifest.totalDuration:59;
-      if(window._exportRunning&&window._exportToken===_exportToken&&elapsed<_td){
-        setTimeout(function(){drawFrame(performance.now());},33); // ~30fps, runs in bg
+      var _td=manifest.totalDuration||59;
+      if(window._esPlaying&&window._esPH<_td){
+        requestAnimationFrame(drawFrame);
       } else {
         drawing=false;
         setTimeout(function(){
           recorder.stop();
-          // Stop the export loop
-          window._exportRunning=false;
-          var _pv2=typeof _getProgVid==='function'?_getProgVid():null;
-          if(_pv2&&!_pv2.paused)_pv2.pause();
-          if(typeof stopAllAudio==='function')stopAllAudio();
+          // Stop playback cleanly
+          if(window._esPlaying){window._esPlaying=false;if(window._esRAF){cancelAnimationFrame(window._esRAF);window._esRAF=null;}}
+          var _pv=typeof _getProgVid==='function'?_getProgVid():null;
+          if(_pv&&!_pv.paused)_pv.pause();
         },500);
       }
     }
 
-    // Start clean playback for recording
-    // Stop any existing playback first
-    if(window._esPlaying){window._esPlaying=false;if(window._esRAF){cancelAnimationFrame(window._esRAF);window._esRAF=null;}}
-    if(window._esRAF){cancelAnimationFrame(window._esRAF);window._esRAF=null;}
-    // Reset to beginning
-    window._esPH=0;window._esLT=0;
+    // Start playback from beginning
+    window._esPlaying=false; // ensure clean start
+    window._esPH=0;
     if(window.E){E.playhead=0;E.currentTime=0;}
     if(typeof movePH==='function')movePH(0);
-    // Start the progVideo playing
-    if(progVid){progVid.currentTime=0;try{progVid.play().catch(function(){});}catch(e){}}
-    // Export recording flag — use a unique token so old exports self-terminate
-    var _exportToken=Date.now();
-    window._exportToken=_exportToken;
-    window._exportRunning=true;
-    setTimeout(function(){drawFrame(performance.now());},33);
+    setTimeout(function(){E_progToggle&&E_progToggle();},100);
+    requestAnimationFrame(drawFrame);
     toast&&toast('Recording... do not navigate away','info');
 
   }catch(e){
@@ -26782,6 +26679,21 @@ function _fixVolSliders(){
    BOOT
    ═══════════════════════════════════════════════════════════════════════════ */
 function _boot(){
+  // ── Initialize 7-track structure if E.tracks is empty ──────────────────────
+  if(window.E&&(!E.tracks||!E.tracks.length)){
+    E.tracks=[
+      {id:'main',     label:'Main Video',   type:'video',clips:[],muted:false,locked:false,volume:100},
+      {id:'broll',    label:'B-Roll',        type:'video',clips:[],muted:false,locked:false,volume:100},
+      {id:'voice',    label:'Voice Over',    type:'audio',clips:[],muted:false,locked:false,volume:100},
+      {id:'music',    label:'Music',         type:'audio',clips:[],muted:false,locked:false,volume:100},
+      {id:'sfx',      label:'Sound FX',      type:'audio',clips:[],muted:false,locked:false,volume:100},
+      {id:'subs',     label:'Subtitles',     type:'text', clips:[],muted:false,locked:false,volume:100},
+      {id:'overlays', label:'Text Overlay',  type:'text', clips:[],muted:false,locked:false,volume:100}
+    ];
+    console.log('[boot] initialized 7 tracks');
+  }
+  // ── Restore persisted timeline (music/sfx/voice survive refresh) ──────────
+  if(typeof _restoreTimelineFromProject==='function')_restoreTimelineFromProject();
   killTimers();_injectNav();_cleanSubs();_reloadTL();_binRender();_wireAddBtn();
   _wireClips();_wireDropZones();_fixVolSliders();_addVOControls();
   _wireTLClick();_wireRuler();_wirePSeek();_wirePHDrag();_wireTrackCtx();_wireExport();
@@ -26806,7 +26718,7 @@ function _boot(){
     }
 }
 _boot();
-setInterval(()=>{var ep=$('edit-pg');if(!ep||!ep.classList.contains('on'))return;killTimers();_wireClips();_wireDropZones();_addVOControls();_wirePHDrag();_wireTrackCtx();_wireExport();if(!window._esPlaying&&window.E&&E.playhead!=null&&Math.abs(window._esPH-E.playhead)>.5){window._esPH=E.playhead;movePH(window._esPH);}},800);
+setInterval(()=>{var ep=$('edit-pg');if(!ep||!ep.classList.contains('on'))return;_wireClips();_wireDropZones();_addVOControls();_wirePHDrag();_wireTrackCtx();_wireExport();if(!window._esPlaying&&window.E&&E.playhead!=null&&Math.abs(window._esPH-E.playhead)>.5){window._esPH=E.playhead;movePH(window._esPH);}},800);
 (function(){var ep=$('edit-pg');if(!ep)return;new MutationObserver(ms=>ms.forEach(m=>{if(m.type==='attributes'&&ep.classList.contains('on'))setTimeout(_boot,300);})).observe(ep,{attributes:true,attributeFilter:['class','style']});})();
 console.log('[AABStudio v2.0] Edit Suite: source/program separated, preload engine, Web Audio, VU meter, mixer, transitions, undo/redo, sign-out');
 })();
