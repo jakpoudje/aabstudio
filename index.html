@@ -6633,27 +6633,38 @@ window.E_exportTimeline=async function(){
           }
         }
       }
-      var _td=manifest.totalDuration||59;
-      if(window._esPlaying&&window._esPH<_td){
+      var _td=manifest.totalDuration>0?manifest.totalDuration:59;
+      if(window._esPlaying&&(window._esPH||0)<_td){
         requestAnimationFrame(drawFrame);
       } else {
         drawing=false;
         setTimeout(function(){
           recorder.stop();
-          // Stop playback cleanly
-          if(window._esPlaying){window._esPlaying=false;if(window._esRAF){cancelAnimationFrame(window._esRAF);window._esRAF=null;}}
-          var _pv=typeof _getProgVid==='function'?_getProgVid():null;
-          if(_pv&&!_pv.paused)_pv.pause();
+          // Stop the playback RAF loop
+          window._esPlaying=false;
+          if(window._esRAF){cancelAnimationFrame(window._esRAF);window._esRAF=null;}
+          var _pv2=typeof _getProgVid==='function'?_getProgVid():null;
+          if(_pv2&&!_pv2.paused)_pv2.pause();
+          if(typeof stopAllAudio==='function')stopAllAudio();
         },500);
       }
     }
 
-    // Start playback from beginning
-    window._esPlaying=false; // ensure clean start
-    window._esPH=0;
+    // Start clean playback for recording
+    // Stop any existing playback first
+    if(window._esPlaying){window._esPlaying=false;if(window._esRAF){cancelAnimationFrame(window._esRAF);window._esRAF=null;}}
+    if(window._esRAF){cancelAnimationFrame(window._esRAF);window._esRAF=null;}
+    // Reset to beginning
+    window._esPH=0;window._esLT=0;
     if(window.E){E.playhead=0;E.currentTime=0;}
     if(typeof movePH==='function')movePH(0);
-    setTimeout(function(){E_progToggle&&E_progToggle();},100);
+    // Start the progVideo playing
+    if(progVid){progVid.currentTime=0;try{progVid.play().catch(function(){});}catch(e){}}
+    // Engage the RAF loop directly
+    window._esPlaying=true;
+    if(typeof _esFrame==='function'){
+      window._esRAF=requestAnimationFrame(_esFrame);
+    }
     requestAnimationFrame(drawFrame);
     toast&&toast('Recording... do not navigate away','info');
 
