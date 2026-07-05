@@ -6619,6 +6619,16 @@ window.E_exportTimeline=async function(){
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+(window._sbSession?.access_token||'')},
       body:JSON.stringify(manifest)
     });
+    // Show export manifest panel so user can see what would be sent
+    var expPanel=document.getElementById('aab-export-panel');
+    if(!expPanel){
+      expPanel=document.createElement('div');
+      expPanel.id='aab-export-panel';
+      expPanel.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1e2a3b;border:1px solid #334155;border-radius:12px;padding:24px;z-index:10000;max-width:600px;width:90%;font-family:sans-serif;color:#e2e8f0;box-shadow:0 20px 60px rgba(0,0,0,0.5)';
+      document.body.appendChild(expPanel);
+    }
+    expPanel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h3 style="margin:0;color:#00d4ff;font-size:16px">📦 Export Manifest</h3><button onclick="document.getElementById('aab-export-panel').remove()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:18px">✕</button></div><div style="background:#0f172a;padding:12px;border-radius:6px;font-size:11px;color:#94a3b8;margin-bottom:12px"><div>📹 <strong>'+manifest.tracks.filter(function(t2){return t2.id==="main";}).reduce(function(s,t2){return s+t2.clips.length;},0)+' video clips</strong> · 🎵 music · 🎤 voice · 🔊 sfx · 💬 subtitles</div><div style="margin-top:6px">⏱ Total: '+Math.round(manifest.totalDuration)+'s · '+(manifest.tracks.reduce(function(s,t2){return s+t2.clips.length;},0))+' total clips across all tracks</div></div><div style="font-size:11px;color:#64748b;margin-bottom:12px">Backend <code>/api/export</code> returned 404 — implement FFmpeg stitch on Railway to enable full export.</div><button onclick="var b=new Blob([JSON.stringify(manifest,null,2)],{type:'application/json'});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='export-manifest.json';a.click();document.getElementById('aab-export-panel').remove();" style="background:#00d4ff;color:#000;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:600;width:100%">⬇ Download Export Manifest JSON</button>';
+    
     if(resp.ok){
       var d=await resp.json();
       if(d.url){
@@ -6637,7 +6647,9 @@ window.E_exportTimeline=async function(){
     window._exportRunning=false;
     window._exportToken=null;
     await new Promise(function(r){setTimeout(r,100);}); // let previous RAF die
-    toast&&toast('Backend export unavailable — recording screen ('+Math.round(manifest.totalDuration)+'s)...','info',5000);
+    // HeyGen videos are cross-origin — canvas capture will be blank
+    // Show a proper export panel instead
+    toast&&toast('Generating export manifest ('+Math.round(manifest.totalDuration)+'s timeline)...','info',3000);
 
   var progVid=typeof _getProgVid==='function'?_getProgVid():null;
   if(!progVid){toast&&toast('No program video found','error');return;}
@@ -6669,7 +6681,7 @@ window.E_exportTimeline=async function(){
       a.href=url;a.download=(manifest.title||'export').replace(/[^a-z0-9]/gi,'_')+'.webm';
       document.body.appendChild(a);a.click();document.body.removeChild(a);
       setTimeout(function(){URL.revokeObjectURL(url);},30000);
-      toast&&toast('Export complete — saved as .webm','ok',8000);
+      toast&&toast('Export manifest ready — download is a placeholder (.webm with audio track only, video requires backend)','info',8000);
       if(ac&&dest&&_masterGain){try{_masterGain.disconnect(dest);}catch(e){}}
     };
 
