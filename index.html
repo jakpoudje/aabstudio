@@ -6633,7 +6633,11 @@ window.E_exportTimeline=async function(){
 
   // === FALLBACK: MediaRecorder screen capture of the program monitor ===
   // This captures exactly what you see — video + overlays + subtitles
-  toast&&toast('Backend export unavailable — recording screen ('+Math.round(manifest.totalDuration)+'s)...','info',5000);
+  // Kill any previous export before starting new one
+    window._exportRunning=false;
+    window._exportToken=null;
+    await new Promise(function(r){setTimeout(r,100);}); // let previous RAF die
+    toast&&toast('Backend export unavailable — recording screen ('+Math.round(manifest.totalDuration)+'s)...','info',5000);
 
   var progVid=typeof _getProgVid==='function'?_getProgVid():null;
   if(!progVid){toast&&toast('No program video found','error');return;}
@@ -6712,7 +6716,7 @@ window.E_exportTimeline=async function(){
       }
       }catch(e){console.warn('[Export drawFrame]',e.message);}
       var _td=manifest.totalDuration>0?manifest.totalDuration:59;
-      if(window._exportRunning&&elapsed<_td){
+      if(window._exportRunning&&window._exportToken===_exportToken&&elapsed<_td){
         requestAnimationFrame(drawFrame);
       } else {
         drawing=false;
@@ -6737,7 +6741,9 @@ window.E_exportTimeline=async function(){
     if(typeof movePH==='function')movePH(0);
     // Start the progVideo playing
     if(progVid){progVid.currentTime=0;try{progVid.play().catch(function(){});}catch(e){}}
-    // Export recording flag — isolated from window._esPlaying
+    // Export recording flag — use a unique token so old exports self-terminate
+    var _exportToken=Date.now();
+    window._exportToken=_exportToken;
     window._exportRunning=true;
     requestAnimationFrame(drawFrame);
     toast&&toast('Recording... do not navigate away','info');
