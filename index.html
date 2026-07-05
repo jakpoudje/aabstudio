@@ -5417,7 +5417,12 @@ function E_renderTL(){
     // Mute button
     var mb=_el("button","aab-track-btn"+(track.muted?" muted":""));
     mb.textContent="M";mb.style.cssText="font-size:9px;padding:1px 4px;border-radius:3px;background:"+(track.muted?"rgba(239,68,68,.2)":"rgba(255,255,255,.06)")+";color:"+(track.muted?"#ef4444":"#6b7280")+";border:.5px solid "+(track.muted?"#ef4444":"#374151")+";cursor:pointer;";
-    mb.title=track.muted?"Unmute track":"Mute track";mb.onclick=function(){track.muted=!track.muted;E_renderTL();};ctrl.appendChild(mb);
+    mb.title=track.muted?"Unmute track":"Mute track";mb.onclick=function(){E_muteTrack?E_muteTrack(track.id):(track.muted=!track.muted);E_renderTL();};ctrl.appendChild(mb);
+    // Solo button
+    var sb=_el("button","aab-track-btn"+(track._solo?" soloed":""));
+    sb.textContent="S";sb.style.cssText="font-size:9px;padding:1px 4px;border-radius:3px;background:"+(track._solo?"rgba(234,179,8,.25)":"rgba(255,255,255,.06)")+";color:"+(track._solo?"#eab308":"#6b7280")+";border:.5px solid "+(track._solo?"#eab308":"#374151")+";cursor:pointer;";
+    sb.title=track._solo?"Unsolo track":"Solo track";
+    sb.onclick=function(){E_soloTrack?E_soloTrack(track.id):(track._solo=!track._solo);E_renderTL();};ctrl.appendChild(sb);
     // Lock button
     var lb=_el("button","aab-track-btn");
     lb.textContent=track.locked?"\uD83D\uDD12":"\uD83D\uDD13";lb.style.cssText="font-size:9px;padding:1px 3px;cursor:pointer;opacity:"+(track.locked?1:.5)+";";
@@ -6093,6 +6098,54 @@ function _wireTimelineEvents() {
 }
 window._wireTimelineEvents = _wireTimelineEvents;
 
+// ── Timeline persistence — saves all track data to PROJECT so refresh restores it ──
+function _saveTimelineToProject(){
+  if(!window.PROJECT||!window.E)return;
+  // Serialize all tracks — keep blob URLs as-is (they survive the session)
+  PROJECT.timeline={
+    tracks:E.tracks.map(function(tr){
+      return {
+        id:tr.id,type:tr.type,muted:tr.muted,volume:tr.volume,locked:tr.locked,
+        clips:(tr.clips||[]).map(function(c){
+          return {id:c.id,url:c.url,name:c.name,type:c.type,start:c.start,
+                  duration:c.duration,volume:c.volume,muted:c.muted,
+                  transitionIn:c.transitionIn,transitionOut:c.transitionOut,
+                  filter:c.filter,narration:c.narration,opacity:c.opacity,
+                  color:c.color,position:c.position,fontSize:c.fontSize};
+        })
+      };
+    }),
+    pxPerSec:E.pxPerSec,inPoint:E.inPoint,outPoint:E.outPoint
+  };
+  // Save to localStorage
+  try{
+    var projs=JSON.parse(localStorage.getItem('aab_projects')||'[]');
+    var idx=projs.findIndex(function(p){return p.id===PROJECT.id;});
+    if(idx>-1)projs[idx]=PROJECT; else projs.push(PROJECT);
+    localStorage.setItem('aab_projects',JSON.stringify(projs));
+  }catch(e){}
+}
+function _restoreTimelineFromProject(){
+  if(!window.PROJECT?.timeline||!window.E)return;
+  var saved=PROJECT.timeline;
+  if(saved.pxPerSec)E.pxPerSec=saved.pxPerSec;
+  if(saved.inPoint!=null)E.inPoint=saved.inPoint;
+  if(saved.outPoint!=null)E.outPoint=saved.outPoint;
+  (saved.tracks||[]).forEach(function(saved_tr){
+    var tr=E.tracks.find(function(t){return t.id===saved_tr.id;});
+    if(!tr)return;
+    tr.muted=saved_tr.muted;tr.volume=saved_tr.volume;tr.locked=saved_tr.locked;
+    // Only restore clips for non-main tracks (main is rebuilt from scenes)
+    // AND only if the saved track has clips the current track doesn't
+    if(saved_tr.id!=='main'&&saved_tr.id!=='subs'){
+      tr.clips=saved_tr.clips||[];
+    }
+  });
+  console.log('[Timeline] Restored from project save');
+}
+window._saveTimelineToProject=_saveTimelineToProject;
+window._restoreTimelineFromProject=_restoreTimelineFromProject;
+
 // Debounced wrapper - prevents flicker on rapid calls
 var _rtlTimer=null;
 var _E_renderTL_raw=E_renderTL;
@@ -6102,8 +6155,9 @@ window.E_renderTL=function(){
     _rtlTimer=null;
     _deduplicateClipIds();
     _E_renderTL_raw();
-    // Re-wire delegation after clips re-render (reset flag so it re-attaches if tl-wrap was replaced)
     if(typeof _wireTimelineEvents==='function')_wireTimelineEvents();
+    // Persist timeline state so refresh doesn't lose audio/overlay tracks
+    _saveTimelineToProject();
   },16);
 };
 E_renderTL=window.E_renderTL;window.E_fit=E_fit;
@@ -6230,6 +6284,8 @@ setTimeout(function(){
     // Wire delegation events once (survives re-renders)
     if(typeof _wireTimelineEvents==='function')_wireTimelineEvents();
     else setTimeout(function(){if(typeof _wireTimelineEvents==='function')_wireTimelineEvents();},600);
+    // Restore persisted timeline (music/sfx/voice/overlays survive refresh)
+    setTimeout(function(){if(typeof _restoreTimelineFromProject==='function'){_restoreTimelineFromProject();E_renderTL&&E_renderTL();}},500);
   },400);}
     if(pg==='dashboard-pg'){setTimeout(function(){if(typeof loadDashboard==='function')loadDashboard();},100);}
   };
@@ -18639,20 +18695,20 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
   };
 
   // Mark in / Mark out (set in/out points for region editing)
-  window.E_markIn = function() {
-    if(!window.AABE) return;
-    AABE.inPoint = AABE.ph || 0;
-    var inBtn = document.querySelector('[onclick*="markIn"],[onclick*="E_markIn"],.aab-mark-in');
-    if(inBtn) inBtn.style.color = '#00d4ff';
-    if(typeof toast === 'function') toast('In point: ' + AABE.inPoint.toFixed(2) + 's', 'info');
+  window.E_markIn = function(pt) {
+    var inPt = pt!=null ? pt : (window._esPH||window.E?.playhead||0);
+    if(window.E) E.inPoint = inPt;
+    if(window.AABE) AABE.inPoint = inPt;
+    if(typeof _updateMarkerRegion==='function')_updateMarkerRegion();
+    toast&&toast('In: '+inPt.toFixed(2)+'s','ok',1500);
   };
 
-  window.E_markOut = function() {
-    if(!window.AABE) return;
-    AABE.outPoint = AABE.ph || 0;
-    var outBtn = document.querySelector('[onclick*="markOut"],[onclick*="E_markOut"],.aab-mark-out');
-    if(outBtn) outBtn.style.color = '#00d4ff';
-    if(typeof toast === 'function') toast('Out point: ' + AABE.outPoint.toFixed(2) + 's', 'info');
+  window.E_markOut = function(pt) {
+    var outPt = pt!=null ? pt : (window._esPH||window.E?.playhead||0);
+    if(window.E) E.outPoint = outPt;
+    if(window.AABE) AABE.outPoint = outPt;
+    if(typeof _updateMarkerRegion==='function')_updateMarkerRegion();
+    toast&&toast('Out: '+outPt.toFixed(2)+'s','ok',1500);
   };
 
   // Track management
@@ -25411,7 +25467,34 @@ function movePH(t){
   ph.style.left=(laneOff()+t*getPPS())+'px';
   var sk=$('e-prog-seek')||$('aab-prog-seek');
   if(sk){var d=totalDur();if(d>0)sk.value=(t/d)*100;}
+  if(typeof _updateMarkerRegion==='function')_updateMarkerRegion();
 }
+// ── Marker region visualization ─────────────────────────────────────────────
+function _updateMarkerRegion(){
+  var pps=typeof getPPS==='function'?getPPS():60;
+  var off=typeof laneOff==='function'?laneOff():0;
+  var inPt=window.E?.inPoint; var outPt=window.E?.outPoint;
+  var tl=document.querySelector('.aab-tl-scroll,.aab-tl-inner');
+  if(!tl)return;
+  ['aab-marker-in','aab-marker-out','aab-marker-region'].forEach(function(id){
+    if(!document.getElementById(id)){
+      var el=document.createElement('div');el.id=id;el.style.pointerEvents='none';el.style.position='absolute';el.style.top='0';el.style.bottom='0';el.style.zIndex='15';
+      if(id==='aab-marker-in')el.style.cssText+=';width:2px;background:rgba(16,185,129,.8);border-right:1px dashed #10b981;';
+      else if(id==='aab-marker-out')el.style.cssText+=';width:2px;background:rgba(239,68,68,.8);border-right:1px dashed #ef4444;';
+      else el.style.cssText+=';background:rgba(16,185,129,.07);z-index:10;';
+      tl.appendChild(el);
+    }
+  });
+  var mIn=document.getElementById('aab-marker-in');
+  var mOut=document.getElementById('aab-marker-out');
+  var mReg=document.getElementById('aab-marker-region');
+  if(inPt!=null&&mIn){mIn.style.left=(off+inPt*pps)+'px';mIn.style.display='block';}
+  if(outPt!=null&&mOut){mOut.style.left=(off+outPt*pps)+'px';mOut.style.display='block';}
+  if(inPt!=null&&outPt!=null&&outPt>inPt&&mReg){
+    mReg.style.left=(off+inPt*pps)+'px';mReg.style.width=((outPt-inPt)*pps)+'px';mReg.style.display='block';
+  } else if(mReg){mReg.style.display='none';}
+}
+window._updateMarkerRegion=_updateMarkerRegion;
 window._movePH=function(pt){if(typeof movePH==="function")movePH(pt);};
 function killTimers(){
   if(window.E&&E.playInterval){clearInterval(E.playInterval);E.playInterval=null;}
@@ -25650,6 +25733,7 @@ function _esApplyTransEffect(t){
 /* ═══════════════════════════════════════════════════════════════════════════
    RAF PLAYBACK ENGINE
    ═══════════════════════════════════════════════════════════════════════════ */
+window.E_loopMode=false;
 window.E_progToggle=function(){
   killTimers();
   var btn=$('e-prog-play')||$('aab-prog-play');
