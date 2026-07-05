@@ -6710,15 +6710,14 @@ window.E_exportTimeline=async function(){
         }
       }
       var _td=manifest.totalDuration>0?manifest.totalDuration:59;
-      if(window._esPlaying&&elapsed<_td){
+      if(window._exportRunning&&elapsed<_td){
         requestAnimationFrame(drawFrame);
       } else {
         drawing=false;
         setTimeout(function(){
           recorder.stop();
-          // Stop the playback RAF loop
-          window._esPlaying=false;
-          if(window._esRAF){cancelAnimationFrame(window._esRAF);window._esRAF=null;}
+          // Stop the export loop
+          window._exportRunning=false;
           var _pv2=typeof _getProgVid==='function'?_getProgVid():null;
           if(_pv2&&!_pv2.paused)_pv2.pause();
           if(typeof stopAllAudio==='function')stopAllAudio();
@@ -6736,11 +6735,8 @@ window.E_exportTimeline=async function(){
     if(typeof movePH==='function')movePH(0);
     // Start the progVideo playing
     if(progVid){progVid.currentTime=0;try{progVid.play().catch(function(){});}catch(e){}}
-    // Engage the RAF loop directly
-    window._esPlaying=true;
-    if(typeof _esFrame==='function'){
-      window._esRAF=requestAnimationFrame(_esFrame);
-    }
+    // Export recording flag — isolated from window._esPlaying
+    window._exportRunning=true;
     requestAnimationFrame(drawFrame);
     toast&&toast('Recording... do not navigate away','info');
 
