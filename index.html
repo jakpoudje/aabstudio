@@ -6463,7 +6463,7 @@ window.E_exportTimeline=async function(){
   // Build full timeline manifest — all tracks, all data
   var manifest={
     title:(window.PROJECT&&window.PROJECT.title)||'export',
-    totalDuration:typeof totalDur==='function'?totalDur():0,
+    totalDuration:(function(){var td=0;if(window.E&&E.tracks){E.tracks.forEach(function(tr){(tr.clips||[]).forEach(function(c){var end=(c.start||0)+(c.duration||0);if(end>td)td=end;});});}return td;}()),
     tracks:E.tracks.map(function(tr){
       return {
         id:tr.id, type:tr.type||'video',
@@ -6567,25 +6567,37 @@ window.E_exportTimeline=async function(){
         var esPH=window._esPH||0;
         if(subs){
           var activeSub=subs.clips.find(function(c){return esPH>=(c.start||0)&&esPH<(c.start||0)+(c.duration||4);});
-          if(activeSub&&activeSub.narration){
+          var subText2=activeSub&&(activeSub.narration||activeSub.text||activeSub.name||'');
+        if(activeSub&&subText2){
             ctx.font='bold 32px sans-serif';ctx.fillStyle='rgba(0,0,0,0.6)';
             ctx.fillRect(60,640,1160,64);
             ctx.fillStyle='#ffffff';ctx.textAlign='center';
-            ctx.fillText(activeSub.narration.slice(0,80),640,682);
+            ctx.fillText(subText.slice(0,80),640,682);
             ctx.textAlign='left';
           }
         }
       }
-      if(window._esPlaying&&window._esPH<manifest.totalDuration){
+      var _td=manifest.totalDuration||59;
+      if(window._esPlaying&&window._esPH<_td){
         requestAnimationFrame(drawFrame);
       } else {
         drawing=false;
-        setTimeout(function(){recorder.stop();E_progToggle&&E_progToggle();},500);
+        setTimeout(function(){
+          recorder.stop();
+          // Stop playback cleanly
+          if(window._esPlaying){window._esPlaying=false;if(window._esRAF){cancelAnimationFrame(window._esRAF);window._esRAF=null;}}
+          var _pv=typeof _getProgVid==='function'?_getProgVid():null;
+          if(_pv&&!_pv.paused)_pv.pause();
+        },500);
       }
     }
 
-    // Start playback
-    E_progToggle&&E_progToggle();
+    // Start playback from beginning
+    window._esPlaying=false; // ensure clean start
+    window._esPH=0;
+    if(window.E){E.playhead=0;E.currentTime=0;}
+    if(typeof movePH==='function')movePH(0);
+    setTimeout(function(){E_progToggle&&E_progToggle();},100);
     requestAnimationFrame(drawFrame);
     toast&&toast('Recording... do not navigate away','info');
 
