@@ -6161,7 +6161,66 @@ window.E_renderTL=function(){
   },16);
 };
 E_renderTL=window.E_renderTL;window.E_fit=E_fit;
-window.E_selectClip=E_selectClip;/* ─── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────── */
+window.E_selectClip=E_selectClip;
+// ── edit_buildPlaylist: load PROJECT.clips (recordings) into timeline ──────
+window.edit_buildPlaylist=function(){
+  var clips=window.PROJECT?.clips||{};
+  var entries=Object.keys(clips);
+  if(!entries.length)return;
+  if(!window.E)return;
+  if(AABE&&AABE.snapshot)AABE.snapshot();
+  // Find best target track for recorded video
+  var voiceTr=E.tracks.find(function(tr){return tr.id==='voice';});
+  var brollTr=E.tracks.find(function(tr){return tr.id==='broll';});
+  var targetTr=voiceTr||brollTr||E.tracks[1];
+  if(!targetTr)return;
+  var added=0;
+  entries.forEach(function(sid){
+    var clip=clips[sid];
+    if(!clip||!clip.url)return;
+    // Don't add duplicates
+    var alreadyAdded=E.tracks.some(function(tr){return tr.clips.some(function(c){return c.url===clip.url;});});
+    if(alreadyAdded)return;
+    var t2=targetTr.clips.reduce(function(s,c){return Math.max(s,(c.start||0)+(c.duration||0));},0);
+    targetTr.clips.push({
+      id:'rec_'+sid+'_'+Date.now(),url:clip.url,
+      name:clip.sceneName||('Recording '+(clip.sceneNum||added+1)),
+      type:'video',start:t2,duration:clip.duration||10,volume:100,
+      narration:clip.narration||''
+    });
+    // Also add to bin
+    if(window._esBinFiles&&!window._esBinFiles.some(function(f){return f.url===clip.url;})){
+      window._esBinFiles.push({url:clip.url,name:clip.sceneName||'Recording',type:'video',dur:clip.duration||10,_userAdded:true});
+    }
+    added++;
+  });
+  if(added>0){
+    if(typeof _binRender==='function')_binRender();
+    E_renderTL&&E_renderTL();
+    toast&&toast(added+' recording'+(added!==1?'s':'')+' added to timeline','ok',4000);
+  }
+};
+
+// ── _renderStudioRecordings: show clips in recording studio right panel ─────
+window._renderStudioRecordings=function(){
+  var clips=window.PROJECT?.clips||{};
+  var entries=Object.keys(clips);
+  // Find the recordings panel in the studio
+  var panel=document.querySelector('#studio-recordings,[id*="studio-clip"],[class*="studio-rec"]');
+  if(!panel)return;
+  panel.innerHTML='';
+  entries.forEach(function(sid){
+    var clip=clips[sid];
+    if(!clip||!clip.url)return;
+    var item=document.createElement('div');
+    item.style.cssText='display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,.05);margin:4px 0;cursor:pointer;';
+    item.innerHTML='<video src="'+clip.url+'" style="width:48px;height:32px;border-radius:3px;object-fit:cover" muted></video><div style="flex:1;min-width:0"><div style="font-size:11px;font-weight:600;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(clip.sceneName||'Recording')+'</div><div style="font-size:10px;color:#64748b">'+(clip.duration||0).toFixed(0)+'s &bull; '+Math.round((clip.size||0)/1024/1024)+'MB</div></div>';
+    item.onclick=function(){if(typeof E_loadSrc==='function'&&clip.url)E_loadSrc(clip.url,clip.sceneName);};
+    panel.appendChild(item);
+  });
+};
+
+/* ─── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────── */
 document.addEventListener('keydown',function(e){
   if(!document.getElementById('edit-pg')||!document.getElementById('edit-pg').classList.contains('on'))return;
   if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
@@ -6275,7 +6334,17 @@ setTimeout(function(){
       if(d==='none'||d==='')target.style.display='';
     }
     // Post-nav hooks
-    if(pg==='record-pg'){setTimeout(function(){if(typeof startCamera==='function'&&typeof STUDIO!=='undefined'&&!STUDIO.stream)startCamera();},600);}
+    if(pg==='record-pg'){setTimeout(function(){
+    if(typeof startCamera==='function'&&typeof STUDIO!=='undefined'&&!STUDIO.stream)startCamera();
+    // Ensure STUDIO knows which scene to record
+    if(typeof STUDIO!=='undefined'&&window.PROJECT?.scenes?.length){
+      if(STUDIO.currentScene==null)STUDIO.currentScene=0;
+      // Load scenes list into STUDIO
+      if(!STUDIO.scenes||!STUDIO.scenes.length){
+        STUDIO.scenes=window.PROJECT.scenes.map(function(s,i){return {id:s.id,num:i+1,narration:s.narration||'',duration:s.duration||10};});
+      }
+    }
+  },600);}
     if(pg==='edit-pg'){setTimeout(function(){
     if(typeof E_build==='function'){window._tlEventsWired=false;E_build();}
     // Reset playhead to 0 if past all clips
