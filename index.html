@@ -6679,10 +6679,17 @@ window.E_exportTimeline=async function(){
     // Draw loop — render program video + overlays to canvas
     var drawing=true;
     var lastT=0;
+    var _exportLastT=0;
     function drawFrame(ts){
+      if(!_exportStartTS)_exportStartTS=ts;
       if(!drawing)return;
-      if(ts-lastT>=33){ // ~30fps
-        lastT=ts;
+      var elapsed=(ts-_exportStartTS)/1000; // real seconds elapsed
+      // Advance playhead based on real time (not relying on _esFrame)
+      window._esPH=elapsed;
+      if(window.E){E.playhead=elapsed;E.currentTime=elapsed;}
+      if(typeof movePH==='function')movePH(elapsed);
+      if(ts-_exportLastT>=33){ // ~30fps
+        _exportLastT=ts;
         ctx.fillStyle='#000';ctx.fillRect(0,0,1280,720);
         if(progVid&&progVid.readyState>=2&&!progVid.paused){
           try{ctx.drawImage(progVid,0,0,1280,720);}catch(e){}
@@ -6703,7 +6710,7 @@ window.E_exportTimeline=async function(){
         }
       }
       var _td=manifest.totalDuration>0?manifest.totalDuration:59;
-      if(window._esPlaying&&(window._esPH||0)<_td){
+      if(window._esPlaying&&elapsed<_td){
         requestAnimationFrame(drawFrame);
       } else {
         drawing=false;
