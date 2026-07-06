@@ -8800,7 +8800,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
               <span onclick="setTpBg('rgba(0,0,0,.75)');this.parentElement.querySelectorAll('span[onclick]').forEach(s=>s.style.outline='');this.style.outline='2px solid #f59e0b';" title="Transparent" style="display:inline-block;width:16px;height:16px;border-radius:3px;background:repeating-linear-gradient(45deg,#333 0,#333 3px,#555 3px,#555 6px);cursor:pointer;border:1.5px solid rgba(255,212,0,.4);"></span>
               <span onclick="setTpBg('#ffffff');this.parentElement.querySelectorAll('span[onclick]').forEach(s=>s.style.outline='');this.style.outline='2px solid #00d4ff';" title="White" style="display:inline-block;width:16px;height:16px;border-radius:3px;background:#fff;cursor:pointer;border:1.5px solid rgba(255,255,255,.6);"></span>
             </div>
-            <select id="tp-scroll-mode" aria-label="Teleprompter scroll mode" style="background:rgba(255,255,255,.04);border:.5px solid rgba(255,255,255,.07);color:rgba(255,255,255,.35);border-radius:3px;padding:2px 4px;font-size:9px;flex-shrink:0;" onchange="setTpScrollMode(this.value)">
+            <select id="tp-scroll-mode" aria-label="Teleprompter scroll mode" onchange="setTpScrollMode(this.value)" style="background:rgba(255,255,255,.04);border:.5px solid rgba(255,255,255,.07);color:rgba(255,255,255,.35);border-radius:3px;padding:2px 4px;font-size:9px;flex-shrink:0;" onchange="setTpScrollMode(this.value)">
               <option value="auto">Auto-scroll</option>
               <option value="manual">Manual</option>
               <option value="word">Word-by-word</option>
@@ -23950,6 +23950,54 @@ window.startAdaptive=function(){if(typeof toggleAdaptiveTp==='function')toggleAd
 window.tpFwd=function(){var el=document.querySelector('.tp-text,[id*=tp-text]');if(el)el.scrollTop+=80;};
 window.tpSpeedUp=function(){var s=document.getElementById('tp-speed');if(s&&typeof TP!=='undefined'){TP.speed=Math.min((TP.speed||80)+10,200);if(s.noUiSlider)s.noUiSlider.set([TP.speed]);else s.value=TP.speed;}};
 window.tpSlowDown=function(){var s=document.getElementById('tp-speed');if(s&&typeof TP!=='undefined'){TP.speed=Math.max((TP.speed||80)-10,10);if(s.noUiSlider)s.noUiSlider.set([TP.speed]);else s.value=TP.speed;}};
+// ── setTpScrollMode — switch teleprompter between auto/word/manual/sentence ──
+function setTpScrollMode(mode){
+  if(typeof TP==='undefined')window.TP=window.TP||{speed:80,playing:false};
+  // Stop current mode
+  if(typeof tpToggle==='function'&&typeof TP!=='undefined'&&TP.playing)tpToggle();
+  if(window._studioWBW&&_studioWBW.running){_studioWBW.running=false;clearInterval(_studioWBW.timer);}
+  // Update selects to reflect mode
+  ['tp-mode-sel','tp-scroll-mode'].forEach(function(id){var s=document.getElementById(id);if(s)s.value=mode;});
+  // Apply mode
+  if(mode==='auto'){
+    // Auto-scroll — restart TP playing
+    if(typeof tpToggle==='function'&&typeof TP!=='undefined'&&!TP.playing)tpToggle();
+    toast&&toast('Auto-scroll mode','info',1500);
+  } else if(mode==='word'||mode==='sentence'){
+    // Word-by-word / sentence mode
+    var tp=document.querySelector('#studio-tp-text,#tp-text,.tp-text');
+    if(tp&&window._studioWBW){
+      var allWords=tp.querySelectorAll('.tp-word');
+      if(!allWords.length){
+        // Wrap words if not done
+        var html=tp.innerHTML;
+        tp.innerHTML=html.replace(/(S+)/g,'<span class="tp-word">$1</span>');
+        allWords=tp.querySelectorAll('.tp-word');
+      }
+      _studioWBW.words=Array.from(allWords);
+      _studioWBW.idx=0;
+      _studioWBW.running=true;
+      // Highlight first word
+      if(typeof renderStudioWbw==='function')renderStudioWbw();
+      // Advance by clicking
+      tp.onclick=function(){
+        if(!_studioWBW.running)return;
+        _studioWBW.idx=Math.min(_studioWBW.idx+1,_studioWBW.words.length-1);
+        if(typeof renderStudioWbw==='function')renderStudioWbw();
+        // Auto-scroll tp to show current word
+        var cur=_studioWBW.words[_studioWBW.idx];
+        if(cur)cur.scrollIntoView({behavior:'smooth',block:'center'});
+      };
+    }
+    toast&&toast(mode==='word'?'Word-by-word: tap to advance':'Sentence mode: tap to advance','info',2000);
+  } else if(mode==='manual'){
+    toast&&toast('Manual mode: scroll freely','info',1500);
+  }
+  // Update Practice button
+  var pb=document.getElementById('btn-tp-start');
+  if(pb){pb.textContent=mode==='word'?'⏹ Stop':'▶ Practice';pb.style.background=mode==='word'?'rgba(239,68,68,.2)':'';pb.style.color=mode==='word'?'#ef4444':'';}
+}
+window.setTpScrollMode=setTpScrollMode;
 // ── Teleprompter mode aliases — global, run immediately ─────────────────────
 window.startScroll=function(){if(typeof tpToggle==='function'){if(typeof TP==='undefined'||!TP.playing)tpToggle();}};
 window.stopScroll=function(){if(typeof tpToggle==='function'){if(typeof TP!=='undefined'&&TP.playing)tpToggle();}};
