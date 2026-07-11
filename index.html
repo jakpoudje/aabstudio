@@ -13347,6 +13347,24 @@ function studioNext() {
           toast('Camera ready', 'ok');
         })
         .catch(function (e) {
+          console.error('[AAB] Camera error:',e.name,e.message);
+          if (e.name === 'NotFoundError' || e.name === 'DevicesNotFoundError') {
+            toast('Requesting camera access...', 'info');
+            navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+              .then(function(stream) {
+                STUDIO.stream = stream; STUDIO.camOn = true; STUDIO.micOn = true;
+                if (vid) { vid.srcObject = stream; vid.muted = true; vid.style.display = 'block'; }
+                if (noCamera) noCamera.style.display = 'none';
+                if(typeof updateCamBtn==='function')updateCamBtn();
+                if(typeof updateMicBtn==='function')updateMicBtn();
+                toast('Camera ready', 'ok');
+              })
+              .catch(function(e2) {
+                if (noCamera) noCamera.innerHTML = '<div style="color:var(--red);font-size:13px;padding:16px;">Camera denied: ' + e2.message + '</div><button class="s-btn" style="margin-top:8px;" onclick="startCamera()">Retry</button>';
+                toast('Camera: ' + e2.message, 'error');
+              });
+            return;
+          }
           if (noCamera) noCamera.innerHTML = '<div style="color:var(--red);font-size:13px;padding:16px;">Camera denied: ' + e.message + '</div><button class="s-btn" style="margin-top:8px;" onclick="startCamera()">Retry</button>';
           toast('Camera: ' + e.message, 'error');
         });
@@ -27546,6 +27564,21 @@ console.log('[AABStudio Transitions] 40 professional transitions loaded');
 })();
 </script>
 
+<script>
+(function(){
+  document.addEventListener('click',function(e){
+    var el=e.target.closest('button,a[onclick],[onclick],[data-action]');
+    if(!el)return;
+    var etag=el.tagName;var eid=el.id?'#'+el.id:'';
+    var txt=(el.textContent||el.title||'').trim().replace(/\s+/g,' ').slice(0,40);
+    var oc=el.getAttribute('onclick')||el.getAttribute('data-action')||'';
+    var fn=oc?oc.split('(')[0].trim().slice(0,30):'';
+    var exists=fn?(typeof window[fn]==='function'?'OK':'MISSING'):'no-onclick';
+    console.log('[BTN] '+etag+eid+' "'+txt+'" → '+fn+'() '+exists);
+  },true);
+  console.log('[AAB] Button logger active');
+})();
+</script>
 </body>
 </html>
 
