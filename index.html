@@ -24027,6 +24027,36 @@ window._studioPracticeToggle=function(btn){
   if(btn){btn.textContent='⏹ Stop Practice';btn.style.background='rgba(16,185,129,.2)';btn.style.color='#10b981';}
   typeof toast==='function'&&toast('Practice mode — teleprompter running, NOT recording','ok',3000);
 };
+// ── setRecState: the missing function that crashed initStudio ──────────────
+window.REC_STATE = window.REC_STATE || 'READY';
+window.setRecState = function(state){
+  window.REC_STATE = state;
+  var rb = document.getElementById('btn-rec');
+  var statusEl = document.getElementById('studio-status');
+  if(rb){
+    if(state==='RECORDING'){
+      rb.textContent='⏹ Stop';
+      rb.classList.add('recording','on');
+      rb.style.background='rgba(239,68,68,.25)';
+      rb.style.color='#ef4444';
+    } else if(state==='STOPPED'){
+      rb.textContent='⏺ REC';
+      rb.classList.remove('recording','on');
+      rb.style.background='';
+      rb.style.color='';
+    } else { // READY or anything else
+      rb.textContent='⏺ REC';
+      rb.classList.remove('recording','on');
+      rb.style.background='';
+      rb.style.color='';
+    }
+  }
+  // Update the small status pill (● READY / ● RECORDING) if present
+  if(statusEl){
+    statusEl.textContent = state==='RECORDING' ? '● RECORDING' : '● READY';
+    statusEl.style.color = state==='RECORDING' ? '#ef4444' : '';
+  }
+};
 window.E_progToggle=function(){var v=document.getElementById('e-prog-vid'),b=document.getElementById('e-prog-play');if(!window.E||!E.tracks)return;if(E.playing){E.playing=false;if(v)v.pause();if(b)b.textContent='▶';return;}E.playing=true;if(b)b.textContent='⏸';window._pIdx=0;window._pNext();};
 window._pNext=function(){var v=document.getElementById('e-prog-vid');if(!v||!window.E||!E.playing)return;var mt=E.tracks.find(function(t){return t.id==='main';});if(!mt||!mt.clips[window._pIdx]){E.playing=false;var b=document.getElementById('e-prog-play');if(b)b.textContent='▶';return;}var c=mt.clips[window._pIdx];if(!c.url){window._pIdx++;window._pNext();return;}v.src=c.url;v.style.display='block';v.load();v.play().catch(function(){});};
 window.E_fc=function(id){if(!window.E||!E.tracks)return;var cl=null;E.tracks.forEach(function(tr){tr.clips.forEach(function(c){if(c.id===id)cl=c;});});if(!cl)return;E.selectedClipId=id;if(cl.url)window.E_loadSrc(cl.url);window._insp(cl);};
