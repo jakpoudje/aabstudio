@@ -24079,6 +24079,35 @@ window.setRecState = function(state){
     statusEl.style.color = state==='RECORDING' ? '#ef4444' : '';
   }
 };
+// ── Asset overlay timer helpers — were called but never defined (crashed recording) ──
+window._aabAssetTimers = window._aabAssetTimers || [];
+window.clearAssetTimers = function(){
+  try{
+    (window._aabAssetTimers||[]).forEach(function(t){clearTimeout(t);});
+  }catch(e){}
+  window._aabAssetTimers = [];
+};
+window.scheduleSceneAssets = function(sceneIndex){
+  // Clear any previously scheduled asset reveals
+  if(typeof clearAssetTimers==='function')clearAssetTimers();
+  try{
+    var scene = (window.STUDIO && STUDIO.scenes && STUDIO.scenes[sceneIndex]) ? STUDIO.scenes[sceneIndex] : null;
+    if(!scene) return;
+    // Assets can live on the scene as .assets / .overlays (array of {url,at,duration})
+    var assets = scene.assets || scene.overlays || [];
+    if(!assets || !assets.length) return; // nothing to schedule — safe no-op
+    assets.forEach(function(a){
+      var at = (a.at||0)*1000; // seconds -> ms
+      var t = setTimeout(function(){
+        try{
+          if(typeof showAssetOverlay==='function') showAssetOverlay(a);
+          else if(typeof setPipMode==='function' && a.url){ /* asset overlay hook */ }
+        }catch(e){}
+      }, at);
+      window._aabAssetTimers.push(t);
+    });
+  }catch(e){ console.warn('[AAB] scheduleSceneAssets skipped:', e.message); }
+};
 window.E_progToggle=function(){var v=document.getElementById('e-prog-vid'),b=document.getElementById('e-prog-play');if(!window.E||!E.tracks)return;if(E.playing){E.playing=false;if(v)v.pause();if(b)b.textContent='▶';return;}E.playing=true;if(b)b.textContent='⏸';window._pIdx=0;window._pNext();};
 window._pNext=function(){var v=document.getElementById('e-prog-vid');if(!v||!window.E||!E.playing)return;var mt=E.tracks.find(function(t){return t.id==='main';});if(!mt||!mt.clips[window._pIdx]){E.playing=false;var b=document.getElementById('e-prog-play');if(b)b.textContent='▶';return;}var c=mt.clips[window._pIdx];if(!c.url){window._pIdx++;window._pNext();return;}v.src=c.url;v.style.display='block';v.load();v.play().catch(function(){});};
 window.E_fc=function(id){if(!window.E||!E.tracks)return;var cl=null;E.tracks.forEach(function(tr){tr.clips.forEach(function(c){if(c.id===id)cl=c;});});if(!cl)return;E.selectedClipId=id;if(cl.url)window.E_loadSrc(cl.url);window._insp(cl);};
