@@ -13361,8 +13361,18 @@ function studioNext() {
           msg='Camera permission denied';
           hint='Click the camera icon in your browser address bar and allow access, then click Retry.';
         } else if(e.name==='NotFoundError'||e.name==='DevicesNotFoundError'){
-          msg='No camera found';
-          hint='Make sure your camera is connected and not in use by another app. On Mac: System Settings → Privacy & Security → Camera → enable your browser.';
+          msg='Camera unavailable';
+          hint='A camera was detected but could not be opened. This usually means another app (Zoom, Teams, FaceTime, Photo Booth) is using it — fully quit that app, then click Retry. If no other app is open, unplug/replug an external camera or restart your browser.';
+          // Distinguish "busy" from "genuinely absent"
+          try{
+            navigator.mediaDevices.enumerateDevices().then(function(ds){
+              var n=ds.filter(function(x){return x.kind==='videoinput';}).length;
+              if(n===0){
+                var nc=document.getElementById('studio-no-camera');
+                if(nc){var h=nc.querySelector('div:nth-child(3)');if(h)h.textContent='No camera detected at all. Check that your webcam is connected and enabled in your OS privacy settings.';}
+              }
+            });
+          }catch(_e){}
         } else if(e.name==='NotReadableError'||e.name==='TrackStartError'){
           msg='Camera is in use by another app';
           hint='Close any other app using your camera (Zoom, Teams, FaceTime) then click Retry.';
