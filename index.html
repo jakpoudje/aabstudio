@@ -7006,7 +7006,7 @@ window.startLiveWaveform = function(canvasId) {
   var H = canvas.height || canvas.offsetHeight;
   canvas.width = W; canvas.height = H;
 
-  navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+  navigator.mediaDevices.getUserMedia({ audio: {echoCancellation:true,noiseSuppression:true,sampleRate:44100}, video: false })
     .then(function(stream) {
       var ac = new (window.AudioContext || window.webkitAudioContext)();
       var src = ac.createMediaStreamSource(stream);
@@ -8926,7 +8926,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
       <div class="panel-group grp-tp">
       <div class="panel-group-label">📖 Teleprompter</div>
       <div class="panel-group-body" style="gap:6px;flex-wrap:wrap;">
-      <button class="s-btn s-btn-gold" id="btn-tp-start" onclick="if(window._studioWBW&&_studioWBW.running){_studioWBW.running=false;clearInterval(_studioWBW.timer);if(window.STUDIO_TP){STUDIO_TP.running=false;clearInterval(STUDIO_TP.timer);}this.textContent='▶ Practice';this.style.background='';this.style.color='';}else{setTpScrollMode('word');}" style="font-size:11px;padding:6px 12px;font-weight:600;">▶ Practice</button>
+      <button class="s-btn s-btn-gold" id="btn-tp-start" onclick="_studioPracticeToggle(this)" style="font-size:11px;padding:6px 12px;font-weight:600;">▶ Practice</button>
       <button class="s-btn s-btn-gold" id="btn-adaptive" onclick="toggleAdaptiveTp()" style="font-size:11px;padding:6px 10px;" title="Mic listens and advances text to match your speech">🎤 Adapt</button>
       <div style="display:flex;align-items:center;gap:4px;">
       <span style="font-size:9px;color:rgba(245,158,11,.5);">Speed</span>
@@ -13659,6 +13659,10 @@ function studioNext() {
 
     // Override startRec to ensure TP visible + set state machine
     function startRec() {
+      // REC = record only — freeze teleprompter so user reads at own pace
+      if(typeof studioTpStop==='function')studioTpStop();
+      if(window.STUDIO_TP){STUDIO_TP.running=false;clearInterval(STUDIO_TP.timer);}
+      if(typeof TP!=='undefined'&&TP.playing&&typeof tpToggle==='function')tpToggle();
       if (!STUDIO.stream || !STUDIO.stream.active) {
         toast('Camera not started — click \uD83D\uDCF7 Cam first', 'error');
         return;
@@ -24020,6 +24024,29 @@ window.tpSpeedUp=function(){
 window.tpSlowDown=function(){
   var s=document.getElementById('tp-speed');
   if(s&&typeof TP!=='undefined'){TP.speed=Math.max((TP.speed||80)-10,10);try{s.noUiSlider?s.noUiSlider.set([TP.speed]):void(s.value=TP.speed);}catch(e){}}
+};
+
+// ── PRACTICE = TP scrolls, no recording ──────────────────────────────
+window._studioPracticeToggle=function(btn){
+  if(window._practiceRunning){
+    window._practiceRunning=false;
+    if(typeof studioTpStop==='function')studioTpStop();
+    if(window.STUDIO_TP){STUDIO_TP.running=false;clearInterval(STUDIO_TP.timer);}
+    if(typeof TP!=='undefined'&&TP.playing&&typeof tpToggle==='function')tpToggle();
+    if(btn){btn.textContent='▶ Practice';btn.style.background='';btn.style.color='';}
+    typeof toast==='function'&&toast('Practice stopped','info',1500);return;
+  }
+  if(window.STUDIO&&STUDIO.recording){typeof toast==='function'&&toast('Stop recording first','error',2000);return;}
+  window._practiceRunning=true;
+  var modeEl=document.getElementById('tp-mode-sel')||document.getElementById('tp-scroll-mode');
+  var mode=modeEl?modeEl.value:'auto';
+  if(typeof setTpScrollMode==='function')setTpScrollMode(mode);
+  if(mode==='auto'||!mode){
+    if(typeof studioTpStart==='function')studioTpStart();
+    else if(typeof TP!=='undefined'&&!TP.playing&&typeof tpToggle==='function')tpToggle();
+  }
+  if(btn){btn.textContent='⏹ Stop Practice';btn.style.background='rgba(16,185,129,.2)';btn.style.color='#10b981';}
+  typeof toast==='function'&&toast('Practice mode — teleprompter running, NOT recording','ok',3000);
 };
 window.E_progToggle=function(){var v=document.getElementById('e-prog-vid'),b=document.getElementById('e-prog-play');if(!window.E||!E.tracks)return;if(E.playing){E.playing=false;if(v)v.pause();if(b)b.textContent='▶';return;}E.playing=true;if(b)b.textContent='⏸';window._pIdx=0;window._pNext();};
 window._pNext=function(){var v=document.getElementById('e-prog-vid');if(!v||!window.E||!E.playing)return;var mt=E.tracks.find(function(t){return t.id==='main';});if(!mt||!mt.clips[window._pIdx]){E.playing=false;var b=document.getElementById('e-prog-play');if(b)b.textContent='▶';return;}var c=mt.clips[window._pIdx];if(!c.url){window._pIdx++;window._pNext();return;}v.src=c.url;v.style.display='block';v.load();v.play().catch(function(){});};
