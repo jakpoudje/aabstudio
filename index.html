@@ -10225,8 +10225,20 @@ window._safeFetch = async function(url, opts, timeoutMs) {
     var _tpAutoTimer = null;
     var _supa = null;
 
+      // Safe storage — Safari private mode / blocked-storage fallback to memory
+      if(!window._aabSafeStorage){
+        var _mem={};
+        var _lsWorks=(function(){try{var k='__aab_test__';window.localStorage.setItem(k,'1');window.localStorage.removeItem(k);return true;}catch(e){return false;}})();
+        window._aabSafeStorage={
+          getItem:function(k){try{return _lsWorks?window.localStorage.getItem(k):(_mem[k]||null);}catch(e){return _mem[k]||null;}},
+          setItem:function(k,v){try{if(_lsWorks)window.localStorage.setItem(k,v);else _mem[k]=v;}catch(e){_mem[k]=v;}},
+          removeItem:function(k){try{if(_lsWorks)window.localStorage.removeItem(k);else delete _mem[k];}catch(e){delete _mem[k];}}
+        };
+        if(!_lsWorks)console.warn('[AAB] localStorage blocked (Safari private mode?) — using in-memory session storage');
+      }
+
     function getSupa() { if (!_supa && window.supabase) _supa = window.supabase.createClient(SUPA_URL, SUPA_KEY, { 
-        auth: { persistSession: true, storage: window.localStorage, storageKey: 'aab-supabase-auth', autoRefreshToken: true, detectSessionInUrl: false },
+        auth: { persistSession: true, storage: window._aabSafeStorage, storageKey: 'aab-supabase-auth', autoRefreshToken: true, detectSessionInUrl: false },
         realtime: { params: { eventsPerSecond: 0 } }, // Disable realtime to prevent WebSocket SyntaxErrors
         global: { headers: { 'X-Client-Info': 'aabstudio/1.0' } }
       }); return _supa; }
