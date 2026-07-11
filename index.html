@@ -13389,27 +13389,14 @@ function studioNext() {
         toast('Camera: '+msg,'error');
       }
       // Check permission state first — if not yet granted, bare call triggers the popup
-      navigator.permissions.query({name:'camera'}).then(function(perm){
-        var useConstraints=(perm.state==='granted'&&!STUDIO._preferredCam);
-        var constraints=useConstraints
-          ?{video:videoConstraints,audio:audioConstraints}
-          :{video:true,audio:true};
-        navigator.mediaDevices.getUserMedia(constraints)
-          .then(_applyStream)
-          .catch(function(e){
-            // If constrained call failed, retry bare (triggers popup if needed)
-            if(useConstraints){
-              navigator.mediaDevices.getUserMedia({video:true,audio:true})
-                .then(_applyStream).catch(_camError);
-            } else {
-              _camError(e);
-            }
-          });
-      }).catch(function(){
-        // permissions API not supported — go straight to bare call
-        navigator.mediaDevices.getUserMedia({video:true,audio:true})
-          .then(_applyStream).catch(_camError);
-      });
+      navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: audioConstraints })
+        .then(_applyStream)
+        .catch(function(e){
+          // Retry once with bare constraints in case the ideal resolution/facingMode is unsupported
+          navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+            .then(_applyStream)
+            .catch(_camError);
+        });
     }
 
     // Override updateTP to also schedule assets
