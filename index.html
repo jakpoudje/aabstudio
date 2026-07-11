@@ -13331,108 +13331,44 @@ function studioNext() {
       if (STUDIO._preferredCam) videoConstraints.deviceId = { exact: STUDIO._preferredCam };
       if (STUDIO._preferredMic) audioConstraints.deviceId = { exact: STUDIO._preferredMic };
 
-      navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: audioConstraints })
-        .then(function (stream) {
-          STUDIO.stream = stream;
-          STUDIO.camOn = true;
-          STUDIO.micOn = true;
-          if (vid) { vid.srcObject = stream; vid.style.display = 'block'; }
-          if (noCamera) noCamera.style.display = 'none';
-          if (_currentBg === 'none') {
-            if (vid) vid.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;';
-          }
-          updateCamBtn(); updateMicBtn();
-          initAudioMeter(stream);
-          enumerateDevices(); // populate device dropdowns after permission granted
-          toast('Camera ready', 'ok');
-        })
-        .catch(function (e) {
-          console.error('[AAB] Camera error:',e.name,e.message);
-          if (e.name === 'NotFoundError' || e.name === 'DevicesNotFoundError') {
-            toast('Requesting camera access...', 'info');
-            navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-              .then(function(stream) {
-                STUDIO.stream = stream; STUDIO.camOn = true; STUDIO.micOn = true;
-                if (vid) { vid.srcObject = stream; vid.muted = true; vid.style.display = 'block'; }
-                if (noCamera) noCamera.style.display = 'none';
-                if(typeof updateCamBtn==='function')updateCamBtn();
-                if(typeof updateMicBtn==='function')updateMicBtn();
-                toast('Camera ready', 'ok');
-              })
-              .catch(function(e2) {
-                if (noCamera) noCamera.innerHTML = '<div style="color:var(--red);font-size:13px;padding:16px;">Camera denied: ' + e2.message + '</div><button class="s-btn" style="margin-top:8px;" onclick="startCamera()">Retry</button>';
-                toast('Camera: ' + e2.message, 'error');
-              });
-            return;
-          }
-          if (noCamera) noCamera.innerHTML = '<div style="color:var(--red);font-size:13px;padding:16px;">Camera denied: ' + e.message + '</div><button class="s-btn" style="margin-top:8px;" onclick="startCamera()">Retry</button>';
-          toast('Camera: ' + e.message, 'error');
-        });
-    }
-
-    // ── RECORDING STATE MACHINE ────────────────────────────────────────────────────
-    // States: IDLE → READY → COUNTDOWN → RECORDING → STOPPED
-    var REC_STATE = 'IDLE';
-
-    function setRecState(state) {
-      REC_STATE = state;
-      var badge = document.getElementById('rec-badge');
-      var txt = document.getElementById('rec-txt');
-      var btn = document.getElementById('btn-rec');
-      var map = {
-        IDLE: { label: 'IDLE', cls: 'rec-badge idle', btn: '⏺ REC', bg: '', color: '' },
-        READY: { label: 'READY', cls: 'rec-badge ready', btn: '⏺ REC', bg: '', color: '' },
-        COUNTDOWN: { label: 'COUNTDOWN', cls: 'rec-badge countdown', btn: '■ STOP', bg: '#dc2626', color: '#fff' },
-        RECORDING: { label: 'REC', cls: 'rec-badge recording', btn: '■ STOP', bg: '#dc2626', color: '#fff' },
-        STOPPED: { label: 'SAVED', cls: 'rec-badge done', btn: '⏺ REC', bg: '', color: '' },
-      };
-      var m = map[state] || map.IDLE;
-      if (badge) badge.className = m.cls;
-      if (txt) txt.textContent = m.label;
-      if (btn) {
-        btn.textContent = m.btn;
-        btn.style.background = m.bg;
-        btn.style.borderColor = m.bg;
-        btn.style.color = m.color;
-        btn.style.fontWeight = m.bg ? '700' : '';
+      // Helper: wire stream to UI
+      function _applyStream(stream) {
+        STUDIO.stream = stream; STUDIO.camOn = true; STUDIO.micOn = true;
+        if (vid) { vid.srcObject = stream; vid.muted = true; vid.style.display = 'block'; }
+        if (noCamera) noCamera.style.display = 'none';
+        if(typeof updateCamBtn==='function')updateCamBtn();
+        if(typeof updateMicBtn==='function')updateMicBtn();
+        if(typeof initAudioMeter==='function')initAudioMeter(stream);
+        if(typeof enumerateDevices==='function')enumerateDevices();
+        toast('Camera ready', 'ok');
       }
-    }
-
-    // ── ASSET TIMING SYSTEM ────────────────────────────────────────────────────────
-    // Assets can appear at: 'start' | 'mid' | 'end' | number (seconds)
-    var _assetTimers = [];
-
-    function clearAssetTimers() {
-      _assetTimers.forEach(function (t) { clearTimeout(t); });
-      _assetTimers = [];
-      var area = document.getElementById('studio-overlay-area');
-      if (area) area.innerHTML = '';
-    }
-
-    function scheduleSceneAssets(sceneIdx) {
-      clearAssetTimers();
-      // Asset auto-overlay during recording requires Pro Studio plan
-      if (APP.plan !== 'pro' && APP.plan !== 'studio' && APP.plan !== 'creator') {
-        return; // free users don't get asset overlays
+      function _camError(e) {
+        console.error('[AAB] Camera error:',e.name,e.message);
+        var msg=e.name==='NotAllowedError'?'Camera permission denied — allow it in your browser settings':e.message;
+        if(noCamera)noCamera.innerHTML='<div style="color:var(--red);font-size:13px;padding:16px;text-align:center;">'+msg+'</div><button class="s-btn" style="margin-top:8px;" onclick="startCamera()">Retry</button>';
+        toast('Camera: '+msg,'error');
       }
-      var scene = PROJECT.scenes[sceneIdx];
-      if (!scene || !scene.assets || !scene.assets.length) return;
-      var narration = scene.narration || '';
-      var words = narration.split(/\s+/).length;
-      var sceneDurMs = (words / (STUDIO.tpSpeed || 80)) * 60000;
-
-      scene.assets.forEach(function (asset) {
-        var delayMs = 0;
-        var timing = asset.timing || 'start';
-        if (timing === 'start') delayMs = 200;
-        else if (timing === 'mid') delayMs = sceneDurMs * 0.5;
-        else if (timing === 'end') delayMs = sceneDurMs * 0.85;
-        else if (typeof timing === 'number') delayMs = timing * 1000;
-
-        var t = setTimeout(function () {
-          showAssetNow(asset.id);
-        }, delayMs);
-        _assetTimers.push(t);
+      // Check permission state first — if not yet granted, bare call triggers the popup
+      navigator.permissions.query({name:'camera'}).then(function(perm){
+        var useConstraints=(perm.state==='granted'&&!STUDIO._preferredCam);
+        var constraints=useConstraints
+          ?{video:videoConstraints,audio:audioConstraints}
+          :{video:true,audio:true};
+        navigator.mediaDevices.getUserMedia(constraints)
+          .then(_applyStream)
+          .catch(function(e){
+            // If constrained call failed, retry bare (triggers popup if needed)
+            if(useConstraints){
+              navigator.mediaDevices.getUserMedia({video:true,audio:true})
+                .then(_applyStream).catch(_camError);
+            } else {
+              _camError(e);
+            }
+          });
+      }).catch(function(){
+        // permissions API not supported — go straight to bare call
+        navigator.mediaDevices.getUserMedia({video:true,audio:true})
+          .then(_applyStream).catch(_camError);
       });
     }
 
