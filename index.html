@@ -7933,7 +7933,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
         <button class="btn btn-ghost btn-sm" id="home-signin-btn" onclick="nav('auth-pg')">Sign in</button>
         <button class="btn btn-primary btn-sm" id="home-start-btn" onclick="nav('auth-pg')">Get started free</button>
         <!-- Logged IN state (hidden until auth) -->
-        <button class="btn btn-ghost btn-sm" id="home-dashboard-btn" style="display:none;" onclick="nav('dashboard-pg')">Dashboard</button>
+        <button class="btn btn-primary btn-sm" id="home-dashboard-btn" style="display:none;background:var(--accent);color:#000;font-weight:700;border:none;" onclick="nav('dashboard-pg')">→ Dashboard</button>
         <button class="btn btn-primary btn-sm" id="home-studio-btn" style="display:none;" onclick="heroStart()">Open Studio</button>
       </div>
     </div>
@@ -10247,7 +10247,7 @@ window._safeFetch = async function(url, opts, timeoutMs) {
     function nav(pg) {
   // Save current page for refresh restoration
   if(pg && ['auth-pg','home-pg','landing-pg'].indexOf(pg)===-1) {
-    try { sessionStorage.setItem('aab_pg',pg); localStorage.setItem('aab_last_pg',pg); } catch(e){}
+    try { sessionStorage.setItem('aab_pg',pg); localStorage.setItem('aab_last_pg',pg); if(window.PROJECT&&window.PROJECT.id)localStorage.setItem('aab_last_proj_id',window.PROJECT.id); } catch(e){}
   }
       // Auth gate
       if (requiresLogin(pg) && !APP.user) {
@@ -12963,7 +12963,7 @@ function studioNext() {
               if (curId === 'dashboard-pg' || curId === '' || !curId) {
                 if (typeof loadDashboard === 'function') loadDashboard();
                 // Only navigate if already on dashboard (don't interrupt scenes/studio/edit)
-                if (!curId || curId === 'dashboard-pg') nav('dashboard-pg');
+                if (!curId || curId === 'home' || curId === 'home-pg' || curId === 'auth-pg') nav('dashboard-pg');
                 setTimeout(function(){ if(typeof renderProjectList==='function') renderProjectList(); }, 400);
               }
             });
@@ -23832,17 +23832,24 @@ window.startSyncRecord=window.startSyncRecord||function(){
 <script id="aab-session-restore">
 // Restore last page on refresh (not on full navigation)
 (function(){
-  var savedPage=sessionStorage.getItem('aab_current_page');
-  if(savedPage&&savedPage!=='home-pg'&&savedPage!=='dash-pg'&&savedPage!=='edit-pg'&&savedPage!=='scenes-pg'&&savedPage!=='script-pg'){
-    // Restore after app loads
+  // Restore last page on refresh — check sessionStorage first, then localStorage
+  var savedPage=sessionStorage.getItem('aab_pg')||localStorage.getItem('aab_last_pg');
+  var SKIP_PAGES=['home-pg','home','auth-pg','landing-pg',''];
+  if(savedPage&&SKIP_PAGES.indexOf(savedPage)===-1){
     setTimeout(function(){
-      if(typeof nav==='function'&&savedPage){
-        nav(savedPage);
-        // If it was scenes/record/edit, also restore project
-        var savedProj=sessionStorage.getItem('aab_current_proj');
-        if(savedProj&&typeof openProject==='function'){try{openProject(JSON.parse(savedProj));}catch(e){}}
+      if(typeof nav==='function'){
+        var attempts=0;
+        var tryNav=function(){
+          attempts++;
+          if(typeof requiresLogin==='function'&&requiresLogin(savedPage)&&!window.APP?.user&&attempts<20)
+            return setTimeout(tryNav,300);
+          nav(savedPage);
+          var savedProj=localStorage.getItem('aab_last_proj_id');
+          if(savedProj&&typeof ap_open==='function')try{ap_open(savedProj);}catch(e){}
+        };
+        tryNav();
       }
-    },1500);
+    },600);
   }
 })();
 </script>
