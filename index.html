@@ -13323,12 +13323,6 @@ function studioNext() {
 
     // Override startCamera to use selected devices
     function startCamera() {
-      // Guard against overlapping calls — two getUserMedia at once makes the 2nd fail
-      if(window._camStarting){return;}
-      if(window.STUDIO && STUDIO.stream && STUDIO.stream.active){return;} // already on
-      window._camStarting=true;
-      var _clearStarting=function(){window._camStarting=false;};
-      setTimeout(_clearStarting,6000); // safety release
       var vid = document.getElementById('studio-cam');
       var noCamera = document.getElementById('studio-no-camera');
 
@@ -13351,7 +13345,6 @@ function studioNext() {
 
       // Helper: wire stream to UI
       function _applyStream(stream) {
-        window._camStarting=false;
         STUDIO.stream = stream; STUDIO.camOn = true; STUDIO.micOn = true;
         if (vid) { vid.srcObject = stream; vid.muted = true; vid.style.display = 'block'; }
         if (noCamera) noCamera.style.display = 'none';
@@ -13362,7 +13355,6 @@ function studioNext() {
         toast('Camera ready', 'ok');
       }
       function _camError(e) {
-        window._camStarting=false;
         console.error('[AAB] Camera error:',e.name,e.message);
         var msg,hint='';
         if(e.name==='NotAllowedError'||e.name==='PermissionDeniedError'){
@@ -13526,9 +13518,8 @@ function studioNext() {
       // Update teleprompter text for first scene
       updateTP();
 
-      // Camera is NOT auto-started — user clicks the Cam button to enable it
-      // (avoids NotFoundError spam on open and lets the permission prompt come on user action)
-      if(typeof updateCamBtn==='function')updateCamBtn();
+      // Auto-start camera
+      startCamera();
       startElapsedTimer();
       startAutoSave();
       enumerateDevices();
