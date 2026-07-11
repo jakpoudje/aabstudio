@@ -13344,8 +13344,26 @@ function studioNext() {
       }
       function _camError(e) {
         console.error('[AAB] Camera error:',e.name,e.message);
-        var msg=e.name==='NotAllowedError'?'Camera permission denied — allow it in your browser settings':e.message;
-        if(noCamera)noCamera.innerHTML='<div style="color:var(--red);font-size:13px;padding:16px;text-align:center;">'+msg+'</div><button class="s-btn" style="margin-top:8px;" onclick="startCamera()">Retry</button>';
+        var msg,hint='';
+        if(e.name==='NotAllowedError'||e.name==='PermissionDeniedError'){
+          msg='Camera permission denied';
+          hint='Click the camera icon in your browser address bar and allow access, then click Retry.';
+        } else if(e.name==='NotFoundError'||e.name==='DevicesNotFoundError'){
+          msg='No camera found';
+          hint='Make sure your camera is connected and not in use by another app. On Mac: System Settings → Privacy & Security → Camera → enable your browser.';
+        } else if(e.name==='NotReadableError'||e.name==='TrackStartError'){
+          msg='Camera is in use by another app';
+          hint='Close any other app using your camera (Zoom, Teams, FaceTime) then click Retry.';
+        } else {
+          msg=e.message||'Camera error';
+          hint='Click Retry or refresh the page.';
+        }
+        if(noCamera)noCamera.innerHTML='<div style="padding:20px;text-align:center;">'
+          +'<div style="font-size:28px;margin-bottom:8px;">📷</div>'
+          +'<div style="color:var(--red);font-size:14px;font-weight:700;margin-bottom:6px;">'+msg+'</div>'
+          +'<div style="color:rgba(255,255,255,.6);font-size:12px;line-height:1.5;margin-bottom:14px;">'+hint+'</div>'
+          +'<button class="s-btn" onclick="startCamera()" style="margin:0 auto;">Retry Camera</button>'
+          +'</div>';
         toast('Camera: '+msg,'error');
       }
       // Check permission state first — if not yet granted, bare call triggers the popup
