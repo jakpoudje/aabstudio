@@ -23668,6 +23668,24 @@ window.aps_saveCharacter=window.aps_saveCharacter||function(){
 console.log('[AABStudio] All stubs loaded: setTpScrollMode, toggleMirror, tpPractice, aps_goToEditSuite, aps_setBg, aps_filterScenes, sidebarTab + all APS controls');
 
 // ── SYNC RECORD: records all scenes in order, auto-advances ──
+window._syncUpdateSceneCounter=function(n,total){
+  var txt=n+'/'+total;
+  // Known ids
+  ['studio-scene-num','st-scene-cnt','studio-scene-counter'].forEach(function(id){
+    var el=document.getElementById(id); if(el) el.textContent=txt;
+  });
+  // Class-based
+  document.querySelectorAll('.studio-scene-num').forEach(function(el){el.textContent=txt;});
+  // Unlabeled divs between Prev/Next that show the N/M pattern
+  document.querySelectorAll('button').forEach(function(b){
+    if(/Prev|Next|←|→/.test((b.textContent||''))){
+      var p=b.parentElement;
+      if(p) Array.from(p.children).forEach(function(c){
+        if(c.children.length===0 && /^\d+\/\d+$/.test((c.textContent||'').trim())) c.textContent=txt;
+      });
+    }
+  });
+};
 window.startSyncRecord_All=function(){
   if(!window.PROJECT||!PROJECT.scenes||!PROJECT.scenes.length){
     if(typeof toast==='function')toast('No scenes to record','error');return;
@@ -23677,49 +23695,64 @@ window.startSyncRecord_All=function(){
   }
   if(STUDIO.recording){ if(typeof toast==='function')toast('Already recording','info'); return; }
 
-  // Sync REC = drive the SAME machinery the single-scene REC + Next uses.
-  // That path already: saves each scene's real blob into PROJECT.clips with an id,
-  // updates the teleprompter scene text, renders the recordings list, and auto-advances.
-  // We add per-scene auto-advance on the scene's duration + teleprompter auto-scroll.
+  // The LIVE scene system is studioGoTo(n) + STUDIO_SCENE (1-based). The RECORDING/clip-save
+  // system uses STUDIO.currentScene (0-based). They are separate — so we drive studioGoTo for
+  // navigation+teleprompter AND bridge STUDIO.currentScene so each clip saves to the right scene.
   STUDIO._syncMode = true;
 
-  // Jump to first scene
+  // Start on scene 1
+  if(typeof studioGoTo==='function') studioGoTo(1);
+  window.STUDIO_SCENE = 1;
   STUDIO.currentScene = 0;
-  PROJECT.currentScene = 0;
-  if(typeof updateTP==='function') updateTP();
-  if(typeof window._updateStudioCounters==='function') window._updateStudioCounters();
+  window._syncUpdateSceneCounter(1, PROJECT.scenes.length);
+
+  function sceneCount(){ return PROJECT.scenes.length; }
 
   function armSceneTimer(){
-    // Auto-advance when this scene's duration elapses (Sync REC behaviour)
     if(STUDIO._sceneTimer) clearTimeout(STUDIO._sceneTimer);
-    var sc = PROJECT.scenes[STUDIO.currentScene];
+    var idx0 = (window.STUDIO_SCENE||1) - 1;            // 0-based current scene
+    var sc = PROJECT.scenes[idx0];
     var durMs = ((sc && sc.duration) || 8) * 1000;
-    // Start teleprompter in the USER-SELECTED mode (auto / word / sentence / manual)
+    // Teleprompter in the user-selected mode, auto-advancing while recording
     try{
-      if(typeof startTpForMode==='function') startTpForMode(true); // true = auto-advance word/sentence while recording
+      if(typeof startTpForMode==='function') startTpForMode(true);
       else if(typeof studioTpStart==='function') studioTpStart();
     }catch(_){}
     STUDIO._sceneTimer = setTimeout(function(){
-      if(!STUDIO._syncMode || !STUDIO.recording) return;
-      if(STUDIO.currentScene < PROJECT.scenes.length - 1){
-        // studioNext() stops the recorder → saves this scene's clip → advances →
-        // its onstop auto-advance restarts recording for the next scene.
-        studioNext();
-        // Re-arm for the next scene shortly after it starts recording
-        setTimeout(function(){ if(STUDIO._syncMode && STUDIO.recording) armSceneTimer(); }, 1800);
+      if(!STUDIO._syncMode) return;
+      var cur = window.STUDIO_SCENE||1;
+      if(cur < sceneCount()){
+        // Stop current scene's recording (saves clip to PROJECT.clips at STUDIO.currentScene)
+        if(STUDIO.recording && typeof stopRec==='function') stopRec();
+        // Advance the LIVE nav system (updates visible counter + teleprompter text)
+        setTimeout(function(){
+          studioGoTo(cur + 1);
+          window.STUDIO_SCENE = cur + 1;
+          STUDIO.currentScene = window.STUDIO_SCENE - 1;  // bridge recording index
+          window._syncUpdateSceneCounter(window.STUDIO_SCENE, sceneCount());
+          // Restart recording for the new scene, then re-arm the timer
+          setTimeout(function(){
+            if(!STUDIO._syncMode) return;
+            if(typeof startRec==='function') startRec();
+            setTimeout(function(){ if(STUDIO._syncMode) armSceneTimer(); }, 500);
+          }, 400);
+        }, 350);
       } else {
-        // Last scene — stop and finish (stopRec saves final clip + navigates to edit)
+        // Last scene done — stop everything
         STUDIO._syncMode = false;
         if(typeof stopTpForMode==='function') stopTpForMode();
         else if(typeof studioTpStop==='function') studioTpStop();
-        if(typeof stopRec==='function') stopRec();
+        if(STUDIO.recording && typeof stopRec==='function') stopRec();
+        var btn=document.getElementById('btn-auto');
+        if(btn){ btn.textContent='\u23f1 Sync REC'; btn.classList.remove('on'); }
+        if(typeof toast==='function') toast('All scenes recorded ✓','ok');
       }
     }, durMs);
   }
 
   if(typeof toast==='function')toast('Sync REC starting in 3…','info');
   setTimeout(function(){
-    // Begin recording scene 1 through the real path
+    // Begin recording scene 1 (startRec saves clip against STUDIO.currentScene=0)
     if(typeof startRec==='function'){ startRec(); }
     else if(typeof toggleRecording==='function'){ toggleRecording(); }
     setTimeout(armSceneTimer, 600);
