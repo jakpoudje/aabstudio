@@ -11940,15 +11940,26 @@ window.addEventListener('resize', function() { if(typeof _fitStudioLayout==='fun
 
 
 window._loadStudioTpText = function() {
-  var sc = (window.STUDIO && STUDIO.currentScene) || 0;
+  // ── SINGLE SOURCE OF TRUTH for teleprompter text ──
+  // Scene pointer: STUDIO_SCENE (1-based) is canonical; keep STUDIO.currentScene bridged.
   var scenes = (window.PROJECT && PROJECT.scenes) || [];
   if(!scenes.length) return;
-  var scene = scenes[sc] || scenes[0];
-  var text = scene.narration || scene.script || '';
+  var n1 = (typeof window.STUDIO_SCENE !== 'undefined' && window.STUDIO_SCENE) ? window.STUDIO_SCENE : ((window.STUDIO && STUDIO.currentScene || 0) + 1);
+  n1 = Math.max(1, Math.min(scenes.length, n1));
+  window.STUDIO_SCENE = n1;
+  if(window.STUDIO) STUDIO.currentScene = n1 - 1;
+  var scene = scenes[n1 - 1] || scenes[0];
+  var text = scene.narration || scene.script || scene.text || scene.content || '';
   var tpBody = document.getElementById('tp-body');
   if(!tpBody) return;
+  // Stop any word-by-word run — the renderer owns the DOM
   if(window._studioWBW) { _studioWBW.running=false; clearInterval(_studioWBW.timer); _studioWBW.idx=0; _studioWBW.words=[]; _studioWBW.highlight=null; }
-  tpBody.innerHTML = '<div id="tp-cur" style="font-family:Sora,monospace;font-size:clamp(18px,2vw,26px);line-height:1.7;color:rgba(255,255,255,0.7);padding:12px 20px;white-space:pre-wrap;word-break:keep-all;">'+text.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>';
+  // Fixed structure the whole TP system relies on: tp-body(viewport) > tp-cur(content)
+  var fontVar = getComputedStyle(document.documentElement).getPropertyValue('--tp-font-size');
+  var fontCss = fontVar && parseFloat(fontVar) ? (parseFloat(fontVar)+'px') : 'clamp(18px,2vw,26px)';
+  tpBody.innerHTML = '<div id="tp-cur" style="font-family:Sora,monospace;font-size:'+fontCss+';line-height:1.7;color:rgba(255,255,255,0.7);padding:12px 20px;white-space:pre-wrap;word-break:keep-all;">'+text.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>';
+  // Update every scene counter element (fragmented across ids + unlabeled divs)
+  if(typeof window._syncUpdateSceneCounter==='function') window._syncUpdateSceneCounter(n1, scenes.length);
 };
 function openRecordingStudio() {
   if (!PROJECT.scenes || !PROJECT.scenes.length) { toast('Add scenes first', 'err'); return; }
@@ -13383,63 +13394,9 @@ function studioNext() {
 
     // Override updateTP to also schedule assets
     function updateTP() {
-      // Only guard during active scrolling (not on page load)
+      // Delegate to the ONE renderer (guard during active scroll so we don't fight the animation)
       if (window._aabTpScrolling) return;
-      // Bridge to the LIVE scene pointer (STUDIO_SCENE is 1-based) so we never show a stale scene.
-      if (typeof window.STUDIO_SCENE !== 'undefined' && window.STUDIO_SCENE) {
-        STUDIO.currentScene = window.STUDIO_SCENE - 1;
-      }
-      var scene   = PROJECT.scenes[STUDIO.currentScene || 0];
-      var prevSc  = PROJECT.scenes[(STUDIO.currentScene || 0) - 1];
-      var nextSc  = PROJECT.scenes[(STUDIO.currentScene || 0) + 1];
-      var curEl   = document.getElementById('tp-cur');
-      var prevEl  = document.getElementById('tp-prev');
-      var nextEl  = document.getElementById('tp-next');
-
-      if (!curEl) return;
-
-      // No scenes - guide user
-      if (!PROJECT.scenes || !PROJECT.scenes.length) {
-        curEl.innerHTML = '<div style="color:rgba(255,255,255,.25);font-size:16px;text-align:center;padding:20px;">' +
-          '\uD83D\uDCDD No script yet — go to Script to add your content, then come back to record.' +
-          '</div>';
-        if (prevEl) prevEl.innerHTML = '';
-        if (nextEl) nextEl.innerHTML = '';
-        return;
-      }
-
-      // No narration in current scene
-      var narration = (scene && scene.narration) ? scene.narration.trim() : '';
-      if (!narration) {
-        curEl.innerHTML = '<div style="color:rgba(255,255,255,.3);font-size:15px;text-align:center;padding:20px;">' +
-          '⚠️ Scene ' + ((STUDIO.currentScene || 0) + 1) + ' has no script. Select this scene in Script editor to add text.' +
-          '</div>';
-        if (prevEl) prevEl.innerHTML = '';
-        if (nextEl) nextEl.innerHTML = '';
-        return;
-      }
-
-      // Build word spans for highlighting
-      var words = narration.split(/\s+/).filter(Boolean);
-      var spans = words.map(function(w, i) {
-        return '<span id="aab_tw' + i + '" class="tp-word" style="display:inline;margin-right:0.3em;color:rgba(255,255,255,0.55);transition:color 0.08s,font-weight 0.08s;">' +
-          w.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</span>';
-      }).join('');
-
-      curEl.innerHTML = '<div class="tp-cur-inner" id="tp-cur-inner" style="display:block;white-space:normal;word-wrap:break-word;width:100%;will-change:transform;transition:transform 0.25s ease;line-height:1.7;">' + spans + '</div>';
-
-      // Prev scene — last line
-      if (prevEl) {
-        var pt = prevSc ? (prevSc.narration || '').trim() : '';
-        if (pt.length > 80) pt = '…' + pt.slice(-70);
-        prevEl.innerHTML = pt ? '<span style="color:rgba(255,255,255,.2);font-size:13px;">' + pt + '</span>' : '';
-      }
-      // Next scene — first line
-      if (nextEl) {
-        var nt = nextSc ? (nextSc.narration || '').trim() : '';
-        if (nt.length > 80) nt = nt.slice(0,70) + '…';
-        nextEl.innerHTML = nt ? '<span style="color:rgba(255,255,255,.2);font-size:13px;">' + nt + '</span>' : '';
-      }
+      if (typeof _loadStudioTpText === 'function') _loadStudioTpText();
     }
 
     // ── AUTO-SAVE EVERY 30s ────────────────────────────────────────────────────────
@@ -13713,210 +13670,106 @@ function studioNext() {
     }
 
     function startTpAutoTimer() {
-      // Kill ALL competing engines — this is the ONLY TP engine
+      // ── SINGLE teleprompter scroll engine ──
+      // Kill any competing timers first.
       window._aabTpActive = false;
       if (window._studioTpTimer) { clearInterval(window._studioTpTimer); window._studioTpTimer = null; }
       if (window._tpAutoTimer) { cancelAnimationFrame(window._tpAutoTimer); window._tpAutoTimer = null; }
+      if (window._studioTpModeTimer) { clearInterval(window._studioTpModeTimer); window._studioTpModeTimer = null; }
 
       var mode = window._tpScrollMode || window._tpMode || 'auto';
-
-      // MANUAL mode — no auto movement, return immediately
       if (mode === 'manual') return;
 
-      var scene = PROJECT && PROJECT.scenes && PROJECT.scenes[STUDIO.currentScene];
-      if (!scene || !scene.narration || !scene.narration.trim()) return;
-      var words = scene.narration.trim().split(/\s+/).filter(Boolean);
-      if (!words.length) return;
-
-      // Rebuild word spans (needed for word-by-word; auto-scroll uses them for timing)
-      if (typeof updateTP === 'function') updateTP();
+      // Ensure the current scene text is rendered by the ONE renderer, then scroll tp-cur.
+      if (typeof _loadStudioTpText === 'function') _loadStudioTpText();
 
       requestAnimationFrame(function() {
-        var curEl = document.getElementById('tp-cur');
-        var inner = document.getElementById('tp-cur-inner');
-        if (!curEl || !inner) return;
+        var viewport = document.getElementById('tp-body');
+        var content  = document.getElementById('tp-cur');
+        if (!viewport || !content) return;
 
-        // Ensure text wraps properly (not one horizontal line)
-        inner.style.display = 'block';
-        inner.style.whiteSpace = 'normal';
-        inner.style.wordWrap = 'break-word';
-        inner.style.width = '100%';
-        inner.style.willChange = 'transform';
+        var wpm = Math.max(20, Math.min(400, (window.STUDIO && STUDIO.tpSpeed) || 80));
+        var text = (content.textContent || '').trim();
+        var words = text.split(/\s+/).filter(Boolean);
+        if (!words.length) return;
 
-        var wpm = Math.max(20, Math.min(400, (STUDIO && STUDIO.tpSpeed) || 80));
-
-        // ════════════════════════════════════════════════════════
-        // MODE: AUTO-SCROLL
-        // Smooth continuous upward scroll — like a real teleprompter
-        // Text rolls upward at a speed matching WPM reading speed
-        // ════════════════════════════════════════════════════════
-        if (mode === 'auto' || mode === 'scroll') {
-          // Reset to top
-          inner.style.transition = 'none';
-          inner.style.transform = 'translateY(0px)';
-
-          // Wait one frame so layout settles after reset
-          requestAnimationFrame(function() {
-            var innerH = inner.scrollHeight;
-            var viewH  = curEl.offsetHeight;
-            var scrollable = Math.max(0, innerH - viewH);
-
-            if (scrollable < 5) {
-              // Text fits the window — scroll it gently through the reading zone anyway
-              // so the presenter gets steady visual pacing (top-align → hold).
-              scrollable = Math.max(scrollable, Math.round(viewH * 0.6));
+        // ── WORD / SENTENCE: highlight-advance at WPM ──
+        if (mode === 'word' || mode === 'sentence') {
+          // Wrap words in spans (once)
+          if (!content.querySelector('.tp-word')) {
+            content.innerHTML = text.replace(/(\S+)/g, '<span class="tp-word">$1</span>');
+          }
+          var spans = Array.from(content.querySelectorAll('.tp-word'));
+          window._studioWBW = window._studioWBW || {};
+          _studioWBW.words = spans; _studioWBW.idx = 0; _studioWBW.running = true;
+          var step = (mode === 'sentence') ? 6 : 1;
+          function paint(){
+            spans.forEach(function(s,i){
+              if (i === _studioWBW.idx) { s.style.color='#f59e0b'; s.style.fontWeight='700'; s.style.textShadow='0 0 18px rgba(245,158,11,.8)'; s.scrollIntoView({behavior:'smooth',block:'center'}); }
+              else if (i < _studioWBW.idx) { s.style.color='rgba(255,255,255,0.28)'; s.style.fontWeight=''; s.style.textShadow=''; }
+              else { s.style.color='rgba(255,255,255,0.6)'; s.style.fontWeight=''; s.style.textShadow=''; }
+            });
+          }
+          paint();
+          var msPer = Math.round(60000 / wpm) * step;
+          window._studioTpModeTimer = setInterval(function(){
+            if (!STUDIO_TP.running && !STUDIO.tpAuto) { clearInterval(window._studioTpModeTimer); window._studioTpModeTimer=null; return; }
+            _studioWBW.idx = Math.min(_studioWBW.idx + step, spans.length - 1);
+            paint();
+            if (_studioWBW.idx >= spans.length - 1) {
+              clearInterval(window._studioTpModeTimer); window._studioTpModeTimer=null;
+              _advanceSceneOrStop();
             }
-
-            // Time to read the whole text at WPM speed
-            var totalMs = (words.length / wpm) * 60000;
-            // Pixels per millisecond
-            var pxPerMs = scrollable / totalMs;
-
-            var startTs = null;
-
-            function scrollFrame(ts) {
-              if (!STUDIO_TP || (!STUDIO_TP.running && !STUDIO.tpAuto)) {
-                window._tpAutoTimer = null;
-                return;
-              }
-              if (!startTs) startTs = ts;
-              var elapsed = ts - startTs;
-              var scrolled = Math.min(elapsed * pxPerMs, scrollable);
-              inner.style.transition = 'none';
-              inner.style.transform = 'translateY(-' + scrolled + 'px)';
-
-              // Progress bar
-              var pf = document.getElementById('scene-prog-fill');
-              if (pf) pf.style.width = Math.min(100, (scrolled / scrollable) * 100) + '%';
-
-              if (scrolled < scrollable) {
-                window._tpAutoTimer = requestAnimationFrame(scrollFrame);
-              } else {
-                // Reached end of this scene
-                window._tpAutoTimer = null;
-                STUDIO_TP.running = false;
-                inner.style.transform = 'translateY(0px)';
-                if (PROJECT.scenes && STUDIO.currentScene < PROJECT.scenes.length - 1) {
-                  STUDIO.currentScene++;
-                  inner.style.transform = '';
-                  if (typeof updateTP === 'function') updateTP();
-                  if (typeof renderStudioQueue === 'function') renderStudioQueue();
-                  if (STUDIO_TP.wasRunning || STUDIO.tpAuto) {
-                    STUDIO_TP.running = true;
-                    setTimeout(function() { startTpAutoTimer(); }, 300);
-                  }
-                } else {
-                  STUDIO_TP.wasRunning = false;
-                  STUDIO.tpAuto = false;
-                  var btn = document.getElementById('btn-tp-start');
-                  if (btn) { btn.textContent = '▶ Practice'; btn.style.cssText = ''; }
-                  if (typeof toast === 'function') toast('✓ All scenes complete', 'ok');
-                }
-              }
-            }
-
-            inner.style.transition = 'none';
-            window._tpAutoTimer = requestAnimationFrame(scrollFrame);
-          });
+          }, msPer);
           return;
         }
 
-        // ════════════════════════════════════════════════════════
-        // MODE: WORD-BY-WORD
-        // Highlights each word in sequence at WPM speed
-        // Text does NOT scroll — stays in place
-        // Each word lights up in cyan then dims when passed
-        // ════════════════════════════════════════════════════════
-        if (mode === 'word') {
-          if (!document.getElementById('aab_tw0')) return;
-
-          inner.style.transition = 'none';
-          inner.style.transform = 'translateY(0px)';
-
-          var msPerW = 60000 / wpm;
-          var totalMs2 = words.length * msPerW;
-          var startTs2 = null;
-          var lastWi2 = -1;
-
-          function wordFrame(ts) {
-            if (!STUDIO_TP || (!STUDIO_TP.running && !STUDIO.tpAuto)) {
-              window._tpAutoTimer = null;
-              return;
-            }
-            if (!startTs2) startTs2 = ts;
-            var elapsed2 = ts - startTs2;
-            var progress2 = Math.min(elapsed2 / totalMs2, 1);
-            var wi2 = Math.min(Math.floor(elapsed2 / msPerW), words.length - 1);
-
-            if (wi2 !== lastWi2) {
-              lastWi2 = wi2;
-              for (var k = 0; k < words.length; k++) {
-                var sp = document.getElementById('aab_tw' + k);
-                if (!sp) continue;
-                if (k < wi2) {
-                  // Past — dim
-                  sp.style.color = 'rgba(255,255,255,.25)';
-                  sp.style.fontWeight = '';
-                  sp.style.background = '';
-                  sp.style.padding = '';
-                } else if (k === wi2) {
-                  // Current — highlight bright cyan
-                  sp.style.color = '#00d4ff';
-                  sp.style.fontWeight = '700';
-                  sp.style.background = 'rgba(0,212,255,.15)';
-                  sp.style.borderRadius = '4px';
-                  sp.style.padding = '1px 3px';
-                  // Scroll to keep current word in view
-                  var spanRect = sp.getBoundingClientRect();
-                  var innerRect = inner.getBoundingClientRect();
-                  var curRect = curEl.getBoundingClientRect();
-                  var curT = parseFloat(inner.style.transform.replace('translateY(','').replace('px)','')) || 0;
-                  var spanPos = (spanRect.top - innerRect.top) - curT;
-                  var target = Math.max(0, spanPos - curT - curRect.height * 0.30);
-                  inner.style.transition = 'transform 0.2s ease';
-                  inner.style.transform = 'translateY(-' + target + 'px)';
-                } else {
-                  // Upcoming — normal
-                  sp.style.color = 'rgba(255,255,255,.6)';
-                  sp.style.fontWeight = '';
-                  sp.style.background = '';
-                  sp.style.padding = '';
-                }
-              }
-              var pf2 = document.getElementById('scene-prog-fill');
-              if (pf2) pf2.style.width = (progress2 * 100) + '%';
-            }
-
-            if (progress2 < 1) {
-              window._tpAutoTimer = requestAnimationFrame(wordFrame);
+        // ── AUTO / SCROLL: smooth continuous upward translate ──
+        viewport.style.overflow = 'hidden';
+        content.style.transition = 'none';
+        content.style.transform = 'translateY(0px)';
+        requestAnimationFrame(function(){
+          var contentH = content.scrollHeight;
+          var viewH = viewport.offsetHeight || 120;
+          var scrollable = Math.max(0, contentH - viewH);
+          // Even if the text fits, glide it gently through the reading zone.
+          if (scrollable < 5) scrollable = Math.round(viewH * 0.5);
+          var totalMs = Math.max(2000, (words.length / wpm) * 60000);
+          var pxPerMs = scrollable / totalMs;
+          var startTs = null;
+          function frame(ts){
+            if (!STUDIO_TP.running && !STUDIO.tpAuto) { window._tpAutoTimer = null; return; }
+            if (!startTs) startTs = ts;
+            var scrolled = Math.min((ts - startTs) * pxPerMs, scrollable);
+            content.style.transform = 'translateY(-' + scrolled + 'px)';
+            var pf = document.getElementById('scene-prog-fill');
+            if (pf) pf.style.width = Math.min(100, (scrolled / scrollable) * 100) + '%';
+            if (scrolled < scrollable) {
+              window._tpAutoTimer = requestAnimationFrame(frame);
             } else {
               window._tpAutoTimer = null;
-              STUDIO_TP.running = false;
-              inner.style.transform = 'translateY(0px)';
-              var btn2 = document.getElementById('btn-tp-start');
-              if (btn2) { btn2.textContent = '▶ Practice'; btn2.style.cssText = ''; }
-              if (PROJECT.scenes && STUDIO.currentScene < PROJECT.scenes.length - 1) {
-                STUDIO.currentScene++;
-                inner.style.transform = '';
-                if (typeof updateTP === 'function') updateTP();
-                if (typeof renderStudioQueue === 'function') renderStudioQueue();
-                if (STUDIO_TP.wasRunning || STUDIO.tpAuto) {
-                  STUDIO_TP.running = true;
-                  setTimeout(function() { startTpAutoTimer(); }, 200);
-                }
-              } else {
-                STUDIO_TP.wasRunning = false;
-                STUDIO.tpAuto = false;
-                if (typeof toast === 'function') toast('\u2713 All scenes complete', 'ok');
-              }
+              _advanceSceneOrStop();
             }
           }
-
-          STUDIO_TP.wasRunning = true;
-          STUDIO_TP.running = true;
-          window._tpAutoTimer = requestAnimationFrame(wordFrame);
-        }
+          window._tpAutoTimer = requestAnimationFrame(frame);
+        });
       });
+
+      // Advance to next scene (via the ONE nav fn) or stop at the end.
+      function _advanceSceneOrStop(){
+        var total = (window.PROJECT && PROJECT.scenes) ? PROJECT.scenes.length : 1;
+        var cur = window.STUDIO_SCENE || 1;
+        if (cur < total && (STUDIO_TP.wasRunning || STUDIO.tpAuto)) {
+          studioGoTo(cur + 1);
+          STUDIO_TP.running = true;
+          setTimeout(function(){ startTpAutoTimer(); }, 250);
+        } else {
+          STUDIO_TP.running = false; STUDIO_TP.wasRunning = false; STUDIO.tpAuto = false;
+          var btn = document.getElementById('btn-tp-start');
+          if (btn) { btn.textContent = '▶ Practice'; btn.style.cssText = ''; }
+          if (typeof toast === 'function') toast('\u2713 Teleprompter complete', 'ok');
+        }
+      }
     }
 
     // Override studioTpStop to cancel rAF not setInterval
@@ -19241,13 +19094,19 @@ window.setTpScrollMode=window.setTpScrollMode||function(modeArg){
 /* ── Scene nav ── */
 window.studioGoTo=function(n){
   var p=window.PROJECT;if(!p||!p.scenes)return;
-  n=Math.max(1,Math.min(p.scenes.length,n));window.STUDIO_SCENE=n;
+  n=Math.max(1,Math.min(p.scenes.length,n));
+  window.STUDIO_SCENE=n;
+  if(window.STUDIO) STUDIO.currentScene = n - 1;  // keep the two indices in lock-step
   var sc=p.scenes[n-1];if(!sc)return;
-  if(STUDIO_TP.timer){clearInterval(STUDIO_TP.timer);STUDIO_TP.timer=null;STUDIO_TP.running=false;}
-  if(_studioWBW.timer){clearInterval(_studioWBW.timer);_studioWBW.timer=null;_studioWBW.running=false;}
-  _tpReset(sc.narration||sc.text||sc.content||sc.script||'');
+  // Stop scroll + word engines before re-render
+  if(typeof STUDIO_TP!=='undefined'&&STUDIO_TP.timer){clearInterval(STUDIO_TP.timer);STUDIO_TP.timer=null;STUDIO_TP.running=false;}
+  if(window._tpAutoTimer){cancelAnimationFrame(window._tpAutoTimer);window._tpAutoTimer=null;}
+  if(window._studioWBW&&_studioWBW.timer){clearInterval(_studioWBW.timer);_studioWBW.timer=null;_studioWBW.running=false;}
+  // ── ONE renderer for teleprompter text ──
+  if(typeof _loadStudioTpText==='function') _loadStudioTpText();
   var btn=document.getElementById('btn-tp-start');if(btn){btn.innerHTML='&#9654; Practice';btn.style.background='';}
-  document.querySelectorAll('#studio-scene-num,.studio-scene-num').forEach(function(el){el.textContent=n+'/'+p.scenes.length;});
+  // Scene counters (all variants) + scene-item highlight
+  if(typeof window._syncUpdateSceneCounter==='function') window._syncUpdateSceneCounter(n, p.scenes.length);
   document.querySelectorAll('.studio-scene-item,[class*="studio-scene-item"]').forEach(function(el,i){
     el.style.background=i===n-1?'rgba(0,212,255,.15)':'';
     el.style.borderLeft=i===n-1?'2px solid #00d4ff':'2px solid transparent';
