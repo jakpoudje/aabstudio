@@ -5059,24 +5059,34 @@ function E_loadClips(){
   var mainTrack=E.tracks.find(function(t){return t.id==="main";});
   if(!mainTrack)return;
   mainTrack.clips=[];
-  var aps=Object.values(PROJECT.apsVideos||{}).sort(function(a,b){return a.sceneNum-b.sceneNum;});
   var pos=0;
-  aps.forEach(function(a){
-    var dur=a.duration||8;
-    mainTrack.clips.push({id:"aps_"+a.sceneNum+"_"+Date.now(),trackId:"main",name:a.name||"Scene "+a.sceneNum,url:a.url||a.videoUrl||a.heygen_url||"",type:"video",start:pos,duration:dur,transitionOut:null,narration:a.narration||a.script||"",color:"#1e40af"});
-    pos+=dur;
-  });
-  // Fallback: load from PROJECT.scenes (recorded or AI clips)
-  if(mainTrack.clips.length===0&&PROJECT.scenes&&PROJECT.scenes.length){
-    pos=0;
-    PROJECT.scenes.forEach(function(sc,i){
-      var url=sc.recordedUrl||sc.apsVideoUrl||(PROJECT.apsVideos&&PROJECT.apsVideos[sc.id])||"";
+
+  // ─── ONE source-aware loader ───
+  // Decide if THIS project is STUDIO-recorded or AI-PRESENTER, then load ONLY that
+  // source (never mix). Only clips with a real playable URL are added (no empty blocks).
+  function realUrl(u){ return (typeof u==="string" && /^(blob:|https?:|data:)/.test(u)) ? u : ""; }
+  var recScenes = (PROJECT.scenes||[]).filter(function(s){ return realUrl(s.recordedUrl); });
+  var apsList = Object.values(PROJECT.apsVideos||{}).filter(function(a){ return realUrl(a.url||a.videoUrl||a.heygen_url); });
+  var mode = PROJECT.videoMode || PROJECT.mode || (recScenes.length ? "studio" : (apsList.length ? "ai" : "none"));
+
+  if(mode==="studio"){
+    (PROJECT.scenes||[]).forEach(function(sc,i){
+      var url=realUrl(sc.recordedUrl); if(!url) return;
       var dur=sc.duration||8;
       mainTrack.clips.push({id:sc.id||("c"+i),trackId:"main",name:sc.title||("Scene "+(i+1)),
-        url:url||"",type:"video",start:pos,duration:dur,narration:sc.narration||sc.script||"",color:"#1e40af"});
+        url:url,type:"video",start:pos,duration:dur,narration:sc.narration||sc.script||"",color:"#1e40af"});
+      pos+=dur;
+    });
+  } else if(mode==="ai"){
+    apsList.sort(function(a,b){return (a.sceneNum||0)-(b.sceneNum||0);}).forEach(function(a){
+      var url=realUrl(a.url||a.videoUrl||a.heygen_url); if(!url) return;
+      var dur=a.duration||8;
+      mainTrack.clips.push({id:"aps_"+(a.sceneNum||pos)+"_"+Date.now(),trackId:"main",name:a.name||"Scene "+(a.sceneNum||""),
+        url:url,type:"video",start:pos,duration:dur,transitionOut:null,narration:a.narration||a.script||"",color:"#1e40af"});
       pos+=dur;
     });
   }
+  // mode==="none" → no real videos yet; timeline stays empty (no fake blocks).
   // Auto-populate subtitle track from clip narration
   var subTrack=E.tracks.find(function(t){return t.id==="subtitle"||t.id==="subs";});
   if(subTrack){
@@ -14421,88 +14431,9 @@ window._reapplyNav=function(){
 }
 
     function tl_buildTracksFromProject() {
-      if (!window.TL || !window.PROJECT) return;
-
-      // Merge all clip sources
-      var allClips = {};
-      // 1. Recorded clips
-      Object.assign(allClips, PROJECT.clips || {});
-      // 2. AI clips
-      Object.assign(allClips, PROJECT.aiClips || {});
-      // 3. Clip metadata (persisted even without blob URL)
-      Object.assign(allClips, PROJECT.clipsMeta || {});
-      Object.assign(allClips, PROJECT.aiClipsMeta || {});
-
-      var clips = Object.entries(allClips).filter(function(e) {
-        return e[1] && (e[1].url || e[1].videoUrl || e[1].sceneNum || e[1].sceneName);
-      });
-
-      // Sort by scene number
-      clips.sort(function(a, b) {
-        var an = (a[1].sceneNum || a[1].sceneIdx || 999);
-        var bn = (b[1].sceneNum || b[1].sceneIdx || 999);
-        return an - bn;
-      });
-
-      // If no clips but project has scenes, create placeholder clips so timeline isn't empty
-      if (clips.length === 0 && PROJECT.scenes && PROJECT.scenes.length > 0) {
-        clips = PROJECT.scenes.map(function(sc, i) {
-          return ['scene_' + sc.id, {
-            id: 'scene_' + sc.id,
-            sceneNum: sc.num || (i+1),
-            sceneName: sc.title || ('Scene ' + (i+1)),
-            duration: sc.duration || 8,
-            source: 'placeholder',
-            url: null
-          }];
-        });
-      }
-
-      // Get main video track
-      // Use actual track IDs that exist in TL.tracks
-      var videoTrack = TL.tracks.find(function(tr) { return tr.id === 'main-video' || tr.id === 'track_video'; });
-      if (!videoTrack) {
-        videoTrack = { id: 'main-video', name: '\ud83d\udcf9 Main Video', type: 'video', clips: [], muted: false, locked: false };
-        TL.tracks.unshift(videoTrack);
-      }
-
-      // Get AI track
-      var aiTrack = TL.tracks.find(function(tr) { return tr.id === 'ai-presenter' || tr.id === 'track_ai'; });
-      if (!aiTrack) {
-        aiTrack = { id: 'ai-presenter', name: '\ud83e\udd16 AI Presenter', type: 'ai', clips: [], muted: false, locked: false };
-        TL.tracks.splice(1, 0, aiTrack);
-      }
-
-      // Distribute clips to correct tracks
-      videoTrack.clips = [];
-      aiTrack.clips = [];
-      var t = 0;
-      var tAi = 0;
-
-      clips.forEach(function(entry) {
-        var id = entry[0], c = entry[1];
-        var dur = parseFloat(c.duration) || 8;
-        var isAi = c.source === 'ai-presenter' || id.startsWith('aps_') || id.startsWith('ai_');
-        var trackId2 = isAi ? (aiTrack.id) : (videoTrack.id);
-        var clipObj = {
-          id: id,
-          clipId: id,
-          start: isAi ? tAi : t,
-          duration: dur,
-          url: c.url || c.videoUrl || null,
-          label: c.sceneName || c.title || ('Scene ' + (c.sceneNum || '?')),
-          isPlaceholder: !c.url && !c.videoUrl,
-          source: c.source || 'recording'
-        };
-        if (isAi) { aiTrack.clips.push(clipObj); tAi += dur; }
-        else { videoTrack.clips.push(clipObj); t += dur; }
-      });
-
-      TL.duration = Math.max(t, tAi, 30);
-
-      // Update media bin
-      if (typeof renderEditClips === 'function') renderEditClips();
-      if (typeof tl_render === 'function') tl_render();
+      // CONSOLIDATED: the single timeline loader is E_loadClips (targets the live E/AABE system).
+      // The old TL system is retired to avoid two timelines conflicting (flicker/playhead bugs).
+      if (typeof E_loadClips === 'function') { try { E_loadClips(); } catch(e){} }
     }
 
     // ── RENDER ─────────────────────────────────────────────────────────────────────
