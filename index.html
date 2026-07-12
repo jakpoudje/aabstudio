@@ -23710,10 +23710,10 @@ window.startSyncRecord_All=function(){
     if(STUDIO._sceneTimer) clearTimeout(STUDIO._sceneTimer);
     var sc = PROJECT.scenes[STUDIO.currentScene];
     var durMs = ((sc && sc.duration) || 8) * 1000;
-    // Start teleprompter auto-scroll for this scene so the words move while recording
+    // Start teleprompter in the USER-SELECTED mode (auto / word / sentence / manual)
     try{
-      if(typeof studioTpStart==='function') studioTpStart();
-      else if(typeof window.startPracticeMode==='function') window.startPracticeMode();
+      if(typeof startTpForMode==='function') startTpForMode(true); // true = auto-advance word/sentence while recording
+      else if(typeof studioTpStart==='function') studioTpStart();
     }catch(_){}
     STUDIO._sceneTimer = setTimeout(function(){
       if(!STUDIO._syncMode || !STUDIO.recording) return;
@@ -23726,7 +23726,8 @@ window.startSyncRecord_All=function(){
       } else {
         // Last scene — stop and finish (stopRec saves final clip + navigates to edit)
         STUDIO._syncMode = false;
-        if(typeof studioTpStop==='function') studioTpStop();
+        if(typeof stopTpForMode==='function') stopTpForMode();
+        else if(typeof studioTpStop==='function') studioTpStop();
         if(typeof stopRec==='function') stopRec();
       }
     }, durMs);
@@ -23745,7 +23746,7 @@ window.startSyncRecord_All=function(){
 window.stopSyncRecord = function(){
   STUDIO._syncMode = false;
   if(STUDIO._sceneTimer) clearTimeout(STUDIO._sceneTimer);
-  if(typeof studioTpStop==='function') studioTpStop();
+  if(typeof stopTpForMode==='function') stopTpForMode(); else if(typeof studioTpStop==='function') studioTpStop();
   if(STUDIO.recording && typeof stopRec==='function') stopRec();
   var btn = document.getElementById('btn-auto');
   if(btn){ btn.textContent = '⏱ Sync REC'; btn.classList.remove('on'); }
@@ -23925,6 +23926,50 @@ window.renderStudioWbw=function(){
     }
   });
 };
+// ── Shared mode-aware teleprompter starter (used by Practice AND Sync REC) ──
+// Respects the 4 modes: auto (continuous scroll), word / sentence (auto-advance at WPM
+// during recording since the presenter can't tap), manual (user scrolls, nothing auto).
+window._studioTpModeTimer = null;
+window.getTpMode = function(){
+  var el = document.getElementById('tp-mode-sel') || document.getElementById('tp-scroll-mode') || document.getElementById('studio-scroll-mode');
+  return (el && el.value) || window._tpMode || 'auto';
+};
+window.startTpForMode = function(autoAdvance){
+  var mode = window.getTpMode();
+  // Apply the mode (wraps words for word/sentence, sets selects, etc.)
+  if(typeof setTpScrollMode==='function') setTpScrollMode(mode);
+  if(window._studioTpModeTimer){ clearInterval(window._studioTpModeTimer); window._studioTpModeTimer=null; }
+  if(mode==='auto'){
+    if(typeof studioTpStart==='function') studioTpStart();
+    else if(typeof TP!=='undefined' && !TP.playing && typeof tpToggle==='function') tpToggle();
+  } else if(mode==='word' || mode==='sentence'){
+    // During recording the presenter can't tap — auto-advance the highlight at WPM.
+    if(autoAdvance && window._studioWBW && _studioWBW.words && _studioWBW.words.length){
+      _studioWBW.running = true;
+      var spdEl = document.getElementById('tp-speed-slider') || document.getElementById('tp-spd-range') || document.getElementById('tp-speed');
+      var wpm = (spdEl && parseInt(spdEl.value)) || (typeof TP!=='undefined' && TP.speed) || 80;
+      var step = mode==='sentence' ? 4 : 1; // sentence advances in bigger chunks
+      var msPer = Math.round(60000 / Math.max(20, wpm)) * step;
+      window._studioTpModeTimer = setInterval(function(){
+        if(!_studioWBW.running){ clearInterval(window._studioTpModeTimer); return; }
+        _studioWBW.idx = Math.min((_studioWBW.idx||0)+step, _studioWBW.words.length-1);
+        if(typeof renderStudioWbw==='function') renderStudioWbw();
+        var cur=_studioWBW.words[_studioWBW.idx];
+        if(cur) cur.scrollIntoView({behavior:'smooth',block:'center'});
+        if(_studioWBW.idx >= _studioWBW.words.length-1){ clearInterval(window._studioTpModeTimer); }
+      }, msPer);
+    }
+    // manual tapping still works via the tp.onclick that setTpScrollMode wired
+  }
+  // manual → nothing to auto-run
+};
+window.stopTpForMode = function(){
+  if(window._studioTpModeTimer){ clearInterval(window._studioTpModeTimer); window._studioTpModeTimer=null; }
+  if(window._studioWBW) _studioWBW.running = false;
+  if(typeof studioTpStop==='function') studioTpStop();
+  if(typeof TP!=='undefined' && TP.playing && typeof tpToggle==='function') tpToggle();
+};
+
 function setTpScrollMode(mode){
   if(typeof TP==='undefined')window.TP=window.TP||{speed:80,playing:false};
   // Stop current mode
