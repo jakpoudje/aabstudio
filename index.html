@@ -27444,6 +27444,105 @@ function _drawTransition(ctx, type, prog, cw, ch, nextVid) {
     window.E_renderTL._transPatch = true;
     window.E_renderTL._orig = orig;
   }
+
+  // ═══ MISSING-MEDIA DETECTION ═══
+  // After each timeline render, verify each video/image clip actually loads.
+  // Broken/expired/dead clips get a clear "Missing media" overlay + Relink button
+  // instead of a silent black block — essential for a production platform.
+  (function(){
+    var rtl = window.E_renderTL;
+    if(rtl && !rtl._mediaCheck){
+      var _o = rtl;
+      window.E_renderTL = function(){
+        _o.apply(this, arguments);
+        setTimeout(_aabCheckClipMedia, 120);
+      };
+      window.E_renderTL._mediaCheck = true;
+      window.E_renderTL._transPatch = true;
+      window.E_renderTL._orig = _o;
+    }
+  })();
+
+  window._aabClipMediaCache = window._aabClipMediaCache || {};
+  function _aabCheckClipMedia(){
+    try{
+      document.querySelectorAll('.aab-clip[data-clip-id]').forEach(function(el){
+        var cid = el.getAttribute('data-clip-id');
+        var tid = el.getAttribute('data-track-id');
+        if(!window.E || !E.tracks) return;
+        var track = E.tracks.find(function(t){return t.id===tid;});
+        var clip = track && track.clips.find(function(c){return String(c.id)===String(cid);});
+        if(!clip) return;
+        // Only check media clips (video/image). Text/audio handled separately.
+        if(clip.type!=='video' && clip.type!=='image') return;
+        var url = clip.url||'';
+        if(!url){ _markMissing(el, clip, 'No media'); return; }
+        var cached = window._aabClipMediaCache[url];
+        if(cached==='ok'){ _clearMissing(el); return; }
+        if(cached==='bad'){ _markMissing(el, clip, 'Missing media'); return; }
+        // Probe once per URL
+        if(clip.type==='image'){
+          var img=new Image();
+          img.onload=function(){ window._aabClipMediaCache[url]='ok'; _clearMissing(el); };
+          img.onerror=function(){ window._aabClipMediaCache[url]='bad'; _markMissing(el, clip, 'Missing image'); };
+          img.src=url;
+        } else {
+          var v=document.createElement('video'); v.preload='metadata'; v.muted=true;
+          var settled=false;
+          v.onloadedmetadata=function(){ if(settled)return; settled=true; window._aabClipMediaCache[url]='ok'; _clearMissing(el); };
+          v.onerror=function(){ if(settled)return; settled=true; window._aabClipMediaCache[url]='bad'; _markMissing(el, clip, 'Missing video'); };
+          setTimeout(function(){ if(settled)return; settled=true; window._aabClipMediaCache[url]='bad'; _markMissing(el, clip, 'Missing video'); }, 6000);
+          v.src=url;
+        }
+      });
+    }catch(e){}
+  }
+  function _markMissing(el, clip, label){
+    el.style.background='repeating-linear-gradient(45deg,rgba(220,38,38,.18),rgba(220,38,38,.18) 8px,rgba(120,20,20,.28) 8px,rgba(120,20,20,.28) 16px)';
+    el.style.borderColor='rgba(248,113,113,.8)';
+    var ov = el.querySelector('.aab-missing-ov');
+    if(!ov){
+      ov=document.createElement('div');
+      ov.className='aab-missing-ov';
+      ov.style.cssText='position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;pointer-events:none;z-index:5;';
+      var txt=document.createElement('div');
+      txt.style.cssText='font-size:10px;font-weight:700;color:#fecaca;text-shadow:0 1px 2px #000;pointer-events:none;';
+      txt.textContent='\u26a0 '+(label||'Missing media');
+      var btn=document.createElement('button');
+      btn.className='aab-relink-btn';
+      btn.textContent='Relink';
+      btn.style.cssText='pointer-events:auto;font-size:9px;font-weight:700;color:#fff;background:rgba(220,38,38,.9);border:none;border-radius:4px;padding:2px 8px;cursor:pointer;';
+      btn.onclick=function(ev){ ev.stopPropagation(); _relinkClip(clip); };
+      ov.appendChild(txt); ov.appendChild(btn);
+      el.appendChild(ov);
+    } else {
+      var t=ov.querySelector('div'); if(t) t.textContent='\u26a0 '+(label||'Missing media');
+    }
+  }
+  function _clearMissing(el){
+    var ov=el.querySelector('.aab-missing-ov'); if(ov) ov.remove();
+    el.style.background=''; // restore default track colour via re-render styles
+  }
+  function _relinkClip(clip){
+    var inp=document.createElement('input'); inp.type='file';
+    inp.accept = clip.type==='image' ? 'image/*' : 'video/*';
+    inp.onchange=function(){
+      var f=inp.files[0]; if(!f) return;
+      var url=URL.createObjectURL(f);
+      clip.url=url;
+      if(window._aabClipMediaCache) delete window._aabClipMediaCache[url];
+      // Also update the underlying scene so it persists
+      if(window.PROJECT && PROJECT.scenes){
+        var sc = PROJECT.scenes.find(function(s){return String(s.id)===String(clip.id);});
+        if(sc){ sc.recordedUrl=url; sc.status='recorded'; }
+      }
+      if(typeof E_renderTL==='function') E_renderTL();
+      if(typeof saveProject==='function') saveProject();
+      if(typeof toast==='function') toast('Media relinked \u2713','ok');
+    };
+    inp.click();
+  }
+  window._aabCheckClipMedia = _aabCheckClipMedia;
   // Also patch _esApplyTransEffect on the existing rAF loop
   // (already patched by the module assignment above)
 })();
