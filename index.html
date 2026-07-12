@@ -7102,25 +7102,7 @@ window.setTpBg = function(color) {
 };
 
 // Font size — works on both TP pages
-window.increaseTpFont = function() {
-  var cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tp-font-size-px')||'22');
-  cur = Math.min(56, cur+2);
-  document.documentElement.style.setProperty('--tp-font-size', cur+'px');
-  document.documentElement.style.setProperty('--tp-font-size-px', String(cur));
-  ['tp-cur','tp-text','tp-body','studio-tp-words'].forEach(function(id){ var el=document.getElementById(id); if(el) el.style.fontSize=cur+'px'; });
-  // Also update word spans in studio
-  document.querySelectorAll('#studio-tp-words, .studio-tp').forEach(function(el){ el.style.fontSize=cur+'px'; });
-  if(window.TP) TP.fontSize=cur;
-};
-window.decreaseTpFont = function() {
-  var cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tp-font-size-px')||'22');
-  cur = Math.max(12, cur-2);
-  document.documentElement.style.setProperty('--tp-font-size', cur+'px');
-  document.documentElement.style.setProperty('--tp-font-size-px', String(cur));
-  ['tp-cur','tp-text','tp-body','studio-tp-words'].forEach(function(id){ var el=document.getElementById(id); if(el) el.style.fontSize=cur+'px'; });
-  document.querySelectorAll('#studio-tp-words, .studio-tp').forEach(function(el){ el.style.fontSize=cur+'px'; });
-  if(window.TP) TP.fontSize=cur;
-};
+// (duplicate increaseTpFont/decreaseTpFont removed — single _tpApplyFont version is canonical)
 
 // Mirror — works on both pages
 window.toggleMirror = function() {
@@ -12293,6 +12275,10 @@ function studioNext() {
         var el = document.getElementById(id);
         if (el && el.value != wpm) el.value = wpm;
       });
+      // If the teleprompter is currently running, restart the engine so the new WPM applies now.
+      if ((window.STUDIO_TP && STUDIO_TP.running) || window._practiceRunning) {
+        if (typeof startTpAutoTimer === 'function') { STUDIO_TP.running = true; STUDIO.tpAuto = true; startTpAutoTimer(); }
+      }
     }
     function toggleAdaptiveTp() {
       STUDIO.adaptive = !STUDIO.adaptive;
@@ -13597,6 +13583,8 @@ function studioNext() {
       }
 
       // State machine + UI
+      // Clear any stray sync-scene timer so a plain REC never auto-advances/finishes → edit.
+      if (!STUDIO._syncMode && STUDIO._sceneTimer) { clearTimeout(STUDIO._sceneTimer); STUDIO._sceneTimer = null; }
       setRecState('RECORDING');
       STUDIO.recording = true;
       STUDIO.chunks = [];
@@ -13812,14 +13800,20 @@ function studioNext() {
 
     // Override studioTpStop to cancel rAF not setInterval
     function studioTpStop() {
-      STUDIO_TP.running = false;
+      // ── THE single stop: kill EVERY teleprompter timer/engine + reset state ──
+      STUDIO_TP.running = false; STUDIO_TP.wasRunning = false;
       if(window.STUDIO) STUDIO.tpAuto = false;
       if (window._tpAutoTimer) { cancelAnimationFrame(window._tpAutoTimer); window._tpAutoTimer = null; }
-      if (window.teleprompterState) { window.teleprompterState.running = false; }
-      if (window.teleprompterState && window.teleprompterState.rafId) { cancelAnimationFrame(window.teleprompterState.rafId); window.teleprompterState.rafId = null; }
+      if (window._studioTpModeTimer) { clearInterval(window._studioTpModeTimer); window._studioTpModeTimer = null; }
+      if (window._studioTpTimer) { clearInterval(window._studioTpTimer); window._studioTpTimer = null; }
+      if (window._studioWBW) { window._studioWBW.running = false; if(_studioWBW.timer){clearInterval(_studioWBW.timer);_studioWBW.timer=null;} }
+      if (typeof STUDIO_TP!=='undefined' && STUDIO_TP.timer) { clearInterval(STUDIO_TP.timer); STUDIO_TP.timer = null; }
+      if (window.teleprompterState) { window.teleprompterState.running = false; if(window.teleprompterState.rafId){cancelAnimationFrame(window.teleprompterState.rafId); window.teleprompterState.rafId=null;} }
+      window._practiceRunning = false;
       var btn = document.getElementById('btn-tp-start');
       if (btn) { btn.textContent = '▶ Practice'; btn.style.background = ''; btn.style.borderColor = ''; btn.style.color = ''; }
     }
+    window.stopAllTp = studioTpStop;
 
     // ── SCENE ASSET TIMING IN EDITOR ──────────────────────────────────────────────
     function setAssetTiming(sceneId, assetId, timing) {
@@ -23961,25 +23955,23 @@ window.tpSlowDown=function(){
 
 // ── PRACTICE = TP scrolls, no recording ──────────────────────────────
 window._studioPracticeToggle=function(btn){
-  if(window._practiceRunning){
-    window._practiceRunning=false;
-    if(typeof studioTpStop==='function')studioTpStop();
-    if(window.STUDIO_TP){STUDIO_TP.running=false;clearInterval(STUDIO_TP.timer);}
-    if(typeof TP!=='undefined'&&TP.playing&&typeof tpToggle==='function')tpToggle();
-    if(btn){btn.textContent='▶ Practice';btn.style.background='';btn.style.color='';}
-    typeof toast==='function'&&toast('Practice stopped','info',1500);return;
+  btn = btn || document.getElementById('btn-tp-start');
+  // STOP if running — one stop for everything
+  if (window._practiceRunning || (window.STUDIO_TP && STUDIO_TP.running)) {
+    window._practiceRunning = false;
+    if (typeof studioTpStop === 'function') studioTpStop();
+    if (btn) { btn.textContent = '\u25b6 Practice'; btn.style.background=''; btn.style.color=''; }
+    typeof toast==='function' && toast('Practice stopped','info',1200);
+    return;
   }
-  if(window.STUDIO&&STUDIO.recording){typeof toast==='function'&&toast('Stop recording first','error',2000);return;}
-  window._practiceRunning=true;
-  var modeEl=document.getElementById('tp-mode-sel')||document.getElementById('tp-scroll-mode');
-  var mode=modeEl?modeEl.value:'auto';
-  if(typeof setTpScrollMode==='function')setTpScrollMode(mode);
-  if(mode==='auto'||!mode){
-    if(typeof studioTpStart==='function')studioTpStart();
-    else if(typeof TP!=='undefined'&&!TP.playing&&typeof tpToggle==='function')tpToggle();
-  }
-  if(btn){btn.textContent='⏹ Stop Practice';btn.style.background='rgba(16,185,129,.2)';btn.style.color='#10b981';}
-  typeof toast==='function'&&toast('Practice mode — teleprompter running, NOT recording','ok',3000);
+  // Don't practice while recording
+  if (window.STUDIO && STUDIO.recording) { typeof toast==='function' && toast('Stop recording first','error',1500); return; }
+  // START — practice runs the ONE engine in the selected mode, no recording
+  window._practiceRunning = true;
+  STUDIO_TP.running = true; STUDIO_TP.wasRunning = true; STUDIO.tpAuto = true;
+  if (btn) { btn.textContent = '\u23f9 Stop Practice'; btn.style.background='rgba(16,185,129,.2)'; btn.style.color='#10b981'; }
+  if (typeof startTpAutoTimer === 'function') startTpAutoTimer();
+  typeof toast==='function' && toast('Practice — teleprompter running (not recording)','ok',2000);
 };
 // ── setRecState: the missing function that crashed initStudio ──────────────
 window.REC_STATE = window.REC_STATE || 'READY';
