@@ -5064,7 +5064,12 @@ function E_loadClips(){
   // ─── ONE source-aware loader ───
   // Decide if THIS project is STUDIO-recorded or AI-PRESENTER, then load ONLY that
   // source (never mix). Only clips with a real playable URL are added (no empty blocks).
-  function realUrl(u){ return (typeof u==="string" && /^(blob:|https?:|data:)/.test(u)) ? u : ""; }
+  function realUrl(u){
+    if(typeof u!=="string" || !/^(blob:|https?:|data:)/.test(u)) return "";
+    // Reject known placeholder/sample videos (demo seed data) — these are not real clips.
+    if(/w3schools\.com|sample-videos|samplelib|dummyvideo|placeholder|test-videos?|mov_bbb|BigBuckBunny|filesamples/i.test(u)) return "";
+    return u;
+  }
   var recScenes = (PROJECT.scenes||[]).filter(function(s){ return realUrl(s.recordedUrl); });
   var apsList = Object.values(PROJECT.apsVideos||{}).filter(function(a){ return realUrl(a.url||a.videoUrl||a.heygen_url); });
   var mode = PROJECT.videoMode || PROJECT.mode || (recScenes.length ? "studio" : (apsList.length ? "ai" : "none"));
@@ -13708,7 +13713,14 @@ function studioNext() {
           paintWord();
           window._studioTpModeTimer = setInterval(function(){
             if (!STUDIO_TP.running && !STUDIO.tpAuto) { clearInterval(window._studioTpModeTimer); window._studioTpModeTimer=null; return; }
-            if (_studioWBW.idx >= wspans.length - 1) { clearInterval(window._studioTpModeTimer); window._studioTpModeTimer=null; _advanceSceneOrStop(); return; }
+            // Advance one word. Only when we've PAINTED the final word do we stop/advance the scene,
+            // so the last word is fully highlighted before moving on (no cut-off, no skipped last word).
+            if (_studioWBW.idx >= wspans.length - 1) {
+              clearInterval(window._studioTpModeTimer); window._studioTpModeTimer=null;
+              // brief hold on the last word, then advance/stop
+              setTimeout(function(){ _advanceSceneOrStop(); }, Math.round(60000 / wpm));
+              return;
+            }
             _studioWBW.idx++; paintWord();
           }, Math.round(60000 / wpm));
           return;
