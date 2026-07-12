@@ -10204,6 +10204,7 @@ window._safeFetch = async function(url, opts, timeoutMs) {
       else { window.PROJECT = window._defaultProject ? window._defaultProject() : { id: 'proj_' + Date.now(), title: 'My Video', scenes: [], assets: [], clips: {} }; window.PROJECT._isNew = true; }
     }
     var PROJECT = window.PROJECT;
+    window._tpScrollMode = 'auto'; window._tpMode = 'auto';
     var STUDIO = { stream: null, mr: null, chunks: [], recording: false, camOn: false, micOn: false, recTimer: null, recSecs: 0, analyser: null, currentScene: 0, tpAuto: false, tpSpeed: 80, adaptive: false, recognition: null, overlayPos: 'pip-right', drawActive: false, drawMode: 'pen', drawColor: '#00d4ff', drawCtx: null, isDrawing: false, sx: 0, sy: 0, snap: null, elapsed: 0, elTimer: null, mirrored: false, focusMode: false };
     var TP = { playing: false, speed: 80, fontSize: 28, mirrored: false, adaptive: false, recognition: null, scrollTimer: null, currentWord: 0, totalWords: 0, theme: 'dark', remoteId: null, remotePoll: null, remoteLastCmd: null };
     var EXPORT_STATE = { ratio: '16:9', platform: 'youtube' };
@@ -13670,71 +13671,113 @@ function studioNext() {
     }
 
     function startTpAutoTimer() {
-      // ── SINGLE teleprompter scroll engine ──
-      // Kill any competing timers first.
+      // ── SINGLE teleprompter scroll engine, FOUR distinct modes ──
       window._aabTpActive = false;
       if (window._studioTpTimer) { clearInterval(window._studioTpTimer); window._studioTpTimer = null; }
       if (window._tpAutoTimer) { cancelAnimationFrame(window._tpAutoTimer); window._tpAutoTimer = null; }
       if (window._studioTpModeTimer) { clearInterval(window._studioTpModeTimer); window._studioTpModeTimer = null; }
 
-      var mode = window._tpScrollMode || window._tpMode || 'auto';
-      if (mode === 'manual') return;
+      // Read the ACTUAL selected mode from the dropdown (not a stale global).
+      var mode = (typeof getTpMode === 'function') ? getTpMode() : (window._tpMode || 'auto');
+      window._tpScrollMode = mode; window._tpMode = mode;
+      if (mode === 'manual') return;   // manual = user scrolls, nothing auto
 
-      // Ensure the current scene text is rendered by the ONE renderer, then scroll tp-cur.
+      // Render the current scene through the ONE renderer.
       if (typeof _loadStudioTpText === 'function') _loadStudioTpText();
 
       requestAnimationFrame(function() {
         var viewport = document.getElementById('tp-body');
         var content  = document.getElementById('tp-cur');
         if (!viewport || !content) return;
+        viewport.style.overflow = 'hidden';
 
         var wpm = Math.max(20, Math.min(400, (window.STUDIO && STUDIO.tpSpeed) || 80));
-        var text = (content.textContent || '').trim();
-        var words = text.split(/\s+/).filter(Boolean);
+        var fullText = (content.textContent || '').trim();
+        var words = fullText.split(/\s+/).filter(Boolean);
         if (!words.length) return;
 
-        // ── WORD / SENTENCE: highlight-advance at WPM ──
-        if (mode === 'word' || mode === 'sentence') {
-          // Wrap words in spans (once)
-          if (!content.querySelector('.tp-word')) {
-            content.innerHTML = text.replace(/(\S+)/g, '<span class="tp-word">$1</span>');
-          }
-          var spans = Array.from(content.querySelectorAll('.tp-word'));
+        // ═══════════════════════════════════════════════════════════
+        // MODE: WORD-BY-WORD — flash ONE word at a time in gold at WPM
+        // ═══════════════════════════════════════════════════════════
+        if (mode === 'word') {
+          content.style.transform = '';
+          content.innerHTML = words.map(function(w){ return '<span class="tp-word">' + w.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</span>'; }).join(' ');
+          var wspans = Array.from(content.querySelectorAll('.tp-word'));
           window._studioWBW = window._studioWBW || {};
-          _studioWBW.words = spans; _studioWBW.idx = 0; _studioWBW.running = true;
-          var step = (mode === 'sentence') ? 6 : 1;
-          function paint(){
-            spans.forEach(function(s,i){
-              if (i === _studioWBW.idx) { s.style.color='#f59e0b'; s.style.fontWeight='700'; s.style.textShadow='0 0 18px rgba(245,158,11,.8)'; s.scrollIntoView({behavior:'smooth',block:'center'}); }
-              else if (i < _studioWBW.idx) { s.style.color='rgba(255,255,255,0.28)'; s.style.fontWeight=''; s.style.textShadow=''; }
-              else { s.style.color='rgba(255,255,255,0.6)'; s.style.fontWeight=''; s.style.textShadow=''; }
+          _studioWBW.words = wspans; _studioWBW.idx = 0; _studioWBW.running = true;
+          function paintWord(){
+            wspans.forEach(function(s,i){
+              if (i === _studioWBW.idx) { s.style.color='#f59e0b'; s.style.fontWeight='800'; s.style.textShadow='0 0 22px rgba(245,158,11,.9)'; s.scrollIntoView({behavior:'smooth',block:'center'}); }
+              else { s.style.color='rgba(255,255,255,0.30)'; s.style.fontWeight=''; s.style.textShadow=''; }
             });
           }
-          paint();
-          var msPer = Math.round(60000 / wpm) * step;
+          paintWord();
           window._studioTpModeTimer = setInterval(function(){
             if (!STUDIO_TP.running && !STUDIO.tpAuto) { clearInterval(window._studioTpModeTimer); window._studioTpModeTimer=null; return; }
-            _studioWBW.idx = Math.min(_studioWBW.idx + step, spans.length - 1);
-            paint();
-            if (_studioWBW.idx >= spans.length - 1) {
-              clearInterval(window._studioTpModeTimer); window._studioTpModeTimer=null;
-              _advanceSceneOrStop();
-            }
-          }, msPer);
+            if (_studioWBW.idx >= wspans.length - 1) { clearInterval(window._studioTpModeTimer); window._studioTpModeTimer=null; _advanceSceneOrStop(); return; }
+            _studioWBW.idx++; paintWord();
+          }, Math.round(60000 / wpm));
           return;
         }
 
-        // ── AUTO / SCROLL: smooth continuous upward translate ──
-        viewport.style.overflow = 'hidden';
+        // ═══════════════════════════════════════════════════════════
+        // MODE: SENTENCE — show ONE full sentence per page; if it does
+        // not fit, show the next chunk of THAT sentence. Whole current
+        // sentence is bright; timing scales with its word count.
+        // ═══════════════════════════════════════════════════════════
+        if (mode === 'sentence') {
+          content.style.transform = '';
+          // Split into sentences (keep the terminator)
+          var sentences = fullText.match(/[^.!?]+[.!?]*/g) || [fullText];
+          sentences = sentences.map(function(s){return s.trim();}).filter(Boolean);
+          window._tpSent = { list: sentences, idx: 0 };
+          function showSentence(){
+            var s = _tpSent.list[_tpSent.idx] || '';
+            // Render the sentence; CSS wrapping shows the whole thing across lines.
+            content.innerHTML = '<div style="color:#fff;font-weight:600;">' + s.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</div>';
+            // If the sentence overflows the viewport, scroll it up in steps ("next part").
+            content.style.transform = 'translateY(0px)';
+            var overflow = content.scrollHeight - viewport.offsetHeight;
+            _tpSent.overflow = Math.max(0, overflow);
+            _tpSent.scrolled = 0;
+          }
+          showSentence();
+          // Advance timing: proportional to words in the sentence at WPM.
+          function nextSentenceTick(){
+            if (!STUDIO_TP.running && !STUDIO.tpAuto) { clearInterval(window._studioTpModeTimer); window._studioTpModeTimer=null; return; }
+            // If current sentence overflows, scroll to reveal the next part first.
+            if (_tpSent.overflow > _tpSent.scrolled + 4) {
+              _tpSent.scrolled = Math.min(_tpSent.overflow, _tpSent.scrolled + viewport.offsetHeight * 0.5);
+              content.style.transition = 'transform .4s ease';
+              content.style.transform = 'translateY(-' + _tpSent.scrolled + 'px)';
+              return;
+            }
+            // Move to next sentence, or advance scene at the end.
+            if (_tpSent.idx >= _tpSent.list.length - 1) { clearInterval(window._studioTpModeTimer); window._studioTpModeTimer=null; _advanceSceneOrStop(); return; }
+            _tpSent.idx++; showSentence();
+          }
+          // Interval = time to read the current sentence; recompute each tick for accuracy.
+          function schedule(){
+            var s = _tpSent.list[_tpSent.idx] || '';
+            var wc = s.split(/\s+/).filter(Boolean).length || 1;
+            var ms = Math.max(1500, (wc / wpm) * 60000);
+            window._studioTpModeTimer = setInterval(nextSentenceTick, ms);
+          }
+          schedule();
+          return;
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // MODE: AUTO-SCROLL — smooth continuous upward glide of all text
+        // ═══════════════════════════════════════════════════════════
         content.style.transition = 'none';
         content.style.transform = 'translateY(0px)';
         requestAnimationFrame(function(){
           var contentH = content.scrollHeight;
           var viewH = viewport.offsetHeight || 120;
           var scrollable = Math.max(0, contentH - viewH);
-          // Even if the text fits, glide it gently through the reading zone.
           if (scrollable < 5) scrollable = Math.round(viewH * 0.5);
-          var totalMs = Math.max(2000, (words.length / wpm) * 60000);
+          var totalMs = Math.max(2500, (words.length / wpm) * 60000);
           var pxPerMs = scrollable / totalMs;
           var startTs = null;
           function frame(ts){
@@ -13744,18 +13787,13 @@ function studioNext() {
             content.style.transform = 'translateY(-' + scrolled + 'px)';
             var pf = document.getElementById('scene-prog-fill');
             if (pf) pf.style.width = Math.min(100, (scrolled / scrollable) * 100) + '%';
-            if (scrolled < scrollable) {
-              window._tpAutoTimer = requestAnimationFrame(frame);
-            } else {
-              window._tpAutoTimer = null;
-              _advanceSceneOrStop();
-            }
+            if (scrolled < scrollable) { window._tpAutoTimer = requestAnimationFrame(frame); }
+            else { window._tpAutoTimer = null; _advanceSceneOrStop(); }
           }
           window._tpAutoTimer = requestAnimationFrame(frame);
         });
       });
 
-      // Advance to next scene (via the ONE nav fn) or stop at the end.
       function _advanceSceneOrStop(){
         var total = (window.PROJECT && PROJECT.scenes) ? PROJECT.scenes.length : 1;
         var cur = window.STUDIO_SCENE || 1;
@@ -13766,7 +13804,7 @@ function studioNext() {
         } else {
           STUDIO_TP.running = false; STUDIO_TP.wasRunning = false; STUDIO.tpAuto = false;
           var btn = document.getElementById('btn-tp-start');
-          if (btn) { btn.textContent = '▶ Practice'; btn.style.cssText = ''; }
+          if (btn) { btn.textContent = '\u25b6 Practice'; btn.style.cssText = ''; }
           if (typeof toast === 'function') toast('\u2713 Teleprompter complete', 'ok');
         }
       }
