@@ -13385,6 +13385,10 @@ function studioNext() {
     function updateTP() {
       // Only guard during active scrolling (not on page load)
       if (window._aabTpScrolling) return;
+      // Bridge to the LIVE scene pointer (STUDIO_SCENE is 1-based) so we never show a stale scene.
+      if (typeof window.STUDIO_SCENE !== 'undefined' && window.STUDIO_SCENE) {
+        STUDIO.currentScene = window.STUDIO_SCENE - 1;
+      }
       var scene   = PROJECT.scenes[STUDIO.currentScene || 0];
       var prevSc  = PROJECT.scenes[(STUDIO.currentScene || 0) - 1];
       var nextSc  = PROJECT.scenes[(STUDIO.currentScene || 0) + 1];
@@ -13719,8 +13723,7 @@ function studioNext() {
       // MANUAL mode — no auto movement, return immediately
       if (mode === 'manual') return;
 
-      var _si = (typeof window.STUDIO_SCENE!=='undefined' && window.STUDIO_SCENE) ? (window.STUDIO_SCENE - 1) : (STUDIO.currentScene || 0);
-      var scene = PROJECT && PROJECT.scenes && PROJECT.scenes[_si];
+      var scene = PROJECT && PROJECT.scenes && PROJECT.scenes[STUDIO.currentScene];
       if (!scene || !scene.narration || !scene.narration.trim()) return;
       var words = scene.narration.trim().split(/\s+/).filter(Boolean);
       if (!words.length) return;
@@ -13729,13 +13732,9 @@ function studioNext() {
       if (typeof updateTP === 'function') updateTP();
 
       requestAnimationFrame(function() {
-        // Real DOM structure: tp-body (viewport) > tp-cur (scrolling content).
-        // tp-cur-inner does not exist — fall back through the real elements.
-        var curEl = document.getElementById('tp-body') || document.getElementById('tp-cur');
-        var inner = document.getElementById('tp-cur-inner') || document.getElementById('tp-cur');
+        var curEl = document.getElementById('tp-cur');
+        var inner = document.getElementById('tp-cur-inner');
         if (!curEl || !inner) return;
-        // If viewport and content are the same element, use its parent as viewport
-        if (curEl === inner && inner.parentElement) curEl = inner.parentElement;
 
         // Ensure text wraps properly (not one horizontal line)
         inner.style.display = 'block';
@@ -13752,9 +13751,6 @@ function studioNext() {
         // Text rolls upward at a speed matching WPM reading speed
         // ════════════════════════════════════════════════════════
         if (mode === 'auto' || mode === 'scroll') {
-          // Ensure the viewport clips overflow so translated content scrolls out of view
-          curEl.style.overflow = 'hidden';
-          if (!curEl.style.height && !curEl.offsetHeight) curEl.style.height = '120px';
           // Reset to top
           inner.style.transition = 'none';
           inner.style.transform = 'translateY(0px)';
@@ -13766,8 +13762,9 @@ function studioNext() {
             var scrollable = Math.max(0, innerH - viewH);
 
             if (scrollable < 5) {
-              // Text fits without scrolling — nothing to scroll
-              return;
+              // Text fits the window — scroll it gently through the reading zone anyway
+              // so the presenter gets steady visual pacing (top-align → hold).
+              scrollable = Math.max(scrollable, Math.round(viewH * 0.6));
             }
 
             // Time to read the whole text at WPM speed
