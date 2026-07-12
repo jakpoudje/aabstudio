@@ -13346,7 +13346,7 @@ function studioNext() {
       // Helper: wire stream to UI
       function _applyStream(stream) {
         STUDIO.stream = stream; STUDIO.camOn = true; STUDIO.micOn = true;
-        if (vid) { vid.srcObject = stream; vid.muted = true; vid.style.display = 'block'; }
+        if (vid) { vid.srcObject = stream; vid.muted = true; vid.volume = 0; vid.setAttribute('muted',''); vid.style.display = 'block'; }
         if (noCamera) noCamera.style.display = 'none';
         if(typeof updateCamBtn==='function')updateCamBtn();
         if(typeof updateMicBtn==='function')updateMicBtn();
@@ -23969,13 +23969,13 @@ function setTpScrollMode(mode){
     toast&&toast('Auto-scroll mode','info',1500);
   } else if(mode==='word'||mode==='sentence'){
     // Word-by-word / sentence mode
-    var tp=document.querySelector('#studio-tp-text,#tp-text,.tp-text');
+    var tp=document.getElementById('tp-cur')||document.getElementById('tp-body')||document.querySelector('#studio-tp-text,#tp-text,.tp-text');
     if(tp&&window._studioWBW){
       var allWords=tp.querySelectorAll('.tp-word');
       if(!allWords.length){
-        // Wrap words if not done
-        var html=tp.innerHTML;
-        tp.innerHTML=html.replace(/(S+)/g,'<span class="tp-word">$1</span>');
+        // Wrap each word in a span (fixed regex: \S+ = non-whitespace runs)
+        var txt=tp.textContent||tp.innerText||'';
+        tp.innerHTML=txt.replace(/(\S+)/g,'<span class="tp-word">$1</span>');
         allWords=tp.querySelectorAll('.tp-word');
       }
       _studioWBW.words=Array.from(allWords);
