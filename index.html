@@ -6556,28 +6556,12 @@ window.E_exportTimeline=async function(){
 
   toast&&toast('Preparing export...','info');
 
-  // Try backend first
-  try{
-    var resp=await fetch((window.API||'https://aabstudio-production.up.railway.app')+'/api/export',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+(window._sbSession?.access_token||'')},
-      body:JSON.stringify(manifest)
-    });
-    if(resp.ok){
-      var d=await resp.json();
-      if(d.url){
-        var a=document.createElement('a');a.href=d.url;a.download=(manifest.title||'export').replace(/[^a-z0-9]/gi,'_')+'.mp4';
-        document.body.appendChild(a);a.click();document.body.removeChild(a);
-        toast&&toast('Export ready — downloading!','ok');return;
-      }
-    } else {
-      console.warn('[Export] Backend returned',resp.status,'— falling back to MediaRecorder');
-    }
-  }catch(e){console.warn('[Export] Backend error:',e.message);}
+  // Render CLIENT-SIDE — the backend /api/export was returning a web page URL that
+  // downloaded as .mp4 ("HTML with no video"). Local canvas render always makes a real file.
 
   // === FALLBACK: MediaRecorder screen capture of the program monitor ===
   // This captures exactly what you see — video + overlays + subtitles
-  toast&&toast('Backend export unavailable — recording screen ('+Math.round(manifest.totalDuration)+'s)...','info',5000);
+  toast&&toast('Rendering video ('+Math.round(manifest.totalDuration)+'s)…','info',5000);
 
   var progVid=typeof _getProgVid==='function'?_getProgVid():null;
   if(!progVid){toast&&toast('No program video found','error');return;}
