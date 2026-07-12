@@ -18489,8 +18489,19 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
     return supa.storage.from('recorded-clips').upload(filename, blob, { contentType: 'video/webm', upsert: true })
       .then(function(r) {
         if (r.error) { console.warn('Upload failed:', r.error.message); return null; }
-        var url = 'https://phjlxkyloafogznhyyig.supabase.co/storage/v1/object/authenticated/recorded-clips/' + filename;
-        return url;
+        // Create a signed URL (7 days) so <video src> can load it WITHOUT an auth header.
+        // The old 'authenticated' path URL returned 403 in <video>/<img> tags because
+        // those elements cannot send an Authorization header.
+        return supa.storage.from('recorded-clips').createSignedUrl(filename, 604800)
+          .then(function(sr){
+            if (sr.error || !sr.data || !sr.data.signedUrl) {
+              console.warn('Signed URL failed:', sr.error && sr.error.message);
+              // Fall back to public URL (works if the bucket is public)
+              var pub = supa.storage.from('recorded-clips').getPublicUrl(filename);
+              return (pub && pub.data && pub.data.publicUrl) ? pub.data.publicUrl : null;
+            }
+            return sr.data.signedUrl;
+          });
       }).catch(function(e) { console.warn('Upload error:', e.message); return null; });
   };
 
