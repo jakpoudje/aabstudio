@@ -6982,7 +6982,9 @@ window.E_renderWaveform = function(clip, canvas) {
       var analyser = ac.createAnalyser();
       analyser.fftSize = 256;
       source.connect(analyser);
-      analyser.connect(ac.destination);
+      // NOTE: do NOT connect analyser to ac.destination — that plays the clip
+      // through the speakers and causes mic feedback during recording.
+      audio.muted = true; audio.volume = 0;
       audio.play().catch(function(){});
       
       // Capture a snapshot after a short play
@@ -13675,6 +13677,8 @@ function studioNext() {
       console.log('Recording mime:', mime || 'browser default');
 
       var mrOpts = mime ? { mimeType: mime, videoBitsPerSecond: 4000000 } : { videoBitsPerSecond: 4000000 };
+      // Silence any playing media (clip previews, waveform) to prevent mic feedback while recording
+      try{ document.querySelectorAll('video,audio').forEach(function(el){ if(el.id!=='studio-cam'&&!el.paused){ try{el.pause();}catch(_){} } }); }catch(_){}
       var mr = new MediaRecorder(STUDIO.stream, mrOpts);
       STUDIO._mime = mime;
 
