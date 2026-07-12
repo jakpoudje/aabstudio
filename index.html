@@ -18161,33 +18161,28 @@ window.closeDropdown = closeDropdown;
 // ── SYNC REC fix — auto-start camera if not on, then start rec + TP ───────
 window.startSyncRecord = function() {
   if (typeof STUDIO === 'undefined') return;
-  // If already recording, stop
-  if (STUDIO.recording) {
-    if (typeof stopRec === 'function') stopRec();
-    var btn = document.getElementById('btn-auto');
+  var btn = document.getElementById('btn-auto');
+  // If already sync-recording, STOP the whole sync session
+  if (STUDIO.recording || STUDIO._syncMode) {
+    if (typeof stopSyncRecord === 'function') stopSyncRecord();
+    else if (typeof stopRec === 'function') stopRec();
     if (btn) { btn.textContent = '⏱ Sync REC'; btn.classList.remove('on'); }
     return;
   }
-  // Auto-start camera if not on
-  var doRecord = function() {
+  // Auto-start camera then run the full multi-scene auto-advance sync recorder
+  var go = function() {
     if (!STUDIO.stream || !STUDIO.stream.active) {
       toast('Camera not started — click \uD83D\uDCF7 Cam first', 'error'); return;
     }
-    if (STUDIO.currentScene === null || STUDIO.currentScene === undefined) {
-      toast('Select a scene first', 'info'); return;
-    }
-    if (typeof startRec === 'function') startRec();
-    setTimeout(function() { if (typeof studioTpStart === 'function') studioTpStart(); }, 350);
-    var btn = document.getElementById('btn-auto');
     if (btn) { btn.textContent = '⏹ Stop sync'; btn.classList.add('on'); }
-    // Sync REC started (silent)
+    // startSyncRecord_All records every scene in order, saving each real clip to
+    // PROJECT.clips and advancing the teleprompter scene-by-scene.
+    if (typeof startSyncRecord_All === 'function') startSyncRecord_All();
   };
   if (!STUDIO.stream || !STUDIO.stream.active) {
-    if (typeof startCamera === 'function') {
-      startCamera();
-      setTimeout(doRecord, 800);
-    } else { doRecord(); }
-  } else { doRecord(); }
+    if (typeof startCamera === 'function') { startCamera(); setTimeout(go, 800); }
+    else { go(); }
+  } else { go(); }
 };
 
 // ── EDIT SUITE — auto-load first clip into preview on arrival ─────────────
@@ -23689,115 +23684,71 @@ window.aps_saveCharacter=window.aps_saveCharacter||function(){
 console.log('[AABStudio] All stubs loaded: setTpScrollMode, toggleMirror, tpPractice, aps_goToEditSuite, aps_setBg, aps_filterScenes, sidebarTab + all APS controls');
 
 // ── SYNC RECORD: records all scenes in order, auto-advances ──
-window.startSyncRecord_All=window.startSyncRecord_All||function(){
+window.startSyncRecord_All=function(){
   if(!window.PROJECT||!PROJECT.scenes||!PROJECT.scenes.length){
     if(typeof toast==='function')toast('No scenes to record','error');return;
   }
-  if(!window.STUDIO||!STUDIO.stream){
+  if(!window.STUDIO||!STUDIO.stream||!STUDIO.stream.active){
     if(typeof toast==='function')toast('Start your camera first (click Cam button)','error');return;
   }
-  var scenes=PROJECT.scenes.slice();
-  var sceneIdx=0;
-  var recorded=[];
-  
-  function recordNextScene(){
-    if(STUDIO.recording)return; // already recording
-    if(sceneIdx>=scenes.length){
-      // All scenes recorded
-      STUDIO.recording=false;
-      _finishSyncRecord(recorded);
-      return;
-    }
-    var sc=scenes[sceneIdx];
-    var dur=(sc.duration||8)*1000;
-    
-    // Navigate to this scene in the teleprompter
-    if(typeof STUDIO_TP!=='undefined'&&typeof setTpScrollMode==='function'){
-      // Reset scroll and set scene text
-      if(typeof resetTpScroll==='function')resetTpScroll();
-    }
-    
-    if(typeof toast==='function')toast('Recording scene '+(sceneIdx+1)+'/'+scenes.length+': '+sc.narration.slice(0,30)+'...','ok');
-    
-    // Start recording
-    var chunks=[];
-    var mr=null;
+  if(STUDIO.recording){ if(typeof toast==='function')toast('Already recording','info'); return; }
+
+  // Sync REC = drive the SAME machinery the single-scene REC + Next uses.
+  // That path already: saves each scene's real blob into PROJECT.clips with an id,
+  // updates the teleprompter scene text, renders the recordings list, and auto-advances.
+  // We add per-scene auto-advance on the scene's duration + teleprompter auto-scroll.
+  STUDIO._syncMode = true;
+
+  // Jump to first scene
+  STUDIO.currentScene = 0;
+  PROJECT.currentScene = 0;
+  if(typeof updateTP==='function') updateTP();
+  if(typeof window._updateStudioCounters==='function') window._updateStudioCounters();
+
+  function armSceneTimer(){
+    // Auto-advance when this scene's duration elapses (Sync REC behaviour)
+    if(STUDIO._sceneTimer) clearTimeout(STUDIO._sceneTimer);
+    var sc = PROJECT.scenes[STUDIO.currentScene];
+    var durMs = ((sc && sc.duration) || 8) * 1000;
+    // Start teleprompter auto-scroll for this scene so the words move while recording
     try{
-      var stream=STUDIO.stream;
-      mr=new MediaRecorder(stream,{mimeType:MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm'});
-      mr.ondataavailable=function(e){if(e.data&&e.data.size>0)chunks.push(e.data);};
-      mr.onstop=function(){
-        var blob=new Blob(chunks,{type:'video/webm'});
-        var url=URL.createObjectURL(blob);
-        recorded.push({url:url,name:'Scene '+(sceneIdx)+': '+sc.narration.slice(0,20),duration:sc.duration||8,start:0,sceneNum:sceneIdx+1,type:'video'});
-        // Show in recordings list
-        var recList=document.getElementById('studio-rec-list')||document.querySelector('.studio-recordings');
-        if(recList){
-          var item=document.createElement('div');
-          item.style.cssText='padding:6px 10px;background:rgba(0,212,255,.08);border-radius:6px;margin:4px 0;font-size:11px;color:#e2e8f0;display:flex;align-items:center;gap:8px;';
-          item.innerHTML='<span>Scene '+(sceneIdx)+'</span><a href="'+url+'" download="scene_'+sceneIdx+'.webm" style="color:#00d4ff;font-size:10px;">↓ Save</a>';
-          recList.appendChild(item);
-        }
-        sceneIdx++;
-        if(sceneIdx<scenes.length){
-          setTimeout(recordNextScene,800);
-        } else {
-          _finishSyncRecord(recorded);
-        }
-      };
-      mr.start(100);
-      STUDIO.currentRecorder=mr;
-      STUDIO.recording=true;
-      // Update UI
-      var recBtn=document.getElementById('aab-rec-btn')||document.querySelector('[onclick*="toggleRecording"]');
-      if(recBtn)recBtn.style.background='rgba(239,68,68,.25)';
-      // Auto-stop after scene duration
-      setTimeout(function(){
-        if(mr&&mr.state==='recording')mr.stop();
-        STUDIO.recording=false;
-      },dur);
-    }catch(e){
-      if(typeof toast==='function')toast('Recording error: '+e.message,'error');
-      sceneIdx++;
-      setTimeout(recordNextScene,500);
-    }
-  }
-  
-  function _finishSyncRecord(clips){
-    STUDIO.recording=false;
-    var recBtn=document.getElementById('aab-rec-btn')||document.querySelector('[onclick*="toggleRecording"]');
-    if(recBtn)recBtn.style.background='';
-    if(typeof toast==='function')toast('All '+clips.length+' scenes recorded! Passing to Edit Suite...','ok');
-    
-    // Pass all recorded clips to Edit Suite in correct order
-    if(window.E&&E.tracks){
-      var mainTrack=E.tracks.find(function(t){return t.id==='main';});
-      if(mainTrack){
-        mainTrack.clips=[];
-        var t2=0;
-        clips.sort(function(a,b){return (a.sceneNum||0)-(b.sceneNum||0);});
-        clips.forEach(function(c){
-          mainTrack.clips.push({id:'rec_'+c.sceneNum,name:c.name,url:c.url,start:t2,duration:c.duration,type:'video',source:'recording',sceneNum:c.sceneNum});
-          t2+=c.duration;
-        });
+      if(typeof studioTpStart==='function') studioTpStart();
+      else if(typeof window.startPracticeMode==='function') window.startPracticeMode();
+    }catch(_){}
+    STUDIO._sceneTimer = setTimeout(function(){
+      if(!STUDIO._syncMode || !STUDIO.recording) return;
+      if(STUDIO.currentScene < PROJECT.scenes.length - 1){
+        // studioNext() stops the recorder → saves this scene's clip → advances →
+        // its onstop auto-advance restarts recording for the next scene.
+        studioNext();
+        // Re-arm for the next scene shortly after it starts recording
+        setTimeout(function(){ if(STUDIO._syncMode && STUDIO.recording) armSceneTimer(); }, 1800);
+      } else {
+        // Last scene — stop and finish (stopRec saves final clip + navigates to edit)
+        STUDIO._syncMode = false;
+        if(typeof studioTpStop==='function') studioTpStop();
+        if(typeof stopRec==='function') stopRec();
       }
-    }
-    // Store in project
-    if(window.PROJECT){
-      PROJECT.recordedClips=clips;
-      if(typeof saveProject==='function')saveProject();
-    }
-    // Navigate to edit suite after 1.5s
-    setTimeout(function(){
-      if(typeof nav==='function')nav('edit-pg');
-      if(typeof E_build==='function')setTimeout(E_build,500);
-      if(typeof E_renderTL==='function')setTimeout(E_renderTL,600);
-    },1500);
+    }, durMs);
   }
-  
-  // Show countdown then start
-  if(typeof toast==='function')toast('Starting sync record in 3 seconds...','info');
-  setTimeout(recordNextScene,3000);
+
+  if(typeof toast==='function')toast('Sync REC starting in 3…','info');
+  setTimeout(function(){
+    // Begin recording scene 1 through the real path
+    if(typeof startRec==='function'){ startRec(); }
+    else if(typeof toggleRecording==='function'){ toggleRecording(); }
+    setTimeout(armSceneTimer, 600);
+  }, 3000);
+};
+
+// Stop Sync REC cleanly (wire the "Stop sync" button behaviour)
+window.stopSyncRecord = function(){
+  STUDIO._syncMode = false;
+  if(STUDIO._sceneTimer) clearTimeout(STUDIO._sceneTimer);
+  if(typeof studioTpStop==='function') studioTpStop();
+  if(STUDIO.recording && typeof stopRec==='function') stopRec();
+  var btn = document.getElementById('btn-auto');
+  if(btn){ btn.textContent = '⏱ Sync REC'; btn.classList.remove('on'); }
 };
 
 // Override startSyncRecord to use auto-advance version
