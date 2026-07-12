@@ -23989,15 +23989,18 @@ window.stopTpForMode = function(){
 
 function setTpScrollMode(mode){
   if(typeof TP==='undefined')window.TP=window.TP||{speed:80,playing:false};
-  // Stop current mode
+  // Stop current mode (both engines + any WPM timer)
   if(typeof tpToggle==='function'&&typeof TP!=='undefined'&&TP.playing)tpToggle();
+  if(typeof studioTpStop==='function' && window.STUDIO_TP && STUDIO_TP.running) studioTpStop();
+  if(window._studioTpModeTimer){ clearInterval(window._studioTpModeTimer); window._studioTpModeTimer=null; }
   if(window._studioWBW&&_studioWBW.running){_studioWBW.running=false;clearInterval(_studioWBW.timer);}
   // Update selects to reflect mode
   ['tp-mode-sel','tp-scroll-mode'].forEach(function(id){var s=document.getElementById(id);if(s)s.value=mode;});
   // Apply mode
   if(mode==='auto'){
-    // Auto-scroll — restart TP playing
-    if(typeof tpToggle==='function'&&typeof TP!=='undefined'&&!TP.playing)tpToggle();
+    // Auto-scroll — use the LIVE studio engine (STUDIO_TP), not the dead TP engine.
+    if(typeof studioTpStart==='function') studioTpStart();
+    else if(typeof tpToggle==='function'&&typeof TP!=='undefined'&&!TP.playing)tpToggle();
     toast&&toast('Auto-scroll mode','info',1500);
   } else if(mode==='word'||mode==='sentence'){
     // Word-by-word / sentence mode
