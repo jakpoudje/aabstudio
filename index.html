@@ -13719,7 +13719,8 @@ function studioNext() {
       // MANUAL mode — no auto movement, return immediately
       if (mode === 'manual') return;
 
-      var scene = PROJECT && PROJECT.scenes && PROJECT.scenes[STUDIO.currentScene];
+      var _si = (typeof window.STUDIO_SCENE!=='undefined' && window.STUDIO_SCENE) ? (window.STUDIO_SCENE - 1) : (STUDIO.currentScene || 0);
+      var scene = PROJECT && PROJECT.scenes && PROJECT.scenes[_si];
       if (!scene || !scene.narration || !scene.narration.trim()) return;
       var words = scene.narration.trim().split(/\s+/).filter(Boolean);
       if (!words.length) return;
@@ -13728,9 +13729,13 @@ function studioNext() {
       if (typeof updateTP === 'function') updateTP();
 
       requestAnimationFrame(function() {
-        var curEl = document.getElementById('tp-cur');
-        var inner = document.getElementById('tp-cur-inner');
+        // Real DOM structure: tp-body (viewport) > tp-cur (scrolling content).
+        // tp-cur-inner does not exist — fall back through the real elements.
+        var curEl = document.getElementById('tp-body') || document.getElementById('tp-cur');
+        var inner = document.getElementById('tp-cur-inner') || document.getElementById('tp-cur');
         if (!curEl || !inner) return;
+        // If viewport and content are the same element, use its parent as viewport
+        if (curEl === inner && inner.parentElement) curEl = inner.parentElement;
 
         // Ensure text wraps properly (not one horizontal line)
         inner.style.display = 'block';
@@ -13747,6 +13752,9 @@ function studioNext() {
         // Text rolls upward at a speed matching WPM reading speed
         // ════════════════════════════════════════════════════════
         if (mode === 'auto' || mode === 'scroll') {
+          // Ensure the viewport clips overflow so translated content scrolls out of view
+          curEl.style.overflow = 'hidden';
+          if (!curEl.style.height && !curEl.offsetHeight) curEl.style.height = '120px';
           // Reset to top
           inner.style.transition = 'none';
           inner.style.transform = 'translateY(0px)';
