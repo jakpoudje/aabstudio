@@ -13830,6 +13830,9 @@ function studioNext() {
       });
 
       function _advanceSceneOrStop(){
+        // If Sync REC is driving, IT owns scene advancement + per-scene recording.
+        // The teleprompter must not advance here too (that caused scene 3->6->9 skips).
+        if (window.STUDIO && STUDIO._syncMode) { return; }
         var total = (window.PROJECT && PROJECT.scenes) ? PROJECT.scenes.length : 1;
         var cur = window.STUDIO_SCENE || 1;
         if (cur < total && (STUDIO_TP.wasRunning || STUDIO.tpAuto)) {
@@ -19101,7 +19104,9 @@ window.studioGoTo=function(n){
   // Stop scroll + word engines before re-render
   if(typeof STUDIO_TP!=='undefined'&&STUDIO_TP.timer){clearInterval(STUDIO_TP.timer);STUDIO_TP.timer=null;STUDIO_TP.running=false;}
   if(window._tpAutoTimer){cancelAnimationFrame(window._tpAutoTimer);window._tpAutoTimer=null;}
-  if(window._studioWBW&&_studioWBW.timer){clearInterval(_studioWBW.timer);_studioWBW.timer=null;_studioWBW.running=false;}
+  if(window._studioWBW){if(_studioWBW.timer)clearInterval(_studioWBW.timer);_studioWBW.timer=null;_studioWBW.running=false;_studioWBW.idx=0;_studioWBW.words=[];}
+  if(window._studioTpModeTimer){clearInterval(window._studioTpModeTimer);window._studioTpModeTimer=null;}
+  if(window._tpSent){_tpSent.idx=0;}
   // ── ONE renderer for teleprompter text ──
   if(typeof _loadStudioTpText==='function') _loadStudioTpText();
   var btn=document.getElementById('btn-tp-start');if(btn){btn.innerHTML='&#9654; Practice';btn.style.background='';}
