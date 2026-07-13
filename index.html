@@ -25072,8 +25072,31 @@ window.aps_loadCustomBg=window.aps_triggerCustomBg;
 
 // ── VOICE ─────────────────────────────────────────────────────────────────────
 window.aps_previewVoice=function(voiceId,voiceName){
-  if(window.speechSynthesis){window.speechSynthesis.cancel();var u=new SpeechSynthesisUtterance('Hello, this is a preview of your selected voice.');var vv=window.speechSynthesis.getVoices();var mv=vv.find(function(v){return v.name.toLowerCase().indexOf((voiceName||'').toLowerCase())>-1;});if(mv)u.voice=mv;window.speechSynthesis.speak(u);}
-  apsNotify('Previewing: '+(voiceName||voiceId||'selected voice'),'info',2500);
+  // Preview the REAL ElevenLabs voice via the backend (was using generic browser TTS).
+  var sel=document.getElementById('aps-voice-sel');
+  var vid=voiceId||(sel&&sel.value)||'';
+  var vname=voiceName||(sel&&sel.selectedOptions&&sel.selectedOptions[0]?sel.selectedOptions[0].textContent:'')||vid;
+  if(!vid){ apsNotify&&apsNotify('Pick a voice first','warn',2000); return; }
+  var API=window.API||'https://aabstudio-production.up.railway.app';
+  var token=window._sbSession&&window._sbSession.access_token;
+  apsNotify&&apsNotify('Loading '+(vname||'voice')+' preview…','info',2000);
+  // Stop any current preview
+  if(window._apsPreviewAudio){try{window._apsPreviewAudio.pause();}catch(e){}}
+  var headers={'Content-Type':'application/json'}; if(token)headers['Authorization']='Bearer '+token;
+  fetch(API+'/api/voice',{method:'POST',headers:headers,body:JSON.stringify({
+    text:'Hello, this is a preview of the '+(vname||'selected')+' voice.',
+    voiceId:vid, stability:0.5, similarityBoost:0.75
+  })}).then(function(r){return r.json();}).then(function(d){
+    if(d&&d.audio){
+      var a=new Audio('data:audio/mpeg;base64,'+d.audio);
+      window._apsPreviewAudio=a; a.play();
+      apsNotify&&apsNotify('▶ '+(vname||'voice'),'ok',2000);
+    } else { throw new Error(d&&d.error||'no audio'); }
+  }).catch(function(err){
+    // Fallback: browser TTS if backend unavailable
+    if(window.speechSynthesis){window.speechSynthesis.cancel();var u=new SpeechSynthesisUtterance('Preview of '+(vname||'selected voice')+'.');window.speechSynthesis.speak(u);}
+    apsNotify&&apsNotify('Live preview unavailable — using fallback','warn',2500);
+  });
 };
 window.aps_updateVoiceList=function(provider){if(typeof aps_onProviderChange==='function')aps_onProviderChange(provider||(document.getElementById('aps-provider')||{}).value||'heygen');};
 window.aps_applyVoiceAll=function(){
