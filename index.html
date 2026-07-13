@@ -11957,8 +11957,8 @@ window._loadStudioTpText = function() {
   // Stop any word-by-word run — the renderer owns the DOM
   if(window._studioWBW) { _studioWBW.running=false; clearInterval(_studioWBW.timer); _studioWBW.idx=0; _studioWBW.words=[]; _studioWBW.highlight=null; }
   // Fixed structure the whole TP system relies on: tp-body(viewport) > tp-cur(content)
-  var fontVar = getComputedStyle(document.documentElement).getPropertyValue('--tp-font-size');
-  var fontCss = fontVar && parseFloat(fontVar) ? (parseFloat(fontVar)+'px') : 'clamp(18px,2vw,26px)';
+  var _fpx = (window.STUDIO && STUDIO.tpFontPx) ? STUDIO.tpFontPx : (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tp-font-size'))||0);
+  var fontCss = _fpx ? (_fpx+'px') : 'clamp(18px,2vw,26px)';
   tpBody.innerHTML = '<div id="tp-cur" style="font-family:Sora,monospace;font-size:'+fontCss+';line-height:1.7;color:rgba(255,255,255,0.7);padding:12px 20px;white-space:pre-wrap;word-break:keep-all;">'+text.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>';
   // Update every scene counter element (fragmented across ids + unlabeled divs)
   if(typeof window._syncUpdateSceneCounter==='function') window._syncUpdateSceneCounter(n1, scenes.length);
@@ -12300,31 +12300,37 @@ function studioNext() {
       toast(STUDIO.adaptive ? 'Adaptive sync ON' : 'Adaptive sync OFF', 'info');
     }
     function _tpCurrentFont() {
+      // Single source of truth: STUDIO.tpFontPx (persists across scene re-renders)
+      if (window.STUDIO && STUDIO.tpFontPx) return STUDIO.tpFontPx;
       var el = document.getElementById('tp-cur');
       if (el) { var fs = parseFloat(getComputedStyle(el).fontSize); if (fs) return fs; }
-      var v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tp-font-size'));
-      return v || 24;
+      return 26;
     }
     function _tpApplyFont(px) {
+      px = Math.round(px);
+      if (window.STUDIO) STUDIO.tpFontPx = px;   // persist the user's choice
       document.documentElement.style.setProperty('--tp-font-size', px + 'px');
       document.documentElement.style.setProperty('--tp-font-size-px', px);
-      // Apply with !important to EVERY teleprompter text element (they use inline !important)
+      // Apply with !important to EVERY teleprompter text element + wrappers
       ['tp-cur','tp-cur-inner','tp-body','studio-tp-words'].forEach(function(id){
         var el = document.getElementById(id);
         if (el) el.style.setProperty('font-size', px + 'px', 'important');
       });
-      // Inner wrapper divs (word-span containers) too
       var body = document.getElementById('tp-body');
-      if (body) body.querySelectorAll('div,#tp-cur,[id*=tp]').forEach(function(el){ el.style.setProperty('font-size', px + 'px', 'important'); });
+      if (body) body.querySelectorAll('div,span.tp-word,[id*=tp]').forEach(function(el){ el.style.setProperty('font-size', px + 'px', 'important'); });
     }
     function increaseTpFont() {
       var cur = Math.min(48, _tpCurrentFont() + 2);
       _tpApplyFont(cur);
+      if (typeof toast === 'function') toast('Text size ' + cur + 'px', 'info', 800);
     }
     function decreaseTpFont() {
       var cur = Math.max(12, _tpCurrentFont() - 2);
       _tpApplyFont(cur);
+      if (typeof toast === 'function') toast('Text size ' + cur + 'px', 'info', 800);
     }
+    window.increaseTpFont = increaseTpFont; window.decreaseTpFont = decreaseTpFont;
+    window._tpApplyFont = _tpApplyFont; window._tpCurrentFont = _tpCurrentFont;
 
     function toggleMirror() {
       // Apply mirror to tp-body (text content) so panel borders don't flip
