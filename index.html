@@ -24038,11 +24038,42 @@ window.clearAssetTimers = function(){
   }catch(e){}
   window._aabAssetTimers = [];
 };
+window.showAssetOverlay = function(a){
+  if(!a) return;
+  var url = a.dataUrl || a.url || a.src; if(!url) return;
+  var area = document.getElementById('studio-overlay-area') || document.getElementById('studio-canvas');
+  if(!area) return;
+  if(getComputedStyle(area).position==='static') area.style.position='relative';
+  var el = document.createElement(a.type==='video'?'video':'img');
+  el.className='aab-scene-asset-ov';
+  el.src=url;
+  if(a.type==='video'){ el.autoplay=true; el.muted=true; el.loop=true; el.playsInline=true; }
+  var sizePct = a.sizePercent || 35;
+  var posMap = {
+    'bot-right':'bottom:4%;right:4%;', 'bot-left':'bottom:4%;left:4%;',
+    'top-right':'top:4%;right:4%;', 'top-left':'top:4%;left:4%;',
+    'center':'top:50%;left:50%;transform:translate(-50%,-50%);',
+    'full':'top:0;left:0;width:100%;height:100%;object-fit:cover;',
+    'lower-third':'bottom:8%;left:50%;transform:translateX(-50%);'
+  };
+  var posCss = posMap[a.position]||posMap['bot-right'];
+  var widthCss = (a.position==='full') ? '' : ('width:'+sizePct+'%;');
+  el.style.cssText='position:absolute;'+posCss+widthCss+'z-index:20;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.4);opacity:0;transition:opacity .4s ease;pointer-events:none;';
+  el.setAttribute('data-asset-id', a.id||'');
+  area.appendChild(el);
+  requestAnimationFrame(function(){ el.style.opacity='1'; });
+  // Auto-remove after duration if specified
+  if(a.duration){ var t=setTimeout(function(){ el.style.opacity='0'; setTimeout(function(){el.remove();},400); }, a.duration*1000); (window._aabAssetTimers=window._aabAssetTimers||[]).push(t); }
+};
+window.clearAssetOverlays = function(){ document.querySelectorAll('.aab-scene-asset-ov').forEach(function(el){el.remove();}); };
 window.scheduleSceneAssets = function(sceneIndex){
   // Clear any previously scheduled asset reveals
   if(typeof clearAssetTimers==='function')clearAssetTimers();
+  if(typeof clearAssetOverlays==='function')clearAssetOverlays();
   try{
-    var scene = (window.STUDIO && STUDIO.scenes && STUDIO.scenes[sceneIndex]) ? STUDIO.scenes[sceneIndex] : null;
+    // Assets are assigned in the scene editor and saved to PROJECT.scenes — read that first.
+    var scene = (window.PROJECT && PROJECT.scenes && PROJECT.scenes[sceneIndex]) ? PROJECT.scenes[sceneIndex]
+              : ((window.STUDIO && STUDIO.scenes && STUDIO.scenes[sceneIndex]) ? STUDIO.scenes[sceneIndex] : null);
     if(!scene) return;
     // Assets can live on the scene as .assets / .overlays (array of {url,at,duration})
     var assets = scene.assets || scene.overlays || [];
