@@ -5076,6 +5076,7 @@ function E_loadClips(){
 
   if(mode==="studio"){
     (PROJECT.scenes||[]).forEach(function(sc,i){
+      if(sc._deleted) return;
       var url=realUrl(sc.recordedUrl); if(!url) return;
       var dur=sc.duration||8;
       mainTrack.clips.push({id:sc.id||("c"+i),trackId:"main",name:sc.title||("Scene "+(i+1)),
@@ -6492,9 +6493,10 @@ window.E_razorAt=E_razorAt;
 function E_deleteSelected(){
   if(!E.selectedClipId)return;
   if(window.AABE&&typeof AABE.snapshot==='function')AABE.snapshot();
+  var _delId=E.selectedClipId;
   E.tracks.forEach(function(t){
-    var i=t.clips.findIndex(function(c){return c.id===E.selectedClipId;});
-    if(i>-1){t.clips.splice(i,1);}
+    var i=t.clips.findIndex(function(c){return c.id===_delId;});
+    if(i>-1){ window._aabMarkSceneDeleted && window._aabMarkSceneDeleted(_delId, t.id); t.clips.splice(i,1);}
   });
   E.selectedClipId=null;E_renderTL();E_showInspector(null,null);
 }
@@ -7792,6 +7794,11 @@ body{max-width:100vw;overflow-x:hidden}
 #record-pg.on .studio-wrap { border-radius: 12px !important; border: 1px solid rgba(255,255,255,.08) !important; overflow: hidden !important; }
 .aab-edit-body { border-radius: 10px !important; border: 1px solid rgba(255,255,255,.08) !important; overflow: hidden !important; }
 .aab-tl-wrap { border-radius: 10px !important; border: 1px solid rgba(255,255,255,.08) !important; overflow: hidden !important; }
+/* Timeline track area: taller + reliably scrollable so ALL tracks (incl. Overlays) are reachable */
+#edit-pg.on .aab-tl-wrap { flex: 0 0 300px !important; height: 300px !important; min-height: 300px !important; }
+#edit-pg.on .aab-tl-scroll { flex: 1 1 auto !important; overflow-y: auto !important; overflow-x: auto !important; max-height: none !important; padding-bottom: 80px !important; }
+#edit-pg.on .aab-tl-tracks-wrap { overflow: visible !important; padding-bottom: 40px !important; }
+.aab-track-row { min-height: 40px !important; }
 
 /* New static pages layout */
 #privacy-pg, #terms-pg, #guide-pg, #contact-pg {
@@ -20581,10 +20588,19 @@ window._E2_duplicateClip=function(clipId,trackId){
   typeof toast==='function'&&toast('Duplicated: '+dup.name,'ok');
 };
 
+window._aabMarkSceneDeleted=function(clipId,trackId){
+  if(trackId && trackId!=='main') return;
+  if(!window.PROJECT || !PROJECT.scenes) return;
+  PROJECT.scenes.forEach(function(s){
+    if(String(s.id)===String(clipId)){ s._deleted=true; s.recordedUrl=null; s.apsVideoUrl=null; s.status=''; }
+  });
+  if(typeof saveProject==='function') saveProject();
+};
 window._E2_deleteClip=function(clipId,trackId){
   var track=window.AABE&&AABE.tracks.find(function(t){return t.id===trackId;});
   if(!track)return;
   track.clips=track.clips.filter(function(c){return c.id!==clipId;});
+  window._aabMarkSceneDeleted && window._aabMarkSceneDeleted(clipId, trackId);
   if(typeof E_renderTL==='function')E_renderTL();
   typeof toast==='function'&&toast('Clip deleted','ok');
 };
