@@ -11660,9 +11660,13 @@ function loadDashboard() {
     }
 
     function uploadSceneAsset(inp) {
-      if (!inp.files.length || _sceneEditorIdx === null) return;
+      if (!inp.files.length) return;
+      // Default to the current studio scene (or first) if none explicitly selected.
+      if (_sceneEditorIdx === null || _sceneEditorIdx === undefined) {
+        _sceneEditorIdx = (typeof window.STUDIO_SCENE !== 'undefined' && window.STUDIO_SCENE) ? (window.STUDIO_SCENE - 1) : 0;
+      }
       var scene = PROJECT.scenes[_sceneEditorIdx];
-      if (!scene) return;
+      if (!scene) { if(typeof toast==='function') toast('Select a scene first', 'error'); return; }
       if (!scene.assets) scene.assets = [];
       Array.from(inp.files).forEach(function (file) {
         var rd = new FileReader();
@@ -26323,7 +26327,12 @@ function _binRender(){
     return f._userAdded===true;
   });
   var clips=[],seen={};var proj=window.PROJECT||{};
-  if(proj.scenes)proj.scenes.forEach((s,i)=>{var url=s.apsVideoUrl||s.videoUrl||'';if(url&&url.length>20&&!seen[url]){seen[url]=1;clips.push({url:url,name:s.name||('Scene '+(i+1)),type:'video',dur:s.duration||s.dur||8,sceneIdx:i,id:'sc_'+i+'_'+(s.id||Date.now())});}});
+  function _binRealUrl(u){ if(typeof u!=='string'||!/^(blob:|https?:|data:)/.test(u))return ''; if(/w3schools\.com|sample-videos|samplelib|dummyvideo|placeholder|test-videos?|mov_bbb|BigBuckBunny|filesamples/i.test(u))return ''; return u; }
+  if(proj.scenes)proj.scenes.forEach((s,i)=>{
+    // Prefer a real studio recording; else a real AI video. (Source-aware, matches timeline.)
+    var url=_binRealUrl(s.recordedUrl)||_binRealUrl(s.apsVideoUrl||s.videoUrl);
+    if(url&&!seen[url]){seen[url]=1;clips.push({url:url,name:s.name||s.title||('Scene '+(i+1)),type:'video',dur:s.duration||s.dur||8,sceneIdx:i,id:'sc_'+i+'_'+(s.id||Date.now())});}
+  });
   if(proj.apsVideos)Object.values(proj.apsVideos).forEach(v=>{if(v&&v.url&&!seen[v.url]){seen[v.url]=1;clips.push({url:v.url,name:v.name||'Clip',type:'video',dur:v.dur||8});}});
   window._esBinFiles.forEach(f=>{if(f.url&&!seen[f.url]){seen[f.url]=1;clips.push(f);}});
   var cnt=$('ebin-count');if(cnt)cnt.textContent=clips.length+' clip'+(clips.length!==1?'s':'');
