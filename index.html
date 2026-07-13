@@ -13336,6 +13336,16 @@ function studioNext() {
       function _applyStream(stream) {
         STUDIO.stream = stream; STUDIO.camOn = true; STUDIO.micOn = true;
         if (vid) { vid.srcObject = stream; vid.muted = true; vid.volume = 0; vid.setAttribute('muted',''); vid.style.display = 'block'; }
+        // PERSISTENT mute enforcer: something re-unmutes the camera preview (causing mic
+        // feedback through the speakers). Keep it muted no matter what re-enables it.
+        if (!window._aabCamMuteGuard) {
+          window._aabCamMuteGuard = setInterval(function(){
+            ['studio-cam','studio-cam-hidden'].forEach(function(id){
+              var c = document.getElementById(id);
+              if (c && (c.muted !== true || c.volume !== 0)) { c.muted = true; c.volume = 0; }
+            });
+          }, 500);
+        }
         if (noCamera) noCamera.style.display = 'none';
         if(typeof updateCamBtn==='function')updateCamBtn();
         if(typeof updateMicBtn==='function')updateMicBtn();
@@ -23544,7 +23554,13 @@ window.startSyncRecord_All=function(){
     if(STUDIO._sceneTimer) clearTimeout(STUDIO._sceneTimer);
     var idx0 = (window.STUDIO_SCENE||1) - 1;            // 0-based current scene
     var sc = PROJECT.scenes[idx0];
-    var durMs = ((sc && sc.duration) || 8) * 1000;
+    // Advance timing must match how long it takes to READ the scene at the current WPM,
+    // so the teleprompter finishes every word before the scene changes. Use the LONGER of
+    // the scene's set duration and the read time (so short-duration scenes don't cut words).
+    var _wpm = Math.max(20, (window.STUDIO && STUDIO.tpSpeed) || 80);
+    var _words = ((sc && (sc.narration||sc.script||sc.text)) || '').trim().split(/\s+/).filter(Boolean).length;
+    var _readMs = Math.round((_words / _wpm) * 60000) + 1200;
+    var durMs = Math.max(((sc && sc.duration) || 8) * 1000, _readMs);
     // Teleprompter in the user-selected mode, auto-advancing while recording
     try{
       if(typeof startTpForMode==='function') startTpForMode(true);
