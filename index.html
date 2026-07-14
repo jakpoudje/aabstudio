@@ -18657,6 +18657,18 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
   };
 
   // Add media to timeline
+  // Read the REAL duration of an uploaded media file before adding it to the timeline,
+  // so uploads are not truncated to a hardcoded length.
+  window._aabRealMediaDuration = function(url, kind, cb){
+    var el = document.createElement(kind==='audio'?'audio':'video');
+    el.preload = 'metadata'; var done=false;
+    function finish(d){ if(done)return; done=true; try{el.src='';}catch(e){} cb(d && isFinite(d) && d>0 ? d : null); }
+    el.onloadedmetadata = function(){ finish(el.duration); };
+    el.onerror = function(){ finish(null); };
+    setTimeout(function(){ finish(el.duration); }, 8000); // fallback if metadata never fires
+    el.src = url;
+  };
+
   window.E_addVideo = function() {
     var input = document.createElement('input');
     input.type = 'file'; input.accept = 'video/*';
@@ -18668,10 +18680,12 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
       if(!track && AABE) track = AABE.tracks[0];
       if(!track) return;
       var start = track.clips.reduce(function(max,c){ return Math.max(max, (c.start||0)+(c.duration||0)); }, 0);
-      var clip = { id:'vid_'+Date.now(), name:file.name, type:'video', url:url, start:start, duration:10, color:'#8b5cf6' };
-      track.clips.push(clip);
-      if(typeof E_renderTL==='function') E_renderTL();
-      if(typeof toast==='function') toast('Video added to timeline','ok');
+      window._aabRealMediaDuration(url, 'video', function(realDur){
+        var clip = { id:'vid_'+Date.now(), name:file.name, type:'video', url:url, start:start, duration:(realDur||10), color:'#8b5cf6' };
+        track.clips.push(clip);
+        if(typeof E_renderTL==='function') E_renderTL();
+        if(typeof toast==='function') toast('Video added ('+(realDur?realDur.toFixed(1)+'s':'length unknown')+')','ok');
+      });
     };
     input.click();
   };
@@ -18687,9 +18701,11 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
       if(!track && AABE) track = AABE.tracks.find(function(t){ return t.id==='music'; });
       if(!track) return;
       var start = track.clips.reduce(function(max,c){ return Math.max(max,(c.start||0)+(c.duration||0));},0);
-      track.clips.push({ id:'aud_'+Date.now(), name:file.name, type:'audio', url:url, start:start, duration:30, color:'#10b981' });
-      if(typeof E_renderTL==='function') E_renderTL();
-      if(typeof toast==='function') toast('Audio added to timeline','ok');
+      window._aabRealMediaDuration(url, 'audio', function(realDur){
+        track.clips.push({ id:'aud_'+Date.now(), name:file.name, type:'audio', url:url, start:start, duration:(realDur||30), color:'#10b981' });
+        if(typeof E_renderTL==='function') E_renderTL();
+        if(typeof toast==='function') toast('Audio added ('+(realDur?realDur.toFixed(1)+'s':'length unknown')+')','ok');
+      });
     };
     input.click();
   };
