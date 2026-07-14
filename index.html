@@ -7295,7 +7295,7 @@ window.resetTpScroll = function() {
 ;;
 
 // Adaptive mic (studio)
-window.toggleAdaptiveTp = function() {
+window._realToggleAdaptiveTp = function() {
   var btn=document.getElementById('btn-adaptive');
   // Use STUDIO_TP for state (STUDIO.adaptive is legacy)
   var isOn = (window.STUDIO_TP && STUDIO_TP.adaptive) || (window.STUDIO && STUDIO.adaptive);
@@ -7327,6 +7327,7 @@ window.toggleAdaptiveTp = function() {
     if(typeof toast==='function') toast('\uD83C\uDFA4 Listening...','info');
   }
 };
+window.toggleAdaptiveTp = window._realToggleAdaptiveTp;
 
 // TP panel toggle
 window.toggleTpPanel = function() {
@@ -12355,6 +12356,9 @@ function studioNext() {
       }
     }
     function toggleAdaptiveTp() {
+      // Delegate to the REAL adaptive-speech implementation (SpeechRecognition-based) which
+      // actually listens to the mic and advances the teleprompter, instead of a flag no-op.
+      if (window._realToggleAdaptiveTp) return window._realToggleAdaptiveTp();
       STUDIO.adaptive = !STUDIO.adaptive;
       var btn = document.getElementById('btn-adaptive');
       if (btn) btn.textContent = STUDIO.adaptive ? '\uD83C\uDFA4 Adapt: ON' : '\uD83C\uDFA4 Adapt';
