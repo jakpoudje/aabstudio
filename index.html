@@ -5467,6 +5467,9 @@ function E_renderTL(){
     var nm=_el("div","aab-track-name");nm.textContent=track.name;nm.title=track.name;lbl.appendChild(nm);
     // Controls row
     var ctrl=_el("div","aab-track-controls");
+    // M/S/volume only make sense for audio-carrying tracks (video or audio), not text/subtitle.
+    var _hasAudio = (track.type==="video" || track.type==="audio");
+    if(_hasAudio){
     // Mute button
     var mb=_el("button","aab-track-btn"+(track.muted?" muted":""));
     mb.textContent="M";mb.style.cssText="font-size:9px;padding:1px 4px;border-radius:3px;background:"+(track.muted?"rgba(239,68,68,.2)":"rgba(255,255,255,.06)")+";color:"+(track.muted?"#ef4444":"#6b7280")+";border:.5px solid "+(track.muted?"#ef4444":"#374151")+";cursor:pointer;";
@@ -5476,6 +5479,7 @@ function E_renderTL(){
     sb.textContent="S";sb.style.cssText="font-size:9px;padding:1px 4px;border-radius:3px;background:"+(track._solo?"rgba(234,179,8,.25)":"rgba(255,255,255,.06)")+";color:"+(track._solo?"#eab308":"#6b7280")+";border:.5px solid "+(track._solo?"#eab308":"#374151")+";cursor:pointer;";
     sb.title=track._solo?"Unsolo track":"Solo track";
     sb.onclick=function(){E_soloTrack?E_soloTrack(track.id):(track._solo=!track._solo);E_renderTL();};ctrl.appendChild(sb);
+    } // end _hasAudio (M/S only for audio tracks)
     // Lock button
     var lb=_el("button","aab-track-btn");
     lb.textContent=track.locked?"\uD83D\uDD12":"\uD83D\uDD13";lb.style.cssText="font-size:9px;padding:1px 3px;cursor:pointer;opacity:"+(track.locked?1:.5)+";";
@@ -6032,6 +6036,12 @@ if(typeof _origNavE==="function"&&!window._navEng){window._navEng=true;
         }
       }
       if(window.STUDIO&&STUDIO.recording&&typeof stopRec==="function")stopRec();
+    }
+    // Leaving edit suite: stop any edit-suite mic streams so the mic doesn't stay live.
+    if(pg!=="edit-pg"){
+      try{ if(typeof _stopMic==="function") _stopMic(); }catch(e){}
+      try{ if(window._recSt){ window._recSt.getTracks().forEach(function(t){t.stop();}); window._recSt=null; } }catch(e){}
+      try{ if(window._micSt){ window._micSt.getTracks().forEach(function(t){t.stop();}); window._micSt=null; } }catch(e){}
     }
     if(pg==="edit-pg"){setTimeout(function(){
       var ep=document.getElementById("edit-pg");if(!ep)return;
@@ -7830,7 +7840,7 @@ body{max-width:100vw;overflow-x:hidden}
 #edit-pg.on .aab-tl-wrap { flex: 0 0 300px !important; height: 300px !important; min-height: 300px !important; }
 #edit-pg.on .aab-tl-scroll { flex: 1 1 auto !important; overflow-y: auto !important; overflow-x: auto !important; max-height: none !important; padding-bottom: 80px !important; }
 #edit-pg.on .aab-tl-tracks-wrap { overflow: visible !important; padding-bottom: 40px !important; }
-.aab-track-row { min-height: 40px !important; }
+/* NOTE: no forced .aab-track-row height — inline track.h keeps header+lane aligned */
 
 /* New static pages layout */
 #privacy-pg, #terms-pg, #guide-pg, #contact-pg {
@@ -7894,7 +7904,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
 .aps-char-card.selected{border-color:#2563eb!important;box-shadow:0 0 0 1px #2563eb!important;}
 
 /* Professional Edit Suite CSS */
-.aab-track-lane { min-height: 48px !important; }
+/* removed conflicting height — inline track.h is authoritative */
 .aab-track-label { min-width: 120px !important; width: 120px !important; background: #0a0d14 !important; border-right: 1px solid rgba(255,255,255,.08) !important; }
 .aab-track-name { font-size: 10px !important; font-weight: 700 !important; letter-spacing: .04em !important; color: #e5e7eb !important; }
 .aab-clip { border-radius: 4px !important; cursor: pointer; }
@@ -20198,9 +20208,9 @@ s.textContent=`
 
 /* ── Track heights: proper sizing ── */
 .aab-track-row{display:flex!important;border-bottom:1px solid #0f1623!important;position:relative!important;}
-.aab-track-row.video-row{min-height:58px!important;height:58px!important;}
-.aab-track-row.audio-row{min-height:44px!important;height:44px!important;}
-.aab-track-row.text-row{min-height:36px!important;height:36px!important;}
+/* removed conflicting height — inline track.h is authoritative */
+/* removed conflicting height — inline track.h is authoritative */
+/* removed conflicting height — inline track.h is authoritative */
 
 /* ── Clip sizing: proper height ── */
 .aab-clip{height:100%!important;border-radius:4px!important;overflow:hidden!important;cursor:pointer!important;box-sizing:border-box!important;}
@@ -21704,8 +21714,8 @@ console.log('[ClipEditor v1] Loaded — trim handles, unique icons, full context
   var s=document.createElement('style');s.id='aab-platform-fixes-css';
   s.textContent=`
 /* ── Track row heights with breathing room ── */
-.aab-track-row { min-height: 52px !important; }
-.aab-track-row.video-row { height: 60px !important; min-height: 60px !important; }
+/* removed conflicting height — inline track.h is authoritative */
+/* removed conflicting height — inline track.h is authoritative */
 .aab-track-row.audio-row { height: 50px !important; min-height: 50px !important; }
 .aab-track-row.text-row  { height: 40px !important; min-height: 40px !important; }
 
@@ -26584,6 +26594,7 @@ function _pickFiles(type){
    VO RECORDING
    ═══════════════════════════════════════════════════════════════════════════ */
 var _micSt=null,_micAA=null,_micAn=null,_vuRAF2=null,_recSt=null,_recRec=null,_recChunks=[],_recDur=0,_recInt=null;
+try{Object.defineProperty(window,'_micSt',{get:function(){return _micSt;},set:function(v){_micSt=v;},configurable:true});Object.defineProperty(window,'_recSt',{get:function(){return _recSt;},set:function(v){_recSt=v;},configurable:true});}catch(e){}
 window.E_startVoiceRecord=()=>{if(_micSt){_stopMic();return;}navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{_micSt=stream;var ctx=new(window.AudioContext||window.webkitAudioContext)();_micAA=ctx;_micAn=ctx.createAnalyser();_micAn.fftSize=128;ctx.createMediaStreamSource(stream).connect(_micAn);document.querySelectorAll('.aab-mic-name-btn').forEach(b=>b.classList.add('active'));_vuRun2();toast&&toast('🎙 Mic on','ok');}).catch(e=>toast&&toast('Mic: '+e.message,'error'));};
 function _stopMic(){if(_micSt){_micSt.getTracks().forEach(t=>t.stop());_micSt=null;}if(_micAA){try{_micAA.close();}catch(e){}}_micAA=null;if(_vuRAF2){cancelAnimationFrame(_vuRAF2);_vuRAF2=null;}document.querySelectorAll('.aab-vu-bar').forEach(b=>{b.style.height='20%';b.style.background='rgba(16,185,129,.35)';});document.querySelectorAll('.aab-mic-name-btn').forEach(b=>b.classList.remove('active'));}
 function _vuRun2(){if(!_micAn)return;var buf=new Uint8Array(_micAn.frequencyBinCount);(function tick(){_vuRAF2=requestAnimationFrame(tick);_micAn.getByteFrequencyData(buf);var avg=0;for(var i=0;i<buf.length;i++)avg+=buf[i];avg/=(buf.length*255);document.querySelectorAll('.aab-vu-bar').forEach((b,i)=>{var on=avg>[.02,.10,.22,.40,.60,.80][i];b.style.height=on?'90%':'20%';b.style.background=on?(avg>.75?'#ef4444':avg>.45?'#f59e0b':'#10b981'):'rgba(16,185,129,.35)';});})();}
