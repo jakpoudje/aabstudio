@@ -4787,8 +4787,8 @@ _css.textContent=""+
 ".aab-clip.sel{border-color:#2563eb!important;box-shadow:0 0 0 1px #2563eb;}"+
 ".aab-thumb-strip{position:absolute;inset:0;display:flex;gap:1px;overflow:hidden;opacity:.55;}"+
 ".aab-waveform{position:absolute;inset:0;}"+
-".aab-clip-lbl{position:relative;z-index:2;font-size:9px;font-weight:700;color:rgba(255,255,255,.92);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 4px rgba(0,0,0,.9);}"+
-".aab-clip-dur{position:absolute;right:4px;bottom:2px;font-size:7px;color:rgba(255,255,255,.4);z-index:2;}"+
+".aab-track-lbl,.aab-track-lbl *{color:#e8edf5 !important;} .e-track-name{color:#e8edf5 !important;} .aab-clip-lbl{position:relative;z-index:2;font-size:9px;font-weight:700;color:#ffffff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 4px rgba(0,0,0,.9);}"+
+".aab-clip-dur{position:absolute;right:4px;bottom:2px;font-size:7px;color:rgba(255,255,255,.75);z-index:2;}"+
 ".aab-trans-icon{position:absolute;right:-7px;top:50%;transform:translateY(-50%);width:14px;height:14px;background:#f59e0b;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:7px;z-index:10;cursor:pointer;}"+
 /* Playhead */
 ".aab-ph{position:absolute;top:0;bottom:0;width:2px;background:#ef4444;pointer-events:none;z-index:20;transform:translateX(0);}"+
@@ -16586,12 +16586,24 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   var lblText = document.getElementById('aps-upload-label-text');
   if(lblText) lblText.textContent = name || 'Photo loaded';
   // BIG preview panel — replace the 👤 placeholder with the real face
+  var presEl = document.getElementById('aps-preview-presenter');
+  if(presEl){ presEl.style.display=''; }
   var bigWrap = document.getElementById('aps-presenter-img-wrap');
   if(bigWrap){
-    bigWrap.innerHTML = '<img src="'+src+'" style="width:100%;height:100%;object-fit:cover;object-position:top center;border-radius:100px 100px 0 0;">';
-    bigWrap.style.border = 'none';
-    bigWrap.style.background = 'transparent';
+    bigWrap.style.position='relative';
+    bigWrap.style.border='none';
+    bigWrap.style.background='transparent';
+    var ph = bigWrap.querySelector('span'); if(ph) ph.style.display='none';
+    var img = bigWrap.querySelector('img.aps-presenter-real-img');
+    if(!img){
+      img = document.createElement('img');
+      img.className='aps-presenter-real-img';
+      img.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:top center;border-radius:inherit;z-index:5;';
+      bigWrap.appendChild(img);
+    }
+    img.src = src;
   }
+  try{ if(window.APS){ APS.photo = src; } }catch(e){}
 };
 
 function aps_clearPhoto() {
@@ -25133,14 +25145,14 @@ window.aps_setBg=function(arg,imgUrl){
   else { bgName=(typeof arg==='string'?arg:'news-studio'); }
   // Visual gradients per studio type (so the preview shows the chosen look, not grey).
   var BG_CSS={
-    'news-studio':'linear-gradient(135deg,#0a1628,#1a2f5a,#0d2040)',
-    'podcast':'linear-gradient(135deg,#0d0020,#1a0535,#0a0015)',
-    'office':'linear-gradient(135deg,#0f1a10,#1a2f1a,#0a1a20)',
-    'classroom':'linear-gradient(135deg,#1a1a0a,#2a2a10,#1a2010)',
-    'courtroom':'linear-gradient(135deg,#1a0a00,#3a1500,#1a0800)',
-    'documentary':'linear-gradient(135deg,#050505,#100005,#050010)',
-    'cooking':'linear-gradient(135deg,#0a1a0a,#182a10,#0f2010)',
-    'custom':'#1a2535'
+    'news-studio':'linear-gradient(135deg,#1e3a8a,#2563eb,#1e40af)',
+    'podcast':'linear-gradient(135deg,#4c1d95,#7c3aed,#5b21b6)',
+    'office':'linear-gradient(135deg,#0f766e,#14b8a6,#0d9488)',
+    'classroom':'linear-gradient(135deg,#a16207,#eab308,#ca8a04)',
+    'courtroom':'linear-gradient(135deg,#7c2d12,#b45309,#92400e)',
+    'documentary':'linear-gradient(135deg,#1f2937,#374151,#111827)',
+    'cooking':'linear-gradient(135deg,#c2410c,#f97316,#ea580c)',
+    'custom':'#334155'
   };
   var st=ST();var scene=st.scenes&&st.scenes[st.currentIdx];
   if(scene){scene.background=bgName;scene.backgroundUrl=imgUrl||'';}
