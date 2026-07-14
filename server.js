@@ -1640,7 +1640,7 @@ async function generateWithHeyGen(req, res, args) {
 // Fallback: if Imgur fails, fall back to HeyGen.
 // ══════════════════════════════════════════════════════════════════════════════
 async function generateWithKling(req, res, args) {
-  const { compositeImageB64, referenceImageBase64, audioBase64, ratio, gesture } = args;
+  const { compositeImageB64, referenceImageBase64, audioBase64, ratio, gesture, motion, studioType, framing } = args;
   try {
     const imageToUse = compositeImageB64 || referenceImageBase64;
     if (!imageToUse) return await generateWithHeyGen(req, res, args);
@@ -1672,11 +1672,32 @@ async function generateWithKling(req, res, args) {
         return await generateWithHeyGen(req, res, args);
       }
 
+      // Map the user's gesture/motion/studio selections into descriptive prompt language
+      // so their choices actually shape the generated video.
+      const GEST = {
+        'professional':'calm, composed professional delivery',
+        'news-anchor':'authoritative news-anchor delivery, steady and clear',
+        'teacher':'warm explanatory teaching style, friendly and clear gestures',
+        'investigative':'serious, measured investigative tone, intent expression',
+        'energetic':'energetic, animated creator delivery, lively expression',
+        'presenter':'polished TV host delivery, engaging and confident'
+      };
+      const MOT = {
+        'static':'locked-off static camera',
+        'push-in':'slow subtle push-in camera move',
+        'handheld':'slight natural handheld camera movement'
+      };
+      const STU = {
+        'news-studio':'modern broadcast news studio','podcast':'podcast studio',
+        'office':'corporate office','classroom':'classroom','courtroom':'formal courtroom',
+        'documentary':'cinematic documentary set','cooking':'bright cooking-show kitchen'
+      };
       const prompt = [
-        'Professional TV presenter speaking to camera.',
-        gesture && gesture !== 'professional' ? gesture + ' delivery style.' : 'Professional calm delivery.',
-        'Natural head movement. Realistic breathing. Subtle body language.',
-        'Broadcast quality studio video. Photorealistic. No watermarks.'
+        'Professional TV presenter speaking directly to camera in a ' + (STU[studioType]||'professional studio') + '.',
+        (GEST[gesture]||'professional calm delivery') + '.',
+        (MOT[motion]||'locked-off static camera') + '.',
+        'Natural head movement, realistic breathing, accurate lip-sync, subtle body language.',
+        'Broadcast quality, photorealistic, no watermarks, no text overlays.'
       ].join(' ');
 
       const i2vResp = await fetch('https://api.piapi.ai/api/v1/task', {
@@ -1728,7 +1749,7 @@ async function generateWithKling(req, res, args) {
       const i2vResp = await fetch(KLING_BASE + '/v1/images/image2video', {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_name: 'kling-v1-5', mode: 'std', duration: '5', aspect_ratio: ratioMap[ratio] || '16:9', image: 'data:image/jpeg;base64,' + imageToUse, prompt: 'Professional TV presenter speaking to camera. Natural head movement.' })
+        body: JSON.stringify({ model_name: 'kling-v1-5', mode: 'std', duration: '5', aspect_ratio: ratioMap[ratio] || '16:9', image: 'data:image/jpeg;base64,' + imageToUse, prompt: 'Professional TV presenter speaking directly to camera, natural head movement, realistic breathing, accurate lip-sync, broadcast quality, photorealistic, no watermarks.' })
       }).catch(e => { throw new Error('Kling direct blocked: ' + e.message); });
       if (!i2vResp.ok) return await generateWithHeyGen(req, res, args);
       const i2vData = await i2vResp.json();
