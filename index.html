@@ -5221,6 +5221,13 @@ function E_loadSrc(url,type){
   } else if(type==="image"&&url){
     if(vid){vid.pause();vid.src="";vid.style.display="none";}
     if(img){img.src=url;img.style.display="block";}
+  } else if(type==="audio"&&url){
+    // Audio clip: use the (hidden) video element as an audio player + show a label.
+    if(img)img.style.display="none";
+    if(vid){vid.src=url;vid.style.display="none";vid.load();
+      vid.ontimeupdate=function(){var t=document.getElementById("aab-src-time");if(t)t.textContent=_ft(vid.currentTime)+" / "+_ft(vid.duration||0);};}
+    var se=document.getElementById("aab-src-empty");
+    if(se){se.style.display="";se.classList.remove("hidden");se.textContent="\uD83C\uDFB5 Audio clip — press play to preview";}
   }
 }
 function E_srcToggle(){
@@ -18657,18 +18664,6 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
   };
 
   // Add media to timeline
-  // Read the REAL duration of an uploaded media file before adding it to the timeline,
-  // so uploads are not truncated to a hardcoded length.
-  window._aabRealMediaDuration = function(url, kind, cb){
-    var el = document.createElement(kind==='audio'?'audio':'video');
-    el.preload = 'metadata'; var done=false;
-    function finish(d){ if(done)return; done=true; try{el.src='';}catch(e){} cb(d && isFinite(d) && d>0 ? d : null); }
-    el.onloadedmetadata = function(){ finish(el.duration); };
-    el.onerror = function(){ finish(null); };
-    setTimeout(function(){ finish(el.duration); }, 8000); // fallback if metadata never fires
-    el.src = url;
-  };
-
   window.E_addVideo = function() {
     var input = document.createElement('input');
     input.type = 'file'; input.accept = 'video/*';
@@ -18680,12 +18675,10 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
       if(!track && AABE) track = AABE.tracks[0];
       if(!track) return;
       var start = track.clips.reduce(function(max,c){ return Math.max(max, (c.start||0)+(c.duration||0)); }, 0);
-      window._aabRealMediaDuration(url, 'video', function(realDur){
-        var clip = { id:'vid_'+Date.now(), name:file.name, type:'video', url:url, start:start, duration:(realDur||10), color:'#8b5cf6' };
-        track.clips.push(clip);
-        if(typeof E_renderTL==='function') E_renderTL();
-        if(typeof toast==='function') toast('Video added ('+(realDur?realDur.toFixed(1)+'s':'length unknown')+')','ok');
-      });
+      var clip = { id:'vid_'+Date.now(), name:file.name, type:'video', url:url, start:start, duration:10, color:'#8b5cf6' };
+      track.clips.push(clip);
+      if(typeof E_renderTL==='function') E_renderTL();
+      if(typeof toast==='function') toast('Video added to timeline','ok');
     };
     input.click();
   };
@@ -18701,11 +18694,9 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
       if(!track && AABE) track = AABE.tracks.find(function(t){ return t.id==='music'; });
       if(!track) return;
       var start = track.clips.reduce(function(max,c){ return Math.max(max,(c.start||0)+(c.duration||0));},0);
-      window._aabRealMediaDuration(url, 'audio', function(realDur){
-        track.clips.push({ id:'aud_'+Date.now(), name:file.name, type:'audio', url:url, start:start, duration:(realDur||30), color:'#10b981' });
-        if(typeof E_renderTL==='function') E_renderTL();
-        if(typeof toast==='function') toast('Audio added ('+(realDur?realDur.toFixed(1)+'s':'length unknown')+')','ok');
-      });
+      track.clips.push({ id:'aud_'+Date.now(), name:file.name, type:'audio', url:url, start:start, duration:30, color:'#10b981' });
+      if(typeof E_renderTL==='function') E_renderTL();
+      if(typeof toast==='function') toast('Audio added to timeline','ok');
     };
     input.click();
   };
@@ -20960,6 +20951,13 @@ setTimeout(function(){
 /* ══════════════════════════════════════
    WAVEFORM RENDERING for audio clips
    ══════════════════════════════════════ */
+// Deterministic pseudo-waveform seeded from the clip id, so a clip's fallback bars are
+// IDENTICAL on every render (no random flicker when re-rendering / selecting clips).
+function _aabSeededWave(seed, n){
+  var s=0; for(var i=0;i<(seed||'').length;i++){ s=(s*31 + seed.charCodeAt(i))>>>0; }
+  var out=[]; for(var k=0;k<n;k++){ s=(s*1103515245+12345)&0x7fffffff; out.push(0.15+((s%1000)/1000)*0.7); }
+  return out;
+}
 window._E2_renderWaveform = function(clip, el){
   // If we have stored waveform data, draw bars
   if(clip.waveform&&clip.waveform.length){
@@ -20970,6 +20968,16 @@ window._E2_renderWaveform = function(clip, el){
     });
     el.appendChild(wv);return;
   }
+  // Not yet decoded: draw a STABLE seeded waveform immediately so there's no flicker,
+  // and only kick off the real decode ONCE per clip (guarded).
+  clip.waveform = _aabSeededWave(clip.id||clip.url||'x', 40);
+  (function(){
+    var wv=document.createElement('div');wv.className='aab-waveform';
+    clip.waveform.forEach(function(h){var bar=document.createElement('div');bar.className='aab-waveform-bar';bar.style.height=(Math.max(0.05,h)*100)+'%';wv.appendChild(bar);});
+    el.appendChild(wv);
+  })();
+  if(clip._wfDecoding) return;   // decode already attempted — don't re-fire on re-render
+  clip._wfDecoding = true;
   // Try AudioContext decoding
   if(clip.url&&window.AudioContext){
     try{
@@ -20990,11 +20998,11 @@ window._E2_renderWaveform = function(clip, el){
         ctx.close();
       }).catch(function(){
         // Fallback: random waveform
-        clip.waveform=Array.from({length:40},function(){return Math.random()*0.7+0.15;});
+        clip.waveform=_aabSeededWave(clip.id||clip.url||'x',40);
         window._E2_renderWaveform(clip,el);
       });
     }catch(e){
-      clip.waveform=Array.from({length:40},function(){return Math.random()*0.7+0.15;});
+      clip.waveform=_aabSeededWave(clip.id||clip.url||'x',40);
       window._E2_renderWaveform(clip,el);
     }
   }
