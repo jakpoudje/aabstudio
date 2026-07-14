@@ -1248,7 +1248,7 @@ app.post('/api/presenter', async (req, res) => {
       gestureStyle,  gesture,
       shotType,      shot,
       motionStyle,   motion,
-      voiceGender, voiceName,
+      voiceGender, voiceName, voiceId, stability, clarity,
       sceneText     = '',
       sceneNum, sceneTotal, duration,
       provider: requestedProvider = null,
@@ -1281,6 +1281,14 @@ app.post('/api/presenter', async (req, res) => {
     if (chosen === 'heygen' && !hasHeygen) chosen = null;
     if (chosen === 'runway' && !hasRunway) chosen = null;
     const hasDID = !!DID_API_KEY;
+    // HeyGen on the Creator plan can't build a Photo Avatar from an uploaded photo, so it
+    // renders a STOCK avatar instead of the user's face. When the user has supplied a
+    // reference image, prefer a provider that animates the real photo (D-ID, else Kling).
+    if (chosen === 'heygen' && (referenceImageBase64 || false)) {
+      if (hasDID)      { chosen = 'did';   console.log('Provider: reference image present -> overriding HeyGen with D-ID so the real face is used'); }
+      else if (hasKling){ chosen = 'kling'; console.log('Provider: reference image present -> overriding HeyGen with Kling so the real face is used'); }
+      else             { console.log('Provider: HeyGen kept (no D-ID/Kling available) — note: Creator plan will use a stock avatar'); }
+    }
     // D-ID is preferred when reference image present — uses actual face, faster than HeyGen
     if (!chosen) {
       // D-ID: fastest option when user has uploaded a reference photo
@@ -1309,6 +1317,8 @@ app.post('/api/presenter', async (req, res) => {
       motion:   motionStyle || motion || 'static',
       gender:   voiceGender || 'unknown',
       voiceName: voiceName || '',
+      voiceId:   voiceId || null,          // the ElevenLabs voice the user selected
+      stability, clarity,
       studioType: bgTypeResolved,
       talkingPhotoId,   // Pass through pre-created ID
       sceneText, sceneNum, sceneTotal, duration
