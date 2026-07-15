@@ -13043,15 +13043,20 @@ function studioNext() {
           window._sbSession = r.data.session;
           if (r.data.session.user && r.data.session.user.id) window.USER_ID = r.data.session.user.id;
           setUser(r.data.session.user);
-          // Pull + merge cloud projects on restore too (previously only after a fresh login).
+          // Pull + merge cloud projects on restore, then push this browser's local projects
+          // up. Previously both only happened after a fresh SIGNED_IN, so a returning user's
+          // work never reached the cloud and never came back on another browser/device.
           setTimeout(function () {
             try {
-              if (typeof syncAndLoadProjects === 'function') {
-                var _p = syncAndLoadProjects();
-                if (_p && _p.then) _p.then(function(){ if (typeof renderProjectList === 'function') renderProjectList(); });
-              } else if (typeof loadProjectsFromCloud === 'function') {
-                loadProjectsFromCloud();
-              }
+              var _load = (typeof syncAndLoadProjects === 'function')
+                ? syncAndLoadProjects()
+                : (typeof loadProjectsFromCloud === 'function' ? loadProjectsFromCloud() : null);
+              var _chain = (_load && _load.then) ? _load : { then: function(f){ try{f();}catch(e){} return this; }, catch: function(){ return this; } };
+              _chain.then(function () {
+                if (typeof pushAllLocalProjectsToCloud === 'function') return pushAllLocalProjectsToCloud();
+              }).then(function () {
+                if (typeof renderProjectList === 'function') renderProjectList();
+              }).catch(function () {});
             } catch (e2) {}
           }, 700);
           // Restore saved page from sessionStorage on refresh
