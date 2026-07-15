@@ -9976,6 +9976,16 @@ window.ap_save = function(silent) {
 
 // ── ap_load — Load a project by ID and set as active ─────────────────────
 window.ap_load = function(projectId) {
+  // Do NOT open a project when nobody is signed in. The tail of this function force-shows
+  // scenes-pg by touching classList directly, which bypasses nav()'s auth gate - so a
+  // signed-out visitor sitting on the login screen had a project opened behind the wall
+  // ("Opened: My Video - 87 scenes"), which then fired navigation into protected pages and
+  // produced a burst of "Please sign in to continue" toasts, plus a storm of requests for
+  // that project's expired video URLs. Loading a project is only ever valid once signed in.
+  if (!window.APP || !APP.user) {
+    try { localStorage.setItem('aab_pending_project', projectId || ''); } catch (e) {}
+    return;
+  }
   var projects = [];
   try { 
     projects = JSON.parse(localStorage.getItem('aab_projects') || '[]');
@@ -10350,8 +10360,17 @@ window._safeFetch = async function(url, opts, timeoutMs) {
   }
       // Auth gate
       if (requiresLogin(pg) && !APP.user) {
+        // Redirect quietly. This used to toast on EVERY blocked navigation, so a single load
+        // that touched several protected pages stacked up identical "Please sign in to
+        // continue" notifications on the login screen - which is not how a professional app
+        // behaves. The login form itself is the message; show the toast at most once.
+        var _wasOnAuth = document.getElementById('auth-pg');
+        _wasOnAuth = _wasOnAuth && _wasOnAuth.classList.contains('on');
         nav('auth-pg');
-        setTimeout(function () { toast('Please sign in to continue', 'info'); }, 200);
+        if (!_wasOnAuth && !window._aabAuthNoticeShown) {
+          window._aabAuthNoticeShown = true;
+          setTimeout(function () { if (typeof toast === 'function') toast('Please sign in to continue', 'info'); }, 200);
+        }
         return;
       }
       // Plan gate
@@ -13088,6 +13107,7 @@ function studioNext() {
           // localStorage, which is why Chrome, Safari and mobile each showed a different
           // project. Set it here, on the normal restore path.
           window._sbSession = r.data.session;
+          window._aabAuthNoticeShown = false;
           if (r.data.session.user && r.data.session.user.id) window.USER_ID = r.data.session.user.id;
           setUser(r.data.session.user);
           // Pull + merge cloud projects on restore, then push this browser's local projects
@@ -20014,10 +20034,15 @@ window.assignAssetToScene=function(idx,url,name){
   var sc=p.scenes[idx];if(!sc)return;
   // Guard: scenes only accept images. Anything else (audio/video/SFX) is rejected here so
   // no other code path can quietly attach a non-image to a scene.
-  var _u=String(url||'');
-  var _isImg = /^data:image\//i.test(_u) || /\.(png|jpe?g|gif|webp|bmp|svg|avif)(\?|#|$)/i.test(_u) ||
-               (/^https?:/i.test(_u) && /image/i.test(String(name||'')));
-  if(!_isImg){
+  var _u=String(url||''), _n=String(name||'');
+  // Reject only what is clearly NOT an image. The previous check required a data:image/ URL,
+  // a known image extension, or "image" in the filename - which wrongly rejected perfectly
+  // valid library assets served over https:// with no extension, so assigning an existing
+  // image to a scene silently failed. Blocklist the known non-image types instead.
+  var _isNotImg = /^data:(video|audio)\//i.test(_u) ||
+                  /\.(mp4|webm|mov|avi|mkv|m4v|mp3|wav|ogg|aac|m4a|flac)(\?|#|$)/i.test(_u) ||
+                  /\.(mp4|webm|mov|mp3|wav|m4a)$/i.test(_n);
+  if(_isNotImg){
     if(typeof toast==='function')toast('Only images can be assigned to a scene','info');
     return;
   }
