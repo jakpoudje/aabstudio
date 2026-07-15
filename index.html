@@ -9986,6 +9986,33 @@ window.ap_load = function(projectId) {
     PROJECT.scenes = PROJECT.scenes.map(function(sc) {
       return Object.assign({ status: 'draft', duration: 8, assets: [] }, sc);
     });
+
+    // ── Drop dead blob: URLs on load ──────────────────────────────────────────
+    // A blob: URL is only valid inside the page session that created it. Once a project is
+    // saved and reloaded, any stored blob: URL can NEVER resolve again. Leaving them in
+    // made the Edit Suite rebuild phantom clips from old recordings and made the media bin
+    // demand a "relink" for videos that no longer exist — even for users who had generated
+    // nothing. Real, persistent URLs (https:, data:) such as generated AI Presenter videos
+    // are kept, so reopening a project from the dashboard still shows real work. Clearing a
+    // dead URL also resets the scene so the user can simply regenerate it.
+    var _isDead = function(v){ return typeof v === 'string' && v.indexOf('blob:') === 0; };
+    var _deadCount = 0;
+    PROJECT.scenes.forEach(function(sc){
+      ['recordedUrl','videoUrl','apsVideoUrl','url','previewUrl'].forEach(function(k){
+        if (_isDead(sc[k])) { delete sc[k]; _deadCount++; }
+      });
+      if (sc.status === 'recorded' && !sc.recordedUrl && !sc.videoUrl && !sc.apsVideoUrl) sc.status = 'draft';
+    });
+    ['apsVideos','aiClips','clipsMeta','aiClipsMeta'].forEach(function(bag){
+      var o = PROJECT[bag];
+      if (!o || typeof o !== 'object') return;
+      Object.keys(o).forEach(function(id){
+        var v = o[id];
+        var u = (typeof v === 'string') ? v : (v && v.url);
+        if (_isDead(u)) { delete o[id]; _deadCount++; }
+      });
+    });
+    if (_deadCount) console.log('[AAB] ap_load: dropped ' + _deadCount + ' dead blob: URL(s) from "' + (PROJECT.title || PROJECT.name || PROJECT.id) + '"');
     
     // Restore AI clip URLs from aiClipsMeta → aiClips
     if (!PROJECT.aiClips) PROJECT.aiClips = {};
