@@ -1952,7 +1952,56 @@ app.get('/api/presenter-wait', (req, res) => {
 });
 
 // ── Status polling ────────────────────────────────────────────────────────────
+// ── Durable storage for generated videos ──────────────────────────────────────
+// Provider video URLs (HeyGen / D-ID / Kling) are TEMPORARY signed links. Once they expire
+// they return 403 and the clip is gone for good - which is why generated scenes disappeared
+// from the clips bar and never reached the Edit Suite, and why the browser console filled
+// with .mp4 403s (a 403 carries no CORS headers, so Safari reports it as a CORS failure).
+// The browser cannot copy these itself: fetching a provider URL client-side is blocked by
+// CORS. So we copy the finished video into our own Supabase bucket server-side, where CORS
+// does not apply, and hand the client a durable URL instead of the provider's.
+async function persistGeneratedVideo(providerUrl, userId, meta) {
+  try {
+    if (!providerUrl || !/^https?:/i.test(providerUrl)) return null;
+    const sb = getSupaAdmin();
+    if (!sb) return null;
+    const r = await fetch(providerUrl);
+    if (!r.ok) { console.warn('[persist] provider fetch failed:', r.status, String(providerUrl).slice(0, 60)); return null; }
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (!buf.length) return null;
+    const bucket = process.env.CLIP_BUCKET || 'recorded-clips';
+    const name = 'generated/' + (userId || 'anon') + '/' + ((meta && meta.sceneId) || 'scene') + '-' + Date.now() + '.mp4';
+    const { error } = await sb.storage.from(bucket).upload(name, buf, { contentType: 'video/mp4', upsert: true });
+    if (error) { console.warn('[persist] upload failed:', error.message); return null; }
+    let url = null;
+    try {
+      const { data: signed } = await sb.storage.from(bucket).createSignedUrl(name, 60 * 60 * 24 * 365 * 5);
+      url = signed && signed.signedUrl;
+    } catch (e) { /* fall back to public URL */ }
+    if (!url) { const { data: pub } = sb.storage.from(bucket).getPublicUrl(name); url = pub && pub.publicUrl; }
+    if (url) console.log('[persist] stored ' + bucket + '/' + name + ' (' + Math.round(buf.length / 1024) + 'KB)');
+    return url || null;
+  } catch (e) {
+    console.warn('[persist] error:', e.message);
+    return null;
+  }
+}
+
 app.get('/api/presenter-status', async (req, res) => {
+  // Copy the finished video into our own storage before replying, so the client only ever
+  // stores a durable URL. Wrapping res.json covers EVERY completion branch in this route
+  // (HeyGen, D-ID, Kling/PiAPI, webhook) - including any added later - rather than needing
+  // the same call pasted into each one.
+  const _json = res.json.bind(res);
+  res.json = function (payload) {
+    if (!payload || !payload.done || !payload.videoUrl || payload.persisted) return _json(payload);
+    return persistGeneratedVideo(payload.videoUrl, req.query.userId, { sceneId: req.query.sceneId })
+      .then(function (durable) {
+        if (durable) { payload.providerUrl = payload.videoUrl; payload.videoUrl = durable; payload.persisted = true; }
+        return _json(payload);
+      })
+      .catch(function () { return _json(payload); });
+  };
   const { taskId } = req.query;
   if (!taskId) return res.status(400).json({ error: 'taskId required' });
   try {
