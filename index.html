@@ -8687,21 +8687,12 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
           <div class="sb-body">
             <div id="asset-library-panel"></div>
             
-            <!-- MY ASSETS TAB — images, audio, video, SFX, generated AI clips -->
+            <!-- MY ASSETS TAB — IMAGES ONLY. Scenes take stills; video comes from the Recording Studio or AI Presenter. -->
             <div id="my-assets-panel" style="display:none;">
               <div style="padding:8px 0 4px;font-size:9px;color:rgba(255,255,255,.3);text-transform:uppercase;letter-spacing:.05em;">Upload to Asset Library</div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">
+              <div style="display:grid;grid-template-columns:1fr;gap:6px;margin-bottom:10px;">
                 <label style="background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);border-radius:8px;padding:8px;text-align:center;cursor:pointer;font-size:10px;color:rgba(255,255,255,.6);">
                   🖼 Image<input type="file" style="display:none;" accept="image/*" onchange="asset_upload(this.files[0],'image')">
-                </label>
-                <label style="background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);border-radius:8px;padding:8px;text-align:center;cursor:pointer;font-size:10px;color:rgba(255,255,255,.6);">
-                  🎵 Audio<input type="file" style="display:none;" accept="audio/*" onchange="asset_upload(this.files[0],'audio')">
-                </label>
-                <label style="background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);border-radius:8px;padding:8px;text-align:center;cursor:pointer;font-size:10px;color:rgba(255,255,255,.6);">
-                  🎬 Video<input type="file" style="display:none;" accept="video/*" onchange="asset_upload(this.files[0],'video')">
-                </label>
-                <label style="background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.12);border-radius:8px;padding:8px;text-align:center;cursor:pointer;font-size:10px;color:rgba(255,255,255,.6);">
-                  🎤 SFX<input type="file" style="display:none;" accept="audio/*" onchange="asset_upload(this.files[0],'sfx')">
                 </label>
               </div>
               <div style="font-size:9px;color:rgba(255,255,255,.3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Saved Assets</div>
@@ -19984,18 +19975,41 @@ setTimeout(function(){
 window.assignAssetToScene=function(idx,url,name){
   var p=window.PROJECT;if(!p||!p.scenes)return;
   var sc=p.scenes[idx];if(!sc)return;
+  // Guard: scenes only accept images. Anything else (audio/video/SFX) is rejected here so
+  // no other code path can quietly attach a non-image to a scene.
+  var _u=String(url||'');
+  var _isImg = /^data:image\//i.test(_u) || /\.(png|jpe?g|gif|webp|bmp|svg|avif)(\?|#|$)/i.test(_u) ||
+               (/^https?:/i.test(_u) && /image/i.test(String(name||'')));
+  if(!_isImg){
+    if(typeof toast==='function')toast('Only images can be assigned to a scene','info');
+    return;
+  }
   if(!sc.assets)sc.assets=[];
-  sc.assets.push({url:url,name:name||'Asset',id:'sa'+Date.now()});
+  sc.assets.push({url:url,name:name||'Image',type:'image',id:'sa'+Date.now()});
   if(typeof _saveProjectFull==='function')_saveProjectFull(p);
   typeof toast==='function'&&toast('Assigned to Scene '+(idx+1),'ok');
 };
 window.uploadAssetToScene=function(idx){
-  var inp=document.createElement('input');inp.type='file';inp.accept='image/*,video/*';inp.style.display='none';
+  // Scenes take IMAGES ONLY. This previously accepted 'image/*,video/*', which let users
+  // attach videos/audio to a scene - scene assets are stills shown over the recording, and
+  // video comes from the Recording Studio or AI Presenter, not from scene assets.
+  var inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.multiple=true;inp.style.display='none';
   document.body.appendChild(inp);
   inp.onchange=function(){
-    var f=inp.files[0];if(!f)return;
-    var rd=new FileReader();rd.onload=function(e){window.assignAssetToScene(idx,e.target.result,f.name);inp.remove();};
-    rd.readAsDataURL(f);
+    var files=[].slice.call(inp.files||[]);
+    if(!files.length){inp.remove();return;}
+    var imgs=files.filter(function(f){return /^image\//.test(f.type);});
+    if(imgs.length!==files.length&&typeof toast==='function')toast('Only image files can be assigned to a scene','info');
+    var done=0;
+    if(!imgs.length){inp.remove();return;}
+    imgs.forEach(function(f){
+      var rd=new FileReader();
+      rd.onload=function(e){
+        window.assignAssetToScene(idx,e.target.result,f.name);
+        if(++done===imgs.length)inp.remove();
+      };
+      rd.readAsDataURL(f);
+    });
   };inp.click();
 };
 window._addSceneAssetUploadButtons=function(){
