@@ -1607,8 +1607,17 @@ async function generateWithHeyGen(req, res, args) {
 
       const maleAvatars   = ['josh_talking_male_4_20241203', 'james_20240207', 'tyler_20240309'];
       const femaleAvatars = ['Anna_public_3_20240108', 'aisha_20240926', 'abigail_20240926'];
-      const avatarList    = (gender === 'male') ? maleAvatars : femaleAvatars;
-      const avatarId      = process.env.HEYGEN_AVATAR_ID || avatarList[0];
+      const _g            = String(gender || '').toLowerCase();
+      const avatarList    = (_g === 'male') ? maleAvatars : femaleAvatars;
+      // The user's chosen gender MUST win. This used to be
+      //   process.env.HEYGEN_AVATAR_ID || avatarList[0]
+      // so whenever HEYGEN_AVATAR_ID was set on the server - and its default is the FEMALE
+      // avatar Anna_public_3_20240108 - every stock-avatar render came back female no matter
+      // which gender or voice the user picked. The env var is now only a fallback for when
+      // no gender was supplied at all.
+      const avatarId      = (_g === 'male' || _g === 'female')
+        ? avatarList[0]
+        : (process.env.HEYGEN_AVATAR_ID || femaleAvatars[0]);
       console.log('HeyGen: stock avatar fallback | gender:', gender, '| avatar:', avatarId);
 
       payload = {
@@ -1660,7 +1669,7 @@ async function generateWithHeyGen(req, res, args) {
 // Fallback: if Imgur fails, fall back to HeyGen.
 // ══════════════════════════════════════════════════════════════════════════════
 async function generateWithKling(req, res, args) {
-  const { compositeImageB64, referenceImageBase64, audioBase64, ratio, gesture, motion, studioType, framing } = args;
+  const { compositeImageB64, referenceImageBase64, audioBase64, ratio, gesture, motion, studioType, framing, gender } = args;
   try {
     const imageToUse = compositeImageB64 || referenceImageBase64;
     if (!imageToUse) return await generateWithHeyGen(req, res, args);
@@ -1712,8 +1721,10 @@ async function generateWithKling(req, res, args) {
         'office':'corporate office','classroom':'classroom','courtroom':'formal courtroom',
         'documentary':'cinematic documentary set','cooking':'bright cooking-show kitchen'
       };
+      const _pg = String(gender || '').toLowerCase();
+      const _who = _pg === 'male' ? 'male presenter' : _pg === 'female' ? 'female presenter' : 'presenter';
       const prompt = [
-        'Professional TV presenter speaking directly to camera in a ' + (STU[studioType]||'professional studio') + '.',
+        'Professional TV ' + _who + ' speaking directly to camera in a ' + (STU[studioType]||'professional studio') + '.',
         (GEST[gesture]||'professional calm delivery') + '.',
         (MOT[motion]||'locked-off static camera') + '.',
         'Natural head movement, realistic breathing, accurate lip-sync, subtle body language.',
