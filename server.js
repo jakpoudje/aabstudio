@@ -1153,7 +1153,16 @@ app.post('/api/creatomate/stitch', async (req, res) => {
     const [width, height] = resMap[resolution] || [1920,1080];
     const elements = []; let time = 0;
     clips.forEach((clip, i) => {
-      elements.push({ type: 'video', source: clip.url, time, duration: clip.duration || 8, fit: 'cover', volume: 1 });
+      // Honour the clip's own properties on EXPORT, not just in the preview monitor.
+      // volume was hardcoded to 1 here and opacity was never sent at all, so the Inspector's
+      // controls shaped the preview and were then silently dropped from the rendered video -
+      // the exported file did not match what the editor showed.
+      const el = { type: 'video', source: clip.url, time, duration: clip.duration || 8, fit: 'cover' };
+      const v = (clip.volume == null) ? 1 : parseFloat(clip.volume);
+      el.volume = isNaN(v) ? 1 : Math.max(0, Math.min(1, v));
+      const op = (clip.opacity == null) ? 1 : parseFloat(clip.opacity);
+      if (!isNaN(op) && op < 1) el.opacity = Math.max(0, Math.min(1, op));
+      elements.push(el);
       if (subtitles[i]) elements.push({ type: 'text', text: subtitles[i], time, duration: clip.duration || 8, x: '50%', y: '88%', width: '85%', font_size: '5 vmin', font_weight: '600', color: '#ffffff', background_color: 'rgba(0,0,0,0.68)', font_family: 'Open Sans', x_anchor: '50%', y_anchor: '100%' });
       time += (clip.duration || 8);
     });
