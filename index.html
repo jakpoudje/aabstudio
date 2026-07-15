@@ -13032,7 +13032,28 @@ function studioNext() {
       }
       var supa = getSupa(); if (!supa) { updateNavState(); return; }
       supa.auth.getSession().then(function (r) {
-        if (r.data && r.data.session) { setUser(r.data.session.user);
+        if (r.data && r.data.session) {
+          // ── Cross-device project sync ────────────────────────────────────────
+          // syncProjectToCloud()/loadProjectsFromCloud() both bail out unless
+          // window._sbSession is set, but ONLY the 'SIGNED_IN' event ever set it - and that
+          // event does NOT fire for a session restored on page load. So for any returning
+          // user, cloud sync silently did nothing and projects lived only in THIS browser's
+          // localStorage, which is why Chrome, Safari and mobile each showed a different
+          // project. Set it here, on the normal restore path.
+          window._sbSession = r.data.session;
+          if (r.data.session.user && r.data.session.user.id) window.USER_ID = r.data.session.user.id;
+          setUser(r.data.session.user);
+          // Pull + merge cloud projects on restore too (previously only after a fresh login).
+          setTimeout(function () {
+            try {
+              if (typeof syncAndLoadProjects === 'function') {
+                var _p = syncAndLoadProjects();
+                if (_p && _p.then) _p.then(function(){ if (typeof renderProjectList === 'function') renderProjectList(); });
+              } else if (typeof loadProjectsFromCloud === 'function') {
+                loadProjectsFromCloud();
+              }
+            } catch (e2) {}
+          }, 700);
           // Restore saved page from sessionStorage on refresh
           var _activePg = document.querySelector('.pg.on,.pg-full.on,.pg-flex.on');
           var _activePgId = _activePg ? _activePg.id : '';

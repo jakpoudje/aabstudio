@@ -873,15 +873,35 @@ app.get('/api/project/list', async (req, res) => {
     if (!user) return res.status(401).json({ error: 'Invalid token' });
     
     const sb = getSupaAdmin(); // Initialize after auth
-    // Try new projects table first
+    // Read the SAME table that /api/project/save writes to (aab_projects). The generic
+    // 'projects' table in this Supabase instance also holds unrelated rows that carry no
+    // project payload; because a valid-but-wrong result is truthy, the old code returned
+    // those and never fell back, so real AABStudio projects never came back from the cloud
+    // and every browser fell back to its own localStorage.
     try {
-      const { data: newProjects, error: newErr } = await sb.from('projects')
+      const { data: mine, error: myErr } = await sb.from('aab_projects')
+        .select('id,title,data,updated_at').eq('user_id', user.id)
+        .order('updated_at', { ascending: false }).limit(50);
+      if (!myErr) {
+        return res.json({ projects: (mine || []).map(r => r.data || r) });
+      }
+      if (!(myErr.code === 'PGRST205' || (myErr.message || '').includes('does not exist'))) throw myErr;
+    } catch(e2) { /* fall through to legacy table */ }
+
+    // Legacy fallback: only accept rows that actually carry a project payload
+    try {
+      const { data: legacy, error: legErr } = await sb.from('projects')
         .select('*').eq('user_id', user.id)
         .order('updated_at', { ascending: false }).limit(50);
-      if (!newErr && newProjects) {
-        return res.json({ projects: newProjects });
+      if (!legErr && legacy) {
+        const real = legacy.filter(r => r && (r.data || r.project_data || Array.isArray(r.scenes)));
+        return res.json({ projects: real.map(r => {
+          if (r.data) return r.data;
+          if (r.project_data) { try { return JSON.parse(r.project_data); } catch(e3) { return r; } }
+          return r;
+        }) });
       }
-    } catch(e2) { /* fall through to old table */ }
+    } catch(e4) { /* fall through */ }
     
     // Fall back to legacy aab_projects table
     const { data, error } = await sb.from('aab_projects')
