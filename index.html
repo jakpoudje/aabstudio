@@ -25371,7 +25371,7 @@ window.apsShowProgress=function(done,total,label){
     '<div style="flex:1;background:#1e293b;border-radius:4px;height:5px;overflow:hidden">'+
       '<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,#00d4ff,#0ea5e9);border-radius:4px;transition:width .5s ease"></div>'+
     '</div>'+
-    '<span style="font-size:12px;color:#e2e8f0;flex-shrink:0">'+pct+'% \u00b7 '+done+' of '+total+' done'+(label?' \u2014 '+label.slice(0,35):'')+'</span>';
+    '<span style="font-size:12px;color:#e2e8f0;flex-shrink:0">'+pct+'% \u00b7 '+Math.floor(done)+' of '+total+' done'+(label?' \u2014 '+label.slice(0,44):'')+'</span>';
 };
 window.apsHideProgress=function(){
   var bar=document.getElementById('aps-gen-progress');
@@ -25615,8 +25615,25 @@ window._apsRunQueue=async function(){
   }
 
   // Poll for URL to appear in either the scene object or PROJECT.scenes[idx]
+  // Stage reporting. The bar previously only moved when a WHOLE scene finished, so a
+  // single-scene render sat at "0% - 0 of 1 done" for minutes and then jumped to 100% with the
+  // user told nothing. done is a COUNT, so it cannot express progress inside a scene. We now
+  // advance a fraction of the current scene based on elapsed time against the provider's own
+  // expected duration, and name the stage the backend is actually in, so the bar always moves
+  // and always says what is happening.
+  var _stageFor=function(ms){
+    if(ms<4000)  return 'Preparing scene\u2026';
+    if(ms<12000) return 'Generating voice (ElevenLabs)\u2026';
+    if(ms<25000) return 'Sending to '+(_prov==='heygen'?'HeyGen':_prov==='kling'?'Kling':'D-ID')+'\u2026';
+    var mins=Math.floor(ms/60000), secs=Math.floor((ms%60000)/1000);
+    return 'Rendering with '+(_prov==='heygen'?'HeyGen':_prov==='kling'?'Kling':'D-ID')+' \u2014 '+(mins?mins+'m ':'')+secs+'s';
+  };
   var pollId=setInterval(function(){
     var elapsed=Date.now()-started;
+    // Smoothly approach (but never reach) the end of this scene's share of the bar.
+    if(!window._apsQueueRunning){/* cancelled */}
+    var _share=Math.min(0.93, elapsed/_limit);
+    apsShowProgress((qPos-1)+_share, window._apsQueueTotal||1, _stageFor(elapsed));
     var sc2=st.scenes&&st.scenes[idx];
     var projSc=window.PROJECT&&PROJECT.scenes&&PROJECT.scenes[idx];
     var url=(sc2&&sc2.apsVideoUrl&&sc2.apsVideoUrl.length>50&&sc2.apsVideoUrl!==urlBefore)?sc2.apsVideoUrl:
@@ -25624,7 +25641,7 @@ window._apsRunQueue=async function(){
             (projSc&&projSc.apsVideoUrl&&projSc.apsVideoUrl.length>50&&projSc.apsVideoUrl!==urlBefore)?projSc.apsVideoUrl:'';
     if(url){
       clearInterval(pollId);
-      apsShowProgress(qPos,window._apsQueueTotal||1,'\u2705 Done');
+      apsShowProgress(qPos,window._apsQueueTotal||1,'\u2705 Saved to your library');
       aps_updateSceneRow(idx,'done',url);
       aps_addClipToBar(idx,url,label);
       window._apsQueueDone=(window._apsQueueDone||0)+1;
