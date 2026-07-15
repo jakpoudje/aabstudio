@@ -1830,7 +1830,7 @@
     .scenes-sidebar {
       width: 270px;
       flex-shrink: 0;
-      background: #fff;
+      background: #0a0e1a;  /* was #fff - white panel in a dark app made the Assets/Upload tabs unreadable */
       border-left: .5px solid var(--bdr);
       display: flex;
       flex-direction: column;
@@ -1859,7 +1859,7 @@
       cursor: pointer;
       background: transparent;
       border: none;
-      color: var(--muted);
+      color: #cbd5e1;  /* was var(--muted) #6b7280 - too dim to read on the sidebar */
       font-family: 'Sora', sans-serif;
       transition: all .15s;
     }
@@ -19702,30 +19702,48 @@ setTimeout(_wirePhotoInputs,1000);
 setTimeout(_wirePhotoInputs,2500); // retry after APS page may open
 
 /* ── APS save character (persists to localStorage + Supabase) ── */
-window.aps_saveCharacter=window.aps_saveCharacter||function(){
-  var nEl=document.getElementById('aps-char-name')||document.querySelector('input[placeholder*="John Anchor"]');
-  var name=(nEl?nEl.value:'').trim();
-  if(!name){typeof toast==='function'&&toast('Enter character name','info');return;}
-  var entry={
-    id:'char_'+Date.now(),name:name,
-    photoB64:window.APS&&APS.photoB64||null,
-    photoMimeType:window.APS&&APS.photoMimeType||'image/jpeg',
-    photoUrl:window.APS&&APS.photo||null,
-    createdAt:new Date().toISOString()
+window.aps_saveCharacter=function(nameArg){
+  /* CANONICAL character save (consolidated).
+     Previously this wrote ONLY to 'aab_chars_<uid>' while the character grid reads
+     'aab_char_profiles' - so saved characters never appeared and could not be recalled.
+     It also read only the STEP-3 name box, so the Save button beside the "Saved Characters"
+     box read an empty field and just errored. Now it accepts either name box and writes BOTH
+     stores, so the grid AND the Character Library modal both see the character. */
+  var a=document.getElementById('aps-char-name-input');
+  var b=document.getElementById('aps-char-name');
+  var name=((nameArg&&String(nameArg))||'').trim()||(a&&a.value.trim())||(b&&b.value.trim())||'';
+  if(!name){typeof toast==='function'&&toast('Enter a character name','info');return;}
+  if(!window.APS)window.APS={};
+  if(!APS.settings)APS.settings={};
+  var prof={
+    id:'cp_'+Date.now(),name:name,
+    photoB64:APS.photoB64||null,
+    photoMimeType:APS.photoMimeType||'image/jpeg',
+    photoUrl:APS.photo||null,
+    avatarId:APS.settings.avatarId||null,
+    voiceId:APS.settings.voiceId||null,
+    provider:APS.settings.provider||'did',
+    createdAt:new Date().toISOString(),savedAt:new Date().toISOString()
   };
-  var key='aab_chars_'+((window.APP&&APP.user&&APP.user.id)||'guest');
-  var existing=[];try{existing=JSON.parse(localStorage.getItem(key)||'[]');}catch(e){}
-  existing.push(entry);
-  localStorage.setItem(key,JSON.stringify(existing));
-  if(window.APS)APS.charName=name;
-  // Persist to Supabase
+  function upsert(key,val){
+    var arr=[];try{arr=JSON.parse(localStorage.getItem(key)||'[]');}catch(e){}
+    if(!Array.isArray(arr))arr=[];
+    var i=-1;for(var k=0;k<arr.length;k++){if(arr[k]&&arr[k].name===name){i=k;break;}}
+    if(i>-1)arr[i]=val;else arr.push(val);
+    try{localStorage.setItem(key,JSON.stringify(arr));}catch(e){}
+    return arr;
+  }
+  upsert('aab_char_profiles',prof);
+  var libKey='aab_chars_'+((window.APP&&APP.user&&APP.user.id)||'guest');
+  var lib=upsert(libKey,prof);
+  APS.charName=name;
+  if(a)a.value='';
   var supa=typeof getSupa==='function'?getSupa():null;
   if(supa&&window._sbSession){
     var uid=window.APP&&APP.user?APP.user.id:null;
-    if(uid)supa.from('characters').upsert({user_id:uid,library:JSON.stringify(existing)},{onConflict:'user_id'}).then(function(){}).catch(function(){});
+    if(uid){try{supa.from('characters').upsert({user_id:uid,library:JSON.stringify(lib)},{onConflict:'user_id'}).then(function(){},function(){});}catch(e){}}
   }
   typeof toast==='function'&&toast('Character saved: '+name,'ok');
-  // Refresh character grid if visible
   if(typeof aps_renderCharGrid==='function')aps_renderCharGrid();
   if(typeof aps_loadSavedPhotos==='function')aps_loadSavedPhotos();
 };
@@ -21887,7 +21905,7 @@ console.log('[ClipEditor v1] Loaded — trim handles, unique icons, full context
 #aps-go-edit-btn-top {
   cursor: pointer !important;
   opacity: 1 !important;
-  color: rgba(16,185,129,.9) !important;
+  color: #fff !important;  /* was green - the button has a green gradient background, so green text was invisible */
   border-color: rgba(16,185,129,.4) !important;
   pointer-events: auto !important;
 }
@@ -21972,7 +21990,7 @@ setTimeout(function(){
     goBtn.style.cursor='pointer';
     goBtn.style.opacity='1';
     goBtn.style.pointerEvents='auto';
-    goBtn.style.color='rgba(16,185,129,.9)';
+    goBtn.style.color='#fff';
     if(!goBtn._wiredFixed){
       goBtn._wiredFixed=true;
       goBtn.onclick=function(){
@@ -22753,7 +22771,7 @@ window.aps_renderCharGrid=window.aps_renderCharGrid||function(){
     grid.appendChild(card);
   });
 };
-/* Wire Save button in APS to aps_saveCharacter */
+/* Wire Save button in APS to the canonical aps_saveCharacter (single storage key + both name boxes) */
 window.aps_saveCharProfile=window.aps_saveCharacter;
 /* Load char grid on APS open */
 setTimeout(function(){if(typeof aps_renderCharGrid==='function')aps_renderCharGrid();},2000);
