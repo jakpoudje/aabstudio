@@ -25214,7 +25214,35 @@ setTimeout(function(){
 },500);
 // Auth functions injected here because main script block (lines 9204-16067) fails to execute
 var _supa = null;
-function getSupa(){if(!_supa&&window.supabase){_supa=supabase.createClient("https://phjlxkyloafogznhyyig.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBoamx4a3lsb2Fmb2d6bmh5eWlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNTcxNDgsImV4cCI6MjA5MDYzMzE0OH0.wI9E9CIHwwFN6d_lgJXwO0_G7J3aq4zesp7eU6TCDiI");}return _supa;}
+function getSupa(){
+  if(!_supa&&window.supabase){
+    /* SAFARI SIGN-IN FIX.
+       This getSupa was injected as a duplicate and created the client with NO auth config,
+       overriding the properly-configured one. That silently discarded window._aabSafeStorage —
+       the shim whose own comment reads "localStorage blocked (Safari private mode?)" — so on
+       Safari, where storage access is restricted by ITP/private mode, createClient fell back to
+       raw localStorage, the session could not be written, and every sign-in ended back on the
+       form with "Please sign in to continue". The safe storage is rebuilt here inline so this
+       does not depend on any other block having executed. The default storageKey is kept so
+       existing sessions are not invalidated. */
+    if(!window._aabSafeStorage){
+      var _mem={},_lsWorks=false;
+      try{ window.localStorage.setItem('__aab_t','1'); window.localStorage.removeItem('__aab_t'); _lsWorks=true; }catch(e){ _lsWorks=false; }
+      window._aabSafeStorage={
+        getItem:function(k){try{return _lsWorks?window.localStorage.getItem(k):(_mem[k]||null);}catch(e){return _mem[k]||null;}},
+        setItem:function(k,v){try{if(_lsWorks)window.localStorage.setItem(k,v);else _mem[k]=v;}catch(e){_mem[k]=v;}},
+        removeItem:function(k){try{if(_lsWorks)window.localStorage.removeItem(k);else delete _mem[k];}catch(e){delete _mem[k];}}
+      };
+      if(!_lsWorks)console.warn('[AAB] localStorage blocked (Safari private mode / ITP) — using in-memory session storage');
+    }
+    _supa=supabase.createClient("https://phjlxkyloafogznhyyig.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBoamx4a3lsb2Fmb2d6bmh5eWlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNTcxNDgsImV4cCI6MjA5MDYzMzE0OH0.wI9E9CIHwwFN6d_lgJXwO0_G7J3aq4zesp7eU6TCDiI",{
+      auth:{ persistSession:true, storage:window._aabSafeStorage, autoRefreshToken:true, detectSessionInUrl:false },
+      realtime:{ params:{ eventsPerSecond:0 } },
+      global:{ headers:{ 'X-Client-Info':'aabstudio/1.0' } }
+    });
+  }
+  return _supa;
+}
 async function doSignIn() {
       var email = document.getElementById('si-email').value.trim();
       var pass = document.getElementById('si-pass').value;
@@ -25318,7 +25346,7 @@ window.apsShowProgress=function(done,total,label){
     '<div style="flex:1;background:#1e293b;border-radius:4px;height:5px;overflow:hidden">'+
       '<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,#00d4ff,#0ea5e9);border-radius:4px;transition:width .5s ease"></div>'+
     '</div>'+
-    '<span style="font-size:12px;color:#e2e8f0;flex-shrink:0">'+done+' of '+total+' done'+(label?' \u2014 '+label.slice(0,35):'')+'</span>';
+    '<span style="font-size:12px;color:#e2e8f0;flex-shrink:0">'+pct+'% \u00b7 '+done+' of '+total+' done'+(label?' \u2014 '+label.slice(0,35):'')+'</span>';
 };
 window.apsHideProgress=function(){
   var bar=document.getElementById('aps-gen-progress');
@@ -25917,8 +25945,15 @@ function _esUpdateAudio(t){
             var _ac=getAC();
             window._vuSynthGain=_ac.createGain();
             window._vuSynthGain.gain.value=0;
-            window._vuSynthGain.connect(_masterGain);
-            // ConstantSourceNode outputs DC offset — inaudible, just drives analyser
+            // WHITE-NOISE FIX: this used to connect to _masterGain, i.e. straight to the
+            // speakers. The comment below says the ConstantSource is "inaudible" and only
+            // drives the analyser, and a steady DC offset IS silent - but the gain is
+            // re-stepped on every update (setValueAtTime(vol*0.1,...)), and every abrupt step
+            // in a DC signal is a click. Continuous re-stepping produced the intermittent
+            // noise/crackle heard even with the studio closed. Connect it to the analyser
+            // ONLY: the VU meter still reads it, but nothing reaches the output bus.
+            if(window._masterAnalyser) window._vuSynthGain.connect(window._masterAnalyser);
+            // ConstantSourceNode outputs DC offset — drives the analyser only, never the output
             window._vuSynthSrc=_ac.createConstantSource();
             window._vuSynthSrc.offset.value=1;
             window._vuSynthSrc.connect(window._vuSynthGain);
@@ -28253,6 +28288,42 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     if (k === 'z' && !e.shiftKey) { e.preventDefault(); window.E_undo(); }
     else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); window.E_redo(); }
   }, true);
+})();
+</script>
+<script id="aab-toast-dedupe">
+/* Identical notifications were stacking - the sign-in screen showed four copies of
+   "Please sign in to continue" at once. Suppress a repeat of the SAME message within a short
+   window, and cap how many are on screen. This wraps whatever toast implementation ends up
+   winning rather than adding another one. */
+(function () {
+  function wrap() {
+    if (typeof window.toast !== 'function' || window.toast._aabDeduped) return false;
+    var orig = window.toast;
+    var last = {};
+    var deduped = function (msg, type) {
+      try {
+        var key = String(msg);
+        var now = Date.now();
+        if (last[key] && (now - last[key]) < 4000) return;   // same message within 4s -> drop
+        last[key] = now;
+        if (Object.keys(last).length > 60) last = {};
+        var r = orig.apply(this, arguments);
+        // Cap simultaneous toasts: keep the newest few.
+        setTimeout(function () {
+          var sels = ['.aab-toast', '.toast', '#toast-container > *', '[class*="toast"]'];
+          for (var i = 0; i < sels.length; i++) {
+            var n = document.querySelectorAll(sels[i]);
+            if (n.length > 3) { for (var j = 0; j < n.length - 3; j++) { if (n[j] && n[j].remove) n[j].remove(); } break; }
+          }
+        }, 30);
+        return r;
+      } catch (e) { try { return orig.apply(this, arguments); } catch (e2) {} }
+    };
+    deduped._aabDeduped = true;
+    window.toast = deduped;
+    return true;
+  }
+  if (!wrap()) { var n = 0, iv = setInterval(function () { if (wrap() || ++n > 60) clearInterval(iv); }, 200); }
 })();
 </script>
 </body>
