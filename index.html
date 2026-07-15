@@ -25644,17 +25644,88 @@ window._apsRunQueue=async function(){
 };
 
 // ── GENERATE ALL / SELECTED / CURRENT ────────────────────────────────────────
+// Does THIS project already hold generated/recorded video for its scenes?
+window._aabExistingVideo=function(scenes){
+  var ai=0,rec=0;
+  (scenes||[]).forEach(function(s){
+    var a=s.apsVideoUrl||s.videoUrl; if(a&&String(a).length>50)ai++;
+    if(s.recordedUrl&&String(s.recordedUrl).length>50)rec++;
+  });
+  return {ai:ai,rec:rec,total:ai+rec};
+};
+
+// Clear this project's existing videos, and delete the stored files behind them so the Edit
+// Suite is not left holding clips from a previous take. Only OUR stored files are removed -
+// provider URLs simply expire on their own.
+window._aabPurgeProjectVideos=async function(scenes,kind){
+  var removed=0, urls=[];
+  (scenes||[]).forEach(function(s){
+    ['apsVideoUrl','videoUrl'].forEach(function(k){
+      if(kind!=='rec'&&s[k]){urls.push(s[k]);delete s[k];removed++;}
+    });
+    if(kind!=='ai'&&s.recordedUrl){urls.push(s.recordedUrl);delete s.recordedUrl;removed++;}
+    if(s.status==='recorded'||s.status==='done')s.status='draft';
+  });
+  var P=window.PROJECT;
+  if(P){
+    ['apsVideos','aiClips','clipsMeta','aiClipsMeta'].forEach(function(b){ if(P[b]) P[b]={}; });
+  }
+  // Drop the matching clips from the Edit Suite timeline too.
+  try{
+    if(window.E&&E.tracks){
+      E.tracks.forEach(function(t){ if(t.clips) t.clips=t.clips.filter(function(c){ return urls.indexOf(c.url)===-1; }); });
+      if(typeof E_renderTL==='function')E_renderTL();
+    }
+  }catch(e){}
+  // Remove the stored objects server-side (best effort; expired provider links are ignored).
+  try{
+    var tok=window._sbSession&&window._sbSession.access_token;
+    var ours=urls.filter(function(u){return /supabase\.co\/storage\//.test(String(u));});
+    if(tok&&ours.length){
+      await fetch('https://aabstudio-production.up.railway.app/api/clip/delete',{
+        method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+        body:JSON.stringify({urls:ours})
+      }).catch(function(){});
+    }
+  }catch(e){}
+  try{ if(typeof saveProject==='function')saveProject(); }catch(e){}
+  return removed;
+};
+
 window.aps_generateAll=async function(){
   if(window._apsQueueRunning){apsNotify('Generation already running.','warn');return;}
   apsInitScenes();
   var st=ST();
   var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
   if(!scenes.length){apsNotify('No scenes found. Create your script first.','warn');return;}
-  var toGen=scenes.filter(function(s){return !s.apsVideoUrl||s.apsVideoUrl.length<50;});
-  toGen.forEach(function(s){s._queueIdx=scenes.indexOf(s);});
-  if(!toGen.length){apsNotify('All scenes already have videos. Use regenerate to redo specific scenes.','info');return;}
-  window._apsQueue=toGen.slice();window._apsQueueTotal=toGen.length;window._apsQueueDone=0;window._apsQueueErrors=0;
-  window._apsQueueRunning=true;apsShowProgress(0,toGen.length,'Starting...');window._apsRunQueue();
+
+  function start(list){
+    list.forEach(function(s){s._queueIdx=scenes.indexOf(s);});
+    window._apsQueue=list.slice();window._apsQueueTotal=list.length;window._apsQueueDone=0;window._apsQueueErrors=0;
+    window._apsQueueRunning=true;apsShowProgress(0,list.length,'Starting...');window._apsRunQueue();
+  }
+
+  // If this project already has video (AI-generated or studio-recorded), ask before redoing it,
+  // and if the user confirms, delete the previous videos first so the Edit Suite is repopulated
+  // from the new take instead of mixing old and new clips.
+  var have=window._aabExistingVideo(scenes);
+  if(have.total>0){
+    var what=[];
+    if(have.ai)  what.push(have.ai+' AI presenter video'+(have.ai>1?'s':''));
+    if(have.rec) what.push(have.rec+' studio recording'+(have.rec>1?'s':''));
+    aabConfirm(
+      'This project already has '+what.join(' and ')+'.\n\nRegenerating will permanently delete the existing videos and replace them with the new take. The Edit Suite will be repopulated with the new videos.',
+      async function(){
+        var n=await window._aabPurgeProjectVideos(scenes,null);
+        apsNotify('Removed '+n+' previous video'+(n===1?'':'s')+' — regenerating',' info');
+        start(scenes.slice());
+      },
+      null,
+      { title:'Regenerate this project?', yes:'Delete & regenerate', danger:true }
+    );
+    return;
+  }
+  start(scenes.slice());
 };
 window.aps_generateSelected=async function(){
   if(window._apsQueueRunning){apsNotify('Generation already running.','warn');return;}

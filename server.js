@@ -1952,6 +1952,42 @@ app.get('/api/presenter-wait', (req, res) => {
 });
 
 // ── Status polling ────────────────────────────────────────────────────────────
+// ── Delete this user's stored clips ─────────────────────────────────
+// Used when a project is regenerated or re-recorded: the previous take's videos are removed
+// from storage so the Edit Suite is repopulated from the new take instead of mixing old and
+// new clips. Scoped to the caller's own folder - a user can only ever delete their own files.
+app.post('/api/clip/delete', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No auth token' });
+    const sb = getSupaAdmin();
+    const { data: { user }, error: authErr } = await sb.auth.getUser(authHeader.replace('Bearer ', ''));
+    if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
+
+    const { urls } = req.body || {};
+    if (!Array.isArray(urls) || !urls.length) return res.json({ ok: true, deleted: 0 });
+
+    const bucket = process.env.CLIP_BUCKET || 'recorded-clips';
+    const paths = [];
+    for (const u of urls) {
+      const m = String(u).match(new RegExp('/(?:object|render)/(?:sign|public|authenticated)/' + bucket + '/([^?#]+)'));
+      if (!m) continue;
+      const p = decodeURIComponent(m[1]);
+      if (p.indexOf(user.id) === -1) { console.warn('[clip/delete] refused (not owner):', p.slice(0, 60)); continue; }
+      paths.push(p);
+    }
+    if (!paths.length) return res.json({ ok: true, deleted: 0, note: 'no owned storage paths in request' });
+
+    const { error } = await sb.storage.from(bucket).remove(paths);
+    if (error) throw error;
+    console.log('[clip/delete] removed ' + paths.length + ' file(s) from ' + bucket);
+    res.json({ ok: true, deleted: paths.length });
+  } catch (e) {
+    console.error('[clip/delete]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Durable storage for generated videos ──────────────────────────────────────
 // Provider video URLs (HeyGen / D-ID / Kling) are TEMPORARY signed links. Once they expire
 // they return 403 and the clip is gone for good - which is why generated scenes disappeared
