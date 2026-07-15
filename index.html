@@ -5275,6 +5275,19 @@ function E_drawProg(){
   if(pempty){pempty.style.display="none";pempty.classList.add("hidden");}
   if(pvid){pvid.style.display="";}
   if(!pvid)return;
+  // ── Apply this clip's properties to the program monitor ───────────────────
+  // Volume was hardcoded to 1 below and speed/opacity were never applied at all, so the
+  // inspector's controls wrote values onto the clip that nothing ever read - the sliders
+  // were decorative. Properties live on the clip and are applied here on every draw.
+  var _cOp  = (vc.opacity == null ? 1 : parseFloat(vc.opacity));
+  if (isNaN(_cOp)) _cOp = 1;
+  pvid.style.opacity = String(Math.max(0, Math.min(1, _cOp)));
+  var _cSp = parseFloat(vc.speed || 1); if (!_cSp || isNaN(_cSp)) _cSp = 1;
+  _cSp = Math.max(0.25, Math.min(4, _cSp));
+  if (pvid.playbackRate !== _cSp) { try { pvid.playbackRate = _cSp; } catch (e) {} }
+  var _cVol = (vc.volume == null ? 1 : parseFloat(vc.volume));
+  if (isNaN(_cVol)) _cVol = 1;
+  _cVol = Math.max(0, Math.min(1, _cVol));
   // src change
   if(pvid._aabSrc!==vc.url){
     pvid._aabSrc=vc.url;
@@ -5290,10 +5303,11 @@ function E_drawProg(){
     if(pvid.paused){
       // Always seek to correct position before playing
       if(Math.abs(pvid.currentTime-cT)>0.15)pvid.currentTime=cT;
-      pvid.muted=false;pvid.volume=1;
+      pvid.muted=false;pvid.volume=_cVol;
       if(!pvid._acWired&&typeof getAC==="function"&&typeof _masterGain!=="undefined"){try{var _ac=getAC();if(_ac&&_masterGain){var _ms=_ac.createMediaElementSource(pvid);_ms.connect(_masterGain);pvid._acWired=true;}}catch(e){}}
       pvid.play().catch(function(e){pvid.muted=false;pvid.play().catch(function(){});});
     } else {
+      if(pvid.volume!==_cVol)pvid.volume=_cVol;   // live volume changes while playing
       // Video is playing - check if it has drifted more than 0.5s from expected position
       if(Math.abs(pvid.currentTime-cT)>0.5){
         pvid.currentTime=cT; // Re-sync if drifted
@@ -20949,8 +20963,17 @@ window._E2_editTextClip = function(clipId, trackId, clip){
    INSPECTOR: per-clip/track details
    ══════════════════════════════════════ */
 window._E2_selectClip = function(clipId, trackId, clip){
-  // First try the source's E_selectClip
-  if(typeof E_selectClip==='function'){try{E_selectClip(clipId);}catch(e){}}
+  // E_selectClip expects (clipObject, trackObject) - it was being handed the clipId STRING,
+  // so E.selectedClipId became clip.id of a string (undefined) and E_loadSrc got undefined.
+  // Resolve the real objects first, then delegate.
+  (function(){
+    try{
+      var _tr = window.E && E.tracks ? E.tracks.find(function(t){return t.id===trackId;}) : null;
+      var _cl = clip || (_tr && _tr.clips ? _tr.clips.find(function(c){return c.id===clipId;}) : null);
+      if(typeof E_selectClip==='function' && _cl) E_selectClip(_cl,_tr);
+      else if(window.E) E.selectedClipId = clipId;
+    }catch(e){}
+  })();
 
   var inspBody=document.getElementById('aab-insp-body')||document.getElementById('aab-insp-b');
   if(!inspBody)return;
@@ -20988,6 +21011,42 @@ window._E2_selectClip = function(clipId, trackId, clip){
   addRow('Name',clip.name||'','text',function(v){clip.name=v;});
   addRow('Start (s)',(clip.start||0).toFixed(2),'number',function(v){clip.start=Math.max(0,parseFloat(v)||0);});
   addRow('Duration (s)',(clip.duration||5).toFixed(2),'number',function(v){clip.duration=Math.max(0.1,parseFloat(v)||1);});
+
+  // ── Per-clip properties ───────────────────────────────────────────────────
+  // Modelled on AABStudio's own timeline rather than copied wholesale: the properties that
+  // matter here are the ones our scenes/presenter workflow actually uses. They live on the
+  // clip and are applied by E_drawProg, so changing them affects the program monitor and
+  // therefore the export - previously the only property control (Volume) wrote a value that
+  // nothing ever read.
+  var _slider=function(label,min,max,step,val,unit,onChange){
+    var wrap=document.createElement('div');wrap.style.cssText='margin-bottom:6px;';
+    var lbl=document.createElement('div');lbl.className='aab-insp-label';lbl.textContent=label;
+    var row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:6px;';
+    var sl=document.createElement('input');sl.type='range';sl.min=min;sl.max=max;sl.step=step;sl.value=val;sl.style.flex='1';
+    var out=document.createElement('span');out.textContent=val+unit;
+    out.style.cssText='font-size:10px;color:#cbd5e1;min-width:44px;text-align:right;';
+    sl.oninput=function(){out.textContent=sl.value+unit;onChange(parseFloat(sl.value));
+      if(typeof E_drawProg==='function')try{E_drawProg();}catch(e){}};
+    sl.onchange=function(){if(typeof E_renderTL==='function')E_renderTL();};
+    row.appendChild(sl);row.appendChild(out);wrap.appendChild(lbl);wrap.appendChild(row);
+    inspBody.appendChild(wrap);return sl;
+  };
+
+  if(isVideo){
+    _slider('Opacity',0,100,1,Math.round((clip.opacity==null?1:clip.opacity)*100),'%',function(v){clip.opacity=v/100;});
+    _slider('Speed',25,400,5,Math.round((clip.speed||1)*100),'%',function(v){clip.speed=v/100;});
+    _slider('Volume',0,100,1,Math.round((clip.volume==null?1:clip.volume)*100),'%',function(v){clip.volume=v/100;});
+  }
+
+  // Image clips: scale + position, so a still assigned to a scene (or dropped on its own
+  // track for an AI Presenter overlay) can be placed on the program monitor and burned in
+  // on export.
+  if(clip.type==='image'){
+    _slider('Scale',10,200,1,Math.round((clip.scale==null?100:clip.scale)),'%',function(v){clip.scale=v;});
+    _slider('X position',0,100,1,(clip.posX==null?50:clip.posX),'%',function(v){clip.posX=v;});
+    _slider('Y position',0,100,1,(clip.posY==null?50:clip.posY),'%',function(v){clip.posY=v;});
+    _slider('Opacity',0,100,1,Math.round((clip.opacity==null?1:clip.opacity)*100),'%',function(v){clip.opacity=v/100;});
+  }
 
   if(isText&&clip.style){
     addRow('Text',clip.text||'','text',function(v){clip.text=v;clip.name='Text: '+v.slice(0,15);});
