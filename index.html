@@ -25226,14 +25226,26 @@ window.apsNotify=function(msg,type,dur){
 window.apsShowProgress=function(done,total,label){
   var bar=document.getElementById('aps-gen-progress');
   if(!bar){bar=document.createElement('div');bar.id='aps-gen-progress';
-    bar.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99998;background:#0f172a;border-bottom:1px solid rgba(0,212,255,.25);padding:8px 20px;display:flex;align-items:center;gap:14px;font-family:Sora,Inter,sans-serif;';
-    var _apsStudio=document.getElementById('ai-presenter-studio');var _apsFirstChild=_apsStudio?_apsStudio.firstElementChild:null;if(_apsFirstChild&&_apsFirstChild.nextSibling){_apsFirstChild.parentNode.insertBefore(bar,_apsFirstChild.nextSibling);}else{document.body.appendChild(bar);}}
+    var _apsStudio=document.getElementById('ai-presenter-studio');var _apsFirstChild=_apsStudio?_apsStudio.firstElementChild:null;
+    var _common='background:#0f172a;border-bottom:1px solid rgba(0,212,255,.25);padding:8px 20px;display:flex;align-items:center;gap:14px;font-family:Sora,Inter,sans-serif;';
+    if(_apsFirstChild&&_apsFirstChild.nextSibling){
+      // In-flow, directly beneath the studio's top bar. This used to be
+      // position:fixed;top:0;z-index:99998 which floated the banner OVER the AI Presenter's
+      // top tabs, hiding and blocking them while generating. Sticky keeps it visible while
+      // scrolling but lets it occupy layout space instead of covering the controls.
+      bar.style.cssText='position:sticky;top:0;z-index:40;'+_common;
+      _apsFirstChild.parentNode.insertBefore(bar,_apsFirstChild.nextSibling);
+    } else {
+      bar.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99998;'+_common;
+      document.body.appendChild(bar);
+    }
+  }
   var pct=total>0?Math.min(100,Math.round((done/total)*100)):0;
   bar.innerHTML='<span style="font-size:11px;color:#64748b;letter-spacing:.06em;flex-shrink:0">GENERATING</span>'+
     '<div style="flex:1;background:#1e293b;border-radius:4px;height:5px;overflow:hidden">'+
       '<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,#00d4ff,#0ea5e9);border-radius:4px;transition:width .5s ease"></div>'+
     '</div>'+
-    '<span style="font-size:12px;color:#e2e8f0;flex-shrink:0">Scene '+done+' of '+total+(label?' \u2014 '+label.slice(0,35):'')+'</span>';
+    '<span style="font-size:12px;color:#e2e8f0;flex-shrink:0">'+done+' of '+total+' done'+(label?' \u2014 '+label.slice(0,35):'')+'</span>';
 };
 window.apsHideProgress=function(){
   var bar=document.getElementById('aps-gen-progress');
@@ -25461,6 +25473,14 @@ window._apsRunQueue=async function(){
   var urlBefore=sd.apsVideoUrl||'';
   var started=Date.now();
 
+  // How long to wait before giving up, per provider. This used to be a flat 120000 (2 min),
+  // but HeyGen renders take roughly 3-8 minutes — so the queue declared "Timed out", marked
+  // the scene failed and moved on while HeyGen carried on and finished. That is why scenes
+  // showed as generated in the HeyGen account but never came back to the clips bar or the
+  // Edit Suite, and only the fastest one ever landed.
+  var _prov=String((sd&&sd.provider)||(window.APS&&APS.settings&&APS.settings.provider)||'did').toLowerCase();
+  var _limit=_prov==='heygen'?600000:(_prov==='kling'?420000:240000);
+
   try{
     // Pass BOTH args: _apsGenerateScene(idx, sceneObject)
     if(typeof _apsGenerateScene==='function')await _apsGenerateScene(idx,sd);
@@ -25484,9 +25504,10 @@ window._apsRunQueue=async function(){
       window._apsQueueDone=(window._apsQueueDone||0)+1;
       st.generating=false;
       setTimeout(window._apsRunQueue,800);
-    } else if(elapsed>120000){
+    } else if(elapsed>_limit){
       clearInterval(pollId);
       apsShowProgress(qPos,window._apsQueueTotal||1,'\u274C Timed out');
+      console.warn('[APS Queue] scene '+(idx+1)+' gave up after '+Math.round(_limit/1000)+'s ('+_prov+'). It may still finish at the provider.');
       aps_updateSceneRow(idx,'error','');
       sd._failed=true;
       window._apsQueueErrors=(window._apsQueueErrors||0)+1;
