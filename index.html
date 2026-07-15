@@ -5340,28 +5340,39 @@ function E_drawSubtitles(canvas,t){
   var ac=null;st.clips.forEach(function(c){if(t>=(c.start||0)&&t<(c.start||0)+(c.duration||0))ac=c;});if(!ac)return;
   var text=(ac.textStyle&&ac.textStyle.text)||ac.name||"";if(!text)return;
   var W=canvas.width,H=canvas.height,fs=Math.round(40*(W/1920));
+  // Confine captions to the ACTUAL video image, not the whole canvas. The program monitor
+  // letterboxes (object-fit: contain), so a 9:16 clip inside a 16:9 canvas leaves black bars -
+  // and captions anchored to canvas W/H spilled onto those dark areas, outside the picture.
+  // Recompute the displayed video rect and lay the captions out inside it.
+  var _pv=document.getElementById("e-prog-vid");
+  var _vw=(_pv&&_pv.videoWidth)||W, _vh=(_pv&&_pv.videoHeight)||H;
+  var _sc=Math.min(W/_vw, H/_vh);
+  var VW=Math.round(_vw*_sc), VH=Math.round(_vh*_sc);
+  var VX=Math.round((W-VW)/2), VY=Math.round((H-VH)/2);
+  var VCX=VX+VW/2;
+  fs=Math.round(40*(VW/1920));
   ctx.save();ctx.font="700 "+fs+"px Arial,sans-serif";ctx.textAlign="center";
   // Word-wrap to fit inside the preview (max 86% of width) so text never spills into the dark.
-  var maxW=W*0.86, words=text.split(" "), lines=[], line="";
+  var maxW=VW*0.86, words=text.split(" "), lines=[], line="";
   words.forEach(function(w){var test=line?line+" "+w:w; if(ctx.measureText(test).width>maxW&&line){lines.push(line);line=w;}else{line=test;}});
   if(line)lines.push(line);
   var lineH=fs+10, blockH=lines.length*lineH;
   // Anchor the caption block inside the lower safe area (never below the frame).
-  var baseY=H-Math.max(48, Math.round(H*0.06))-(blockH-lineH);
+  var baseY=(VY+VH)-Math.max(24, Math.round(VH*0.06))-(blockH-lineH);
   if(mode==="karaoke"){
     var pr=Math.min(1,(t-(ac.start||0))/(ac.duration||1)), totalW=text.split(" ").length, hi=Math.floor(pr*totalW), gi=0;
     lines.forEach(function(ln,li){
       var lw=ctx.measureText(ln).width, y=baseY+li*lineH;
-      ctx.globalAlpha=0.8;ctx.fillStyle="#000";ctx.fillRect(W/2-lw/2-20,y-fs-4,lw+40,fs+16);ctx.globalAlpha=1;
-      var xp=W/2-lw/2; ctx.textAlign="left";
+      ctx.globalAlpha=0.8;ctx.fillStyle="#000";ctx.fillRect(VCX-lw/2-20,y-fs-4,lw+40,fs+16);ctx.globalAlpha=1;
+      var xp=VCX-lw/2; ctx.textAlign="left";
       ln.split(" ").forEach(function(w){ctx.fillStyle=gi<hi?"#00d4ff":gi===hi?"#fff":"rgba(255,255,255,0.5)";ctx.fillText(w,xp,y);xp+=ctx.measureText(w+" ").width;gi++;});
     });
   } else {
     ctx.textAlign="center";
     lines.forEach(function(ln,li){
       var lw=ctx.measureText(ln).width, y=baseY+li*lineH;
-      ctx.globalAlpha=0.8;ctx.fillStyle="#000";ctx.fillRect(W/2-lw/2-20,y-fs-4,lw+40,fs+16);ctx.globalAlpha=1;
-      ctx.fillStyle="#fff";ctx.fillText(ln,W/2,y);
+      ctx.globalAlpha=0.8;ctx.fillStyle="#000";ctx.fillRect(VCX-lw/2-20,y-fs-4,lw+40,fs+16);ctx.globalAlpha=1;
+      ctx.fillStyle="#fff";ctx.fillText(ln,VCX,y);
     });
   }
   ctx.restore();
@@ -18908,9 +18919,21 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
   };
 
   window.E_addTransition = function(type) {
-    if(!AABE || !AABE.selectedClip) { if(typeof toast==='function') toast('Select a clip first','info'); return; }
-    if(typeof E_applyTransition==='function') E_applyTransition(AABE.selectedClip.id, type||'fade');
-    else if(typeof toast==='function') toast('Transition: '+( type||'fade'),'ok');
+    // Transitions could NEVER be applied: this gated on AABE.selectedClip, a property that does
+    // not exist anywhere in the codebase (the selection is stored as AABE.selectedClipId). So it
+    // always fell into "Select a clip first", and E_applyTransition - which exists and works -
+    // was unreachable. The else-branch also toasted "Transition: fade" as if something had
+    // happened, reporting success while doing nothing. Resolve the real clip from the id.
+    var E = window.AABE || window.E;
+    var id = E && (E.selectedClipId || (E.selectedClip && E.selectedClip.id));
+    if(!id){ if(typeof toast==='function') toast('Select a clip first','info'); return; }
+    if(typeof E_applyTransition!=='function'){
+      if(typeof toast==='function') toast('Transitions are unavailable in this build','error');
+      return;
+    }
+    if(typeof E_saveHistory==='function') E_saveHistory();
+    E_applyTransition(id, type||'fade');
+    if(typeof E_renderTL==='function') E_renderTL();
   };
 
   // Export
