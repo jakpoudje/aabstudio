@@ -13022,7 +13022,40 @@ function studioNext() {
     // ══ INIT ══════════════════════════════════════════════════════════════════════
     window.addEventListener('load', function () {
       var tn = document.getElementById('topnav'); if (tn) tn.style.display = 'flex';
-      try { var s = localStorage.getItem('aab_projects'); if (s && s.length > 900000) localStorage.removeItem('aab_projects'); } catch (e) { }
+      // ── Local project storage safety ────────────────────────────────────────────
+      // This used to be: if (s.length > 900000) localStorage.removeItem('aab_projects')
+      // i.e. silently DELETE every saved project whenever the blob passed ~900KB. A single
+      // 34-scene project with embedded image data URLs already exceeds 1MB, so this fired on
+      // ordinary page loads and destroyed real work with no warning. Never delete the user's
+      // projects: keep the active one plus as many recent ones as fit, and let cloud sync
+      // hold the rest.
+      try {
+        var s = localStorage.getItem('aab_projects');
+        if (s && s.length > 900000) {
+          var _arr = [];
+          try { _arr = JSON.parse(s) || []; } catch (e0) { _arr = []; }
+          if (Array.isArray(_arr) && _arr.length > 1) {
+            var _activeId = localStorage.getItem('aab_active_project_id');
+            _arr.sort(function (a, b) {
+              if (a && a.id === _activeId) return -1;
+              if (b && b.id === _activeId) return 1;
+              var da = String((a && (a.updatedAt || a.date)) || '');
+              var db = String((b && (b.updatedAt || b.date)) || '');
+              return db > da ? 1 : -1;
+            });
+            var _kept = [];
+            for (var _i = 0; _i < _arr.length; _i++) {
+              if (_kept.length && JSON.stringify(_kept.concat([_arr[_i]])).length > 900000) break;
+              _kept.push(_arr[_i]);
+            }
+            if (!_kept.length) _kept = [_arr[0]];
+            if (_kept.length < _arr.length) {
+              try { localStorage.setItem('aab_projects', JSON.stringify(_kept)); } catch (e1) { }
+              console.warn('[AAB] aab_projects over local size limit — kept ' + _kept.length + ' of ' + _arr.length + ' in this browser; the rest remain in cloud sync.');
+            }
+          }
+        }
+      } catch (e) { }
       // Check for remote page
       var params = new URLSearchParams(window.location.search);
       if (params.get('remote')) { initRemotePage(); return; }
