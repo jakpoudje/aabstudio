@@ -722,7 +722,7 @@ app.get('/api/projects', async (req, res) => {
 // ── VIDEO CLIP UPLOAD ─────────────────────────────────────────────────────────
 // Fixes: blob: URLs are lost on page refresh. User-recorded clips are uploaded
 // here immediately after recording stops. Returns a permanent Supabase Storage URL.
-// Requires: Supabase Storage bucket "aab-clips" with public access.
+// Persists a clip to Supabase Storage (bucket: recorded-clips) and returns a durable URL.
 app.post('/api/clip/upload', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
@@ -739,22 +739,40 @@ app.post('/api/clip/upload', async (req, res) => {
     const filename = 'clips/' + user.id + '/' + (projectId || 'proj') + '/' + (sceneId || ('scene-' + sceneNum)) + '-' + Date.now() + '.' + ext;
     const buffer   = Buffer.from(clipBase64, 'base64');
 
-    const { data, error } = await sb.storage.from('aab-clips').upload(filename, buffer, { contentType: mimeType, upsert: true });
+    // Bucket: this used to target 'aab-clips', which does not exist in this Supabase project
+    // (verified in the dashboard: the buckets are 'exports', 'recorded-clips' and
+    // 'project-assets'). Every upload therefore failed with "Bucket not found" and nothing was
+    // ever persisted - which is why generated videos only ever existed as the provider's
+    // temporary signed URLs and 403'd once those expired. Use the real clips bucket.
+    const CLIP_BUCKET = process.env.CLIP_BUCKET || 'recorded-clips';
+    const { data, error } = await sb.storage.from(CLIP_BUCKET).upload(filename, buffer, { contentType: mimeType, upsert: true });
 
     if (error) {
       if (error.message?.includes('Bucket not found') || error.statusCode === 400) {
         return res.status(503).json({
-          error: 'Storage bucket "aab-clips" not found. Create it in Supabase Storage → New Bucket → Name: aab-clips → Public: ON.',
+          error: 'Storage bucket "' + CLIP_BUCKET + '" not found in Supabase Storage.',
           setup: true
         });
       }
       throw error;
     }
 
-    const { data: urlData } = sb.storage.from('aab-clips').getPublicUrl(filename);
-    const publicUrl = urlData?.publicUrl;
-    console.log('Clip uploaded:', filename, '(' + Math.round(buffer.length / 1024) + 'KB)');
-    res.json({ ok: true, url: publicUrl, filename, size: buffer.length });
+    // 'recorded-clips' is a PRIVATE bucket, so getPublicUrl() would hand back a URL that 403s.
+    // Issue a long-lived signed URL instead: this works whether or not the bucket is public and
+    // needs no change to the bucket's access settings. Fall back to the public URL if signing
+    // is unavailable (e.g. the bucket is already public).
+    let finalUrl = null;
+    try {
+      const { data: signed, error: signErr } = await sb.storage.from(CLIP_BUCKET)
+        .createSignedUrl(filename, 60 * 60 * 24 * 365 * 5);   // 5 years
+      if (!signErr && signed?.signedUrl) finalUrl = signed.signedUrl;
+    } catch (eSign) { /* fall through to public URL */ }
+    if (!finalUrl) {
+      const { data: urlData } = sb.storage.from(CLIP_BUCKET).getPublicUrl(filename);
+      finalUrl = urlData?.publicUrl || null;
+    }
+    console.log('Clip uploaded:', CLIP_BUCKET + '/' + filename, '(' + Math.round(buffer.length / 1024) + 'KB)');
+    res.json({ ok: true, url: finalUrl, filename, bucket: CLIP_BUCKET, size: buffer.length });
   } catch (e) {
     console.error('clip/upload:', e.message);
     res.status(500).json({ error: e.message });
