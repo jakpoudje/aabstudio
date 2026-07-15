@@ -19243,6 +19243,11 @@ window._applyVirtualBg=function(type){
 setTimeout(function(){
   document.querySelectorAll('button').forEach(function(b){
     var t=b.textContent.trim();
+    // Do NOT hijack the AI Presenter's own background buttons. This loop matches by button
+    // TEXT across the whole document, so "News Studio" / "Office" in the AI Presenter were
+    // having their onclick overwritten with _applyVirtualBg, which killed aps_setBg for
+    // exactly those two backgrounds. Recording-studio virtual-bg wiring is unchanged.
+    if(b.classList.contains('aps-bg-btn') || (b.closest && b.closest('#ai-presenter-studio'))) return;
     if(!b._vbg){
       if(t.indexOf('News')>-1){b._vbg=true;b.onclick=function(){window._applyVirtualBg('news');};}
       if(t.indexOf('Office')>-1){b._vbg=true;b.onclick=function(){window._applyVirtualBg('office');};}
