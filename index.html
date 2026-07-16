@@ -13252,6 +13252,11 @@ function studioNext() {
                 console.log('All projects pushed to cloud ✓');
               } catch (e) { console.warn('pushAllLocalProjectsToCloud:', e.message); }
             }
+    /* Exported here, beside its own definition. The export at line ~13376 lived in a
+       block that threw before reaching it, so this was undefined on window and the
+       restore path's typeof check silently skipped the push. */
+    try { window.pushAllLocalProjectsToCloud = pushAllLocalProjectsToCloud; } catch (e) {}
+
 
 
 
@@ -15688,6 +15693,22 @@ window._reapplyNav=function(){
       }
       return local;
     }
+
+    /* ── Publish the sync chain ───────────────────────────────────────────────
+       These three are defined HERE (loadProjectsFromCloud ~15597, syncAndLoadProjects ~15633)
+       but were being exported from a DIFFERENT script block at lines 13376-13378:
+         window.loadProjectsFromCloud = loadProjectsFromCloud;   <- ReferenceError there
+       That block cannot see these declarations, so the assignment threw and every export died
+       with it. Verified live: all three reported `undefined` on window AND unreachable via
+       eval - so the restore path's `typeof pushAllLocalProjectsToCloud === 'function'` check
+       was always false and THE CLOUD PUSH NEVER RAN. That is why the cloud stayed empty and
+       each browser kept its own projects, even after the updated_at fix. Export them from the
+       scope that actually owns them. */
+    try {
+      window.syncAndLoadProjects   = syncAndLoadProjects;
+      window.loadProjectsFromCloud = loadProjectsFromCloud;
+      console.log('[sync] chain published to window');
+    } catch (e) { console.error('[sync] could not publish chain:', e.message); }
 
 
 
