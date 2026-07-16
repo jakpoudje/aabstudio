@@ -29411,6 +29411,41 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
 /* Desktop: the Export button was below the fold with no scroll. Guarantee room. */
 #export-pg .export-inner { padding-bottom: 48px !important; }
 #edit-pg { padding-bottom: 24px; }
+
+/* ── EDIT SUITE on small screens ─────────────────────────────────────────────
+   Measured: edit-pg reported overflowY:hidden with 20 controls below the fold and
+   CAN_SCROLL:false - they were unreachable. Unlike the other pages, this is not a stray
+   override: the Edit Suite is deliberately a fixed app shell (height:100dvh, overflow:hidden)
+   with internal scrollers, which is CORRECT on desktop - a timeline editor should not
+   page-scroll. There are 20+ competing #edit-pg.on rules (grid, then flex, then flex again),
+   and #edit-pg.on outranks .pg-full, so hidden wins.
+   Desktop keeps the fixed shell. On a phone the shell cannot fit 214 controls in 679px, so the
+   page is allowed to grow and scroll instead of trapping them. Scoped to <=767px and placed
+   last with matching specificity so it wins without touching the desktop editor. */
+@media (max-width: 767px) {
+  #edit-pg.on {
+    display: flex !important;
+    flex-direction: column !important;
+    height: auto !important;
+    min-height: 100dvh !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding-bottom: 96px !important;   /* clear the bottom nav */
+  }
+  /* Internal panes must not clamp to a viewport height they no longer own. */
+  #edit-pg.on .aab-edit-body {
+    flex-direction: column !important;
+    overflow: visible !important;
+    min-height: 0 !important;
+  }
+  #edit-pg.on .aab-monitors { flex: 0 0 auto !important; min-height: 34vh !important; overflow: visible !important; }
+  #edit-pg.on .aab-tl-wrap {
+    flex: 0 0 auto !important; height: auto !important;
+    min-height: 200px !important; max-height: none !important;
+  }
+}
 </style>
 </body>
 </html>
