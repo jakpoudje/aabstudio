@@ -28782,6 +28782,97 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
      other studio panels. Collapsing must be done with CSS on the existing DOM, never by moving
      live nodes. Removed entirely rather than patched. -->
 
+<style id="aab-rwd-dashboard">
+/* ── AABStudio 2.0 responsive — DASHBOARD ────────────────────────────────────
+   Per spec: mobile removes the sidebar entirely and replaces it with a Bottom Navigation;
+   the layout becomes single column; project cards go full width.
+   Desktop (>=1440) and tablet keep the existing sidebar untouched.
+   Nothing here moves DOM - the sidebar is hidden by CSS and the bottom nav is a NEW element
+   appended alongside it, driving the SAME dashNav() the sidebar already uses. */
+@media (max-width: 767px) {
+  #dashboard-pg .dash-layout { flex-direction: column !important; }
+  #dashboard-pg .dash-sidebar { display: none !important; }        /* spec: no sidebars on mobile */
+  #dashboard-pg .dash-main {
+    width: 100% !important; padding: 16px !important;               /* spec: mobile page margin 16px */
+    padding-bottom: 96px !important;                                /* clear the 80px bottom nav */
+  }
+  /* spec: project cards become full width, 240px tall */
+  #dashboard-pg .proj-card, #dashboard-pg .dash-card {
+    width: 100% !important; max-width: 100% !important; min-height: 240px !important;
+    border-radius: 16px !important; margin-bottom: 16px !important;
+  }
+  #dashboard-pg .proj-grid, #dashboard-pg .dash-grid {
+    grid-template-columns: 1fr !important; display: block !important;
+  }
+  #aab-bottom-nav { display: flex !important; }
+}
+/* iPad portrait (768-1024): two columns, sidebar hidden per spec */
+@media (min-width: 768px) and (max-width: 1024px) {
+  #dashboard-pg .dash-sidebar { display: none !important; }
+  #dashboard-pg .dash-main { padding: 24px !important; }
+  #dashboard-pg .proj-grid, #dashboard-pg .dash-grid { grid-template-columns: 1fr 1fr !important; }
+}
+/* iPad landscape (1025-1439): sidebar narrows to 240px per spec */
+@media (min-width: 1025px) and (max-width: 1439px) {
+  #dashboard-pg .dash-sidebar { flex: 0 0 240px !important; width: 240px !important; }
+  #dashboard-pg .proj-grid, #dashboard-pg .dash-grid { grid-template-columns: 1fr 1fr !important; }
+}
+
+/* Bottom navigation — mobile only, 80px per spec, 48px+ touch targets */
+#aab-bottom-nav {
+  display: none;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 900;
+  height: 80px; align-items: stretch;
+  background: #0a0e1a; border-top: .5px solid rgba(255,255,255,.12);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+#aab-bottom-nav button {
+  flex: 1; min-height: 48px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 3px;
+  background: transparent; border: 0; cursor: pointer;
+  color: #6b7280; font-size: 12px; font-family: inherit;
+  transition: color 150ms;                 /* spec: button press 150ms */
+}
+#aab-bottom-nav button.on { color: #00d4ff; }
+#aab-bottom-nav .bn-ico { font-size: 20px; line-height: 1; }
+</style>
+<script id="aab-rwd-dashboard-nav">
+/* Bottom navigation for mobile. ADDITIVE: creates a new element and drives the EXISTING
+   dashNav()/nav() functions the sidebar already calls. It never moves or reparents existing
+   DOM - the previous attempt at mobile panels did exactly that and emptied the studio's scene
+   list, so this deliberately only adds. Hidden above 767px by CSS, so desktop is untouched. */
+(function () {
+  var ITEMS = [
+    { ico: '\uD83C\uDFE0', label: 'Home',     go: function () { if (typeof dashNav === 'function') dashNav('projects'); } },
+    { ico: '\uD83C\uDFAC', label: 'Projects', go: function () { if (typeof dashNav === 'function') dashNav('projects'); } },
+    { ico: '\uD83D\uDDBC', label: 'Assets',   go: function () { if (typeof dashNav === 'function') dashNav('my-assets'); } },
+    { ico: '\uD83D\uDC64', label: 'Account',  go: function () { if (typeof dashNav === 'function') dashNav('account'); } }
+  ];
+  function build() {
+    if (document.getElementById('aab-bottom-nav')) return true;
+    var pg = document.getElementById('dashboard-pg');
+    if (!pg) return false;
+    var nav = document.createElement('nav');
+    nav.id = 'aab-bottom-nav';
+    nav.setAttribute('role', 'navigation');
+    ITEMS.forEach(function (it, i) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.innerHTML = '<span class="bn-ico">' + it.ico + '</span><span>' + it.label + '</span>';
+      if (i === 0) b.className = 'on';
+      b.onclick = function () {
+        [].forEach.call(nav.children, function (c) { c.classList.remove('on'); });
+        b.classList.add('on');
+        try { it.go(); } catch (e) {}
+      };
+      nav.appendChild(b);
+    });
+    pg.appendChild(nav);   // appended, nothing moved
+    return true;
+  }
+  if (!build()) { var n = 0, iv = setInterval(function () { if (build() || ++n > 60) clearInterval(iv); }, 250); }
+})();
+</script>
 </body>
 </html>
 
