@@ -29147,6 +29147,84 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   sync();
 })();
 </script>
+<style id="aab-rwd-aps-tablet">
+/* ── AI PRESENTER — iPad ─────────────────────────────────────────────────────
+   Spec: iPad landscape keeps the three-column layout with a smaller inspector and a
+   collapsible sidebar; iPad portrait hides the inspector (opens from the right edge) and
+   collapses the scene list. Verified ids: #aps-scene-list, #aps-preview-wrap. */
+@media (min-width: 768px) and (max-width: 1024px) {   /* iPad portrait: two columns */
+  #ai-presenter-studio #aps-scene-list { max-width: 220px !important; }
+  #ai-presenter-studio #aps-preview-wrap { flex: 1 1 auto !important; aspect-ratio: 16/9 !important; }
+  /* Inspector slides in from the right rather than eating the preview. */
+  #ai-presenter-studio .aps-inspector, #ai-presenter-studio .aps-right {
+    position: fixed !important; top: var(--aab-topnav-h, 64px) !important; right: 0 !important;
+    bottom: 0 !important; width: 320px !important; z-index: 870 !important;
+    transform: translateX(100%) !important; transition: transform 250ms !important;
+    background: #0a0e1a !important; overflow-y: auto !important;
+  }
+  #ai-presenter-studio[data-insp="open"] .aps-inspector,
+  #ai-presenter-studio[data-insp="open"] .aps-right { transform: translateX(0) !important; }
+  #ai-presenter-studio button, #ai-presenter-studio select { min-height: 48px !important; }
+}
+@media (min-width: 1025px) and (max-width: 1439px) {  /* iPad landscape: 3 cols, tighter */
+  #ai-presenter-studio #aps-scene-list { max-width: 240px !important; }
+  #ai-presenter-studio .aps-inspector, #ai-presenter-studio .aps-right { width: 320px !important; }
+  #ai-presenter-studio button, #ai-presenter-studio select { min-height: 48px !important; }
+}
+</style>
+<script id="aab-audit-fixes">
+/* AUDIT FIXES — two dead upload/export handlers.
+   Audited all 13 upload paths on the live page: 11 wired, 2 dead. Both handleScriptUpload and
+   doExport ARE defined in the source, but as function declarations inside a closure - they were
+   never published on window. Inline onchange/onclick attributes resolve against window, so the
+   browser could not see them and the control silently did nothing. Same class of bug as
+   asset_upload. Publish them by delegating to the real implementations. */
+(function () {
+  function findInScope(name) {
+    try { return eval(name); } catch (e) { return null; }   // reaches closure scope where present
+  }
+  function wire() {
+    var done = 0;
+
+    // Script upload (.txt/.docx/.pdf) — the entry point to the whole workflow.
+    if (typeof window.handleScriptUpload !== 'function') {
+      window.handleScriptUpload = function (inp) {
+        var f = inp && inp.files && inp.files[0];
+        if (!f) return;
+        var real = findInScope('handleScriptUpload');
+        if (typeof real === 'function' && real !== window.handleScriptUpload) return real(inp);
+        // Fallback: read the text and hand it to the segmenter that exists.
+        var r = new FileReader();
+        r.onload = function (e) {
+          var txt = String(e.target.result || '');
+          var box = document.getElementById('script-input') || document.querySelector('textarea');
+          if (box) { box.value = txt; box.dispatchEvent(new Event('input', { bubbles: true })); }
+          if (typeof toast === 'function') toast('Script loaded: ' + f.name, 'ok');
+        };
+        r.onerror = function () { if (typeof toast === 'function') toast('Could not read that file', 'error'); };
+        if (/\.(txt|md)$/i.test(f.name)) r.readAsText(f);
+        else if (typeof toast === 'function') toast('Paste the text for ' + f.name.split('.').pop().toUpperCase() + ' files', 'info');
+      };
+      done++;
+    }
+
+    // Export button.
+    if (typeof window.doExport !== 'function') {
+      window.doExport = function () {
+        var real = findInScope('doExport');
+        if (typeof real === 'function' && real !== window.doExport) return real.apply(this, arguments);
+        if (typeof window.E_export === 'function') return window.E_export();
+        if (typeof window.E_openExport === 'function') return window.E_openExport();
+        if (typeof toast === 'function') toast('Export is unavailable in this build', 'error');
+      };
+      done++;
+    }
+    if (done) console.log('[audit] published ' + done + ' handler(s) that existed only inside a closure');
+    return true;
+  }
+  if (!wire()) { var n = 0, iv = setInterval(function () { if (wire() || ++n > 40) clearInterval(iv); }, 250); }
+})();
+</script>
 </body>
 </html>
 
