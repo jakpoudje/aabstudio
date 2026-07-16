@@ -28477,6 +28477,48 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   if (!wrap()) { var n = 0, iv = setInterval(function () { if (wrap() || ++n > 60) clearInterval(iv); }, 200); }
 })();
 </script>
+<script id="aab-asset-upload">
+/* asset_upload() was CALLED by the scenes sidebar Image button
+   (onchange="asset_upload(this.files[0],'image')") but was never DEFINED anywhere in the
+   codebase - verified: 2 references, 0 definitions. So uploading an image to a scene from the
+   sidebar has always been a no-op: the handler simply did not exist.
+
+   Rather than write a second uploader, this delegates to the one canonical path that the rest
+   of the platform already uses: assignAssetToScene(), which owns image validation, tagging and
+   persistence. One logic, no rival implementation. */
+(function () {
+  function currentSceneIdx() {
+    try {
+      if (window.APS && APS.currentIdx != null) return APS.currentIdx;
+      if (typeof ST === 'function') { var st = ST(); if (st && st.currentIdx != null) return st.currentIdx; }
+    } catch (e) {}
+    if (window.PROJECT && PROJECT.currentIdx != null) return PROJECT.currentIdx;
+    return 0;
+  }
+
+  window.asset_upload = function (file, type) {
+    if (!file) return;
+    if (!/^image\//.test(file.type || '')) {
+      if (typeof toast === 'function') toast('Only images can be assigned to a scene', 'info');
+      return;
+    }
+    if (typeof window.assignAssetToScene !== 'function') {
+      if (typeof toast === 'function') toast('Scene assets are unavailable in this build', 'error');
+      return;
+    }
+    var idx = currentSceneIdx();
+    var r = new FileReader();
+    r.onerror = function () { if (typeof toast === 'function') toast('Could not read that image', 'error'); };
+    r.onload = function (e) {
+      window.assignAssetToScene(idx, e.target.result, file.name);
+      if (typeof toast === 'function') toast('Image assigned to scene ' + (idx + 1), 'ok');
+      if (typeof renderMyAssets === 'function') { try { renderMyAssets(); } catch (e2) {} }
+      if (typeof aps_selectScene === 'function') { try { aps_selectScene(idx); } catch (e2) {} }
+    };
+    r.readAsDataURL(file);
+  };
+})();
+</script>
 </body>
 </html>
 
