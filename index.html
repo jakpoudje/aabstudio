@@ -29505,6 +29505,88 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   }
 }
 </style>
+<script id="aab-undo-v2">
+/* ── UNDO/REDO v2 — record BEFORE every mutation ─────────────────────────────
+   v1 captured history by diffing the serialized tracks inside E_renderTL, on the assumption
+   that every mutation re-renders. PROVEN WRONG by test: razor 7->9 clips, delete 9->8, then
+   undo returned 7 instead of 9 - it jumped back PAST the razor, because E_delClip does not
+   call E_renderTL, so the delete was never recorded and undo popped the wrong state.
+   Inferring history from renders is unreliable. This wraps each mutation function and snapshots
+   the state BEFORE it runs, which is what undo actually needs. The wrapper is additive: it calls
+   through to the original, so no editing behaviour changes. */
+(function () {
+  var MUTATORS = ['E_delClip','E_razorAt','E_deleteSelected','E_deleteTrack','E_addClip',
+                  'E_addTextClip','E_delClipFromTrack','E_upClip','E_applyTransition',
+                  'E_addTrack','E_duplicateClip','E_addVideo','E_addAudio','E_addImage'];
+
+  function snap() { try { return JSON.stringify((window.E || {}).tracks || []); } catch (e) { return null; } }
+
+  window.E_saveHistory = function () {
+    var E = window.E; if (!E || !E.tracks) return;
+    if (E._applyingHistory) return;
+    var s = snap(); if (s === null) return;
+    if (!E._undoStack) E._undoStack = [];
+    if (E._undoStack[E._undoStack.length - 1] === s) return;   // no-op change
+    E._undoStack.push(s);
+    if (E._undoStack.length > 50) E._undoStack.shift();
+    E._redoStack = [];
+  };
+
+  function apply(from, to, label) {
+    var E = window.E;
+    if (!E || !E[from] || !E[from].length) {
+      if (typeof toast === 'function') toast('Nothing to ' + label, 'info');
+      return;
+    }
+    E._applyingHistory = true;
+    try {
+      if (!E[to]) E[to] = [];
+      E[to].push(snap());
+      E.tracks = JSON.parse(E[from].pop());
+      if (typeof window.E_renderTL === 'function') window.E_renderTL();
+      if (typeof window.E_drawProg === 'function') { try { window.E_drawProg(); } catch (e) {} }
+      if (typeof toast === 'function') toast(label === 'undo' ? 'Undone' : 'Redone', 'ok');
+    } catch (e) {
+      if (typeof toast === 'function') toast('Could not ' + label, 'err');
+    } finally { E._applyingHistory = false; }
+  }
+  window.E_undo = function () { apply('_undoStack', '_redoStack', 'undo'); };
+  window.E_redo = function () { apply('_redoStack', '_undoStack', 'redo'); };
+
+  // Wrap each mutator so history is recorded BEFORE the change - never inferred afterwards.
+  function wrapAll() {
+    var n = 0;
+    MUTATORS.forEach(function (name) {
+      var fn = window[name];
+      if (typeof fn !== 'function' || fn._aabHist) return;
+      var wrapped = function () {
+        try { if (!window.E || !window.E._applyingHistory) window.E_saveHistory(); } catch (e) {}
+        return fn.apply(this, arguments);
+      };
+      wrapped._aabHist = true;
+      try { window[name] = wrapped; n++; } catch (e) {}
+    });
+    return n;
+  }
+  var got = wrapAll();
+  if (got) console.log('[undo] recording before ' + got + ' mutation(s)');
+  // Some mutators are defined later; keep trying briefly.
+  var tries = 0;
+  var iv = setInterval(function () { var m = wrapAll(); if (m) console.log('[undo] +' + m + ' more'); if (++tries > 40) clearInterval(iv); }, 250);
+
+  // Ctrl/Cmd+Z, Ctrl+Shift+Z / Ctrl+Y — scoped to the Edit Suite.
+  document.addEventListener('keydown', function (e) {
+    var pg = document.getElementById('edit-pg');
+    if (!pg || !pg.classList.contains('on')) return;
+    var t = e.target || {};
+    if (/^(INPUT|TEXTAREA)$/.test(t.tagName) || t.isContentEditable) return;
+    if (!(e.ctrlKey || e.metaKey)) return;
+    var k = (e.key || '').toLowerCase();
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); window.E_undo(); }
+    else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); window.E_redo(); }
+  }, true);
+})();
+</script>
 </body>
 </html>
 
