@@ -20357,7 +20357,7 @@ setTimeout(function(){
     if(!videoClips.length){typeof toast==='function'&&toast('No video clips on timeline','info');return;}
     typeof toast==='function'&&toast('Exporting '+videoClips.length+' clips...','info');
     var payload={
-      clips:videoClips.map(function(c){return{url:c.url,start:c.start,duration:c.duration,name:c.name,volume:(c.volume==null?1:c.volume),opacity:(c.opacity==null?1:c.opacity),speed:(c.speed||1),scale:c.scale,posX:c.posX,posY:c.posY,type:c.type};}),   /* Send the clip's own properties to the renderer. This used to strip everything except url/start/duration/name, so Opacity, Speed and Volume set in the Inspector shaped the preview and were then dropped on export - the rendered file did not match the editor. */
+      clips:videoClips.map(function(c){return{url:c.url,start:c.start,duration:c.duration,name:c.name};}),
       audioTracks:audioClips,
       subtitles:E.tracks.find(function(t){return t.id==='subs'&&!t.muted;})?
         (E.tracks.find(function(t){return t.id==='subs';}).clips.map(function(c){return{text:c.narration||c.name,start:c.start,duration:c.duration};})):
@@ -25284,9 +25284,13 @@ function getSupa(){
       if(!_lsWorks)console.warn('[AAB] localStorage blocked (Safari private mode / ITP) — using in-memory session storage');
     }
     _supa=supabase.createClient("https://phjlxkyloafogznhyyig.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBoamx4a3lsb2Fmb2d6bmh5eWlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNTcxNDgsImV4cCI6MjA5MDYzMzE0OH0.wI9E9CIHwwFN6d_lgJXwO0_G7J3aq4zesp7eU6TCDiI",{
-      auth:{ persistSession:true, storage:window._aabSafeStorage, autoRefreshToken:true, detectSessionInUrl:false },
-      realtime:{ params:{ eventsPerSecond:0 } },
-      global:{ headers:{ 'X-Client-Info':'aabstudio/1.0' } }
+      // Only the storage shim is needed here (that was the Safari problem). A realtime
+      // config was previously added alongside it with eventsPerSecond:0 - a degenerate value
+      // some supabase-js builds turn into a divide-by-zero when computing their throttle
+      // interval, which can throw inside createClient and leave getSupa() returning undefined,
+      // making signInWithPassword fail. It was never required for the storage fix, so it is
+      // removed rather than left as a risk.
+      auth:{ persistSession:true, storage:window._aabSafeStorage, autoRefreshToken:true, detectSessionInUrl:false }
     });
   }
   return _supa;
@@ -27397,7 +27401,18 @@ function _fixVolSliders(){
   var origSignIn=window.doSignIn;
   if(origSignIn&&!origSignIn._navPatch){
     window.doSignIn=async function(){
-      await origSignIn.apply(this,arguments);
+      // Surface the real reason a sign-in failed. This wrapper used to await the inner
+      // doSignIn with no catch, so if it threw (e.g. getSupa() returning undefined) the
+      // rejection was unhandled, the button stayed stuck and the user was told nothing.
+      try{
+        await origSignIn.apply(this,arguments);
+      }catch(err){
+        console.error('[auth] sign-in failed:', err);
+        var b=document.getElementById('btn-in'); if(b){ b.textContent='Sign in'; b.disabled=false; }
+        var e=document.getElementById('err-in');
+        if(e){ e.textContent=(err&&err.message)||'Sign-in failed. Please try again.'; e.style.display='block'; }
+        return;
+      }
       // After sign-in, go to dashboard
       setTimeout(()=>{if(typeof nav==='function')nav('dashboard-pg');},500);
     };
