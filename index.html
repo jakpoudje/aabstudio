@@ -28561,6 +28561,67 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   };
 })();
 </script>
+<script id="aab-asset-cloud">
+/* Store images in Supabase Storage, not in the browser.
+   Images were embedded in the project as base64 dataURLs and written to localStorage. A single
+   34-scene project exceeded 1MB against a ~5MB origin cap, so storage filled and EVERY save
+   threw - the asset was assigned in memory and could never persist. The quota workaround then
+   kept the asset but stripped its dataURL, so the UI said "assigned" while showing nothing.
+   Uploading to the project-assets bucket and storing only a URL removes the ceiling entirely
+   and makes the same asset resolve on every browser and device. */
+(function () {
+  var API = 'https://aabstudio-production.up.railway.app';
+
+  window.aabUploadAssetToCloud = async function (dataUrl, name) {
+    var tok = window._sbSession && window._sbSession.access_token;
+    if (!tok || !/^data:image\//i.test(String(dataUrl || ''))) return null;   // caller falls back
+    try {
+      var r = await fetch(API + '/api/asset/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+        body: JSON.stringify({ dataUrl: dataUrl, name: name || 'image',
+                               projectId: (window.PROJECT && PROJECT.id) || null })
+      });
+      if (!r.ok) { console.warn('[asset] upload failed', r.status); return null; }
+      var j = await r.json();
+      return j && j.url ? j.url : null;
+    } catch (e) { console.warn('[asset] upload error', e.message); return null; }
+  };
+
+  // Wrap the single canonical assign path so EVERY entry point benefits - the library click,
+  // the sidebar Image button and uploadAssetToScene all funnel through this.
+  function wrapAssign() {
+    if (typeof window.assignAssetToScene !== 'function' || window.assignAssetToScene._cloud) return false;
+    var orig = window.assignAssetToScene;
+    var wrapped = function (idx, url, name) {
+      var r = orig.call(this, idx, url, name);
+      // If a base64 image was just attached, swap it for a stored URL in the background.
+      if (/^data:image\//i.test(String(url || ''))) {
+        window.aabUploadAssetToCloud(url, name).then(function (cloudUrl) {
+          if (!cloudUrl) return;
+          try {
+            var sc = window.PROJECT && PROJECT.scenes && PROJECT.scenes[idx];
+            if (sc && sc.assets) {
+              sc.assets.forEach(function (a) { if (a && a.url === url) { a.url = cloudUrl; delete a.dataUrl; } });
+            }
+            (window.PROJECT && PROJECT.assets || []).forEach(function (a) {
+              if (a && (a.dataUrl === url || a.url === url)) { a.url = cloudUrl; delete a.dataUrl; }
+            });
+            if (typeof saveProject === 'function') saveProject();
+            if (typeof renderSceneEditorAssets === 'function') { try { renderSceneEditorAssets(idx); } catch (e) {} }
+            console.log('[asset] image moved to cloud storage');
+          } catch (e) {}
+        });
+      }
+      return r;
+    };
+    wrapped._cloud = true;
+    window.assignAssetToScene = wrapped;
+    return true;
+  }
+  if (!wrapAssign()) { var n = 0, iv = setInterval(function () { if (wrapAssign() || ++n > 60) clearInterval(iv); }, 200); }
+})();
+</script>
 </body>
 </html>
 

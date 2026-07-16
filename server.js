@@ -1961,6 +1961,58 @@ app.get('/api/presenter-wait', (req, res) => {
 });
 
 // ── Status polling ────────────────────────────────────────────────────────────
+// ── Upload a scene/library image to Storage ──────────────────────────
+// Images were embedded in the project as base64 dataURLs and saved to localStorage. One
+// 34-scene project exceeded 1MB against a ~5MB origin cap, so storage filled and EVERY save
+// threw - the asset was assigned in memory and could never persist. Worse, trimming the
+// dataURLs to survive the quota kept the asset but dropped its image, so the UI said
+// "assigned" while showing nothing. Images belong in Storage with the project holding only a
+// URL: no quota ceiling, and the same asset resolves on every browser and device.
+app.post('/api/asset/upload', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No auth token' });
+    const sb = getSupaAdmin();
+    const { data: { user }, error: authErr } = await sb.auth.getUser(authHeader.replace('Bearer ', ''));
+    if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
+
+    const { dataUrl, name = 'image', projectId } = req.body || {};
+    if (!dataUrl) return res.status(400).json({ error: 'dataUrl required' });
+    const m = String(dataUrl).match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    if (!m) return res.status(400).json({ error: 'dataUrl must be a base64 image' });
+
+    const mime = m[1];
+    const buf = Buffer.from(m[2], 'base64');
+    if (buf.length > 25 * 1024 * 1024) return res.status(413).json({ error: 'Image too large (max 25MB)' });
+
+    const ext = (mime.split('/')[1] || 'png').replace('jpeg', 'jpg').split('+')[0];
+    const safe = String(name).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 40);
+    const bucket = process.env.ASSET_BUCKET || 'project-assets';
+    const path = 'assets/' + user.id + '/' + (projectId || 'proj') + '/' + Date.now() + '-' + safe + '.' + ext;
+
+    const { error } = await sb.storage.from(bucket).upload(path, buf, { contentType: mime, upsert: true });
+    if (error) {
+      if (error.message?.includes('Bucket not found')) {
+        return res.status(503).json({ error: 'Storage bucket "' + bucket + '" not found', setup: true });
+      }
+      throw error;
+    }
+    // project-assets is public; fall back to a signed URL if it ever becomes private.
+    let url = null;
+    const { data: pub } = sb.storage.from(bucket).getPublicUrl(path);
+    url = pub && pub.publicUrl;
+    if (!url) {
+      const { data: signed } = await sb.storage.from(bucket).createSignedUrl(path, 60 * 60 * 24 * 365 * 5);
+      url = signed && signed.signedUrl;
+    }
+    console.log('[asset] stored ' + bucket + '/' + path + ' (' + Math.round(buf.length / 1024) + 'KB)');
+    res.json({ ok: true, url: url, bucket: bucket, path: path, size: buf.length });
+  } catch (e) {
+    console.error('[asset/upload]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Delete this user's stored clips ─────────────────────────────────
 // Used when a project is regenerated or re-recorded: the previous take's videos are removed
 // from storage so the Edit Suite is repopulated from the new take instead of mixing old and
