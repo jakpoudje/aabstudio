@@ -910,14 +910,30 @@ app.get('/api/project/list', async (req, res) => {
     // those and never fell back, so real AABStudio projects never came back from the cloud
     // and every browser fell back to its own localStorage.
     try {
+      // The aab_projects table's ACTUAL columns are: id, user_id, title, data.
+      // This previously did .select('id,title,data,updated_at').order('updated_at') - but
+      // updated_at DOES NOT EXIST on this table. Postgres returned 42703 "column
+      // aab_projects.updated_at does not exist", the 400 was swallowed by the catch below, and
+      // the route fell through to the legacy 'projects' table and returned ZERO projects.
+      // Verified by reading the table directly: the user's rows were there the whole time.
+      // So saves were fine and the LIST was broken - which is why the cloud looked permanently
+      // empty and every browser kept its own localStorage. Select only columns that exist and
+      // sort in JS on the timestamp inside `data`.
       const { data: mine, error: myErr } = await sb.from('aab_projects')
-        .select('id,title,data,updated_at').eq('user_id', user.id)
-        .order('updated_at', { ascending: false }).limit(50);
+        .select('id,title,data').eq('user_id', user.id).limit(50);
       if (!myErr) {
-        return res.json({ projects: (mine || []).map(r => r.data || r) });
+        const rows = (mine || []).map(r => r.data || r);
+        rows.sort((a, b) => {
+          const ta = String((a && (a.updatedAt || a.date || a.savedAt)) || '');
+          const tb = String((b && (b.updatedAt || b.date || b.savedAt)) || '');
+          return tb > ta ? 1 : -1;
+        });
+        console.log('[project/list] returning ' + rows.length + ' project(s) for ' + user.id);
+        return res.json({ projects: rows });
       }
+      console.error('[project/list] aab_projects query failed:', myErr.code, myErr.message);
       if (!(myErr.code === 'PGRST205' || (myErr.message || '').includes('does not exist'))) throw myErr;
-    } catch(e2) { /* fall through to legacy table */ }
+    } catch(e2) { console.error('[project/list] falling back to legacy table:', e2.message); }
 
     // Legacy fallback: only accept rows that actually carry a project payload
     try {
