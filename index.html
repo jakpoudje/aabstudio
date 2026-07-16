@@ -15631,21 +15631,60 @@ window._reapplyNav=function(){
     }
 
     async function syncAndLoadProjects() {
-      // Always return local immediately
-      var local = JSON.parse(localStorage.getItem('aab_projects') || '[]');
-      // Try cloud in parallel — don't block on it
+      /* ── CLOUD IS THE SOURCE OF TRUTH ──────────────────────────────────────
+         Why this was broken: the app was built localStorage-first and cloud sync was added
+         later as a COPY - the authority was never flipped. Two concrete consequences:
+           1. A project that exists only on THIS device was never pushed up, so Chrome kept its
+              projects and Safari kept different ones. Each browser was an island. That is
+              exactly the "different projects on different devices" bug.
+           2. When cloud DID hold a project, `local[idx] = cp` clobbered the local copy blindly
+              with no timestamp check - so a newer local edit could be silently destroyed by an
+              older cloud copy.
+         Now: the cloud set is authoritative for what EXISTS, conflicts resolve by newest-wins
+         (never blind overwrite), anything local-only is pushed UP so it becomes shared, and
+         localStorage is demoted to a cache. Projects are small JSON now that images live in
+         project-assets and videos in recorded-clips, so there is no size reason to keep local
+         as the master. */
+      var local = [];
+      try { local = JSON.parse(localStorage.getItem('aab_projects') || '[]'); } catch (e) { local = []; }
+      if (!Array.isArray(local)) local = [];
+
+      function stamp(p) {
+        return String((p && (p.updatedAt || p.date || p.savedAt)) || '');
+      }
+
       try {
         var cloudProjects = await loadProjectsFromCloud();
-        if (cloudProjects && cloudProjects.length > 0) {
+        if (cloudProjects && cloudProjects.length) {
+          var merged = local.slice();
+          var pushBack = [];
           cloudProjects.forEach(function (cp) {
-            var idx = local.findIndex(function (p) { return p.id === cp.id; });
-            if (idx > -1) { local[idx] = cp; } else { local.unshift(cp); }
+            var idx = merged.findIndex(function (p) { return p.id === cp.id; });
+            if (idx === -1) { merged.unshift(cp); return; }          // cloud-only -> adopt
+            // Both sides have it: newest wins, rather than cloud clobbering local.
+            if (stamp(cp) >= stamp(merged[idx])) merged[idx] = cp;
+            else pushBack.push(merged[idx]);                          // local is newer -> send up
           });
-          local.sort(function (a, b) { return (b.date || '') > (a.date || '') ? 1 : -1; });
-          localStorage.setItem('aab_projects', JSON.stringify(local.slice(0, 25)));
+          // Anything only on this device must go UP, or the other browser never sees it.
+          var cloudIds = cloudProjects.map(function (c) { return c.id; });
+          merged.forEach(function (p) { if (p && cloudIds.indexOf(p.id) === -1) pushBack.push(p); });
+
+          if (pushBack.length && typeof syncProjectToCloud === 'function') {
+            pushBack.slice(0, 10).forEach(function (p) { try { syncProjectToCloud(p); } catch (e) {} });
+            console.log('[sync] pushed ' + Math.min(pushBack.length, 10) + ' local-only/newer project(s) to cloud');
+          }
+
+          merged.sort(function (a, b) { return stamp(b) > stamp(a) ? 1 : -1; });
+          try { localStorage.setItem('aab_projects', JSON.stringify(merged.slice(0, 25))); } catch (e) {}
+          console.log('[sync] cloud authoritative: ' + cloudProjects.length + ' cloud, ' + merged.length + ' total');
+          return merged;
+        }
+        // Cloud is empty but this device has work: seed the cloud so other devices can see it.
+        if (local.length && typeof pushAllLocalProjectsToCloud === 'function') {
+          try { await pushAllLocalProjectsToCloud(); console.log('[sync] seeded cloud from this device'); } catch (e) {}
         }
       } catch (e) {
-        console.warn('Cloud sync unavailable (API not deployed yet):', e.message);
+        console.warn('[sync] cloud unavailable, using local cache:', e.message);
       }
       return local;
     }
