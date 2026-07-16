@@ -857,10 +857,23 @@ app.post('/api/project/save', async (req, res) => {
       );
       if (error) throw error;
     } catch(dbErr) {
-      // Non-fatal — log but return ok so client doesn't retry endlessly
-      console.warn('project/save DB error (non-fatal):', dbErr.message);
+      // THIS USED TO SWALLOW THE ERROR AND STILL RETURN { ok: true }.
+      // Proven live: POST /api/project/save returned 200 {"ok":true} while
+      // GET /api/project/list returned 0 projects - the write had failed, the failure was
+      // hidden, and the client was told it succeeded. Every save was silently discarded, the
+      // cloud stayed permanently empty, and each browser therefore kept its own local set:
+      // that is the "different projects on different devices" bug. The console even logged
+      // "Project synced to cloud" on top of it. Report the truth instead.
+      console.error('[project/save] DB write FAILED for ' + p.id + ':', dbErr.message);
+      return res.status(500).json({
+        error: 'Could not save project to the cloud: ' + dbErr.message,
+        projectId: p.id,
+        hint: dbErr.message && /relation|does not exist|schema/i.test(dbErr.message)
+          ? 'The aab_projects table is missing in Supabase.'
+          : undefined
+      });
     }
-    res.json({ ok: true });
+    res.json({ ok: true, id: p.id });
   } catch(e) {
     console.error('/api/project/save:', e.message);
     res.status(500).json({ error: e.message });
