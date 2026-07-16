@@ -29006,6 +29006,108 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   sync();
 })();
 </script>
+<style id="aab-rwd-rest">
+/* ── AABStudio 2.0 responsive — AI PRESENTER / EDIT SUITE / EXPORT ───────────
+   All selectors below were read from the live DOM, not guessed. Panels are shown and hidden
+   IN PLACE with CSS; no node is ever reparented. Desktop >=768 is untouched. */
+@media (max-width: 767px) {
+
+  /* ── AI PRESENTER ─────────────────────────────────────────────────────────
+     Spec: preview fixed at top (16:9), scene carousel, sticky Generate, controls as cards.
+     Verified ids: #aps-preview-wrap, #aps-scene-list, #aps-gen-all-btn, #aps-go-edit-btn-top */
+  #ai-presenter-studio { padding-top: var(--aab-topnav-h, 64px) !important; padding-bottom: 92px !important; }
+  #ai-presenter-studio > div { flex-direction: column !important; min-width: 0 !important; }
+  #aps-preview-wrap {
+    order: 1 !important; width: 100% !important; max-width: 100vw !important;
+    aspect-ratio: 16/9 !important; flex: 0 0 auto !important;   /* spec: always 16:9 */
+  }
+  /* Scene list becomes a horizontal carousel under the preview. */
+  #aps-scene-list {
+    order: 2 !important; display: flex !important; flex-direction: row !important;
+    overflow-x: auto !important; -webkit-overflow-scrolling: touch !important;
+    max-height: 96px !important; gap: 8px !important; width: 100% !important;
+  }
+  #aps-scene-list > * { flex: 0 0 190px !important; min-width: 190px !important; }
+  /* The presenter controls stack below, full width, thumb-sized. */
+  #ai-presenter-studio .aps-select, #ai-presenter-studio select {
+    width: 100% !important; min-height: 48px !important;
+  }
+  #ai-presenter-studio button { min-height: 48px !important; }
+  /* Generate stays sticky and reachable — spec. */
+  #aps-gen-all-btn {
+    position: fixed !important; left: 12px !important; right: 12px !important; bottom: 92px !important;
+    z-index: 880 !important; min-height: 52px !important; width: auto !important;
+  }
+  /* Header actions wrap instead of collapsing "Go to Edit Suite" onto four lines. */
+  #aps-go-edit-btn-top, #aps-gen-sel-btn { min-height: 44px !important; }
+
+  /* ── EDIT SUITE ───────────────────────────────────────────────────────────
+     Spec: monitor top, timeline 80px collapsed -> 220px expanded, inspector as sheet.
+     Verified ids: #e-prog-vid, #aab-tl-tw, #aab-rows.
+     214 controls cannot all live on a phone — mobile is review + light trim, so the toolbar
+     scrolls rather than being clipped, and the timeline is the expandable surface. */
+  #edit-pg { padding-top: var(--aab-topnav-h, 64px) !important; padding-bottom: 88px !important; }
+  #edit-pg > div { flex-direction: column !important; min-width: 0 !important; }
+  #e-prog-vid { width: 100% !important; max-height: 40vh !important; object-fit: contain !important; }
+  #aab-tl-tw {
+    height: 80px !important; overflow-x: auto !important; overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important; transition: height 250ms !important;
+  }
+  #edit-pg[data-tl="open"] #aab-tl-tw { height: 220px !important; }
+  #edit-pg .aab-track-lbl { flex: 0 0 96px !important; min-width: 96px !important; max-width: 96px !important; }
+  /* Toolbars scroll horizontally — a timeline IS horizontal; that is expected, not clipping. */
+  #edit-pg .aab-tl-toolbar, #edit-pg .e-tools {
+    overflow-x: auto !important; -webkit-overflow-scrolling: touch !important;
+    flex-wrap: nowrap !important; max-height: none !important;
+  }
+  #edit-pg button { min-height: 44px !important; }
+
+  /* ── EXPORT ───────────────────────────────────────────────────────────────
+     Only 5 controls — full-width form, generous targets. */
+  #export-pg { padding-top: var(--aab-topnav-h, 64px) !important; padding-bottom: 24px !important; }
+  #export-pg .export-inner { width: 100% !important; max-width: 100% !important; padding: 16px !important; }
+  #export-pg .fmt-opt { width: 100% !important; min-height: 52px !important; margin-bottom: 8px !important; }
+  #export-pg button { width: 100% !important; min-height: 52px !important; border-radius: 12px !important; }
+}
+</style>
+<script id="aab-rwd-rest-js">
+/* Timeline expand/collapse (spec: 80 -> 220px) and the Edit Suite bottom nav.
+   Body-mounted, additive, no reparenting. */
+(function () {
+  function buildTlToggle() {
+    if (document.getElementById('aab-tl-toggle')) return true;
+    var tw = document.getElementById('aab-tl-tw');
+    if (!tw) return false;
+    var b = document.createElement('button');
+    b.id = 'aab-tl-toggle';
+    b.type = 'button';
+    b.textContent = '\u25B2 Timeline';
+    b.style.cssText = 'display:none;position:fixed;right:12px;bottom:92px;z-index:882;min-height:44px;'
+      + 'padding:0 14px;border-radius:12px;background:#111827;color:#e8edf5;'
+      + 'border:.5px solid rgba(255,255,255,.15);font-size:13px;cursor:pointer;';
+    b.onclick = function () {
+      var pg = document.getElementById('edit-pg');
+      if (!pg) return;
+      var open = pg.getAttribute('data-tl') === 'open';
+      pg.setAttribute('data-tl', open ? 'closed' : 'open');
+      b.textContent = open ? '\u25B2 Timeline' : '\u25BC Timeline';
+    };
+    document.body.appendChild(b);
+    return true;
+  }
+  function sync() {
+    var b = document.getElementById('aab-tl-toggle');
+    var pg = document.getElementById('edit-pg');
+    if (!b || !pg) return;
+    b.style.display = (pg.classList.contains('on') && window.innerWidth <= 767) ? 'block' : 'none';
+  }
+  if (!buildTlToggle()) { var n = 0, iv = setInterval(function () { if (buildTlToggle() || ++n > 60) clearInterval(iv); }, 250); }
+  document.addEventListener('click', function () { setTimeout(sync, 60); }, true);
+  window.addEventListener('resize', sync);
+  setInterval(sync, 800);
+  sync();
+})();
+</script>
 </body>
 </html>
 
