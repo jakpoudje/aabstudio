@@ -11852,9 +11852,30 @@ function loadDashboard() {
           // Position grid (3x3)
           var positions = ['top-left', 'top-center', 'top-right', 'mid-left', 'center', 'mid-right', 'bot-left', 'bot-center', 'bot-right'];
           var posLabels = ['↖', '↑', '↗', '←', '⊙', '→', '↙', '↓', '↘'];
+          // Build the 3x3 position grid. A refactor left this loop body empty, so posGridWrap
+          // was NEVER created - yet it is appended below. Every render of this panel therefore
+          // threw "posGridWrap is not defined", which killed the click handler AFTER it had
+          // already pushed the asset and saved: the assignment worked, the panel never redrew,
+          // and no toast appeared, so assigning an image looked like it did nothing.
+          var posGridWrap = document.createElement('div');
+          posGridWrap.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:3px;margin-bottom:6px;max-width:126px;';
           positions.forEach(function (pos, pi) {
             var isOn = (asset.position || 'bot-right') === pos;
-            // position button built via DOM
+            var pb = document.createElement('button');
+            pb.type = 'button';
+            pb.textContent = posLabels[pi];
+            pb.title = pos;
+            pb.style.cssText = 'padding:5px 0;font-size:11px;line-height:1;border-radius:4px;cursor:pointer;'
+              + 'border:.5px solid ' + (isOn ? 'var(--accent)' : 'var(--bdr2)') + ';'
+              + 'background:' + (isOn ? 'rgba(0,212,255,.16)' : 'transparent') + ';'
+              + 'color:' + (isOn ? 'var(--accent)' : 'var(--muted2)') + ';';
+            pb.onclick = function (ev) {
+              ev.stopPropagation();
+              asset.position = pos;
+              if (typeof saveProject === 'function') saveProject();
+              renderSceneEditorAssets(idx);
+            };
+            posGridWrap.appendChild(pb);
           });
 
           // size slider built via DOM above
