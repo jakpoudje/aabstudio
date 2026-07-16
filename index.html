@@ -28874,6 +28874,91 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   window.addEventListener('pagehide', function () { window.aabStopAllMedia('page hidden'); });
 })();
 </script>
+<script id="aab-mobile-panels">
+/* ── ONE MOBILE PANEL SYSTEM, USED BY EVERY PAGE ─────────────────────────────
+   Small screens need a DIFFERENT layout, not a squeezed desktop one. Previous attempts capped
+   widths (which clipped 535px of unreachable content) and guessed at class names (six selectors
+   matched zero elements). This instead reads the real DOM and applies one consistent rule set:
+
+     - the PRIMARY panel (camera / monitor / preview) stays open and takes the top of the screen
+     - every SECONDARY panel becomes a tap-to-open section, stacked vertically underneath
+     - only one secondary panel is open at a time, so controls are always reachable
+     - nothing is ever hidden by overflow; a closed section is collapsed, not clipped
+
+   Identical behaviour on Record, Edit Suite, Scenes and AI Presenter. */
+(function () {
+  var MOBILE = 820;
+  function isMobile() { return window.innerWidth <= MOBILE; }
+
+  // Per page: the element to keep open at the top, and the panels to collapse under it.
+  var PAGES = {
+    'record-pg':  { primary: '.studio-stage-wrap, #studio-cam', panels: '.panel-group' },
+    'edit-pg':    { primary: '#e-prog-vid, .aab-prog-wrap',      panels: '#aab-insp, .aab-insp' },
+    'scenes-pg':  { primary: null,                                panels: '.scenes-sidebar' }
+  };
+
+  function labelFor(el, i) {
+    var h = el.querySelector('.panel-group-label, h2, h3, .aab-insp-title');
+    var t = (h && h.textContent || '').trim();
+    if (!t) t = (el.getAttribute('data-label') || '').trim();
+    return t ? t.slice(0, 28) : ('Panel ' + (i + 1));
+  }
+
+  function build() {
+    if (!isMobile()) { teardown(); return; }
+    Object.keys(PAGES).forEach(function (pgId) {
+      var pg = document.getElementById(pgId);
+      if (!pg || !pg.classList.contains('on')) return;
+      var cfg = PAGES[pgId];
+      var panels = [].slice.call(pg.querySelectorAll(cfg.panels));
+      panels.forEach(function (p, i) {
+        if (p._aabCollapsible) return;
+        p._aabCollapsible = true;
+        var body = document.createElement('div');
+        while (p.firstChild) body.appendChild(p.firstChild);
+        body.className = 'aab-m-body';
+        body.style.cssText = 'display:none;padding:8px 0;';
+
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'aab-m-head';
+        btn.textContent = labelFor(p, i) + '  ▸';
+        btn.style.cssText = 'width:100%;min-height:44px;display:flex;align-items:center;justify-content:space-between;'
+          + 'padding:10px 12px;background:rgba(255,255,255,.05);border:.5px solid rgba(255,255,255,.12);'
+          + 'border-radius:8px;color:#e8edf5;font-size:13px;font-weight:600;cursor:pointer;text-align:left;';
+        btn.onclick = function () {
+          var open = body.style.display !== 'none';
+          // one open at a time — controls stay reachable
+          [].forEach.call(pg.querySelectorAll('.aab-m-body'), function (b) { b.style.display = 'none'; });
+          [].forEach.call(pg.querySelectorAll('.aab-m-head'), function (h) { h.textContent = h.textContent.replace('▾', '▸'); });
+          if (!open) { body.style.display = 'block'; btn.textContent = btn.textContent.replace('▸', '▾'); }
+        };
+        p.appendChild(btn);
+        p.appendChild(body);
+        p.style.cssText += ';width:100%;max-width:100%;min-width:0;margin-bottom:6px;';
+      });
+    });
+  }
+
+  function teardown() {
+    [].forEach.call(document.querySelectorAll('.aab-m-body'), function (body) {
+      var p = body.parentElement; if (!p || !p._aabCollapsible) return;
+      var head = p.querySelector('.aab-m-head');
+      while (body.firstChild) p.appendChild(body.firstChild);
+      if (head) head.remove();
+      body.remove();
+      p._aabCollapsible = false;
+    });
+  }
+
+  var t;
+  function schedule() { clearTimeout(t); t = setTimeout(build, 200); }
+  window.addEventListener('resize', function () { clearTimeout(t); t = setTimeout(function () { teardown(); build(); }, 250); });
+  document.addEventListener('click', schedule, true);   // rebuild after navigation
+  schedule();
+  window.aabBuildMobilePanels = build;
+})();
+</script>
 </body>
 </html>
 
