@@ -29433,6 +29433,40 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
 #export-pg .export-inner { padding-bottom: 48px !important; }
 #edit-pg { padding-bottom: 24px; }
 
+/* ── TOUCH TARGETS — the reason controls "don't work" ────────────────────────
+   MEASURED on the live Record page: the teleprompter A+ buttons are 23x15px and 25x19px.
+   Fifteen pixels tall is ~2mm on a phone. The FUNCTION is fine - increaseTpFont() steps
+   28->30->32->34->36->38, persists to STUDIO.tpFontPx and survives a re-render - and the
+   button is not covered. It simply cannot be hit with a finger. My audit called this "working"
+   because .click() in JS always lands; the user reported it broken because a fingertip is ~9mm.
+   Both were true. The spec requires 48x48 minimum, 52x52 preferred. This applies it to the
+   dense inline controls that CSS elsewhere never sized: teleprompter font/speed/mirror, and any
+   tiny control in the studio bar or panel rows. Desktop keeps its compact controls above 1024px
+   where a mouse makes 23x15 acceptable. */
+@media (max-width: 1024px) {
+  #record-pg button,
+  #record-pg .studio-tp button,
+  #record-pg .panel-group button,
+  #studio-tp button,
+  #tp-controls button,
+  .tp-ctrl button,
+  #teleprompter-pg button {
+    min-width: 48px !important;
+    min-height: 48px !important;
+    padding: 8px 10px !important;
+    font-size: 14px !important;
+  }
+  /* Rows holding them must be allowed to grow, or bigger buttons just get clipped. */
+  #record-pg .studio-tp, #record-pg .panel-group-body, #record-pg .studio-ctrl-row {
+    flex-wrap: wrap !important;
+    height: auto !important;
+    max-height: none !important;
+    gap: 6px !important;
+  }
+  /* Sliders need a real thumb too. */
+  #record-pg input[type=range] { height: 44px !important; }
+}
+
 /* ── EDIT SUITE on small screens ─────────────────────────────────────────────
    Measured: edit-pg reported overflowY:hidden with 20 controls below the fold and
    CAN_SCROLL:false - they were unreachable. Unlike the other pages, this is not a stray
