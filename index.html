@@ -28805,22 +28805,12 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     grid-template-columns: 1fr !important; display: block !important;
   }
   #aab-bottom-nav[data-active="1"] { display: flex !important; }
-
-  /* "+ New project" disappeared under the top bar.
-     #topnav is position:fixed and 52px tall on desktop, and #dashboard-pg carries an INLINE
-     padding-top:52px to clear it - the two are hardcoded to match. On a phone #topnav has
-     flex-wrap:nowrap and must fit the logo + Pro Studio + Sign out into ~390px, so it grows
-     TALLER than 52px while the padding stays at 52 - the dashboard slides underneath by the
-     difference and the topmost element ("+ New project") is what gets hidden. Let the bar wrap
-     and drive the page padding from its MEASURED height instead of a hardcoded constant. */
-  #topnav { flex-wrap: wrap !important; height: auto !important; min-height: 52px !important; row-gap: 4px !important; }
-  #dashboard-pg { padding-top: var(--aab-topnav-h, 64px) !important; }
-  #dashboard-pg .dash-hdr {
+  /* "+ New project" was clipped behind the header: the dash header is a fixed-height row and
+     the button overflowed it. Let the header wrap and size to content on mobile. */
+  #dashboard-pg .dash-hdr, #dashboard-pg .dash-header {
     flex-wrap: wrap !important; height: auto !important; min-height: 0 !important; gap: 8px !important;
   }
-  #dashboard-pg .dash-hdr > * { min-width: 0 !important; }
-  /* spec: primary button 52px, full width on mobile so it can never be squeezed out */
-  #dashboard-pg .dash-hdr button { min-height: 52px !important; }
+  #dashboard-pg .dash-hdr > *, #dashboard-pg .dash-header > * { min-width: 0 !important; }
 }
 /* iPad portrait (768-1024): two columns, sidebar hidden per spec */
 @media (min-width: 768px) and (max-width: 1024px) {
@@ -28904,20 +28894,116 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   document.addEventListener('click', function () { setTimeout(sync, 60); }, true);
   setInterval(sync, 800);
   sync();
+})();
+</script>
+<style id="aab-rwd-record">
+/* ── AABStudio 2.0 responsive — RECORDING STUDIO ─────────────────────────────
+   Built from a verified DOM read, not guessed selectors:
+     .studio-q      = scene list      (left column)
+     .studio-canvas = camera + .studio-tp teleprompter (centre)
+     .studio-panel  = asset library   (right column)
+   On a phone these three desktop columns are crushed into ~390px, which reduces the CAMERA -
+   the entire point of the page - to a sliver, and floats "Done -> Edit" / "Sign out" over the
+   content. Per spec, mobile is a different experience: camera takes the top half, teleprompter
+   overlays it so the eyeline stays on the lens, and only the controls needed DURING a take stay
+   on screen. Scene list and assets become bottom-nav destinations - shown/hidden IN PLACE with
+   CSS. Nothing is reparented. */
+@media (max-width: 767px) {
+  #record-pg .studio-main { flex-direction: column !important; min-width: 0 !important; }
 
-  /* Publish the top bar's REAL height so pages can clear it. The inline padding-top:52px on
-     #dashboard-pg assumes a 52px bar; when the bar wraps on a narrow screen it is taller and
-     content slides under it. Measure and expose it as --aab-topnav-h. */
-  function syncTopnav() {
-    var tn = document.getElementById('topnav');
-    if (!tn) return;
-    var h = Math.ceil(tn.getBoundingClientRect().height);
-    if (h > 0) document.documentElement.style.setProperty('--aab-topnav-h', h + 'px');
+  /* Camera first and large - it is the job. Keep 16:9 per spec. */
+  #record-pg .studio-canvas {
+    order: 1 !important; width: 100% !important; max-width: 100vw !important;
+    min-height: 46vh !important; flex: 0 0 auto !important;
   }
-  window.addEventListener('resize', syncTopnav);
-  window.addEventListener('orientationchange', function () { setTimeout(syncTopnav, 120); });
-  setInterval(syncTopnav, 1000);
-  syncTopnav();
+  /* Teleprompter overlays the camera: eyes stay on the lens. */
+  #record-pg .studio-tp {
+    position: absolute !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+    max-height: 30% !important; overflow-y: auto !important;
+    background: rgba(0,0,0,.62) !important; backdrop-filter: blur(2px);
+    z-index: 5 !important;
+  }
+  #record-pg .studio-canvas { position: relative !important; }
+
+  /* Scene list + asset library become bottom-nav views, hidden by default. */
+  #record-pg .studio-q,
+  #record-pg .studio-panel { display: none !important; }
+  #record-pg[data-mview="scenes"] .studio-q {
+    display: flex !important; order: 2 !important; width: 100% !important;
+    max-width: 100vw !important; max-height: 42vh !important; overflow-y: auto !important;
+  }
+  #record-pg[data-mview="assets"] .studio-panel {
+    display: block !important; order: 2 !important; width: 100% !important;
+    max-width: 100vw !important; max-height: 42vh !important; overflow-y: auto !important;
+  }
+
+  /* Top bar: condensed, wraps, never floats over content. */
+  #record-pg .studio-bar {
+    flex-wrap: wrap !important; height: auto !important; max-height: none !important;
+    gap: 6px !important; padding: 6px 8px !important;
+  }
+  #record-pg .studio-bar > * { min-width: 0 !important; }
+  #record-pg .studio-bar button { min-height: 44px !important; }
+
+  /* Clear the fixed top bar using its MEASURED height. */
+  #record-pg { padding-top: var(--aab-topnav-h, 64px) !important; }
+  /* Clear the bottom nav. */
+  #record-pg .studio-wrap { padding-bottom: 88px !important; }
+}
+</style>
+<script id="aab-rwd-record-nav">
+/* Record bottom navigation. ADDITIVE and BODY-MOUNTED.
+   Body-mounted because a page ancestor carries a transform while it is the active page, and a
+   transformed ancestor makes position:fixed resolve against THAT element instead of the
+   viewport - measured earlier as a nav with height 0. Switching views only sets a data
+   attribute; the panels are shown/hidden by CSS in place. No node is ever moved. */
+(function () {
+  var VIEWS = [
+    { id: 'record', ico: '\u23FA', label: 'Record' },
+    { id: 'scenes', ico: '\uD83C\uDFAC', label: 'Scenes' },
+    { id: 'assets', ico: '\uD83D\uDDBC', label: 'Assets' }
+  ];
+  function build() {
+    if (document.getElementById('aab-rec-nav')) return true;
+    if (!document.getElementById('record-pg')) return false;
+    var nav = document.createElement('nav');
+    nav.id = 'aab-rec-nav';
+    nav.style.cssText = 'display:none;position:fixed;left:0;right:0;bottom:0;z-index:901;height:80px;'
+      + 'align-items:stretch;background:#0a0e1a;border-top:.5px solid rgba(255,255,255,.12);'
+      + 'padding-bottom:env(safe-area-inset-bottom,0px);';
+    VIEWS.forEach(function (v, i) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.view = v.id;
+      b.innerHTML = '<span style="font-size:20px;line-height:1">' + v.ico + '</span><span>' + v.label + '</span>';
+      b.style.cssText = 'flex:1;min-height:48px;display:flex;flex-direction:column;align-items:center;'
+        + 'justify-content:center;gap:3px;background:transparent;border:0;cursor:pointer;'
+        + 'font-size:12px;font-family:inherit;transition:color 150ms;color:' + (i === 0 ? '#00d4ff' : '#6b7280') + ';';
+      b.onclick = function () {
+        var pg = document.getElementById('record-pg');
+        if (pg) pg.setAttribute('data-mview', v.id);
+        [].forEach.call(nav.children, function (c) { c.style.color = '#6b7280'; });
+        b.style.color = '#00d4ff';
+      };
+      nav.appendChild(b);
+    });
+    document.body.appendChild(nav);          // body-mounted: transform-proof
+    var pg = document.getElementById('record-pg');
+    if (pg && !pg.getAttribute('data-mview')) pg.setAttribute('data-mview', 'record');
+    return true;
+  }
+  function sync() {
+    var nav = document.getElementById('aab-rec-nav');
+    var pg = document.getElementById('record-pg');
+    if (!nav || !pg) return;
+    var show = pg.classList.contains('on') && window.innerWidth <= 767;
+    nav.style.display = show ? 'flex' : 'none';
+  }
+  if (!build()) { var n = 0, iv = setInterval(function () { if (build() || ++n > 60) clearInterval(iv); }, 250); }
+  document.addEventListener('click', function () { setTimeout(sync, 60); }, true);
+  window.addEventListener('resize', sync);
+  setInterval(sync, 800);
+  sync();
 })();
 </script>
 </body>
