@@ -28652,7 +28652,10 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
       if (!v || v._aabUnlock) return !!v;
       v._aabUnlock = true;
       v.addEventListener('play', unlock);
-      v.muted = false;
+      // Only unmute a playback monitor - never an element bound to a live mic (feedback).
+      var live = v.srcObject && v.srcObject.getAudioTracks &&
+                 v.srcObject.getAudioTracks().some(function (t) { return t.readyState === 'live'; });
+      if (!live) v.muted = false;
       return true;
     };
     if (!tryWire()) { var n = 0, iv = setInterval(function () { if (tryWire() || ++n > 60) clearInterval(iv); }, 250); }
@@ -28747,6 +28750,37 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
    the browser kept showing the recording indicator. There is no single owner, so track EVERY
    stream centrally at the source and provide one authoritative kill switch. A live mic when the
    user is not recording is a privacy problem, not a cosmetic one. */
+/* MIC FEEDBACK.
+   A <video> holding a LIVE mic stream plays your own voice straight back out of the speakers -
+   that is the howl/echo. One binding site sets muted (vid.muted=true; vid.volume=0) but another
+   does not: `vid.srcObject = STUDIO.stream` with no muting, and #studio-bg-vid carries no muted
+   attribute either. Patching one line would leave the other paths, so guard it at the source:
+   any media element that is handed a stream containing a LIVE microphone track is muted for
+   monitoring. It is still recorded - MediaRecorder captures the stream, not the element - so
+   nothing is lost, the speakers just stop re-broadcasting the mic into it. */
+(function () {
+  try {
+    var proto = HTMLMediaElement.prototype;
+    var desc = Object.getOwnPropertyDescriptor(proto, 'srcObject');
+    if (desc && desc.set && !proto._aabFeedbackGuard) {
+      Object.defineProperty(proto, 'srcObject', {
+        configurable: true,
+        enumerable: desc.enumerable,
+        get: desc.get,
+        set: function (stream) {
+          try {
+            var hasLiveMic = stream && stream.getAudioTracks &&
+              stream.getAudioTracks().some(function (t) { return t.readyState === 'live'; });
+            if (hasLiveMic) { this.muted = true; this.volume = 0; this.setAttribute('muted', ''); }
+          } catch (e) {}
+          return desc.set.call(this, stream);
+        }
+      });
+      proto._aabFeedbackGuard = true;
+    }
+  } catch (e) {}
+})();
+
 (function () {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
   if (navigator.mediaDevices.getUserMedia._aabTracked) return;
