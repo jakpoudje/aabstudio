@@ -28713,19 +28713,30 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
    which CLIPPED content instead of fitting it: .studio-ctrl-v2 showed 534px of 1069px, losing
    535px that the user could never reach. Content must WRAP onto more lines, never be hidden. */
 @media (max-width: 820px) {
-  /* Never hide horizontal content - it is unreachable. Let it wrap. */
+  /* Never hide horizontal content - hidden content is unreachable. */
   .studio-wrap, .studio-main, .studio-ctrl-v2, .studio-ctrl-row, .studio-bar, .panel-group {
     min-width: 0 !important;
     max-width: 100% !important;
     overflow-x: visible !important;
-    flex-wrap: wrap !important;
     box-sizing: border-box !important;
   }
-  /* Stack the page top-to-bottom. */
+  /* COLUMN CONTAINERS MUST NOT WRAP.
+     flex-direction:column + flex-wrap:wrap means a child that runs out of VERTICAL space wraps
+     into a NEW COLUMN - sideways. Measured: .studio-ctrl-v2 has two 534px children and a
+     scrollWidth of 1069 (534+534) - they were sitting side by side precisely BECAUSE of the
+     wrap I had added to stop clipping. On a column, wrap must be nowrap; only row containers
+     may wrap. */
   .studio-wrap, .studio-main, .studio-ctrl-v2 {
     flex-direction: column !important;
+    flex-wrap: nowrap !important;
     align-items: stretch !important;
     width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+  /* Row containers: these are the ones that should wrap onto extra lines. */
+  .studio-ctrl-row, .studio-bar, .panel-group, .panel-group-body {
+    flex-wrap: wrap !important;
   }
   /* Every flex child must be allowed to shrink; min-width:auto is what forces the 1069px. */
   .studio-ctrl-v2 > *, .studio-ctrl-row > *, .studio-bar > *, .panel-group > *, .panel-group-body > * {
