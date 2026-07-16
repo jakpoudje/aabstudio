@@ -12490,9 +12490,27 @@ function studioNext() {
       document.documentElement.style.setProperty('--tp-font-size', px + 'px');
       document.documentElement.style.setProperty('--tp-font-size-px', px);
       // Apply with !important to EVERY teleprompter text element + wrappers
-      ['tp-cur','tp-cur-inner','tp-body','studio-tp-words'].forEach(function(id){
+      // Apply to each container AND its text children. Previously only the container got the
+      // size, and only tp-body had its children updated (see the tp-body-specific block below).
+      // The word-by-word renderer builds its wrapper with an INLINE font-size:clamp(18px,2vw,26px),
+      // and an inline style on a child beats the parent - so on any prompter whose text lives in
+      // a child element, A+/A- moved the container and the visible text never changed. That is
+      // why the font buttons appeared dead on the standalone teleprompter and the practice view
+      // while the same function measurably worked on tp-body.
+      ['tp-cur','tp-cur-inner','tp-body','studio-tp-words','tp-text'].forEach(function(id){
         var el = document.getElementById(id);
-        if (el) el.style.setProperty('font-size', px + 'px', 'important');
+        if (!el) return;
+        el.style.setProperty('font-size', px + 'px', 'important');
+        el.querySelectorAll('div,span,p').forEach(function(child){
+          child.style.setProperty('font-size', px + 'px', 'important');
+        });
+      });
+      // Any prompter text container found by class, same treatment.
+      document.querySelectorAll('.tp-body,.tp-text,.tp-cur,#tp-cur-inner').forEach(function(el){
+        el.style.setProperty('font-size', px + 'px', 'important');
+        el.querySelectorAll('div,span,p').forEach(function(child){
+          child.style.setProperty('font-size', px + 'px', 'important');
+        });
       });
       var body = document.getElementById('tp-body');
       if (body) body.querySelectorAll('div,span.tp-word,[id*=tp]').forEach(function(el){ el.style.setProperty('font-size', px + 'px', 'important'); });
