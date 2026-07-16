@@ -28804,7 +28804,13 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   #dashboard-pg .proj-grid, #dashboard-pg .dash-grid {
     grid-template-columns: 1fr !important; display: block !important;
   }
-  #aab-bottom-nav { display: flex !important; }
+  #aab-bottom-nav[data-active="1"] { display: flex !important; }
+  /* "+ New project" was clipped behind the header: the dash header is a fixed-height row and
+     the button overflowed it. Let the header wrap and size to content on mobile. */
+  #dashboard-pg .dash-hdr, #dashboard-pg .dash-header {
+    flex-wrap: wrap !important; height: auto !important; min-height: 0 !important; gap: 8px !important;
+  }
+  #dashboard-pg .dash-hdr > *, #dashboard-pg .dash-header > * { min-width: 0 !important; }
 }
 /* iPad portrait (768-1024): two columns, sidebar hidden per spec */
 @media (min-width: 768px) and (max-width: 1024px) {
@@ -28867,10 +28873,27 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
       };
       nav.appendChild(b);
     });
-    pg.appendChild(nav);   // appended, nothing moved
+    // MUST live on <body>. #dashboard-pg carries a transform (measured:
+    // matrix(1,0,0,1,0,...)) and a transformed ancestor makes position:fixed resolve against
+    // THAT element rather than the viewport - so a nav inside it can never pin to the bottom of
+    // the screen. It is also inside an overflow:auto scroller. Appending to body keeps this
+    // additive (nothing existing is moved) while letting fixed positioning actually work.
+    document.body.appendChild(nav);
     return true;
   }
   if (!build()) { var n = 0, iv = setInterval(function () { if (build() || ++n > 60) clearInterval(iv); }, 250); }
+
+  // The nav lives on <body>, so show it only while the Dashboard is the active page.
+  function sync() {
+    var nav = document.getElementById('aab-bottom-nav');
+    if (!nav) return;
+    var pg = document.getElementById('dashboard-pg');
+    var onDash = !!(pg && pg.classList.contains('on'));
+    nav.setAttribute('data-active', onDash ? '1' : '0');
+  }
+  document.addEventListener('click', function () { setTimeout(sync, 60); }, true);
+  setInterval(sync, 800);
+  sync();
 })();
 </script>
 </body>
