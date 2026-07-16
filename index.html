@@ -29374,6 +29374,44 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   sync();
 })();
 </script>
+<style id="aab-scroll-authority">
+/* ── PAGES MUST SCROLL — authoritative, last rule wins ───────────────────────
+   MEASURED on the live site at 1276px: edit-pg had 20 controls below the fold (worst at
+   y=824 against a 679px viewport) and export-pg had 2 - including the "Export video ->"
+   button itself at y=862 - with pageScrollsY:false on BOTH. The page could not scroll, so
+   those controls were permanently UNREACHABLE. Not a mobile-only bug: the Export button was
+   off-screen on desktop too.
+
+   Cause: FOUR competing overflow declarations on .pg-full -
+     .pg-full { overflow: hidden; position: fixed; height: 100vh; }
+     .pg-full { overflow-y: auto !important; }              (attempted fix)
+     .pg-full { ... overflow: hidden !important; }          (re-broke BOTH axes)
+     .pg-full { padding-bottom: 32px !important; overflow-y: auto !important; }
+   The shorthand `overflow: hidden !important` resets overflow-y too, and whichever lands last
+   wins - so scrolling was killed. This block is last in the document and settles it: vertical
+   scrolling is always allowed, horizontal never forced. Content below the fold is reachable
+   again on every page and at every width. */
+.pg-full {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+.pg { min-height: 100vh; }
+
+/* Clear the fixed bottom navs so the last control is never hidden behind them. */
+@media (max-width: 767px) {
+  #record-pg .studio-wrap,
+  #scenes-pg .scenes-body,
+  #dashboard-pg .dash-main,
+  #edit-pg,
+  #ai-presenter-studio { padding-bottom: 96px !important; }
+  /* Export's primary action must always be reachable. */
+  #export-pg { padding-bottom: 32px !important; }
+}
+/* Desktop: the Export button was below the fold with no scroll. Guarantee room. */
+#export-pg .export-inner { padding-bottom: 48px !important; }
+#edit-pg { padding-bottom: 24px; }
+</style>
 </body>
 </html>
 
