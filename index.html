@@ -28964,9 +28964,28 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   }
   #record-pg .studio-canvas { position: relative !important; }
 
-  /* Scene list + asset library become bottom-nav views, hidden by default. */
+  /* Every desktop control group gets a home on mobile - previously Lighting, Background,
+     Annotate and View had NOWHERE to go and were simply squeezed off-screen. The nine groups
+     on this page are: Input, Record, Scene, Teleprompter, SESSION, Background, Lighting,
+     Annotate, View. They are routed to nav views and shown IN PLACE; nothing is reparented.
+       Record view  -> Record + Scene + SESSION   (needed DURING a take)
+       Tools view   -> Input + Background + Lighting + Annotate + View  (set up, not mid-take)
+       Prompter view-> Teleprompter
+     Spec: "Tools page contains Lighting, Background, Microphone, Mirror, Camera, Effects". */
   #record-pg .studio-q,
   #record-pg .studio-panel { display: none !important; }
+  #record-pg .panel-group { display: none !important; }
+  /* Default (Record): only what you need while rolling. */
+  #record-pg[data-mview="record"] .panel-group[data-m="record"] { display: block !important; }
+  #record-pg[data-mview="tools"]  .panel-group[data-m="tools"]  { display: block !important; }
+  #record-pg[data-mview="prompt"] .panel-group[data-m="prompt"] { display: block !important; }
+  #record-pg .panel-group {
+    width: 100% !important; max-width: 100vw !important; min-width: 0 !important;
+    margin-bottom: 8px !important;
+  }
+  #record-pg .panel-group-body { flex-wrap: wrap !important; height: auto !important; gap: 6px !important; }
+  #record-pg .panel-group-body > * { min-width: 0 !important; }
+  #record-pg .panel-group button, #record-pg .panel-group select { min-height: 44px !important; }
   #record-pg[data-mview="scenes"] .studio-q {
     display: flex !important; order: 2 !important; width: 100% !important;
     max-width: 100vw !important; max-height: 42vh !important; overflow-y: auto !important;
@@ -29000,8 +29019,39 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   var VIEWS = [
     { id: 'record', ico: '\u23FA', label: 'Record' },
     { id: 'scenes', ico: '\uD83C\uDFAC', label: 'Scenes' },
+    { id: 'prompt', ico: '\uD83D\uDCD6', label: 'Prompter' },
+    { id: 'tools',  ico: '\uD83D\uDD27', label: 'Tools' },
     { id: 'assets', ico: '\uD83D\uDDBC', label: 'Assets' }
   ];
+
+  /* Tag each desktop control group with the mobile view it belongs to, by reading its OWN
+     label. Nothing is moved - the tag only drives CSS visibility. Read from the live DOM:
+     Input, Record, Scene, Teleprompter, SESSION, Background, Lighting, Annotate, View. */
+  var ROUTE = [
+    { re: /record/i,       v: 'record' },
+    { re: /scene/i,        v: 'record' },
+    { re: /session/i,      v: 'record' },
+    { re: /teleprompter/i, v: 'prompt' },
+    { re: /input/i,        v: 'tools'  },
+    { re: /background/i,   v: 'tools'  },
+    { re: /lighting/i,     v: 'tools'  },
+    { re: /annotate/i,     v: 'tools'  },
+    { re: /view/i,         v: 'tools'  }
+  ];
+  function tagGroups() {
+    var pg = document.getElementById('record-pg');
+    if (!pg) return 0;
+    var n = 0;
+    [].forEach.call(pg.querySelectorAll('.panel-group'), function (g) {
+      if (g.getAttribute('data-m')) return;
+      var lbl = g.querySelector('.panel-group-label');
+      var t = (lbl && lbl.textContent || '').trim();
+      var hit = ROUTE.filter(function (r) { return r.re.test(t); })[0];
+      g.setAttribute('data-m', hit ? hit.v : 'tools');   // unknown -> Tools, never lost
+      n++;
+    });
+    return n;
+  }
   function build() {
     if (document.getElementById('aab-rec-nav')) return true;
     if (!document.getElementById('record-pg')) return false;
@@ -29029,6 +29079,8 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     document.body.appendChild(nav);          // body-mounted: transform-proof
     var pg = document.getElementById('record-pg');
     if (pg && !pg.getAttribute('data-mview')) pg.setAttribute('data-mview', 'record');
+    var tagged = tagGroups();
+    if (tagged) console.log('[rwd] routed ' + tagged + ' control group(s) to mobile views');
     return true;
   }
   function sync() {
@@ -29039,9 +29091,9 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     nav.style.display = show ? 'flex' : 'none';
   }
   if (!build()) { var n = 0, iv = setInterval(function () { if (build() || ++n > 60) clearInterval(iv); }, 250); }
-  document.addEventListener('click', function () { setTimeout(sync, 60); }, true);
+  document.addEventListener('click', function () { setTimeout(function () { tagGroups(); sync(); }, 60); }, true);
   window.addEventListener('resize', sync);
-  setInterval(sync, 800);
+  setInterval(function () { tagGroups(); sync(); }, 800);
   sync();
 })();
 </script>
