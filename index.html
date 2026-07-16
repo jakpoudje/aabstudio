@@ -28805,12 +28805,22 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     grid-template-columns: 1fr !important; display: block !important;
   }
   #aab-bottom-nav[data-active="1"] { display: flex !important; }
-  /* "+ New project" was clipped behind the header: the dash header is a fixed-height row and
-     the button overflowed it. Let the header wrap and size to content on mobile. */
-  #dashboard-pg .dash-hdr, #dashboard-pg .dash-header {
+
+  /* "+ New project" disappeared under the top bar.
+     #topnav is position:fixed and 52px tall on desktop, and #dashboard-pg carries an INLINE
+     padding-top:52px to clear it - the two are hardcoded to match. On a phone #topnav has
+     flex-wrap:nowrap and must fit the logo + Pro Studio + Sign out into ~390px, so it grows
+     TALLER than 52px while the padding stays at 52 - the dashboard slides underneath by the
+     difference and the topmost element ("+ New project") is what gets hidden. Let the bar wrap
+     and drive the page padding from its MEASURED height instead of a hardcoded constant. */
+  #topnav { flex-wrap: wrap !important; height: auto !important; min-height: 52px !important; row-gap: 4px !important; }
+  #dashboard-pg { padding-top: var(--aab-topnav-h, 64px) !important; }
+  #dashboard-pg .dash-hdr {
     flex-wrap: wrap !important; height: auto !important; min-height: 0 !important; gap: 8px !important;
   }
-  #dashboard-pg .dash-hdr > *, #dashboard-pg .dash-header > * { min-width: 0 !important; }
+  #dashboard-pg .dash-hdr > * { min-width: 0 !important; }
+  /* spec: primary button 52px, full width on mobile so it can never be squeezed out */
+  #dashboard-pg .dash-hdr button { min-height: 52px !important; }
 }
 /* iPad portrait (768-1024): two columns, sidebar hidden per spec */
 @media (min-width: 768px) and (max-width: 1024px) {
@@ -28894,6 +28904,20 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   document.addEventListener('click', function () { setTimeout(sync, 60); }, true);
   setInterval(sync, 800);
   sync();
+
+  /* Publish the top bar's REAL height so pages can clear it. The inline padding-top:52px on
+     #dashboard-pg assumes a 52px bar; when the bar wraps on a narrow screen it is taller and
+     content slides under it. Measure and expose it as --aab-topnav-h. */
+  function syncTopnav() {
+    var tn = document.getElementById('topnav');
+    if (!tn) return;
+    var h = Math.ceil(tn.getBoundingClientRect().height);
+    if (h > 0) document.documentElement.style.setProperty('--aab-topnav-h', h + 'px');
+  }
+  window.addEventListener('resize', syncTopnav);
+  window.addEventListener('orientationchange', function () { setTimeout(syncTopnav, 120); });
+  setInterval(syncTopnav, 1000);
+  syncTopnav();
 })();
 </script>
 </body>
