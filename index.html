@@ -26316,12 +26316,20 @@ function _updateMarkerRegion(){
   var inPt=window.E?.inPoint; var outPt=window.E?.outPoint;
   var tl=document.querySelector('.aab-tl-scroll,.aab-tl-inner');
   if(!tl)return;
+  /* The In/Out markers are position:absolute with top:0;bottom:0, so they fill their OFFSET
+     PARENT. This container is position:static, and so is #aab-tl-wrap above it - so the browser
+     walks up to #edit-pg (position:fixed) and the markers stretch the full height of the PAGE.
+     Measured live: markers rendered 94px tall with offsetParent === edit-pg while the timeline
+     itself was 199px. That is the reported "vertical red and green lines top to bottom of the
+     page instead of marking regions on the timeline". Giving the timeline container its own
+     positioning context bounds the markers and the region to the timeline. */
+  if(getComputedStyle(tl).position==='static') tl.style.position='relative';
   ['aab-marker-in','aab-marker-out','aab-marker-region'].forEach(function(id){
     if(!document.getElementById(id)){
       var el=document.createElement('div');el.id=id;el.style.pointerEvents='none';el.style.position='absolute';el.style.top='0';el.style.bottom='0';el.style.zIndex='15';
       if(id==='aab-marker-in')el.style.cssText+=';width:2px;background:rgba(16,185,129,.8);border-right:1px dashed #10b981;';
       else if(id==='aab-marker-out')el.style.cssText+=';width:2px;background:rgba(239,68,68,.8);border-right:1px dashed #ef4444;';
-      else el.style.cssText+=';background:rgba(16,185,129,.07);z-index:10;';
+      else el.style.cssText+=';background:rgba(16,185,129,.12);z-index:10;border-left:1px solid rgba(16,185,129,.35);border-right:1px solid rgba(239,68,68,.35);';
       tl.appendChild(el);
     }
   });
