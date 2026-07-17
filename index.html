@@ -25679,22 +25679,33 @@ window.aps_addClipToBar=function(idx,videoUrl,sceneName){
 
 // ── CLEAN CLIPS BAR (remove stale/non-session clips) ─────────────────────────
 function fixApsClipsBar(){
+  /* THIS USED TO DELETE MOST OF THE USER'S CLIPS.
+     It removed every child lacking data-session-clip, and that attribute is only set by
+     aps_addClipToBar - i.e. only on clips generated in THIS browser session. Anything restored
+     from a saved project therefore had no such marker and was deleted on every 1500ms tick.
+     Measured live: 10 scenes held a generated video, 7 were in PROJECT.apsVideos, and the tray
+     showed 2 - exactly the two generated since the page loaded. Everything else was being wiped
+     a second and a half after it appeared. Being from an earlier session does not make a clip
+     stale; it makes it the user's work.
+     A clip is only genuinely stale if it has no usable URL, so that is the only thing removed
+     now. Session-generated clips are untouched, and restored clips are adopted rather than
+     destroyed. */
   var bar=document.getElementById('aps-clips-list');
   var apsBar=document.getElementById('aps-clips-bar');
-  // Remove native-rendered clips (not from our session) from the parent bar
-  if(apsBar){
-    Array.from(apsBar.children).forEach(function(child){
-      if(child.id==='aps-clips-list'||child.id==='aps-clips-empty')return;
-      // Remove if it's a native-rendered clip (no data-session-clip attr)
-      if(!child.dataset||!child.dataset.sessionClip)child.remove();
+  function prune(container){
+    if(!container)return;
+    Array.from(container.children).forEach(function(child){
+      if(!child||child.id==='aps-clips-list'||child.id==='aps-clips-empty')return;
+      var v=child.querySelector&&child.querySelector('video');
+      var u=v?(v.getAttribute('src')||v.currentSrc||''):'';
+      // Only remove a clip that genuinely cannot resolve: no URL, or a dead blob from a
+      // previous session. Never remove one merely for lacking a session marker.
+      if(!u || /^blob:/i.test(u)){ child.remove(); return; }
+      if(child.dataset && !child.dataset.sessionClip) child.dataset.sessionClip='1';  // adopt it
     });
   }
-  // Also clean aps-clips-list of stale entries
-  if(bar){
-    Array.from(bar.querySelectorAll('[data-scene-idx]')).forEach(function(c){
-      if(!c.dataset.sessionClip)c.remove();
-    });
-  }
+  prune(apsBar);
+  prune(bar);
 }
 setInterval(fixApsClipsBar,1500);
 
