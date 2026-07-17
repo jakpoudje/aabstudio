@@ -184,11 +184,32 @@ function pushClipReady(projectId, payload) {
 const corsOpts = {
   origin: '*',
   methods: ['GET','POST','PUT','DELETE','OPTIONS','PATCH'],
-  allowedHeaders: ['Content-Type','Authorization','X-Requested-With'],
-  maxAge: 86400
+  allowedHeaders: ['Content-Type','Authorization','X-Requested-With','apikey','x-client-info'],
+  exposedHeaders: ['Content-Length','Content-Type'],
+  // maxAge was 86400 (24h). Safari caches PREFLIGHT RESULTS aggressively for the full maxAge and
+  // does not re-ask - so once a preflight failed (server restarting, an earlier bad config), every
+  // subsequent POST /api/project/save was refused from cache for a DAY without the request ever
+  // leaving the browser. That is the "Fetch API cannot load ... due to access control checks"
+  // seen repeatedly in the live Safari console, while the same POST succeeds from Chrome
+  // (verified: GET 401, POST 401 - the route, server and CORS config are all fine). Chrome
+  // re-checks readily; Safari does not. A short cache means a transient failure expires in
+  // minutes instead of poisoning saves for a day.
+  maxAge: 600,
+  optionsSuccessStatus: 204,
+  preflightContinue: false
 };
 app.use(cors(corsOpts));
 app.options('*', cors(corsOpts));
+// Belt and braces: an error response WITHOUT CORS headers is reported by Safari as an
+// access-control failure rather than as the actual error, which is how a plain 500 masquerades
+// as a CORS problem and sends everyone hunting the wrong bug. Set them unconditionally.
+app.use(function (req, res, next) {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With,apikey,x-client-info');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS,PATCH');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 
 // Stripe webhook — MUST use raw body, skip JSON middleware for this route
 app.post('/api/stripe/webhook',
