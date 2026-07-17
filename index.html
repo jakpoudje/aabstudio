@@ -29660,6 +29660,191 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   window.aabDeadMedia = function () { return Object.keys(dead); };
 })();
 </script>
+<script id="aab-ingest">
+/* ── BACKGROUND INGEST: capture -> durable storage -> timeline ────────────────
+   THE ROOT PROBLEM, measured on the live timeline: of 34 clips, 17 pointed at dead blob: URLs
+   and 17 had no URL at all - ZERO were playable. Nothing was ever persisted: recordings were
+   memory-only blob: URLs that die with the page, and AI videos were provider links that expire.
+   That single fact explains the silent monitors (readyState 0 - no data ever loaded), the 403
+   flood, the blank program monitor and the "constant reloading" (the timeline is DERIVED from
+   scene URLs on every visit, so it re-reads dead links ~2x/second forever - measured at 43 video
+   loads in 10 seconds).
+
+   The cure is to persist at the moment of capture, not on the way to the Edit Suite:
+     recording finishes -> blob is uploaded to recorded-clips -> scene URL becomes durable
+     -> that ONE clip is upserted onto the timeline.
+   Then the Edit Suite is already populated when you open it, clips actually play, retakes
+   replace in place, and nothing needs re-deriving.
+
+   Implemented as a WATCHER rather than by editing the recorders: there are six mr.onstop
+   handlers and four of them set scene.recordedUrl to a blob - patching each would add a fifth
+   rival implementation, which is the disease this codebase already has. A blob: URL is readable
+   via fetch(), so one watcher covers every recorder, including any added later. Purely
+   additive; no existing node or handler is modified. */
+(function () {
+  var API = 'https://aabstudio-production.up.railway.app';
+
+  function blobToBase64(blob) {
+    return new Promise(function (res, rej) {
+      var r = new FileReader();
+      r.onload = function () { res(String(r.result).split(',')[1]); };
+      r.onerror = rej;
+      r.readAsDataURL(blob);
+    });
+  }
+
+  // Put exactly ONE clip on the timeline for this scene — never rebuild the whole thing.
+  // Rebuilding is what causes the 2-renders-per-second storm.
+  window.aabUpsertSceneClip = function (sceneIdx, url, durationSec, name) {
+    try {
+      var E = window.E; if (!E || !E.tracks) return false;
+      var track = E.tracks.filter(function (t) { return t.id === 'main'; })[0] || E.tracks[0];
+      if (!track) return false;
+      if (!track.clips) track.clips = [];
+      var sc = window.PROJECT && PROJECT.scenes ? PROJECT.scenes[sceneIdx] : null;
+      var key = 'scene_' + (sc && sc.id ? sc.id : sceneIdx);
+      var existing = track.clips.filter(function (c) { return c.sceneKey === key; })[0];
+      if (existing) {                       // RETAKE: replace in place
+        existing.url = url;
+        existing.duration = durationSec || existing.duration;
+        existing.name = name || existing.name;
+      } else {
+        var start = track.clips.reduce(function (a, c) { return Math.max(a, (c.start || 0) + (c.duration || 0)); }, 0);
+        track.clips.push({
+          id: 'clip_' + Date.now() + '_' + sceneIdx,
+          sceneKey: key, trackId: track.id,
+          name: name || ('Scene ' + (sceneIdx + 1)),
+          url: url, type: 'video',
+          start: start, duration: durationSec || 8,
+          color: '#3b82f6'
+        });
+      }
+      if (typeof window.E_renderTL === 'function') { try { window.E_renderTL(); } catch (e) {} }
+      return true;
+    } catch (e) { console.warn('[ingest] upsert failed:', e.message); return false; }
+  };
+
+  // Upload one scene's recording and swap the blob for a durable URL.
+  window.aabIngestScene = async function (sceneIdx) {
+    var P = window.PROJECT; if (!P || !P.scenes) return;
+    var sc = P.scenes[sceneIdx]; if (!sc) return;
+    var u = sc.recordedUrl || '';
+    if (!/^blob:/i.test(u)) return;             // already durable, or nothing to do
+    if (sc._ingesting) return;
+    var tok = (typeof window.aabGetToken === 'function')
+      ? await window.aabGetToken()               // live token, never the stale snapshot
+      : (window._sbSession && window._sbSession.access_token);
+    if (!tok) return;                            // not signed in yet — retried on the next tick
+    sc._ingesting = true;
+    try {
+      var blob = await (await fetch(u)).blob();  // blob: URLs are readable in the page that made them
+      if (!blob || !blob.size) { sc._ingesting = false; return; }
+      var b64 = await blobToBase64(blob);
+      var r = await fetch(API + '/api/clip/upload?v=2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+        body: JSON.stringify({
+          clipBase64: b64, mimeType: blob.type || 'video/webm',
+          projectId: P.id, sceneId: sc.id, sceneNum: sceneIdx + 1
+        })
+      });
+      if (!r.ok) { console.warn('[ingest] upload failed', r.status, (await r.text()).slice(0, 90)); sc._ingesting = false; return; }
+      var j = await r.json();
+      if (j && j.url) {
+        sc.recordedUrl = j.url;                  // durable from here on
+        sc.persistedAt = new Date().toISOString();
+        window.aabUpsertSceneClip(sceneIdx, j.url, sc.recordedDuration, 'Scene ' + (sceneIdx + 1));
+        if (typeof saveProject === 'function') { try { saveProject(); } catch (e) {} }
+        console.log('[ingest] scene ' + (sceneIdx + 1) + ' stored -> timeline');
+        if (typeof toast === 'function') toast('Scene ' + (sceneIdx + 1) + ' saved to your library', 'ok', 1500);
+      }
+    } catch (e) {
+      console.warn('[ingest] scene ' + (sceneIdx + 1) + ':', e.message);
+    } finally { sc._ingesting = false; }
+  };
+
+  // Watch for a recording landing on any scene. Covers all six mr.onstop handlers without
+  // touching one of them.
+  function sweep() {
+    var P = window.PROJECT;
+    if (!P || !P.scenes) return;
+    if (!(window._sbSession && window._sbSession.access_token)) return;
+    P.scenes.forEach(function (sc, i) {
+      if (sc && /^blob:/i.test(sc.recordedUrl || '') && !sc._ingesting) window.aabIngestScene(i);
+      // AI videos are persisted server-side by persistGeneratedVideo; just place them.
+      var ai = sc && (sc.apsVideoUrl || sc.videoUrl);
+      if (ai && /supabase\.co\/storage/i.test(ai) && !sc._placed) {
+        sc._placed = true;
+        window.aabUpsertSceneClip(i, ai, sc.duration, 'Scene ' + (i + 1));
+      }
+    });
+  }
+  setInterval(sweep, 2000);
+  window.aabSweepIngest = sweep;
+  console.log('[ingest] background ingest active');
+})();
+</script>
+<script id="aab-token-refresh">
+/* ── EXPIRED TOKEN: "Save failed: 401 {error: Token expired}" ─────────────────
+   window._sbSession is a SNAPSHOT taken once at sign-in. Supabase refreshes the access token
+   internally roughly every hour (autoRefreshToken:true), but nothing ever updated this object -
+   so all 16 places that read _sbSession.access_token kept sending the ORIGINAL, now-expired
+   token, and every save 401'd while the client logged "Cloud save failed (API may not be
+   deployed yet)". The API was fine; the token was an hour old.
+
+   Fixed at the source rather than at 16 call sites: keep _sbSession itself fresh. Subscribing to
+   onAuthStateChange catches TOKEN_REFRESHED, and a periodic getSession() catches anything the
+   event misses (including a refresh that happened while the tab was backgrounded). Every existing
+   caller then reads a live token without being touched - no rival implementations added. */
+(function () {
+  function adopt(session, why) {
+    if (!session || !session.access_token) return;
+    var prev = window._sbSession && window._sbSession.access_token;
+    window._sbSession = session;
+    if (prev && prev !== session.access_token) console.log('[auth] access token refreshed (' + why + ')');
+  }
+
+  function wire() {
+    var supa = (typeof getSupa === 'function') ? getSupa() : null;
+    if (!supa || !supa.auth || window._aabTokenWired) return !!window._aabTokenWired;
+    window._aabTokenWired = true;
+
+    // 1. Adopt every refresh the client performs.
+    try {
+      supa.auth.onAuthStateChange(function (event, session) {
+        if (session) adopt(session, event);
+        if (event === 'SIGNED_OUT') window._sbSession = null;
+      });
+    } catch (e) {}
+
+    // 2. Safety net: pull the current session periodically. getSession() refreshes if needed,
+    //    so this also repairs a token that expired while the tab was in the background.
+    async function pull(why) {
+      try {
+        var r = await supa.auth.getSession();
+        if (r && r.data && r.data.session) adopt(r.data.session, why);
+      } catch (e) {}
+    }
+    pull('startup');
+    setInterval(function () { pull('poll'); }, 4 * 60 * 1000);          // well inside the ~1h expiry
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) pull('tab focus');
+    });
+
+    // 3. One authoritative accessor for new code — always returns a live token.
+    window.aabGetToken = async function () {
+      try {
+        var r = await supa.auth.getSession();
+        if (r && r.data && r.data.session) { adopt(r.data.session, 'on demand'); return r.data.session.access_token; }
+      } catch (e) {}
+      return window._sbSession && window._sbSession.access_token;
+    };
+    console.log('[auth] token refresh wired');
+    return true;
+  }
+  if (!wire()) { var n = 0, iv = setInterval(function () { if (wire() || ++n > 60) clearInterval(iv); }, 250); }
+})();
+</script>
 </body>
 </html>
 
