@@ -29605,6 +29605,61 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   }, true);
 })();
 </script>
+<script id="aab-loop-guard">
+/* ── TIMELINE RELOAD LOOP ────────────────────────────────────────────────────
+   MEASURED on the live Edit Suite: 18 timeline re-renders and 43 video src assignments in TEN
+   SECONDS, across 24 video elements. Every render re-assigns src on every video even when the
+   URL has not changed, so each one re-requests. The provider URLs are expired, so each request
+   403s, and it repeats ~4x/second forever. That is what makes the timeline "keep reloading the
+   videos every few seconds", floods the console with 403s, freezes the renderer, and bounces
+   the page back to the dashboard when the tab stalls.
+
+   Two guards, both at the source so they cover every code path:
+     1. Re-assigning the SAME src is a no-op. A media element already holding that URL does not
+        need to fetch it again - this alone stops the reload storm.
+     2. A URL that has already failed is never requested again. Expired provider links cannot
+        recover, so retrying them forever only burns the main thread. */
+(function () {
+  var dead = Object.create(null);   // url -> true once it has failed
+
+  try {
+    var proto = HTMLMediaElement.prototype;
+    var d = Object.getOwnPropertyDescriptor(proto, 'src');
+    if (d && d.set && !proto._aabLoopGuard) {
+      Object.defineProperty(proto, 'src', {
+        configurable: true,
+        enumerable: d.enumerable,
+        get: d.get,
+        set: function (v) {
+          var url = String(v == null ? '' : v);
+          // (1) identical src -> do nothing. This is the reload storm.
+          try { if (url && this.getAttribute('src') === url) return; } catch (e) {}
+          // (2) known-dead url -> refuse. Expired links never come back.
+          if (url && dead[url]) return;
+          return d.set.call(this, v);
+        }
+      });
+      proto._aabLoopGuard = true;
+    }
+  } catch (e) {}
+
+  // Mark a URL dead the first time it fails, so nothing re-requests it.
+  document.addEventListener('error', function (e) {
+    var el = e.target;
+    if (!el || !/^(VIDEO|AUDIO)$/.test(el.tagName)) return;
+    var u = el.currentSrc || el.getAttribute('src');
+    if (!u) return;
+    if (!dead[u]) {
+      dead[u] = true;
+      var n = Object.keys(dead).length;
+      if (n === 1 || n % 10 === 0) console.warn('[loop-guard] ' + n + ' dead media URL(s) blocked from retrying');
+    }
+    try { el.removeAttribute('src'); el.load && el.load(); } catch (e2) {}
+  }, true);
+
+  window.aabDeadMedia = function () { return Object.keys(dead); };
+})();
+</script>
 </body>
 </html>
 
