@@ -26316,20 +26316,12 @@ function _updateMarkerRegion(){
   var inPt=window.E?.inPoint; var outPt=window.E?.outPoint;
   var tl=document.querySelector('.aab-tl-scroll,.aab-tl-inner');
   if(!tl)return;
-  /* The In/Out markers are position:absolute with top:0;bottom:0, so they fill their OFFSET
-     PARENT. This container was position:static, and so was #aab-tl-wrap above it - so the
-     browser walked up to #edit-pg (position:fixed) and the markers stretched the full height of
-     the PAGE. Measured: marker height 134px against a timeline container of height 0. That is
-     the reported "vertical red and green lines top to bottom of the page instead of marking
-     regions on the timeline". Giving the container its own positioning context bounds them to
-     the timeline, which is what a professional editor does. */
-  if(getComputedStyle(tl).position==='static') tl.style.position='relative';
   ['aab-marker-in','aab-marker-out','aab-marker-region'].forEach(function(id){
     if(!document.getElementById(id)){
       var el=document.createElement('div');el.id=id;el.style.pointerEvents='none';el.style.position='absolute';el.style.top='0';el.style.bottom='0';el.style.zIndex='15';
       if(id==='aab-marker-in')el.style.cssText+=';width:2px;background:rgba(16,185,129,.8);border-right:1px dashed #10b981;';
       else if(id==='aab-marker-out')el.style.cssText+=';width:2px;background:rgba(239,68,68,.8);border-right:1px dashed #ef4444;';
-      else el.style.cssText+=';background:rgba(16,185,129,.12);z-index:10;border-left:1px solid rgba(16,185,129,.35);border-right:1px solid rgba(239,68,68,.35);';
+      else el.style.cssText+=';background:rgba(16,185,129,.07);z-index:10;';
       tl.appendChild(el);
     }
   });
@@ -27178,13 +27170,20 @@ function _binRender(){
     });
     card.querySelector('.aab-bin-del').addEventListener('click',e=>{e.stopPropagation();
       window._esBinFiles=window._esBinFiles.filter(f=>f.url!==cl.url);
-      // Also clear from project scenes so it doesn't re-appear
+      /* Clear it from the project, or _binRender puts it straight back.
+         The bin picks its URL as _binRealUrl(s.recordedUrl) || _binRealUrl(s.apsVideoUrl||s.videoUrl)
+         and rebuilds from proj.scenes on EVERY render - but this only cleared apsVideoUrl and
+         videoUrl, never recordedUrl. So AI videos deleted fine while studio RECORDINGS were
+         undeletable: the X removed the card and the next render restored it from s.recordedUrl.
+         Deleting also never persisted, so anything that did delete returned on reload. */
       if(proj.scenes)proj.scenes.forEach(s=>{
         if(s.apsVideoUrl===cl.url)s.apsVideoUrl='';
         if(s.videoUrl===cl.url)s.videoUrl='';
+        if(s.recordedUrl===cl.url){ s.recordedUrl=''; if(s.status==='recorded')s.status='draft'; }
       });
       // Remove from timeline too
       if(window.E&&E.tracks)E.tracks.forEach(tr=>{tr.clips=tr.clips.filter(c=>c.url!==cl.url);});
+      if(typeof saveProject==='function'){try{saveProject();}catch(_e){}}   // persist the removal
       _binRender(); E_renderTL&&E_renderTL();
       toast&&toast('Removed from bin','ok');
     });
@@ -29862,6 +29861,79 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     return true;
   }
   if (!wire()) { var n = 0, iv = setInterval(function () { if (wire() || ++n > 60) clearInterval(iv); }, 250); }
+})();
+</script>
+<script id="aab-resume-guard">
+/* ── DON'T BURN CREDITS ON A REFRESH ──────────────────────────────────────────
+   A generation in flight lives only in memory (_apsQueue, _apsQueueRunning). Refresh the tab and
+   the queue is gone - but the PROVIDER carries on and still bills you. The scene comes back with
+   no video, so the user regenerates and pays a second time for work already paid for. Worse, a
+   provider taskId that was still polling is lost forever, so the finished render can never be
+   collected.
+
+   Two protections:
+     1. Persist the in-flight queue + provider taskIds, so a reload RESUMES polling instead of
+        abandoning paid work.
+     2. Warn before leaving while a generation is running.
+   Purely additive: nothing existing is modified, and a stale record self-expires. */
+(function () {
+  var KEY = 'aab_gen_state';
+  var MAX_AGE = 30 * 60 * 1000;   // a render that old is finished or dead
+
+  function snapshot() {
+    try {
+      if (!window._apsQueueRunning) { localStorage.removeItem(KEY); return; }
+      var P = window.PROJECT;
+      var pending = (window._apsQueue || []).map(function (s) { return s && s.id; }).filter(Boolean);
+      // taskIds let a reload RESUME polling rather than abandon a paid render.
+      var tasks = {};
+      (P && P.scenes || []).forEach(function (s) {
+        if (s && s._apsTaskId && !(s.apsVideoUrl || s.videoUrl)) tasks[s.id] = s._apsTaskId;
+      });
+      localStorage.setItem(KEY, JSON.stringify({
+        at: Date.now(), projectId: P && P.id,
+        total: window._apsQueueTotal || 0, done: window._apsQueueDone || 0,
+        pending: pending, tasks: tasks
+      }));
+    } catch (e) {}
+  }
+  setInterval(snapshot, 3000);
+  window.addEventListener('pagehide', snapshot);
+
+  // Warn before abandoning a paid render.
+  window.addEventListener('beforeunload', function (e) {
+    if (!window._apsQueueRunning) return;
+    e.preventDefault();
+    e.returnValue = 'Generation is still running. Leaving now may waste the credits already spent on scenes in progress.';
+    return e.returnValue;
+  });
+
+  // On load: tell the user what was in flight, and hand back any taskIds so polling can resume.
+  function restore() {
+    var raw; try { raw = localStorage.getItem(KEY); } catch (e) { return; }
+    if (!raw) return;
+    var st; try { st = JSON.parse(raw); } catch (e) { localStorage.removeItem(KEY); return; }
+    if (!st || !st.at || (Date.now() - st.at) > MAX_AGE) { localStorage.removeItem(KEY); return; }
+    var P = window.PROJECT;
+    if (!P || (st.projectId && P.id !== st.projectId)) return;   // different project — leave it
+    var ids = Object.keys(st.tasks || {});
+    if (ids.length) {
+      ids.forEach(function (sceneId) {
+        var sc = (P.scenes || []).filter(function (s) { return String(s.id) === String(sceneId); })[0];
+        if (sc && !(sc.apsVideoUrl || sc.videoUrl)) sc._apsTaskId = st.tasks[sceneId];   // resume target
+      });
+      console.log('[resume] ' + ids.length + ' generation(s) were in flight before the reload — task ids restored');
+      if (typeof toast === 'function') {
+        toast(ids.length + ' scene' + (ids.length > 1 ? 's were' : ' was') + ' still generating when the page reloaded — checking if they finished', 'info', 6000);
+      }
+      // The provider may well have finished while we were away: ask, rather than regenerate and pay twice.
+      if (typeof window.aps_checkPending === 'function') { try { window.aps_checkPending(ids); } catch (e) {} }
+    }
+    localStorage.removeItem(KEY);
+  }
+  var n = 0, iv = setInterval(function () {
+    if (window.PROJECT || ++n > 40) { clearInterval(iv); if (window.PROJECT) restore(); }
+  }, 250);
 })();
 </script>
 </body>
