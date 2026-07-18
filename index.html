@@ -25713,7 +25713,7 @@ setInterval(fixApsClipsBar,1500);
 // ── MISC ──────────────────────────────────────────────────────────────────────
 window.aps_showSceneImagePreview=function(imgUrl){var p=document.getElementById('aps-preview-img')||document.querySelector('.aps-preview-img');if(p&&imgUrl){p.src=imgUrl;p.style.display='block';}};
 window.aps_regenerateScene=function(idx){
-  var st=ST();if(window._apsQueueRunning){apsNotify('Generation already running.','warn');return;}
+  var st=ST();if(window._apsQueueRunning && !(typeof window.aabQueueIsStale==='function' && window.aabQueueIsStale())){/* a genuinely-running queue blocks; a wedged one (no progress ~90s) is cleared below */if(typeof window.aabResetQueue==='function' && window.aabQueueIsStale())window.aabResetQueue(true);apsNotify('Generation already running.','warn');return;}
   var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
   var scene=scenes[idx];if(!scene)return;
   scene._queueIdx=idx;scene.apsVideoUrl='';
@@ -25872,7 +25872,7 @@ window._aabPurgeProjectVideos=async function(scenes,kind){
 };
 
 window.aps_generateAll=async function(){
-  if(window._apsQueueRunning){apsNotify('Generation already running.','warn');return;}
+  if(window._apsQueueRunning){if(typeof window.aabQueueIsStale==='function' && window.aabQueueIsStale()){window.aabResetQueue&&window.aabResetQueue(true);/* wedged queue: clear and continue */}else{apsNotify('Generation already running.','warn');return;}}
   apsInitScenes();
   var st=ST();
   var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
@@ -25907,7 +25907,7 @@ window.aps_generateAll=async function(){
   start(scenes.slice());
 };
 window.aps_generateSelected=async function(){
-  if(window._apsQueueRunning){apsNotify('Generation already running.','warn');return;}
+  if(window._apsQueueRunning){if(typeof window.aabQueueIsStale==='function' && window.aabQueueIsStale()){window.aabResetQueue&&window.aabResetQueue(true);/* wedged queue: clear and continue */}else{apsNotify('Generation already running.','warn');return;}}
   apsInitScenes();
   var st=ST();var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
   var sel=scenes.filter(function(s){return s._selected||s.selected||s._checked;});
@@ -25917,7 +25917,7 @@ window.aps_generateSelected=async function(){
   window._apsQueueRunning=true;apsShowProgress(0,sel.length,'Starting...');window._apsRunQueue();
 };
 window.aps_generateCurrent=async function(){
-  if(window._apsQueueRunning){apsNotify('Generation already running.','warn');return;}
+  if(window._apsQueueRunning){if(typeof window.aabQueueIsStale==='function' && window.aabQueueIsStale()){window.aabResetQueue&&window.aabResetQueue(true);/* wedged queue: clear and continue */}else{apsNotify('Generation already running.','warn');return;}}
   apsInitScenes();
   var st=ST();var scenes=st.scenes||(window.PROJECT?window.PROJECT.scenes:[])||[];
   var idx=st.currentIdx||0;var scene=scenes[idx];if(!scene)return;
@@ -29943,6 +29943,61 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   var n = 0, iv = setInterval(function () {
     if (window.PROJECT || ++n > 40) { clearInterval(iv); if (window.PROJECT) restore(); }
   }, 250);
+})();
+</script>
+<script id="aab-queue-guard">
+/* ── STUCK GENERATION QUEUE ───────────────────────────────────────────────────
+   Reported: "Generate all" skipped scene 3 and stopped returning videos, then "regenerate scene
+   3" said "generating already running". The queue poll matches a finished render by index AND by
+   apsVideoUrl !== urlBefore. When a scene already held a video from a previous run, urlBefore was
+   that old URL - so if the provider returned the same URL (or wrote to a different slot) the
+   inequality never tripped, the poll never resolved, and the chain stalled with
+   _apsQueueRunning left true. That one flag then blocked every future generation, which is the
+   "already running" message while nothing is actually running.
+
+   This does not rewrite the queue (that risks breaking working generation); it makes a stall
+   non-fatal:
+     - aabResetQueue(): clear the stuck flags so work can start again.
+     - a watchdog: if the running flag is set but the queue has not advanced in 12 minutes
+       (longer than the slowest provider limit), assume it wedged and clear it.
+   Both are additive and touch only the flags, never the render logic. */
+(function () {
+  window.aabResetQueue = function (quiet) {
+    window._apsQueueRunning = false;
+    if (window._apsState) window._apsState.generating = false;
+    try { var st = (typeof ST === 'function') ? ST() : null; if (st) st.generating = false; } catch (e) {}
+    if (!quiet && typeof toast === 'function') toast('Generation queue reset — you can generate again', 'ok', 2500);
+    return true;
+  };
+
+  // Watchdog: detect a running flag that is not actually progressing.
+  var lastDone = -1, lastChange = Date.now();
+  setInterval(function () {
+    var running = !!window._apsQueueRunning;
+    var done = (window._apsQueueDone || 0) + (window._apsQueueErrors || 0);
+    if (done !== lastDone) { lastDone = done; lastChange = Date.now(); return; }
+    if (!running) { lastChange = Date.now(); return; }
+    // running, but no progress for 12 minutes -> wedged
+    if (Date.now() - lastChange > 12 * 60 * 1000) {
+      console.warn('[queue] no progress for 12 min while running — clearing wedged flag');
+      window.aabResetQueue(true);
+      if (typeof toast === 'function') toast('Generation looked stuck and was reset — try again', 'warn', 6000);
+      lastChange = Date.now();
+    }
+  }, 30000);
+
+  // When a single-scene regenerate is asked for while the flag is stuck, clear it first rather
+  // than refusing. A real in-flight queue keeps advancing _apsQueueDone, so this only frees a
+  // wedged one: if nothing has progressed in 90s, the "running" flag is stale.
+  var _lastProgressAt = Date.now(), _lastCount = -1;
+  setInterval(function () {
+    var c = (window._apsQueueDone || 0) + (window._apsQueueErrors || 0);
+    if (c !== _lastCount) { _lastCount = c; _lastProgressAt = Date.now(); }
+  }, 1000);
+  window.aabQueueIsStale = function () {
+    return !!window._apsQueueRunning && (Date.now() - _lastProgressAt > 90 * 1000);
+  };
+  console.log('[queue] stuck-queue guard active');
 })();
 </script>
 </body>
