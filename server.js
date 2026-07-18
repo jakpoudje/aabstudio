@@ -1023,6 +1023,10 @@ app.delete('/api/project/:id', async (req, res) => {
       } catch(e2) {}
     }
     if (!user) return res.status(401).json({ error: 'Invalid token' });
+    // sb was never declared in this handler - every other route does `const sb = getSupaAdmin()`,
+    // but the delete route referenced a bare `sb`, throwing ReferenceError caught as a 500. So
+    // project deletion has never worked. Declare the admin client the same way the rest do.
+    const sb = getSupaAdmin();
     const { error } = await sb.from('aab_projects')
       .delete().eq('id', req.params.id).eq('user_id', user.id);
     if (error) throw error;
