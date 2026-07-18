@@ -30153,7 +30153,24 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     return p;
   }
 
+  function slimChars(v) {
+    try {
+      var arr = JSON.parse(v);
+      if (!Array.isArray(arr)) return v;
+      arr.forEach(function (c) {
+        if (!c || typeof c !== 'object') return;
+        ['image', 'avatar', 'photo', 'thumbnail', 'preview', 'imageData', 'src'].forEach(function (kk) {
+          if (typeof c[kk] === 'string' && c[kk].indexOf('data:') === 0) c[kk] = '';
+        });
+      });
+      return JSON.stringify(arr);
+    } catch (e) { return v; }
+  }
   localStorage.setItem = function (k, v) {
+    if (typeof k === 'string' && k.indexOf('aab_chars_') === 0) {
+      var _sl = slimChars(v);
+      try { return real(k, _sl); } catch (e) { try { return real(k, '[]'); } catch (e2) {} return; }
+    }
     if (k !== KEY) return real(k, v);
     var data;
     try { data = JSON.parse(v); } catch (e) { return real(k, v); }   // not our shape — passthrough
@@ -30174,6 +30191,15 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   try {
     var cur = localStorage.getItem(KEY);
     if (cur && cur.length > 2 * 1024 * 1024) { localStorage.setItem(KEY, cur); console.log('[storage] slimmed existing oversized local mirror'); }
+  } catch (e) {}
+  try {
+    for (var _i = 0; _i < localStorage.length; _i++) {
+      var _ck = localStorage.key(_i);
+      if (_ck && _ck.indexOf('aab_chars_') === 0) {
+        var _cv = localStorage.getItem(_ck);
+        if (_cv && _cv.length > 500 * 1024) { localStorage.setItem(_ck, _cv); console.log('[storage] slimmed oversized character cache ' + _ck); }
+      }
+    }
   } catch (e) {}
   console.log('[storage] quota-safe local mirror active');
 })();
