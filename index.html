@@ -10395,7 +10395,7 @@ window._safeFetch = async function(url, opts, timeoutMs) {
     try { sessionStorage.setItem('aab_pg',pg); localStorage.setItem('aab_last_pg',pg); if(window.PROJECT&&window.PROJECT.id)localStorage.setItem('aab_last_proj_id',window.PROJECT.id); } catch(e){}
   }
       // Auth gate
-      if (requiresLogin(pg) && !APP.user) {
+      if (requiresLogin(pg) && !APP.user && !window._aabAuthPending && !(window._sbSession && window._sbSession.access_token)) {
         // Redirect quietly. This used to toast on EVERY blocked navigation, so a single load
         // that touched several protected pages stacked up identical "Please sign in to
         // continue" notifications on the login screen - which is not how a professional app
@@ -13193,7 +13193,9 @@ function studioNext() {
         return;
       }
       var supa = getSupa(); if (!supa) { updateNavState(); return; }
+      window._aabAuthPending = true;
       supa.auth.getSession().then(function (r) {
+        window._aabAuthPending = false;
         if (r.data && r.data.session) {
           // ── Cross-device project sync ────────────────────────────────────────
           // syncProjectToCloud()/loadProjectsFromCloud() both bail out unless
