@@ -6742,13 +6742,16 @@ window.E_exportTimeline=async function(){
             ctx.font='bold 32px sans-serif';ctx.fillStyle='rgba(0,0,0,0.6)';
             ctx.fillRect(60,640,1160,64);
             ctx.fillStyle='#ffffff';ctx.textAlign='center';
-            ctx.fillText(subText.slice(0,80),640,682);
+            ctx.fillText(String(subText2||'').slice(0,80),640,682);
             ctx.textAlign='left';
           }
         }
       }
       var _td=manifest.totalDuration||59;
-      if(window._esPlaying&&window._esPH<_td){
+      var _elapsed=Date.now()-(window._exportStartedAt||0);
+      // Keep drawing while playing OR still within the clip's duration OR in the first 500ms
+      // grace window (so a slow play-start never ends the recording prematurely).
+      if((window._esPlaying||_elapsed<500)&&window._esPH<_td){
         requestAnimationFrame(drawFrame);
       } else {
         drawing=false;
@@ -6762,12 +6765,21 @@ window.E_exportTimeline=async function(){
       }
     }
 
-    // Start playback from beginning
-    window._esPlaying=false; // ensure clean start
+    // Start playback from beginning, THEN begin the draw loop.
+    // Previously the loop was started with requestAnimationFrame BEFORE playback began
+    // (E_progToggle was scheduled 100ms later), so on the very first frame _esPlaying was still
+    // false, the loop took its else branch and STOPPED THE RECORDER before a single frame of the
+    // timeline had played - producing an empty/near-empty file. That is why export never yielded
+    // a real video. Start playback, confirm the flag, and only then drive the draw loop; also
+    // hold the loop open until playback has actually started.
     window._esPH=0;
     if(window.E){E.playhead=0;E.currentTime=0;}
     if(typeof movePH==='function')movePH(0);
-    setTimeout(function(){E_progToggle&&E_progToggle();},100);
+    window._exportStartedAt=Date.now();
+    window._esPlaying=true;                       // mark playing so drawFrame does not stop on frame 1
+    if(typeof E_progToggle==='function'){ try{ E_progToggle(); }catch(e){} }
+    // If the toggle did not actually start playback, force the flag on so the recorder still runs.
+    setTimeout(function(){ if(!window._esPlaying) window._esPlaying=true; }, 150);
     requestAnimationFrame(drawFrame);
     toast&&toast('Recording... do not navigate away','info');
 
