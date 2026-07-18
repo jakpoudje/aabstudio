@@ -24199,11 +24199,21 @@ window.startSyncRecord=window.startSyncRecord||function(){
         var attempts=0;
         var tryNav=function(){
           attempts++;
-          if(typeof requiresLogin==='function'&&requiresLogin(savedPage)&&!window.APP?.user&&attempts<20)
-            return setTimeout(tryNav,300);
+          // Restoring a heavy project (e.g. 87 scenes) on refresh BEFORE sign-in froze the page:
+          // the guard gave up after ~6s and navigated into the edit suite while signed out, then
+          // ap_open loaded the whole project into memory with no session, hanging the tab. Never
+          // restore a login-gated page or auto-open a project until the user is actually signed in.
+          var signedIn = !!(window.APP && window.APP.user) || !!(window._sbSession && window._sbSession.access_token);
+          if(typeof requiresLogin==='function' && requiresLogin(savedPage) && !signedIn){
+            if(attempts<40) return setTimeout(tryNav,300);
+            if(typeof nav==='function'){ try{ nav('auth-pg'); }catch(e){ try{nav('home-pg');}catch(_){} } }
+            return;
+          }
           nav(savedPage);
-          var savedProj=localStorage.getItem('aab_last_proj_id');
-          if(savedProj&&typeof ap_open==='function')try{ap_open(savedProj);}catch(e){}
+          if(signedIn){
+            var savedProj=localStorage.getItem('aab_last_proj_id');
+            if(savedProj&&typeof ap_open==='function') setTimeout(function(){ try{ap_open(savedProj);}catch(e){} }, 400);
+          }
         };
         tryNav();
       }
