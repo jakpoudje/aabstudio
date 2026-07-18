@@ -20019,11 +20019,17 @@ window.aps_saveCharacter=function(nameArg){
   if(!name){typeof toast==='function'&&toast('Enter a character name','info');return;}
   if(!window.APS)window.APS={};
   if(!APS.settings)APS.settings={};
+  // Persist a photo URL, NOT the base64. Previously prof carried photoB64 (~1.9MB raw base64) AND
+  // photoUrl (~1.9MB data URI), written to TWO localStorage keys AND pushed to Supabase - the same
+  // image stored four times, ~3.9MB per character in localStorage alone, which is what crashed
+  // Safari. The base64 is only needed transiently for the generation API call (APS.photoB64 stays
+  // in memory for that); it must never be persisted. Keep a short URL if we have a real stored one.
+  var _storedUrl = (APS.photo && APS.photo.indexOf('data:')!==0) ? APS.photo : null;   // https URL only, not a data: URI
   var prof={
     id:'cp_'+Date.now(),name:name,
-    photoB64:APS.photoB64||null,
+    photoB64:null,                       // never persist the blob
     photoMimeType:APS.photoMimeType||'image/jpeg',
-    photoUrl:APS.photo||null,
+    photoUrl:_storedUrl,                 // a durable URL, or null - never a 1.9MB data URI
     avatarId:APS.settings.avatarId||null,
     voiceId:APS.settings.voiceId||null,
     gender:(typeof window.aps_getGender==='function'?window.aps_getGender():(APS.settings.gender||'male')),
@@ -24063,7 +24069,7 @@ window.aps_saveCharacter=window.aps_saveCharacter||function(){
   var key='aab_chars_'+((window.APP&&APP.user&&APP.user.id)||'guest');
   var chars=[];try{chars=JSON.parse(localStorage.getItem(key)||'[]');}catch(e){}
   var existing=chars.findIndex(function(c){return c.name===name;});
-  var entry={id:'char_'+(Date.now()),name:name,photoB64:APS.photoB64||null,photoMimeType:APS.photoMimeType||null,photoUrl:APS.photo||null,savedAt:new Date().toISOString()};
+  var entry={id:'char_'+(Date.now()),name:name,photoB64:null,photoMimeType:APS.photoMimeType||null,photoUrl:(APS.photo&&APS.photo.indexOf("data:")!==0?APS.photo:null),savedAt:new Date().toISOString()};
   if(existing>-1)chars[existing]=entry; else chars.push(entry);
   localStorage.setItem(key,JSON.stringify(chars));
   if(typeof toast==='function')toast('Saved: '+name,'ok');
