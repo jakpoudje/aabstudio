@@ -30159,8 +30159,16 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
       if (!Array.isArray(arr)) return v;
       arr.forEach(function (c) {
         if (!c || typeof c !== 'object') return;
-        ['image', 'avatar', 'photo', 'thumbnail', 'preview', 'imageData', 'src'].forEach(function (kk) {
-          if (typeof c[kk] === 'string' && c[kk].indexOf('data:') === 0) c[kk] = '';
+        // Measured: a character stored photoB64 (raw base64, NO data: prefix) AND photoUrl (data:
+        // URI), 1.9MB EACH = 3.9MB in one character. The prefix-only check missed photoB64.
+        // Strip any string field that is either a data: URI or a large raw base64 blob; keep a
+        // stored https URL (short, durable) so the avatar still resolves from Supabase.
+        Object.keys(c).forEach(function (kk) {
+          var val = c[kk];
+          if (typeof val !== 'string') return;
+          var isData = val.indexOf('data:') === 0;
+          var isBigB64 = val.length > 50000 && /^[A-Za-z0-9+/=\r\n]+$/.test(val.slice(0, 200));
+          if (isData || isBigB64) c[kk] = '';    // drop inline image data; cloud/URL holds the real one
         });
       });
       return JSON.stringify(arr);
