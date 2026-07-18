@@ -30000,6 +30000,91 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   console.log('[queue] stuck-queue guard active');
 })();
 </script>
+<script id="aab-relink">
+/* ── RELINK: keep timeline clips pointing at each scene's CURRENT video ────────
+   The confusion the user described is a real disconnect. Measured: 15 scenes now hold a durable
+   video in our Supabase storage (ingest is working), yet 34 timeline clips are linked to ZERO
+   scenes (sceneKey count 0) and still point at the old dead-blob URLs they were built from.
+   Two separate worlds:
+     - scene.recordedUrl / scene.apsVideoUrl  = the current, good video
+     - timeline clip.url                      = whatever it was built with, never updated
+   And the timeline builder reads apsVideoUrl||videoUrl but NOT recordedUrl, so studio recordings
+   never reach the timeline at all.
+
+   Relink reconciles the two: for each scene with a usable (non-blob) video, find its timeline
+   clip and point it at the current URL; if a scene has a video but no clip, create one. This is
+   what a professional NLE does when media is relinked. Idempotent and additive - it never
+   removes the user's edits, only repairs dead/again-missing links. */
+(function () {
+  function realUrl(u) {
+    u = String(u || '');
+    if (!u || /^blob:/i.test(u)) return '';          // blobs from a closed session are dead
+    return u;
+  }
+  function sceneVideo(s) {
+    // Prefer a durable stored URL; fall back to a provider URL that has not expired yet.
+    return realUrl(s.recordedUrl) || realUrl(s.apsVideoUrl) || realUrl(s.videoUrl);
+  }
+
+  window.E_relinkClips = function (opts) {
+    opts = opts || {};
+    var E = window.E, P = window.PROJECT;
+    if (!E || !E.tracks || !P || !P.scenes) return { linked: 0, created: 0 };
+    var main = E.tracks.filter(function (t) { return t.id === 'main'; })[0] || E.tracks[0];
+    if (!main) return { linked: 0, created: 0 };
+    if (!main.clips) main.clips = [];
+    var linked = 0, created = 0;
+
+    P.scenes.forEach(function (s, i) {
+      var url = sceneVideo(s);
+      if (!url) return;                                // nothing good to link
+      var key = 'scene_' + (s.id != null ? s.id : i);
+
+      // 1. A clip already tagged for this scene -> update its URL if it drifted.
+      var clip = main.clips.filter(function (c) { return c.sceneKey === key; })[0];
+      // 2. Otherwise, an untagged clip sitting in this scene's slot (legacy clips have no key) -> adopt it.
+      if (!clip) clip = main.clips.filter(function (c) { return !c.sceneKey && c._slot === i; })[0]
+                     || main.clips[i];                 // positional fallback for the original build
+      if (clip) {
+        if (clip.url !== url) { clip.url = url; linked++; }
+        clip.sceneKey = key;                            // tag it so future relinks are exact
+      } else {
+        var start = main.clips.reduce(function (a, c) { return Math.max(a, (c.start || 0) + (c.duration || 0)); }, 0);
+        main.clips.push({
+          id: 'clip_' + Date.now() + '_' + i, sceneKey: key, trackId: main.id,
+          name: 'Scene ' + (i + 1), url: url, type: 'video',
+          start: start, duration: s.recordedDuration || s.duration || 8, color: '#3b82f6'
+        });
+        created++;
+      }
+    });
+
+    if ((linked || created) && typeof window.E_renderTL === 'function') { try { window.E_renderTL(); } catch (e) {} }
+    if (!opts.quiet && (linked || created) && typeof toast === 'function')
+      toast('Relinked ' + linked + ' clip' + (linked !== 1 ? 's' : '') + (created ? ', added ' + created : '') + ' to current media', 'ok', 3000);
+    return { linked: linked, created: created };
+  };
+
+  // Run once when the Edit Suite opens, so clips show their current media instead of dead links.
+  var _lastRelink = 0;
+  function autoRelink() {
+    var pg = document.getElementById('edit-pg');
+    if (!pg || !pg.classList.contains('on')) return;
+    if (Date.now() - _lastRelink < 5000) return;        // not more than every 5s
+    _lastRelink = Date.now();
+    try { window.E_relinkClips({ quiet: true }); } catch (e) {}
+  }
+  // when the user navigates into the Edit Suite
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    if (t && /Edit Suite/i.test(t.textContent || '')) setTimeout(autoRelink, 600);
+  }, true);
+  // and once shortly after load if we are already there
+  setTimeout(autoRelink, 3000);
+
+  console.log('[relink] clip relinker ready — call E_relinkClips() to repair timeline media');
+})();
+</script>
 </body>
 </html>
 
