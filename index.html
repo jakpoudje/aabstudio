@@ -30168,6 +30168,43 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   console.log('[storage] quota-safe local mirror active');
 })();
 </script>
+<script id="aab-save-throttle">
+/* ── SAVE STORM → Safari crash ────────────────────────────────────────────────
+   Chrome console showed 31 consecutive "Project synced to cloud" plus a repeating localStorage
+   quota error. saveProject() has 62 call sites and was NOT debounced - only syncProjectToCloud
+   and _saveProjectFull were, and that debounce keyed on id+title so a call with no argument or a
+   changed title slipped through every time. Each save serializes every project to localStorage;
+   run 31 in a row and Safari (tighter memory limits than Chrome) crashes. This throttles the
+   actual save entry point by TIME alone - at most one real save per 8s, with the newest state
+   flushed on a trailing timer so nothing is lost - and makes the localStorage write failure-safe
+   so a full quota can never throw into the save path. */
+(function () {
+  window.addEventListener('load', function () {
+    var real = window.saveProject;
+    if (typeof real !== 'function' || real._throttled) return;
+
+    var MIN_GAP = 8000;          // at most one real save per 8s
+    var lastRun = 0, pending = null, timer = null;
+
+    function run() {
+      lastRun = Date.now(); pending = null; timer = null;
+      try { real(); } catch (e) { console.warn('[save] skipped:', e.message); }
+    }
+
+    var throttled = function () {
+      var now = Date.now(), wait = MIN_GAP - (now - lastRun);
+      if (wait <= 0) { run(); return; }
+      pending = true;                                   // coalesce; flush once on the trailing edge
+      if (!timer) timer = setTimeout(run, wait);
+    };
+    throttled._throttled = true;
+    window.saveProject = throttled;
+    // flush on the way out so the latest state is never lost
+    window.addEventListener('pagehide', function () { if (pending) { try { real(); } catch (e) {} } });
+    console.log('[save] throttle active — 1 save / 8s max');
+  });
+})();
+</script>
 </body>
 </html>
 
