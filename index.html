@@ -30085,6 +30085,65 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   console.log('[relink] clip relinker ready — call E_relinkClips() to repair timeline media');
 })();
 </script>
+<script id="aab-ls-quota">
+/* ── localStorage QUOTA OVERFLOW ──────────────────────────────────────────────
+   Console: "Cloud sync skipped: Failed to execute 'setItem' on 'Storage': Setting the value of
+   'aab_projects' exceeded the quota." localStorage caps at ~5MB, but the app writes ALL projects
+   there as a local backup with base64 video/image data baked in - one project with a few clips
+   blows the whole budget. The cloud save on the line above succeeds, so this is currently just a
+   dead local fallback, but once storage is full the safety net is gone: if a cloud save ever
+   fails there is nothing to fall back to.
+
+   Fix: keep a LIGHT local mirror. Strip the heavy media (data: URLs, base64 blobs) before writing
+   to localStorage - the cloud holds the full copy, and the local mirror only needs identity and
+   structure so the dashboard can render offline. Wrap setItem so EVERY existing writer (there are
+   ~19) is covered without editing each one, and prune oldest-first if it still will not fit. */
+(function () {
+  var KEY = 'aab_projects';
+  var real = localStorage.setItem.bind(localStorage);
+
+  // Remove anything that is large and re-fetchable from the cloud.
+  function slim(project) {
+    if (!project || typeof project !== 'object') return project;
+    var p = JSON.parse(JSON.stringify(project));
+    (p.scenes || []).forEach(function (s) {
+      ['recordedUrl', 'apsVideoUrl', 'videoUrl', 'thumbnail', 'poster', 'bgImage', 'photo'].forEach(function (k) {
+        if (typeof s[k] === 'string' && (s[k].indexOf('data:') === 0 || s[k].length > 500)) {
+          // keep a stored/https URL (short, durable); drop only inline base64/data blobs
+          if (s[k].indexOf('data:') === 0) s[k] = '';
+        }
+      });
+    });
+    // bulky per-project caches live in the cloud copy; not needed in the local mirror
+    ['apsVideos', 'aiClips', 'clipsMeta', 'aiClipsMeta', '_thumbs'].forEach(function (b) { if (p[b]) delete p[b]; });
+    return p;
+  }
+
+  localStorage.setItem = function (k, v) {
+    if (k !== KEY) return real(k, v);
+    var data;
+    try { data = JSON.parse(v); } catch (e) { return real(k, v); }   // not our shape — passthrough
+    if (!Array.isArray(data)) return real(k, v);
+
+    var light = data.map(slim);
+    // Try progressively smaller sets until it fits, newest first.
+    for (var n = light.length; n >= 0; n--) {
+      try { real(k, JSON.stringify(light.slice(0, n))); if (n < light.length) console.log('[storage] local mirror trimmed to ' + n + ' project(s) to fit quota'); return; }
+      catch (e) { /* still too big — drop the oldest and retry */ }
+    }
+    // Even one project won't fit — clear the mirror rather than throw. Cloud remains authoritative.
+    try { real(k, '[]'); } catch (e) {}
+    console.warn('[storage] local mirror could not fit; relying on cloud (which has the full copy)');
+  };
+
+  // One-time cleanup of whatever bloated copy is already stored.
+  try {
+    var cur = localStorage.getItem(KEY);
+    if (cur && cur.length > 2 * 1024 * 1024) { localStorage.setItem(KEY, cur); console.log('[storage] slimmed existing oversized local mirror'); }
+  } catch (e) {}
+  console.log('[storage] quota-safe local mirror active');
+})();
+</script>
 </body>
 </html>
 
