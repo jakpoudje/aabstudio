@@ -241,7 +241,11 @@ app.post('/api/stripe/webhook',
 // JSON body parser — 30mb to handle base64 images
 app.use((req, res, next) => {
   if (req.path === '/api/stripe/webhook') return next();
-  express.json({ limit: '30mb' })(req, res, next);
+  // Clips are POSTed as base64, which inflates a file by ~33%: a 30mb body ceiling therefore
+  // capped real uploads at roughly 22MB (~1-2 min of 1080p) even though recorded-clips is a
+  // 500MB bucket. The API body limit - not storage - was the wall, and it surfaced as a bare
+  // 413 with no useful message. Raised so the bucket limit is the real constraint again.
+  express.json({ limit: '220mb' })(req, res, next);
 });
 
 function getSupaAdmin() {
@@ -756,6 +760,14 @@ app.post('/api/clip/upload', async (req, res) => {
     const { clipBase64, mimeType = 'video/webm', projectId, sceneId, sceneNum } = req.body;
     if (!clipBase64) return res.status(400).json({ error: 'clipBase64 required' });
 
+    // Explicit size guard so an oversized clip gets a clear answer rather than a raw 413 from
+    // the body parser. 200MB of real video ~= 266MB of base64, inside the raised body ceiling.
+    const _approxBytes = Math.floor((clipBase64.length * 3) / 4);
+    if (_approxBytes > 200 * 1024 * 1024) {
+      return res.status(413).json({
+        error: 'Clip too large (' + Math.round(_approxBytes / 1048576) + 'MB). Maximum is 200MB — please record a shorter scene or use a lower resolution.'
+      });
+    }
     const ext      = mimeType.includes('mp4') ? 'mp4' : 'webm';
     const filename = 'clips/' + user.id + '/' + (projectId || 'proj') + '/' + (sceneId || ('scene-' + sceneNum)) + '-' + Date.now() + '.' + ext;
     const buffer   = Buffer.from(clipBase64, 'base64');
@@ -2992,7 +3004,14 @@ app.use((err, req, res, next) => {
   res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization');
   if (err && (err.type === 'entity.too.large' || err.message?.includes('request aborted') || err.status === 400)) {
     console.warn('Request error (client likely disconnected):', err.message);
-    if (!res.headersSent) res.status(400).json({ error: 'Request aborted or too large' });
+    if (!res.headersSent) {
+      var _tooBig = /entity too large|request entity/i.test(String(err && err.message || ''));
+      res.status(_tooBig ? 413 : 400).json({
+        error: _tooBig
+          ? 'That file is too large to upload. Please use a shorter clip, or record at a lower resolution.'
+          : 'Request aborted or too large'
+      });
+    }
     return;
   }
   console.error('Unhandled error:', err?.message || err);
