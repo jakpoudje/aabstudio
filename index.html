@@ -5386,15 +5386,27 @@ function E_drawTextLayers(ctx,canvas,t){
       if(t<c.start||t>=c.start+c.duration)return;
       if(!c.textStyle)return;
       var ts=c.textStyle;
-      var fw=canvas.width;var fh=canvas.height;
-      var fs=Math.round((ts.fontSize||36)*(fw/1920));
+      // Confine text overlays to the ACTUAL video image, not the whole canvas - the same fix the
+      // subtitle path already uses above. The program monitor letterboxes (object-fit: contain),
+      // so anchoring to canvas W/H put text in the black bars OUTSIDE the picture, which is why
+      // overlays "did not fit the video display area". Recompute the displayed video rect and lay
+      // the text inside it.
+      var _tw=canvas.width, _th=canvas.height;
+      var _pv2=document.getElementById("e-prog-vid");
+      var _vw2=(_pv2&&_pv2.videoWidth)||_tw, _vh2=(_pv2&&_pv2.videoHeight)||_th;
+      var _sc2=Math.min(_tw/_vw2, _th/_vh2);
+      var TW=Math.round(_vw2*_sc2), TH=Math.round(_vh2*_sc2);
+      var TX=Math.round((_tw-TW)/2), TY=Math.round((_th-TH)/2);
+      var fs=Math.round((ts.fontSize||36)*(TW/1920));   // scale to the VIDEO width, not the canvas
       ctx.save();
       ctx.font=(ts.fontWeight||"700")+" "+fs+"px "+(ts.fontFamily||"Arial");
       ctx.textAlign=ts.align||"center";
-      var x=ts.align==="right"?fw-40:ts.align==="left"?40:fw/2;
-      var y=ts.position==="top"?fs+20:ts.position==="center"?fh/2:fh-60;
+      // x/y anchored to the video rect (TX/TY/TW/TH), with a small inset so nothing kisses the edge.
+      var pad=Math.round(TW*0.03);
+      var x=ts.align==="right"?TX+TW-pad:ts.align==="left"?TX+pad:TX+TW/2;
+      var y=ts.position==="top"?TY+fs+pad:ts.position==="center"?TY+TH/2:TY+TH-pad;
       var m=ctx.measureText(ts.text||"");
-      var bw=m.width+32;var bh=fs+18;
+      var bw=Math.min(m.width+32, TW*0.94);var bh=fs+18;
       var bx=ts.align==="right"?x-bw:ts.align==="left"?x:x-bw/2;
       ctx.globalAlpha=ts.bgOpacity||0.75;
       ctx.fillStyle=ts.bgColor||"#000";
