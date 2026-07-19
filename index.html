@@ -10604,16 +10604,7 @@ window._safeFetch = async function(url, opts, timeoutMs) {
         var user = result.data && result.data.user;
         if (!user) throw new Error('Email not confirmed or account not found. Check your inbox.');
         setUser(user);
-        // Restore saved page from sessionStorage, or go to dashboard
-        var _savedPage = '';
-        try { _savedPage = sessionStorage.getItem('aab_pg') || ''; } catch(e) {}
-        var _safePgs = ['scenes-pg','record-pg','edit-pg','export-pg','script-pg','dashboard-pg'];
-        if (_savedPage && _safePgs.indexOf(_savedPage) > -1) {
-          nav(_savedPage);
-          if (_savedPage === 'scenes-pg' && typeof renderSceneBoard==='function') setTimeout(renderSceneBoard, 150);
-        } else {
-          nav('dashboard-pg');
-        }
+        nav('dashboard-pg'); // Julius spec: signed-in -> dashboard first (both doSignIn rivals)
         setTimeout(function(){if(typeof renderProjectList==='function')renderProjectList();},300);
       } catch (e) {
         showErr('err-in', e.message || 'Sign in failed. Please try again.');
@@ -25419,12 +25410,9 @@ window.aps_saveSettings=function(){
 function setUser(u){
   window._aabUser=u;
   if(u){
-    // Restore saved page or go to dashboard
-    var savedPage="";
-    try{savedPage=sessionStorage.getItem("aab_last_page")||"";}catch(e){}
-    var pg=savedPage&&savedPage!=="auth-pg"&&savedPage!=="home"?savedPage:"dashboard-pg";
-    nav(pg);
-    // Reset signing in button
+    try{var _oe=((u.email)||"").toLowerCase();if(["jakpoudje@gmail.com","julius@aabstudio.ai","admin@aabstudio.ai","julious28@yahoo.com"].indexOf(_oe)>-1){window.APP=window.APP||{};window.APP.plan="studio";}}catch(_e){}
+    var _cur=document.querySelector(".pg.on,.pg-full.on");var _cid=_cur?_cur.id:"";
+    if(!_cid||_cid==="auth-pg"||_cid==="home"||_cid==="home-pg"){ nav("dashboard-pg"); }
     var btn=document.getElementById("btn-in");
     if(btn)btn.textContent="Sign in";
   }
@@ -25492,16 +25480,7 @@ async function doSignIn() {
         var user = result.data && result.data.user;
         if (!user) throw new Error('Email not confirmed or account not found. Check your inbox.');
         setUser(user);
-        // Restore saved page from sessionStorage, or go to dashboard
-        var _savedPage = '';
-        try { _savedPage = sessionStorage.getItem('aab_pg') || ''; } catch(e) {}
-        var _safePgs = ['scenes-pg','record-pg','edit-pg','export-pg','script-pg','dashboard-pg'];
-        if (_savedPage && _safePgs.indexOf(_savedPage) > -1) {
-          nav(_savedPage);
-          if (_savedPage === 'scenes-pg' && typeof renderSceneBoard==='function') setTimeout(renderSceneBoard, 150);
-        } else {
-          nav('dashboard-pg');
-        }
+        nav('dashboard-pg'); // Julius spec: signed-in -> dashboard first (both doSignIn rivals)
         setTimeout(function(){if(typeof renderProjectList==='function')renderProjectList();},300);
       } catch (e) {
         showErr('err-in', e.message || 'Sign in failed. Please try again.');
