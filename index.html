@@ -27202,7 +27202,12 @@ function clipCtx(clip,track,e){
     {i:clip.muted?'🔊':'🔇',l:clip.muted?'Unmute':'Mute',fn:()=>{_snapshotTracks();clip.muted=!clip.muted;(typeof E_renderTL==="function"?E_renderTL():null);}},
     {i:clip.locked?'🔓':'🔒',l:clip.locked?'Unlock':'Lock',fn:()=>{clip.locked=!clip.locked;(typeof E_renderTL==="function"?E_renderTL():null);}},
     '—',{i:'📋',l:'Properties',fn:()=>_esInspect(clip,track)},
-    {i:'🗑',l:'Delete Clip',danger:true,fn:()=>{_snapshotTracks();track.clips=track.clips.filter(c=>c.id!==clip.id);(typeof E_renderTL==="function"?E_renderTL():null);}}
+    {i:'🗑',l:'Delete Clip',danger:true,fn:()=>{_snapshotTracks();
+      if(clip.sceneKey&&window.aabMarkClipDeleted)window.aabMarkClipDeleted(clip.sceneKey);
+      track.clips=track.clips.filter(c=>c.id!==clip.id);
+      if(window._esSelClips)window._esSelClips.delete(clip.id);
+      (typeof E_renderTL==="function"?E_renderTL():null);
+      if(typeof toast==='function')toast('Clip deleted','ok',1500);}}
   ]);
 }
 function trackCtx(track,e){
@@ -29916,6 +29921,7 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   // Put exactly ONE clip on the timeline for this scene — never rebuild the whole thing.
   // Rebuilding is what causes the 2-renders-per-second storm.
   window.aabUpsertSceneClip = function (sceneIdx, url, durationSec, name) {
+    if (window.aabIsClipDeleted && window.aabIsClipDeleted(window.aabClipKey(sceneIdx))) return false;  // user deleted this clip
     try {
       var E = window.E; if (!E || !E.tracks) return false;
       var track = E.tracks.filter(function (t) { return t.id === 'main'; })[0] || E.tracks[0];
@@ -29942,6 +29948,34 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
       if (typeof window.E_renderTL === 'function') { try { window.E_renderTL(); } catch (e) {} }
       return true;
     } catch (e) { console.warn('[ingest] upsert failed:', e.message); return false; }
+  };
+
+  /* ── USER DELETIONS ARE PERMANENT ────────────────────────────────────────────
+     Deleting a timeline clip used to be undone within seconds: E_relinkClips saw
+     "this scene has a video but no clip" and helpfully re-created it, and the 2s
+     ingest sweep re-placed AI clips. To the user, delete simply did not work.
+     A deletion is now recorded on the project (and saved with it), and every
+     auto-placer must respect it. Re-recording or re-generating a scene clears the
+     tombstone, so new media still arrives normally. */
+  window.aabClipKey = function (sceneIdx, scene) {
+    scene = scene || ((window.PROJECT && window.PROJECT.scenes) ? window.PROJECT.scenes[sceneIdx] : null) || {};
+    return 'scene_' + (scene.id != null ? scene.id : sceneIdx);
+  };
+  window.aabIsClipDeleted = function (key) {
+    var P = window.PROJECT;
+    return !!(P && P.deletedClipKeys && P.deletedClipKeys.indexOf(key) > -1);
+  };
+  window.aabMarkClipDeleted = function (key) {
+    var P = window.PROJECT; if (!P || !key) return;
+    if (!P.deletedClipKeys) P.deletedClipKeys = [];
+    if (P.deletedClipKeys.indexOf(key) < 0) P.deletedClipKeys.push(key);
+    if (window.AABLog) window.AABLog.info('timeline', 'clip removed by user (' + key + ') — auto-placers will not restore it');
+    if (typeof saveProject === 'function') { try { saveProject(); } catch (e) {} }
+  };
+  window.aabUnmarkClipDeleted = function (key) {
+    var P = window.PROJECT; if (!P || !P.deletedClipKeys || !key) return;
+    var i = P.deletedClipKeys.indexOf(key);
+    if (i > -1) P.deletedClipKeys.splice(i, 1);
   };
 
   // Upload one scene's recording and swap the blob for a durable URL.
@@ -29974,6 +30008,7 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
       if (j && j.url) {
         sc.recordedUrl = j.url;                  // durable from here on
         sc.persistedAt = new Date().toISOString();
+        if (window.aabUnmarkClipDeleted) window.aabUnmarkClipDeleted(window.aabClipKey(sceneIdx, sc)); // fresh take -> allow it back
         window.aabUpsertSceneClip(sceneIdx, j.url, sc.recordedDuration, 'Scene ' + (sceneIdx + 1));
         if (typeof saveProject === 'function') { try { saveProject(); } catch (e) {} }
         console.log('[ingest] scene ' + (sceneIdx + 1) + ' stored -> timeline');
@@ -30015,6 +30050,35 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   }
   setInterval(sweep, 2000);
   window.aabSweepIngest = sweep;
+
+  /* Delete / Backspace removes the selected timeline clip(s). Every professional NLE does this,
+     and it gives a delete path that does not depend on which right-click menu wins at runtime. */
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Delete' && ev.key !== 'Backspace') return;
+    var t = ev.target || {};
+    var tag = (t.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || t.isContentEditable) return; // typing
+    var pg = document.getElementById('edit-pg');
+    if (!pg || !pg.classList.contains('on')) return;                    // only inside the Edit Suite
+    var sel = window._esSelClips;
+    if (!sel || !sel.size || !window.E || !window.E.tracks) return;
+    ev.preventDefault();
+    var ids = [], n = 0;
+    sel.forEach(function (id) { ids.push(id); });
+    if (typeof window._snapshotTracks === 'function') { try { window._snapshotTracks(); } catch (e) {} }
+    window.E.tracks.forEach(function (tr) {
+      if (!tr.clips) return;
+      tr.clips = tr.clips.filter(function (c) {
+        if (ids.indexOf(c.id) < 0) return true;
+        if (c.sceneKey && window.aabMarkClipDeleted) window.aabMarkClipDeleted(c.sceneKey);
+        n++; return false;
+      });
+    });
+    sel.clear();
+    if (typeof window.E_renderTL === 'function') { try { window.E_renderTL(); } catch (e) {} }
+    if (n && typeof toast === 'function') toast(n + ' clip' + (n !== 1 ? 's' : '') + ' deleted', 'ok', 1500);
+    if (window.AABLog) window.AABLog.info('timeline', 'deleted ' + n + ' selected clip(s) via keyboard');
+  });
   console.log('[ingest] background ingest active');
 })();
 </script>
@@ -30246,6 +30310,7 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
       var url = sceneVideo(s);
       if (!url) return;                                // nothing good to link
       var key = 'scene_' + (s.id != null ? s.id : i);
+      if (window.aabIsClipDeleted && window.aabIsClipDeleted(key)) return;  // user deleted it - never resurrect
 
       // 1. A clip already tagged for this scene -> update its URL if it drifted.
       var clip = main.clips.filter(function (c) { return c.sceneKey === key; })[0];
