@@ -6284,7 +6284,7 @@ function _wireTimelineEvents() {
 
   // RIGHT-CLICK CONTEXT MENU
   tl.addEventListener('contextmenu', function(ev) {
-    var ce = ev.target.closest('.ce2,.aab-clip'); if (!ce) return;
+    var ce = ev.target.closest('.ce2'); if (!ce) return; /* consolidated: .aab-clip menus are owned by clipCtx */
     ev.preventDefault(); ev.stopPropagation();
     var clipId = ce.dataset.clipId, trackId = ce.dataset.trackId;
     if (!clipId || !window.E) return;
@@ -21771,7 +21771,9 @@ window._E2_wireAll = function(){
     if(el._e2wired)return;el._e2wired=true;
     var clipId=el.getAttribute('data-id')||el.getAttribute('data-clip-id')||el.dataset.id;
     var trackId=el.getAttribute('data-track-id')||el.getAttribute('data-tid')||'main';
-    el.addEventListener('contextmenu',function(e){
+    /* CONSOLIDATED: clip right-click menu is owned by clipCtx (es-override) alone.
+       This E2 duplicate stacked a second menu over it and deleted from rival state. */
+    if(false) el.addEventListener('contextmenu',function(e){
       window._E2_clipContextMenu(e,clipId,trackId);
     });
     el.addEventListener('click',function(e){
@@ -22061,11 +22063,8 @@ window._CE_enhanceClip = function(clipEl, clip, track){
     window._CE_selectClip(clip.id, track.id, clip, track);
   });
 
-  // ── RIGHT-CLICK: full context menu ──
-  clipEl.addEventListener('contextmenu',function(e){
-    e.preventDefault();e.stopPropagation();
-    window._CE_showClipMenu(e, clip, track);
-  });
+  // ── RIGHT-CLICK: consolidated — clipCtx (es-override) is the single clip menu ──
+  /* was: clipEl.addEventListener('contextmenu', ...) -> _CE_showClipMenu — duplicate menu removed */
 };
 
 /* ── Select clip ── */
@@ -23231,11 +23230,8 @@ function _applyUniqueIcons(){
         var track = window.AABE && AABE.tracks && AABE.tracks.find(function(t){return t.id===tid;});
         var clip = track && track.clips.find(function(c){return c.id===cid;});
         if(!clip) return;
-        // Context menu
-        el.addEventListener('contextmenu',function(e){
-          e.preventDefault(); e.stopPropagation();
-          window._CE_showClipMenu_v2(e, clip, track);
-        });
+        // Context menu: consolidated — clipCtx (es-override) is the single clip menu
+        /* was: el.addEventListener('contextmenu', ...) -> _CE_showClipMenu_v2 — duplicate menu removed */
         // Trim handles
         if(!el.querySelector('.aab-clip-trim-l')){
           var pps = window.AABE&&AABE.pxPerSec||50;
@@ -27205,7 +27201,10 @@ function clipCtx(clip,track,e){
     '—',{i:'📋',l:'Properties',fn:()=>_esInspect(clip,track)},
     {i:'🗑',l:'Delete Clip',danger:true,fn:()=>{_snapshotTracks();
       if(clip.sceneKey&&window.aabMarkClipDeleted)window.aabMarkClipDeleted(clip.sceneKey);
-      track.clips=track.clips.filter(c=>c.id!==clip.id);
+      /* remove by id from EVERY engine state — rival engines (E / AABE) can hold separate
+         track arrays, and deleting from only one made the visible clip survive */
+      [window.E,window.AABE].forEach(en=>{ if(en&&en.tracks&&Array.isArray(en.tracks))
+        en.tracks.forEach(t=>{ if(t&&Array.isArray(t.clips)) t.clips=t.clips.filter(c=>c.id!==clip.id); }); });
       if(window._esSelClips)window._esSelClips.delete(clip.id);
       (typeof E_renderTL==="function"?E_renderTL():null);
       if(typeof toast==='function')toast('Clip deleted','ok',1500);}}
@@ -28546,7 +28545,10 @@ function _drawTransition(ctx, type, prog, cw, ch, nextVid) {
           var settled=false;
           v.onloadedmetadata=function(){ if(settled)return; settled=true; window._aabClipMediaCache[url]='ok'; _clearMissing(el); };
           v.onerror=function(){ if(settled)return; settled=true; window._aabClipMediaCache[url]='bad'; _markMissing(el, clip, 'Missing video'); };
-          setTimeout(function(){ if(settled)return; settled=true; window._aabClipMediaCache[url]='bad'; _markMissing(el, clip, 'Missing video'); }, 6000);
+          /* slow network ≠ dead media: five clips probe in parallel, so a fixed timeout
+             manufactured false permanent "Missing media" badges. Timeout now leaves the URL
+             unverified (re-checked on next render); only a real load error marks it bad. */
+          setTimeout(function(){ if(settled)return; settled=true; try{v.src='';}catch(_e){} }, 12000);
           v.src=url;
         }
       });
