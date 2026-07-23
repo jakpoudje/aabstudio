@@ -3,6 +3,160 @@
 <html lang="en">
 
 <head>
+<script id="aab-logger">
+/* AAB Studio — central developer logger (aab-logger)
+   Lightweight structured console: platform states, module tags, colours,
+   timestamps, a REAL readiness % based on modules that have come online,
+   and wrapping of native console so existing logs are formatted too.
+   Public API: window.AABLog.{info,success,warn,error,critical,step,state,
+   register,ready,readiness,blocking,modules}. */
+(function () {
+  if (window.AABLog) return;
+  var START = Date.now();
+  var COL = {
+    info:     '#38bdf8', // sky
+    success:  '#22c55e', // green
+    warn:     '#f59e0b', // amber
+    error:    '#ef4444', // red
+    critical: '#b91c1c', // dark red
+    state:    '#a78bfa', // violet
+    step:     '#94a3b8', // slate
+    dim:      '#64748b'
+  };
+  var nlog  = (console.log   || function () {}).bind(console);
+  var nwarn = (console.warn  || console.log).bind(console);
+  var nerr  = (console.error || console.log).bind(console);
+
+  function two(n) { n = '' + n; return n.length < 2 ? '0' + n : n; }
+  function three(n) { n = '' + n; while (n.length < 3) n = '0' + n; return n; }
+  function ts() {
+    var d = new Date();
+    return two(d.getHours()) + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds()) + '.' + three(d.getMilliseconds());
+  }
+  function pad(s, n) { s = '' + s; while (s.length < n) s += ' '; return s; }
+
+  function emit(level, mod, msg, extra) {
+    var c = COL[level] || COL.info;
+    var native = (level === 'error' || level === 'critical') ? nerr : (level === 'warn' ? nwarn : nlog);
+    var args = [
+      '%c' + ts() + '%c ' + pad(level.toUpperCase(), 8) + '%c[' + (mod || 'app') + ']%c ' + msg,
+      'color:' + COL.dim,
+      'color:' + c + ';font-weight:700',
+      'color:' + c,
+      'color:inherit'
+    ];
+    if (extra !== undefined) args.push(extra);
+    try { native.apply(console, args); } catch (e) { try { nlog(ts(), level, mod, msg, extra); } catch (_) {} }
+  }
+
+  /* ── readiness registry ── */
+  var MOD = {}; // name -> { ready:bool, required:bool }
+  function reg(name, required) { if (!(name in MOD)) MOD[name] = { ready: false, required: required !== false }; }
+  function pct() {
+    var req = Object.keys(MOD).filter(function (k) { return MOD[k].required; });
+    if (!req.length) return 0;
+    var done = req.filter(function (k) { return MOD[k].ready; }).length;
+    return Math.round(done / req.length * 100);
+  }
+  function blocking() { return Object.keys(MOD).filter(function (k) { return MOD[k].required && !MOD[k].ready; }); }
+
+  var state = 'Starting';
+  function setState(s) { state = s; emit('state', 'platform', 'state -> ' + s + '  [' + pct() + '%]'); }
+
+  var announced = false;
+  function announce() {
+    if (pct() >= 100 && !announced) {
+      announced = true;
+      emit('success', 'AAB Studio', 'AAB Studio Ready (100%) — booted in ' + ((Date.now() - START) / 1000).toFixed(1) + 's');
+      setState('Ready');
+    }
+  }
+  function markReady(name, msg) {
+    reg(name);
+    if (MOD[name].ready) return;
+    MOD[name].ready = true;
+    emit('success', name, (msg || 'ready') + '  [' + pct() + '%]');
+    announce();
+  }
+
+  /* ── public API ── */
+  window.AABLog = {
+    info:     function (mod, msg, x) { emit('info', mod, msg, x); },
+    success:  function (mod, msg, x) { emit('success', mod, msg, x); },
+    warn:     function (mod, msg, x) { emit('warn', mod, msg, x); },
+    error:    function (mod, msg, reason) { emit('error', mod, msg + (reason ? '  — reason: ' + reason : '')); },
+    critical: function (mod, msg, reason) { emit('critical', mod, msg + (reason ? '  — reason: ' + reason : '')); },
+    step:     function (mod, msg, x) { emit('step', mod, '-> ' + msg, x); },
+    state:    setState,
+    register: reg,
+    ready:    markReady,
+    readiness: pct,
+    blocking: blocking,
+    modules:  function () { try { return JSON.parse(JSON.stringify(MOD)); } catch (e) { return MOD; } },
+    _native:  { log: nlog, warn: nwarn, error: nerr }
+  };
+
+  /* ── wrap native console so scattered console.* get timestamps + colour ── */
+  function wrap(orig, level) {
+    return function () {
+      var a = Array.prototype.slice.call(arguments);
+      var mod = 'log';
+      if (typeof a[0] === 'string') {
+        var m = a[0].match(/^\s*\[([^\]]{1,24})\]\s*/);
+        if (m) { mod = m[1]; a[0] = a[0].slice(m[0].length); }
+      }
+      var pre = ['%c' + ts() + '%c ' + pad(level.toUpperCase(), 8) + '%c[' + mod + ']%c',
+        'color:' + COL.dim, 'color:' + (COL[level] || COL.info) + ';font-weight:700',
+        'color:' + (COL[level] || COL.info), 'color:inherit'];
+      try { orig.apply(console, pre.concat(a)); } catch (e) { try { orig.apply(console, a); } catch (_) {} }
+    };
+  }
+  try {
+    console.log   = wrap(nlog,  'info');
+    console.info  = wrap(nlog,  'info');
+    console.warn  = wrap(nwarn, 'warn');
+    console.error = wrap(nerr,  'error');
+  } catch (e) {}
+
+  /* ── capture uncaught errors + rejections with source location ── */
+  window.addEventListener('error', function (e) {
+    var where = e.filename ? (String(e.filename).split('/').pop() + ':' + e.lineno + ':' + e.colno) : 'unknown';
+    emit('critical', 'uncaught', (e.message || 'Script error') + '  @ ' + where + '  — next: inspect that source/line');
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e && e.reason;
+    var msg = (r && (r.message || r)) || 'unknown';
+    emit('error', 'promise', 'unhandled rejection: ' + msg);
+  });
+
+  /* ── boot readiness: poll for known modules coming online ── */
+  var CHECKS = {
+    'Supabase':      function () { return typeof window.getSupa === 'function' && !!window.getSupa(); },
+    'Auth resolved': function () { return window._aabAuthPending === false || !!(window._sbSession && window._sbSession.access_token); },
+    'Master wiring': function () { return window._aabMaster === true; },
+    'Edit engine':   function () { return !!(window.AABE || window.E); },
+    'AI Presenter':  function () { return typeof window.aps_generateScene === 'function' || typeof window.aps_generateAll === 'function'; }
+  };
+  Object.keys(CHECKS).forEach(function (n) { reg(n, true); });
+  setState('Loading');
+  var ticks = 0;
+  var poll = setInterval(function () {
+    ticks++;
+    Object.keys(CHECKS).forEach(function (n) {
+      if (!MOD[n].ready) { try { if (CHECKS[n]()) markReady(n); } catch (e) {} }
+    });
+    if (pct() >= 100) { clearInterval(poll); return; }
+    if (ticks >= 60) {
+      clearInterval(poll);
+      var b = blocking();
+      if (b.length) emit('warn', 'readiness', 'stalled at ' + pct() + '% — waiting on: ' + b.join(', ') + '  — these modules never signalled ready');
+    }
+  }, 500);
+
+  emit('state', 'AAB Studio', 'developer logger online — capturing platform activity');
+})();
+
+</script>
   <meta charset="UTF-8">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
@@ -29797,6 +29951,7 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     var u = sc.recordedUrl || '';
     if (!/^blob:/i.test(u)) return;             // already durable, or nothing to do
     if (sc._ingesting) return;
+    if (sc._ingestDead) return;                 // permanently unrecoverable — never retry (see catch)
     var tok = (typeof window.aabGetToken === 'function')
       ? await window.aabGetToken()               // live token, never the stale snapshot
       : (window._sbSession && window._sbSession.access_token);
@@ -29825,7 +29980,20 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
         if (typeof toast === 'function') toast('Scene ' + (sceneIdx + 1) + ' saved to your library', 'ok', 1500);
       }
     } catch (e) {
-      console.warn('[ingest] scene ' + (sceneIdx + 1) + ':', e.message);
+      /* A blob: URL only lives as long as the page that created it. After a reload it is gone
+         for good, so retrying every 2s forever just burns CPU/network and spams saves (this was
+         an endless "[ingest] scene N: Load failed" loop). Give up after 2 tries, drop the dead
+         reference, and say so once. */
+      sc._ingestTries = (sc._ingestTries || 0) + 1;
+      var _dead = /load failed|not found|network|failed to fetch/i.test(e.message || '');
+      if (_dead || sc._ingestTries >= 2) {
+        sc._ingestDead = true;
+        sc.recordedUrl = '';                    // dead reference — stop everything re-reading it
+        if (window.AABLog) window.AABLog.error('ingest', 'scene ' + (sceneIdx + 1) + ' recording lost (temporary blob URL expired on reload)', (e.message || 'load failed') + ' — next: re-record this scene; retries stopped');
+        else console.warn('[ingest] scene ' + (sceneIdx + 1) + ' unrecoverable, retries stopped:', e.message);
+      } else if (window.AABLog) {
+        window.AABLog.warn('ingest', 'scene ' + (sceneIdx + 1) + ' upload retry ' + sc._ingestTries + '/2', e.message);
+      } else { console.warn('[ingest] scene ' + (sceneIdx + 1) + ':', e.message); }
     } finally { sc._ingesting = false; }
   };
 
@@ -29836,7 +30004,7 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     if (!P || !P.scenes) return;
     if (!(window._sbSession && window._sbSession.access_token)) return;
     P.scenes.forEach(function (sc, i) {
-      if (sc && /^blob:/i.test(sc.recordedUrl || '') && !sc._ingesting) window.aabIngestScene(i);
+      if (sc && /^blob:/i.test(sc.recordedUrl || '') && !sc._ingesting && !sc._ingestDead) window.aabIngestScene(i);
       // AI videos are persisted server-side by persistGeneratedVideo; just place them.
       var ai = sc && (sc.apsVideoUrl || sc.videoUrl);
       if (ai && /supabase\.co\/storage/i.test(ai) && !sc._placed) {
@@ -30254,31 +30422,7 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   });
 })();
 </script>
-<script id="aab-diag-panel">
-/* Temporary runtime readout so we can SEE (via a screenshot) what the app actually does on load,
-   instead of guessing from source. Remove once Safari routing/plan are confirmed. */
-(function(){
-  var BUILD='DIAG-A';
-  function state(){
-    var pg='(none)';try{var e=document.querySelector('.pg.on,.pg-full.on,.pg-flex.on');pg=e?e.id:'(none)';}catch(_){}
-    var plan='?';try{plan=(window.APP&&window.APP.plan)||'?';}catch(_){}
-    var auth='no';try{auth=(window.APP&&window.APP.user&&window.APP.user.email)?'user':((window._sbSession&&window._sbSession.access_token)?'session':'no');}catch(_){}
-    var modal='';try{if(document.querySelector('#upgrade-modal,[id*="upgrade"],.upgrade-modal'))modal=' | UPGRADE-MODAL';}catch(_){}
-    var br=(/safari/i.test(navigator.userAgent)&&!/chrome|crios|android/i.test(navigator.userAgent))?'Safari':'Chrome/other';
-    return 'BUILD '+BUILD+'\n'+br+'\npage: '+pg+'\nplan: '+plan+'\nauth: '+auth+modal;
-  }
-  function ensure(){
-    if(!document.body)return;
-    var d=document.getElementById('aab-diag-box');
-    if(!d){d=document.createElement('div');d.id='aab-diag-box';
-      d.style.cssText='position:fixed;left:6px;bottom:6px;z-index:2147483647;background:#111;color:#0f0;font:11px/1.35 monospace;padding:6px 8px;border:1px solid #0f0;border-radius:5px;max-width:70vw;white-space:pre;pointer-events:none;opacity:.92';
-      document.body.appendChild(d);}
-    d.textContent=state();
-  }
-  function start(){ensure();setInterval(ensure,1000);}
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
-})();
-</script>
+
 </body>
 </html>
 
