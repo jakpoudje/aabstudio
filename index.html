@@ -8056,6 +8056,9 @@ body{max-width:100vw;overflow-x:hidden}
 #record-pg.on .studio-wrap { border-radius: 12px !important; border: 1px solid rgba(255,255,255,.08) !important; overflow: hidden !important; }
 .aab-edit-body { border-radius: 10px !important; border: 1px solid rgba(255,255,255,.08) !important; overflow: hidden !important; }
 .aab-tl-wrap { border-radius: 10px !important; border: 1px solid rgba(255,255,255,.08) !important; overflow: hidden !important; }
+/* A page that is not active must NEVER paint: the Record page's clip tray was rendering on
+   top of the Edit Suite after navigation. */
+#record-pg:not(.on), #record-pg:not(.on) * { display: none !important; }
 /* Timeline track area: sizes to its tracks (adding a track grows it) up to 46vh, then scrolls.
    Tracks are NEVER cut off: beyond 46vh the inner .aab-tl-scroll takes over with a visible bar. */
 #edit-pg.on .aab-tl-wrap { flex: 0 0 auto !important; height: auto !important; min-height: 300px !important; max-height: 46vh !important; }
@@ -30325,7 +30328,13 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
       if (!clip) clip = main.clips.filter(function (c) { return !c.sceneKey && c._slot === i; })[0]
                      || main.clips[i];                 // positional fallback for the original build
       if (clip) {
-        if (clip.url !== url) { clip.url = url; linked++; }
+        /* Only REPAIR a dead link (empty or blob:). Never overwrite a working http url -
+           scenes holding BOTH a studio recording and an AI video had relink (recorded-first)
+           and the placers (AI-first) flipping clip.url every few seconds, so every <video>
+           reloaded constantly and the Edit Suite was unusable. Whichever media loaded first
+           now stays until the user retakes/regenerates. */
+        var _cur = String(clip.url || '');
+        if ((!_cur || /^blob:/i.test(_cur)) && clip.url !== url) { clip.url = url; linked++; }
         clip.sceneKey = key;                            // tag it so future relinks are exact
       } else {
         var start = main.clips.reduce(function (a, c) { return Math.max(a, (c.start || 0) + (c.duration || 0)); }, 0);
