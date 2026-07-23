@@ -30621,6 +30621,20 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     if(typeof _origAdaptive==='function'){ try{ return _origAdaptive(); }catch(e){ log('adaptive failed: '+e.message); } }
     typeof toast==='function'&&toast('Adaptive speech sync is unavailable on this device','info',2000);
   };
+  /* Bind DIRECTLY to the button in capture phase: even if some rival capturing listener
+     swallows the bubbling click before the onclick attribute runs, we fire first. */
+  function bindBtn(){
+    var b=document.getElementById('btn-tp-start');
+    if(b && !b._tpcBound){ b._tpcBound=1; b.addEventListener('click',function(ev){ ev.stopImmediatePropagation(); ev.preventDefault(); window._studioPracticeToggle(b); },true); }
+    var chip=document.getElementById('aab-tp-state');
+    if(!chip){
+      var host=document.querySelector('.grp-tp .panel-group-label');
+      if(host){ chip=document.createElement('span'); chip.id='aab-tp-state';
+        chip.style.cssText='margin-left:8px;font-size:9px;padding:1px 6px;border-radius:8px;background:rgba(255,255,255,.08);color:#9ca3af;';
+        chip.textContent='TP: idle'; host.appendChild(chip); }
+    }
+  }
+  setInterval(function(){ bindBtn(); var c=document.getElementById('aab-tp-state'); if(c){ c.textContent='TP: '+(T.running?('running \u00b7 '+T.mode+' \u00b7 '+T.wpm+'wpm'):'idle'); c.style.color=T.running?'#10b981':'#9ca3af'; } },800);
   if(window.AABLog){ AABLog.ready('Teleprompter controls','one controller owns Practice/mode/speed/reset/A-/A+'); }
 })();
 </script>
