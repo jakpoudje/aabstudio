@@ -9186,7 +9186,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
       <input type="range" min="20" max="220" value="80" id="tp-spd-range" oninput="setTpSpd(this.value); var v2=document.getElementById('tp-spd-val2'); if(v2) v2.textContent=this.value+'wpm';; if(window.studioTpUpdateSpeed) studioTpUpdateSpeed(+this.value);" style="width:60px;accent-color:var(--gold);">
       <span id="tp-spd-val2" style="font-size:10px;color:var(--gold);min-width:34px;">80wpm</span>
       <span style="font-size:9px;color:rgba(255,255,255,.2);">|</span>
-      <select id="tp-mode-sel" onchange="setTpScrollMode(this.value); document.getElementById('tp-scroll-mode') && (document.getElementById('tp-scroll-mode').value=this.value);" title="Scroll mode" style="font-size:9px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.5);border-radius:4px;padding:2px 4px;cursor:pointer;"><option value="auto" selected>📜 Auto-scroll</option><option value="word">💡 Word-by-word</option><option value="manual">✋ Manual</option></select>
+      <select id="tp-mode-sel" onchange="setTpScrollMode(this.value); document.getElementById('tp-scroll-mode') && (document.getElementById('tp-scroll-mode').value=this.value);" title="Scroll mode" style="font-size:9px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.5);border-radius:4px;padding:2px 4px;cursor:pointer;"><option value="auto" selected>📜 Auto-scroll</option><option value="word">💡 Word-by-word</option><option value="manual">✋ Manual</option><option value="sentence">📖 Sentence</option></select>
       </div>
       <button class="s-btn" onclick="resetTpScroll()" style="font-size:10px;padding:4px 8px;" title="Reset scroll to top">↺</button>
       <div style="display:flex;align-items:center;gap:3px;">
@@ -30495,6 +30495,112 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
 })();
 </script>
 
+<script id="aab-tp-controls">
+/* ONE authoritative teleprompter controller for the Recording Studio bottom bar.
+   The originals live inside the fragile main block (9204-16067) that is known to fail
+   on some browsers, leaving every onclick (Practice, Adapt, mode, speed, reset, A-/A+)
+   pointing at undefined functions - all controls dead at once. This block is self-
+   contained, defined last (so it wins over every rival copy), and drives the real
+   studio prompter DOM directly. */
+(function(){
+  var T = window._TPC = { mode:'auto', wpm:80, fontPx:0, running:false, raf:0, timer:0, wi:0 };
+  function box(){ return document.getElementById('tp-body') || document.getElementById('tp-cur'); }
+  function words(){ var b=box(); return b ? b.querySelectorAll('.tp-word') : []; }
+  function log(m,x){ if(window.AABLog) AABLog.info('teleprompter', m, x); }
+
+  function stopEngines(){
+    T.running=false;
+    if(T.raf){ cancelAnimationFrame(T.raf); T.raf=0; }
+    if(T.timer){ clearInterval(T.timer); T.timer=0; }
+    if(typeof window._studioStopWBW==='function'){ try{ _studioStopWBW(); }catch(e){} }
+    if(window._studioWBW) _studioWBW.running=false;
+  }
+  function startAuto(){
+    var b=box(); if(!b) return;
+    var last=performance.now();
+    function step(now){
+      if(!T.running) return;
+      /* wpm -> px/s: ~1 line (~30px) per ~7 words */
+      b.scrollTop += ((T.wpm/60)*(30/7)) * ((now-last)/1000) * 10;
+      last=now; T.raf=requestAnimationFrame(step);
+    }
+    T.raf=requestAnimationFrame(step);
+  }
+  function startWord(){
+    var b=box(); if(!b) return;
+    if(typeof window._studioStartWBW==='function'){ try{ if(window._studioWBW)_studioWBW.running=true; _studioStartWBW(); return; }catch(e){} }
+    var ws=words(); if(!ws.length){ startAuto(); return; }
+    T.wi=0;
+    T.timer=setInterval(function(){
+      if(!T.running){ clearInterval(T.timer); T.timer=0; return; }
+      ws.forEach(function(w,i){ w.style.color = i<T.wi ? 'rgba(255,255,255,.2)' : (i===T.wi ? '#f59e0b' : 'rgba(255,255,255,.4)'); });
+      if(ws[T.wi] && ws[T.wi].scrollIntoView) ws[T.wi].scrollIntoView({block:'center'});
+      if(++T.wi>=ws.length){ clearInterval(T.timer); T.timer=0; T.running=false; paintBtn(false); }
+    }, Math.round(60000/Math.max(20,T.wpm)));
+  }
+  function start(){
+    stopEngines(); T.running=true;
+    if(window.STUDIO_TP){ STUDIO_TP.running=true; }
+    if(T.mode==='word') startWord(); else if(T.mode==='manual'){ /* user scrolls */ } else startAuto(); /* auto + sentence */
+    log('started - mode '+T.mode+' @ '+T.wpm+'wpm');
+  }
+  function stop(){
+    stopEngines();
+    if(window.STUDIO_TP){ STUDIO_TP.running=false; }
+    log('stopped');
+  }
+  function paintBtn(on){
+    var b=document.getElementById('btn-tp-start'); if(!b) return;
+    b.textContent = on ? '\u23f9 Stop Practice' : '\u25b6 Practice';
+    b.style.background = on ? 'rgba(16,185,129,.2)' : '';
+    b.style.color = on ? '#10b981' : '';
+  }
+
+  window._studioPracticeToggle = function(btn){
+    if(window.STUDIO && STUDIO.recording){ typeof toast==='function'&&toast('Stop recording first','error',1500); return; }
+    if(T.running){ stop(); paintBtn(false); typeof toast==='function'&&toast('Practice stopped','info',1200); }
+    else { start(); paintBtn(true); typeof toast==='function'&&toast('Practice \u2014 teleprompter running','ok',1500); }
+  };
+  window.setTpScrollMode = function(m){
+    T.mode = m||'auto';
+    var sel=document.getElementById('tp-mode-sel'); if(sel && sel.value!==T.mode){ try{ sel.value=T.mode; }catch(e){} }
+    document.querySelectorAll('[data-tpmode]').forEach(function(b){ b.classList.toggle('active', b.dataset.tpmode===T.mode); });
+    if(T.running){ start(); }
+    log('mode -> '+T.mode);
+  };
+  window.setTpSpd = function(v){
+    T.wpm = Math.max(20, Math.min(220, +v||80));
+    var lab=document.getElementById('tp-spd-val2'); if(lab) lab.textContent=T.wpm+'wpm';
+    if(T.running && T.mode==='word'){ start(); }  /* re-time the word interval */
+  };
+  window.resetTpScroll = function(){
+    stop(); paintBtn(false);
+    var b=box(); if(b) b.scrollTop=0;
+    T.wi=0; words().forEach(function(w){ w.style.color=''; w.style.fontWeight=''; w.style.textShadow=''; });
+    typeof toast==='function'&&toast('Teleprompter reset','info',1200);
+  };
+  function bumpFont(d){
+    var b=box(); if(!b) return;
+    if(!T.fontPx){ var cs=getComputedStyle(b); T.fontPx=parseFloat(cs.fontSize)||22; }
+    T.fontPx = Math.max(12, Math.min(64, T.fontPx+d));
+    b.style.setProperty('font-size', T.fontPx+'px', 'important');
+    /* word spans carry inline clamp() that beats the parent - hit them too */
+    b.querySelectorAll('.tp-word, #studio-tp-words, #tp-cur-inner *').forEach(function(el){
+      el.style.setProperty('font-size', T.fontPx+'px', 'important');
+    });
+    log('font -> '+T.fontPx+'px');
+  }
+  window.increaseTpFont = function(){ bumpFont(2); };
+  window.decreaseTpFont = function(){ bumpFont(-2); };
+
+  var _origAdaptive = window.toggleAdaptiveTp;
+  window.toggleAdaptiveTp = function(){
+    if(typeof _origAdaptive==='function'){ try{ return _origAdaptive(); }catch(e){ log('adaptive failed: '+e.message); } }
+    typeof toast==='function'&&toast('Adaptive speech sync is unavailable on this device','info',2000);
+  };
+  if(window.AABLog){ AABLog.ready('Teleprompter controls','one controller owns Practice/mode/speed/reset/A-/A+'); }
+})();
+</script>
 </body>
 </html>
 
