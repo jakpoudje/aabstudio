@@ -30540,15 +30540,38 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   }
   function start(){
     stopEngines(); T.running=true;
-    if(window.STUDIO_TP){ STUDIO_TP.running=true; }
-    if(T.mode==='word') startWord(); else if(T.mode==='manual'){ /* user scrolls */ } else startAuto(); /* auto + sentence */
+    if(window.STUDIO_TP){ STUDIO_TP.running=true; STUDIO_TP.wasRunning=true; }
+    if(window.STUDIO) STUDIO.tpAuto=true;
+    /* The studio prompter shows one sentence at a time - raw scrollTop has nothing to scroll.
+       Drive the studio's real engines when they exist; fall back to rAF scroll otherwise. */
+    if(T.mode==='word'){ startWord(); }
+    else if(T.mode==='manual'){ /* user scrolls */ }
+    else if(typeof window.startTpAutoTimer==='function'){ try{ startTpAutoTimer(); }catch(e){ startAuto(); } }
+    else { startAuto(); }
+    /* Rival scripts (studioTpStop/stopAllTp at ~14290, scene-advance ~14276) stamp the button
+       label back to "Practice" without stopping us - re-assert while running. */
+    if(T.lbl) clearInterval(T.lbl);
+    T.lbl=setInterval(function(){ if(T.running) paintBtn(true); else { clearInterval(T.lbl); T.lbl=0; } },700);
     log('started - mode '+T.mode+' @ '+T.wpm+'wpm');
   }
   function stop(){
     stopEngines();
-    if(window.STUDIO_TP){ STUDIO_TP.running=false; }
+    if(T.lbl){ clearInterval(T.lbl); T.lbl=0; }
+    if(window.STUDIO_TP){ STUDIO_TP.running=false; STUDIO_TP.wasRunning=false; }
+    if(window.STUDIO) STUDIO.tpAuto=false;
+    if(window._tpAutoTimer){ try{ cancelAnimationFrame(window._tpAutoTimer); }catch(e){} window._tpAutoTimer=null; }
+    if(window._studioTpTimer){ clearInterval(window._studioTpTimer); window._studioTpTimer=null; }
+    if(window._studioTpModeTimer){ clearInterval(window._studioTpModeTimer); window._studioTpModeTimer=null; }
     log('stopped');
   }
+  /* ONE stop: rivals that used to stamp the label now stop the controller too */
+  var _origStopAll = window.stopAllTp, _origSTS = window.studioTpStop;
+  window.stopAllTp = window.studioTpStop = function(){
+    T.running=false; if(T.lbl){ clearInterval(T.lbl); T.lbl=0; }
+    stopEngines(); paintBtn(false);
+    if(typeof _origSTS==='function'){ try{ _origSTS(); }catch(e){} }
+    else if(typeof _origStopAll==='function'){ try{ _origStopAll(); }catch(e){} }
+  };
   function paintBtn(on){
     var b=document.getElementById('btn-tp-start'); if(!b) return;
     b.textContent = on ? '\u23f9 Stop Practice' : '\u25b6 Practice';
