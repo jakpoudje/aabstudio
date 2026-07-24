@@ -20516,6 +20516,7 @@ window._aabSplitClip = function(clipId, trackId){
   var dur1 = playhead-clip.start, dur2 = clip.duration-dur1;
   var clip2 = Object.assign({},clip,{id:'c'+Date.now(),start:playhead,duration:dur2});
   clip.duration = dur1;
+  if (clip.sceneKey) clip2.sceneKey = clip.sceneKey;   // both halves still belong to the scene
   track.clips.push(clip2);
   track.clips.sort(function(a,b){return a.start-b.start;});
   if(typeof E_renderTL==='function')E_renderTL();
@@ -30363,6 +30364,14 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
 
       // 1. A clip already tagged for this scene -> update its URL if it drifted.
       var clip = main.clips.filter(function (c) { return c.sceneKey === key; })[0];
+      // 1b. Fragments of this scene from a SPLIT share the same media url. If the scene's
+      //     media is already present on the timeline (whole or split into pieces), the scene
+      //     is represented - do NOT create another clip, or every split/trim/drag would be
+      //     "rejoined" by a fresh full-length copy piling on top every 5s.
+      if (!clip) {
+        var frag = main.clips.filter(function (c) { return c.url === url; });
+        if (frag.length) { frag.forEach(function (c) { if (!c.sceneKey) c.sceneKey = key; }); return; }
+      }
       // 2. Otherwise, an untagged clip sitting in this scene's slot (legacy clips have no key) -> adopt it.
       if (!clip) clip = main.clips.filter(function (c) { return !c.sceneKey && c._slot === i; })[0]
                      || main.clips[i];                 // positional fallback for the original build
