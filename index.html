@@ -30491,6 +30491,34 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
 })();
 </script>
 
+<script id="aab-editpg-state">
+/* THE EDIT SUITE LAYOUT BUG.
+   Every Edit Suite layout rule is scoped to "#edit-pg.on ..." — including
+     #edit-pg.on #e-main{display:flex}        (bin | source | program | inspector in ONE ROW)
+     #edit-pg.on .aab-edit-body{display:none} (hides the legacy duplicate bin + inspector)
+   #edit-pg uses class "pg-full", and several paths show it via inline styles or strip the
+   class after nav() sets it. With .on missing, #e-main falls back to display:block so the
+   monitors stop sitting beside the media bin and collapse, and the legacy editor stops being
+   hidden - giving TWO media bins and no visible Source/Program monitors.
+   Verified live: adding .on restores bin 190 | source 595 | program 595 | inspector 220.
+   NOTE: .aab-edit-body must stay in the DOM (applyGrid uses its presence to pick the AABE
+   flex layout) - it only needs to be hidden, never removed. */
+(function () {
+  var ep = null;
+  function sync() {
+    ep = ep || document.getElementById('edit-pg');
+    if (!ep) return;
+    var visible = getComputedStyle(ep).display !== 'none';
+    if (visible !== ep.classList.contains('on')) {
+      ep.classList.toggle('on', visible);
+      if (window.AABLog) window.AABLog.info('edit-suite', 'restored #edit-pg.on -> layout rules active');
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', sync);
+  sync();
+  setInterval(sync, 400);
+})();
+</script>
 </body>
 </html>
 
