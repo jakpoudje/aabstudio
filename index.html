@@ -24500,7 +24500,7 @@ window.addEventListener('load',function(){
    flex:1 1 auto makes it contribute its real content height, so the timeline GROWS with
    its tracks (verified live: wrap 240 -> 401px, last track fully visible) up to 50vh,
    then the inner scroll takes over. */
-#edit-pg.on .aab-tl-inner{flex:1 1 auto!important;}
+#edit-pg.on .aab-tl-inner{flex:1 1 0!important;min-height:0!important;}
 #edit-pg.on .aab-tl-scroll{overflow-y:auto!important;overflow-x:auto!important;}
 #edit-pg.on .aab-tl-scroll::-webkit-scrollbar{width:10px;height:10px;}
 #edit-pg.on .aab-tl-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.22);border-radius:5px;}
@@ -30541,6 +30541,59 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', sync);
   sync();
   setInterval(sync, 400);
+})();
+</script>
+<script id="aab-tl-resizer">
+/* The timeline divider (.aab-tl-resize) was styled with cursor:ns-resize and a hover
+   colour but had NO handler - purely decorative. Now it actually resizes: drag it up to
+   enlarge the timeline, down to enlarge the preview monitors. The monitors keep their
+   full size by default (the timeline sits at its natural height and scrolls internally),
+   so nothing is shrunk just to fit tracks. The chosen height persists per browser. */
+(function () {
+  var KEY = 'aab_tl_h', MIN = 140, applied = false;
+  function wrap() { return document.querySelector('.aab-tl-wrap'); }
+  function maxH() { return Math.round(window.innerHeight * 0.75); }
+  function setH(px, save) {
+    var w = wrap(); if (!w) return;
+    px = Math.max(MIN, Math.min(maxH(), Math.round(px)));
+    w.style.setProperty('height', px + 'px', 'important');
+    w.style.setProperty('min-height', px + 'px', 'important');
+    w.style.setProperty('max-height', px + 'px', 'important');
+    w.style.setProperty('flex', '0 0 ' + px + 'px', 'important');
+    if (save) { try { localStorage.setItem(KEY, String(px)); } catch (e) {} }
+  }
+  function wire() {
+    var w = wrap(); if (!w) return;
+    var h = w.querySelector('.aab-tl-resize'); if (!h || h._aabWired) return;
+    h._aabWired = 1;
+    h.title = 'Drag to resize the timeline / preview area';
+    h.style.setProperty('height', '7px', 'important');
+    h.style.setProperty('cursor', 'ns-resize', 'important');
+    h.addEventListener('pointerdown', function (ev) {
+      ev.preventDefault();
+      var startY = ev.clientY, startH = w.getBoundingClientRect().height;
+      try { h.setPointerCapture(ev.pointerId); } catch (e) {}
+      document.body.style.userSelect = 'none';
+      function move(e2) { setH(startH - (e2.clientY - startY), false); }
+      function up(e2) {
+        h.removeEventListener('pointermove', move);
+        h.removeEventListener('pointerup', up);
+        document.body.style.userSelect = '';
+        setH(w.getBoundingClientRect().height, true);
+        if (window.AABLog) AABLog.info('edit-suite', 'timeline resized to ' + Math.round(w.getBoundingClientRect().height) + 'px');
+      }
+      h.addEventListener('pointermove', move);
+      h.addEventListener('pointerup', up);
+    });
+    // restore the user's saved split once the editor exists
+    if (!applied) {
+      applied = true;
+      var saved = null; try { saved = localStorage.getItem(KEY); } catch (e) {}
+      if (saved) setH(parseInt(saved, 10), false);
+    }
+  }
+  setInterval(wire, 500);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();
 })();
 </script>
 </body>
