@@ -15491,8 +15491,20 @@ window._reapplyNav=function(){
     }
 
     function splitClipAtPlayhead() {
-      if (TL.selectedClip) tl_splitAtPlayhead(TL.selectedClip.trackId);
-      else toast('Select a clip and position the playhead to split', 'info');
+      /* Rerouted: TL is a dead engine (TL.selectedClip is always null here); the live
+         engine is AABE. Use the selected AABE clip + playhead instead. */
+      try {
+        var sel = window._esSelClips && window._esSelClips.size ? [...window._esSelClips][0] : null;
+        var main = window.AABE && AABE.tracks ? (AABE.tracks.find(function(t){return t.id==='main';})||AABE.tracks[0]) : null;
+        if (!main) { toast && toast('Open the Edit Suite first', 'info'); return; }
+        var clip = sel ? main.clips.find(function(c){return c.id===sel;}) : null;
+        if (!clip) {
+          var ph = AABE.currentTime || 0;
+          clip = main.clips.find(function(c){return ph>c.start && ph<(c.start+(c.duration||c.dur||0));});
+        }
+        if (clip && typeof window._aabSplitClip==='function') window._aabSplitClip(clip.id, main.id);
+        else toast && toast('Position the playhead over a clip to split', 'info');
+      } catch(e) { toast && toast('Split failed', 'warn'); }
     }
 
 
@@ -29980,6 +29992,10 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
       var sc = window.PROJECT && PROJECT.scenes ? PROJECT.scenes[sceneIdx] : null;
       var key = 'scene_' + (sc && sc.id ? sc.id : sceneIdx);
       var existing = track.clips.filter(function (c) { return c.sceneKey === key; })[0];
+      if (!existing) {
+        var _frag = track.clips.filter(function (c) { return c.url === url; });
+        if (_frag.length) { _frag.forEach(function (c) { if (!c.sceneKey) c.sceneKey = key; }); return true; }
+      }
       if (existing) {                       // RETAKE: replace in place
         existing.url = url;
         existing.duration = durationSec || existing.duration;
