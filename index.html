@@ -25239,26 +25239,43 @@ window.E_selectClip = function(clipId){
         }
         if(typeof E_loadSrc==='function') E_loadSrc(url, name);
         // Highlight selected
-        binEl.querySelectorAll('[class*="bin-item"],[class*="clip-card"]').forEach(function(x){x.style.outline='';});
+        /* The cards are class "aab-bin-clip" - the old query looked for "bin-item"/"clip-card"
+           and matched NOTHING, so previous outlines were never cleared and every clip you
+           clicked stayed highlighted: selecting one appeared to select them all. */
+        binEl.querySelectorAll('.aab-bin-clip,[class*="bin-item"],[class*="clip-card"]').forEach(function(x){x.style.outline='';x.classList.remove('sel-bin');});
         item.style.outline = '2px solid #00d4ff';
+        item.classList.add('sel-bin');
       });
     });
   }
 })();
 
 // ── FIX: Unmute all video elements, ensure full audio ─────────────────────
-(function unmuteVideos(){
-  document.querySelectorAll('video').forEach(function(v){
-    v.muted = false;
-    v.volume = 1;
-  });
-  // Also patch future video loads
+(function audioFocus(){
+  /* This used to force EVERY <video> unmuted at volume 1, patch play() so nothing could
+     ever be muted, and re-unmute everything every 1.5s. The Edit Suite keeps 6 hidden
+     preload <video> elements per project, so several tracks played audio at once and
+     fought each other - the voice cut in and out. Now exactly ONE element may be audible:
+     the monitor the user is actually watching. Hidden preloads stay silent always. */
+  function isMonitor(v){ return v.id === 'e-src-vid' || v.id === 'e-prog-vid'; }
+  window.aabAudioFocus = function (active) {
+    var vids = document.querySelectorAll('video');
+    if (!active) {
+      for (var i = 0; i < vids.length; i++) { if (isMonitor(vids[i]) && !vids[i].paused) { active = vids[i]; break; } }
+    }
+    for (var j = 0; j < vids.length; j++) {
+      var v = vids[j];
+      if (!isMonitor(v)) { v.muted = true; v.volume = 0; continue; }   // preloads never make sound
+      var on = (v === active);
+      v.muted = !on; v.volume = on ? 1 : 0;
+    }
+  };
   var origPlay = HTMLVideoElement.prototype.play;
-  HTMLVideoElement.prototype.play = function(){
-    this.muted = false;
-    this.volume = 1;
+  HTMLVideoElement.prototype.play = function () {
+    try { window.aabAudioFocus(this); } catch (e) {}
     return origPlay.apply(this, arguments);
   };
+  window.aabAudioFocus(null);
 })();
 
 // ── FIX: Wire existing clips immediately (prevent flicker from fw2-less clips)
@@ -25279,8 +25296,8 @@ window.E_selectClip = function(clipId){
         if(cid && typeof E_selectClip==='function') E_selectClip(cid);
       });
     });
-    // Also unmute any new videos
-    document.querySelectorAll('video').forEach(function(v){ v.muted=false; v.volume=1; });
+    // Keep hidden preload videos silent; only the watched monitor stays audible
+    if (window.aabAudioFocus) window.aabAudioFocus(null);
   }, 1500);
 })();
 })();
