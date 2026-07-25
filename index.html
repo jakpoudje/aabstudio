@@ -31106,6 +31106,41 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   };
 })();
 </script>
+<script id="aab-asset-delete">
+/* The My Assets cards call deleteAssetById(id, projectId) but that function was never defined
+   (a second, rival renderer defines dash_deleteAsset(id) instead), so every Delete click threw
+   "deleteAssetById is not a function" and did nothing. Define it once, defensively: remove the
+   asset from the global asset store AND the project, delete the file from Supabase cloud, then
+   refresh whichever asset view is open. Because every tab reads the same aab_global_assets
+   store, removing it here syncs all tabs. */
+(function () {
+  window.deleteAssetById = function (id, projectId) {
+    var doDelete = function () {
+      var assets = [];
+      try { assets = JSON.parse(localStorage.getItem('aab_global_assets') || '[]'); } catch (e) {}
+      var victim = assets.filter(function (a) { return a && a.id === id; })[0];
+      // 1) local store
+      try { localStorage.setItem('aab_global_assets', JSON.stringify(assets.filter(function (a) { return a && a.id !== id; }))); } catch (e) {}
+      // 2) the project's own asset list
+      try {
+        if (window.PROJECT && PROJECT.assets) { PROJECT.assets = PROJECT.assets.filter(function (a) { return a && a.id !== id; }); if (typeof ap_save === 'function') ap_save(true); }
+      } catch (e) {}
+      // 3) the cloud file (Supabase) — the server verifies ownership before removing
+      try {
+        var u = victim && (victim.url || victim.dataUrl);
+        if (u && window.aabDeleteFromCloud) window.aabDeleteFromCloud(u);
+      } catch (e) {}
+      // 4) refresh whichever asset view is open (both renderers), so all tabs stay in sync
+      try { if (typeof dash_loadAssets === 'function') dash_loadAssets(); } catch (e) {}
+      try { if (typeof dash_loadVideos === 'function') dash_loadVideos(); } catch (e) {}
+      if (typeof toast === 'function') toast('Asset deleted', 'ok', 1400);
+      if (window.AABLog) AABLog.info('assets', 'deleted asset ' + id + (victim && victim.url ? ' (+ cloud)' : ''));
+    };
+    if (typeof aabConfirm === 'function') aabConfirm('Delete this asset?', doDelete, null, { title: 'Delete Asset', yes: 'Delete', danger: true });
+    else if (confirm('Delete this asset?')) doDelete();
+  };
+})();
+</script>
 </body>
 </html>
 
