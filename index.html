@@ -30984,7 +30984,13 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
    empty-state text, sub-labels and asset meta, which Julius could barely read. These rules
    lift the contrast, scoped strictly to the dashboard asset/video sections so nothing else
    is affected. */
-#dash-my-assets .dash-sub, #dash-my-videos .dash-sub { color:#aeb9c9 !important; }
+#dash-my-assets .dash-sub, #dash-my-videos .dash-sub { color:#334155 !important; font-weight:500 !important; }
+/* On the light asset/video panels, make ALL text dark and pronounced, not soft grey. */
+#dash-my-assets, #dash-my-videos { color:#0f172a !important; }
+#dash-my-assets .dash-asset-filter, #dash-my-videos .dash-vid-filter { color:#1e293b !important; font-weight:600 !important; }
+#dash-assets-grid *, #dash-videos-grid * { color:#0f172a !important; }
+#dash-assets-grid [style*="color:#9ca3af"], #dash-assets-grid [style*="color:#6b7280"],
+#dash-videos-grid [style*="color:#9ca3af"], #dash-videos-grid [style*="color:#6b7280"] { color:#475569 !important; }
 #dash-my-assets [style*="rgba(255,255,255,.3)"],
 #dash-my-videos [style*="rgba(255,255,255,.3)"],
 #dash-my-assets [style*="rgba(255,255,255,0.3)"],
@@ -31139,6 +31145,94 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     if (typeof aabConfirm === 'function') aabConfirm('Delete this asset?', doDelete, null, { title: 'Delete Asset', yes: 'Delete', danger: true });
     else if (confirm('Delete this asset?')) doDelete();
   };
+})();
+</script>
+<script id="aab-asset-upload-safe">
+/* QUOTA CRASH FIX. dash_uploadAsset stored the whole file as base64 (dataUrl) in the
+   aab_global_assets localStorage key. A few images overflow the ~5MB quota -> QuotaExceededError
+   at every subsequent setItem, which silently broke saving projects, recordings and assets
+   app-wide (new projects fell back to an old stored one, recordings failed, assets read as 0).
+   This override uploads the file to Supabase (project-assets, via /api/asset/upload) and stores
+   ONLY the returned URL in localStorage - never the base64 - so the quota can't fill. If the
+   upload fails it stores a lightweight placeholder (no data) and warns, rather than crashing. */
+(function () {
+  var API = window.API || 'https://aabstudio-production.up.railway.app';
+  function saveRecord(rec) {
+    var assets = [];
+    try { assets = JSON.parse(localStorage.getItem('aab_global_assets') || '[]'); } catch (e) {}
+    assets.unshift(rec);
+    // hard cap + never store any base64: strip dataUrl on everything before writing
+    assets = assets.slice(0, 100).map(function (a) {
+      if (a && typeof a.url === 'string' && a.url.indexOf('data:') === 0) a.url = '';
+      if (a) delete a.dataUrl;
+      return a;
+    });
+    try { localStorage.setItem('aab_global_assets', JSON.stringify(assets)); }
+    catch (e) { if (window.AABLog) AABLog.warn('assets', 'local store full — asset saved to cloud only'); }
+    try { if (window.PROJECT) { if (!PROJECT.assets) PROJECT.assets = []; PROJECT.assets.unshift(rec); if (typeof ap_save === 'function') ap_save(true); } } catch (e) {}
+    try { if (typeof dash_loadAssets === 'function') dash_loadAssets(); } catch (e) {}
+  }
+  window.dash_uploadAsset = function (file, type) {
+    if (!file) return;
+    if (typeof toast === 'function') toast('Uploading ' + (file.name || type) + '\u2026', 'info', 1500);
+    var t = type || (file.type.split('/')[0] || 'file');
+    var reader = new FileReader();
+    reader.onload = function (ev) {
+      var dataUrl = ev.target.result;
+      var base = { id: 'asset_' + Date.now() + '_' + Math.random().toString(36).slice(2),
+                   name: file.name, type: t, size: file.size,
+                   projectId: (window.PROJECT && PROJECT.id) || null,
+                   projectTitle: (window.PROJECT && PROJECT.title) || '',
+                   createdAt: new Date().toISOString() };
+      var tok = window._sbSession && window._sbSession.access_token;
+      // Images go through the server route (it accepts data:image only). Others: keep a URL
+      // if we can make an object URL for this session; never persist base64.
+      if (t === 'image' && tok) {
+        fetch(API + '/api/asset/upload', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+          body: JSON.stringify({ dataUrl: dataUrl, name: file.name, projectId: base.projectId })
+        }).then(function (r) { return r.json(); }).then(function (d) {
+          base.url = (d && d.url) || '';
+          if (!base.url && window.AABLog) AABLog.warn('assets', 'cloud upload returned no url');
+          saveRecord(base);
+          if (typeof toast === 'function') toast('Saved: ' + file.name, 'ok', 1500);
+        }).catch(function () {
+          base.url = ''; saveRecord(base);
+          if (typeof toast === 'function') toast('Saved (cloud upload failed): ' + file.name, 'warn', 2000);
+        });
+      } else {
+        // audio/video/sfx: cloud route is image-only, so store a session object URL for preview
+        // and the record WITHOUT base64 (durable cloud upload for these is a follow-up).
+        try { base.url = URL.createObjectURL(file); } catch (e) { base.url = ''; }
+        base._sessionOnly = true;
+        saveRecord(base);
+        if (typeof toast === 'function') toast('Saved: ' + file.name, 'ok', 1500);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+})();
+</script>
+<script id="aab-quota-reclaim">
+/* The localStorage quota is already full of base64 asset data from before the upload fix, so
+   every save currently throws QuotaExceededError. On boot, strip any base64 (data:) urls out of
+   the stored assets - keeps the asset records (name/type/cloud url) but frees the space, so
+   projects, recordings and new assets can save again immediately. */
+(function () {
+  try {
+    var raw = localStorage.getItem('aab_global_assets');
+    if (raw && raw.indexOf('data:') > -1) {
+      var assets = JSON.parse(raw);
+      var freed = 0;
+      assets = assets.map(function (a) {
+        if (a && typeof a.url === 'string' && a.url.indexOf('data:') === 0) { freed += a.url.length; a.url = ''; }
+        if (a && a.dataUrl) { freed += (a.dataUrl.length || 0); delete a.dataUrl; }
+        return a;
+      });
+      localStorage.setItem('aab_global_assets', JSON.stringify(assets));
+      if (window.AABLog) AABLog.info('storage', 'reclaimed ~' + Math.round(freed/1024) + 'KB of base64 from assets — saving works again');
+    }
+  } catch (e) {}
 })();
 </script>
 </body>
