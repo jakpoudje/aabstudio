@@ -11595,6 +11595,15 @@ function loadDashboard() {
       if (!proj) { toast('Project not found', 'error'); return; }
       
       aabConfirm('Delete "' + (proj.title||'Project') + '"? This cannot be undone.', function() {
+        // 0. Delete all of this project's stored clips from the cloud bucket.
+        try {
+          var _u = [];
+          (proj.scenes||[]).forEach(function(sc){
+            [sc && sc.recordedUrl, sc && sc.apsVideoUrl, sc && sc.videoUrl].forEach(function(x){ if(x) _u.push(x); });
+          });
+          if (proj.apsVideos) Object.keys(proj.apsVideos).forEach(function(k){ if(proj.apsVideos[k]) _u.push(proj.apsVideos[k]); });
+          window.aabDeleteFromCloud && window.aabDeleteFromCloud(_u);
+        } catch(_e) {}
         // 1. Remove from localStorage
         var updated = saved.filter(function(p){ return p && p.id !== proj.id; });
         try { localStorage.setItem('aab_projects', JSON.stringify(updated)); } catch(e2) {}
@@ -27449,6 +27458,8 @@ function _binRender(){
       });
       // Remove from timeline too
       if(window.E&&E.tracks)E.tracks.forEach(tr=>{tr.clips=tr.clips.filter(c=>c.url!==cl.url);});
+      // Deleting from the bin (the file's home) removes the stored object from the cloud too.
+      try{ window.aabDeleteFromCloud && window.aabDeleteFromCloud(cl.url); }catch(_e){}
       if(typeof saveProject==='function'){try{saveProject();}catch(_e){}}   // persist the removal
       _binRender(); E_renderTL&&E_renderTL();
       toast&&toast('Removed from bin','ok');
@@ -30691,6 +30702,64 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     v.load();
   }
   setInterval(next, 700);
+})();
+</script>
+<script id="aab-cloud-delete">
+/* Central cloud-delete: deleting a file from the media bin, a scene, or a project must also
+   remove the stored object from Supabase so it does not linger in the bucket forever.
+   The server route POST /api/clip/delete verifies ownership (the storage path must contain
+   the user's id) before removing, so this is safe to call with any list of urls - provider
+   /expired/blob urls simply match nothing and are ignored. Timeline-only deletes do NOT call
+   this (the same media may still live in the bin); only bin/scene/project deletes do. */
+(function () {
+  var API = window.API || 'https://aabstudio-production.up.railway.app';
+  /* Persistent readiness: AABLog.readiness() gives the %, AABLog.modules() the per-module
+     state. Expose a one-call summary the user can run anytime in the console, and print a
+     live line whenever readiness changes so "% ready" is always visible, not just at boot. */
+  window.aabReady = function () {
+    try {
+      var pct = window.AABLog ? AABLog.readiness() : null;
+      var mods = window.AABLog ? AABLog.modules() : {};
+      if (window.AABLog) AABLog.state('readiness', 'AAB Studio ' + pct + '% ready');
+      Object.keys(mods).forEach(function (k) {
+        var m = mods[k];
+        if (window.AABLog) AABLog.info('readiness', '  ' + (m && m.ready ? 'OK  ' : '... ') + k);
+      });
+      return pct;
+    } catch (e) { return null; }
+  };
+  (function () {
+    var last = -1;
+    setInterval(function () {
+      try {
+        var pct = window.AABLog ? AABLog.readiness() : null;
+        if (pct != null && pct !== last) {
+          last = pct;
+          if (window.AABLog) AABLog.state('readiness', 'AAB Studio ' + pct + '% ready');
+        }
+      } catch (e) {}
+    }, 1000);
+  })();
+
+  window.aabDeleteFromCloud = function (urls) {
+    try {
+      if (!urls) return;
+      if (!Array.isArray(urls)) urls = [urls];
+      var storage = urls.filter(function (u) { return /supabase\.co\/storage\//.test(String(u)); });
+      if (!storage.length) return;
+      var tok = window._sbSession && window._sbSession.access_token;
+      if (!tok) { if (window.AABLog) AABLog.warn('cloud-delete', 'not signed in - skipped ' + storage.length + ' file(s)'); return; }
+      fetch(API + '/api/clip/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+        body: JSON.stringify({ urls: storage })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (window.AABLog) AABLog.info('cloud-delete', 'removed ' + ((d && d.deleted) || 0) + ' file(s) from storage');
+      }).catch(function (e) {
+        if (window.AABLog) AABLog.warn('cloud-delete', 'request failed: ' + e.message);
+      });
+    } catch (e) {}
+  };
 })();
 </script>
 </body>
