@@ -5782,19 +5782,23 @@ function E_renderTL(){
       ce2.style.left=l+"px";ce2.style.width=Math.max(w,20)+"px";
       ce2.style.background=track.color+"44";ce2.style.borderColor=track.color;
       if(track.type==="video"&&clip.url&&w>40){
+        /* FILMSTRIP across the FULL clip width. The old code capped at 8 frames of 50px, so
+           a long clip showed thumbs for only ~400px and was blank after. It also spawned all
+           the sample <video>s at once, saturating the browser per-host media limit so most
+           never seeked. Now: one canvas per ~64px of real width (covers the whole clip), and
+           a single shared, sequential loader (window.aabFilmstrip) paints them one video at a
+           time so they reliably render without flooding connections. */
         var ts=_el("div","aab-thumb-strip");
-        var nt=Math.min(8,Math.ceil(w/50));
+        var FW=64; var nt=Math.max(1,Math.min(60,Math.round(w/FW)));
+        var cells=[];
         for(var ti=0;ti<nt;ti++){
-          (function(idx,totalN){
-            var tc=document.createElement("canvas");tc.width=50;tc.height=track.h-8;
-            tc.style.cssText="flex-shrink:0;height:100%;object-fit:cover;";
-            var tv=document.createElement("video");tv.src=clip.url;tv.muted=true;tv.preload="metadata";tv.setAttribute("playsinline","");
-            tv.addEventListener("loadedmetadata",function(){tv.currentTime=clip.duration*(idx/(totalN>1?totalN-1:1));});
-            tv.addEventListener("seeked",function(){try{tc.getContext("2d").drawImage(tv,0,0,50,tc.height);}catch(er){}});
-            ts.appendChild(tc);
-          })(ti,nt);
+          var tc=document.createElement("canvas");tc.width=FW;tc.height=Math.max(8,track.h-8);
+          tc.style.cssText="flex:1 1 0;min-width:0;height:100%;object-fit:cover;";
+          ts.appendChild(tc);
+          cells.push({canvas:tc, t: clip.duration*(nt>1?ti/(nt-1):0)});
         }
         ce2.appendChild(ts);
+        if(window.aabFilmstrip) window.aabFilmstrip(clip.url, cells);
       }
       if(track.type==="audio"&&w>20){
         var wv=document.createElement("canvas");wv.className="aab-waveform";
@@ -30799,6 +30803,46 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
 }
 #tp-body .tp-word, #tp-cur .tp-word { font-size: var(--tp-font-size, 26px) !important; }
 </style>
+<script id="aab-filmstrip">
+/* Shared, sequential filmstrip painter. Timeline clips ask for a set of {canvas,t} cells;
+   we load ONE hidden <video> per clip.url, seek it to each requested time in turn, paint each
+   frame, then release it - so a whole timeline of clips paints its filmstrips without ever
+   holding more than one extra <video> open (the browser per-host media limit is ~6, and the
+   editor already keeps monitors + preloads). Requests queue so many clips are handled in order. */
+(function () {
+  var q = [], busy = false, cache = {};
+  window.aabFilmstrip = function (url, cells) {
+    if (!url || !cells || !cells.length) return;
+    q.push({ url: url, cells: cells });
+    pump();
+  };
+  function pump() {
+    if (busy) return;
+    var job = q.shift(); if (!job) return;
+    busy = true;
+    var v = document.createElement('video');
+    v.muted = true; v.preload = 'metadata'; v.playsInline = true;
+    try { v.removeAttribute('crossorigin'); } catch (e) {}
+    var i = 0, done = false;
+    function finish() { if (done) return; done = true; try { v.removeAttribute('src'); v.load(); } catch (e) {} busy = false; setTimeout(pump, 30); }
+    function paintNext() {
+      if (i >= job.cells.length) return finish();
+      var cell = job.cells[i];
+      try { v.currentTime = Math.min(cell.t || 0, (v.duration || cell.t || 0)); }
+      catch (e) { i++; paintNext(); }
+    }
+    v.addEventListener('loadeddata', function () { paintNext(); });
+    v.addEventListener('seeked', function () {
+      var cell = job.cells[i];
+      if (cell && cell.canvas) { try { cell.canvas.getContext('2d').drawImage(v, 0, 0, cell.canvas.width, cell.canvas.height); } catch (e) {} }
+      i++; paintNext();
+    });
+    v.addEventListener('error', finish);
+    setTimeout(function () { if (!done && i === 0) finish(); }, 12000);
+    v.src = url; v.load();
+  };
+})();
+</script>
 </body>
 </html>
 
