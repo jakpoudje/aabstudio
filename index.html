@@ -12460,6 +12460,24 @@ function openRecordingStudio() {
           var rb = document.getElementById('btn-retake');
           if (rb) rb.style.display = '';
           toast('Scene ' + (STUDIO.currentScene + 1) + ' saved \u2713  ' + STUDIO.recSecs + 's', 'ok');
+          // Upload to Supabase IMMEDIATELY so the recording is durable before the blob: URL can
+          // die (blob URLs only live in the tab that made them; the old code relied on a 2s
+          // background sweep that lost the race on reload/navigate -> dead recordings). We kick
+          // the durable upload right here; aabIngestScene swaps recordedUrl to the Supabase URL
+          // on success and re-saves. The local blob stays as the instant preview meanwhile.
+          try {
+            var _si = STUDIO.currentScene;
+            if (typeof window.aabIngestScene === 'function') {
+              window.aabIngestScene(_si).then(function(){
+                var _sc = PROJECT.scenes[_si];
+                if (_sc && /^https?:/i.test(_sc.recordedUrl||'')) {
+                  if (window.AABLog) AABLog.success('recording','scene '+(_si+1)+' uploaded — safe on reload');
+                } else if (window.AABLog) {
+                  AABLog.warn('recording','scene '+(_si+1)+' not yet uploaded — will retry');
+                }
+              });
+            }
+          } catch(_e){}
           // stopRec ONLY saves + stops. Scene advancing is handled by the Sync REC driver.
           // Navigating to the Edit Suite happens ONLY when the user clicks "Done \u2192 Edit".
           // (Removed auto-advance + auto-nav that caused recordings to jump to edit by themselves.)
@@ -13698,10 +13716,10 @@ function studioNext() {
             if (STUDIO.stream) { STUDIO.stream.getTracks().forEach(function(t){ t.stop(); }); STUDIO.stream = null; }
             clearInterval(STUDIO.elTimer);
             saveProject();
-            nav('edit-pg');
-            setTimeout(function() {
-              if (typeof edit_buildPlaylist === 'function') edit_buildPlaylist();
-            }, 400);
+            // Make sure every recording is uploaded to Supabase before leaving the studio,
+            // so none is lost as a temporary blob.
+            var _go = function(){ nav('edit-pg'); setTimeout(function(){ if (typeof edit_buildPlaylist === 'function') edit_buildPlaylist(); }, 400); };
+            if (window.aabWaitForUploads) { toast('Saving recordings\u2026','info',1200); window.aabWaitForUploads().then(_go); } else { _go(); }
           }, 200);
         };
         STUDIO.recording = false;
@@ -13711,14 +13729,12 @@ function studioNext() {
         return;
       }
 
-      // Not recording — navigate immediately
+      // Not recording — but still wait for any pending uploads so nothing is lost.
       if (STUDIO.stream) { STUDIO.stream.getTracks().forEach(function(t){ t.stop(); }); STUDIO.stream = null; }
       clearInterval(STUDIO.elTimer);
       saveProject();
-      nav('edit-pg');
-      setTimeout(function() {
-        if (typeof edit_buildPlaylist === 'function') edit_buildPlaylist();
-      }, 400);
+      var _go2 = function(){ nav('edit-pg'); setTimeout(function(){ if (typeof edit_buildPlaylist === 'function') edit_buildPlaylist(); }, 400); };
+      if (window.aabWaitForUploads) { window.aabWaitForUploads(8000).then(_go2); } else { _go2(); }
     }
 
     function startElapsedTimer() {
@@ -30113,8 +30129,8 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
          an endless "[ingest] scene N: Load failed" loop). Give up after 2 tries, drop the dead
          reference, and say so once. */
       sc._ingestTries = (sc._ingestTries || 0) + 1;
-      var _dead = /load failed|not found|network|failed to fetch/i.test(e.message || '');
-      if (_dead || sc._ingestTries >= 2) {
+      var _dead = /load failed|not found/i.test(e.message || '');   // blob actually gone
+      if (_dead || sc._ingestTries >= 5) {                          // else keep retrying while the page lives
         sc._ingestDead = true;
         sc.recordedUrl = '';                    // dead reference — stop everything re-reading it
         if (window.AABLog) window.AABLog.error('ingest', 'scene ' + (sceneIdx + 1) + ' recording lost (temporary blob URL expired on reload)', (e.message || 'load failed') + ' — next: re-record this scene; retries stopped');
@@ -31065,6 +31081,29 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   // run shortly after boot (project is loaded by then), and once more after the first sync
   setTimeout(function(){ clean('boot'); }, 2500);
   setTimeout(function(){ clean('post-sync'); }, 8000);
+})();
+</script>
+<script id="aab-upload-guard">
+/* Wait for any still-uploading recordings to finish before leaving the studio, so a
+   recording is never lost by navigating away while its blob is still local-only. */
+(function(){
+  window.aabWaitForUploads = function(timeoutMs){
+    timeoutMs = timeoutMs || 15000;
+    return new Promise(function(resolve){
+      var start = Date.now();
+      (function check(){
+        var P = window.PROJECT;
+        var pending = P && P.scenes ? P.scenes.filter(function(sc){
+          return sc && /^blob:/i.test(sc.recordedUrl||'') && !sc._ingestDead;
+        }) : [];
+        if(!pending.length){ resolve('done'); return; }
+        // kick any that aren't in flight
+        pending.forEach(function(sc){ var i=P.scenes.indexOf(sc); if(!sc._ingesting && window.aabIngestScene) window.aabIngestScene(i); });
+        if(Date.now()-start > timeoutMs){ resolve('timeout ('+pending.length+' pending)'); return; }
+        setTimeout(check, 700);
+      })();
+    });
+  };
 })();
 </script>
 </body>
