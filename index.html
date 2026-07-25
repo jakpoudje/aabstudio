@@ -27299,15 +27299,10 @@ function clipCtx(clip,track,e){
     {i:clip.muted?'🔊':'🔇',l:clip.muted?'Unmute':'Mute',fn:()=>{_snapshotTracks();clip.muted=!clip.muted;(typeof E_renderTL==="function"?E_renderTL():null);}},
     {i:clip.locked?'🔓':'🔒',l:clip.locked?'Unlock':'Lock',fn:()=>{clip.locked=!clip.locked;(typeof E_renderTL==="function"?E_renderTL():null);}},
     '—',{i:'📋',l:'Properties',fn:()=>_esInspect(clip,track)},
-    {i:'🗑',l:'Delete Clip',danger:true,fn:()=>{_snapshotTracks();
-      if(clip.sceneKey&&window.aabMarkClipDeleted)window.aabMarkClipDeleted(clip.sceneKey);
-      /* remove by id from EVERY engine state — rival engines (E / AABE) can hold separate
-         track arrays, and deleting from only one made the visible clip survive */
-      [window.E,window.AABE].forEach(en=>{ if(en&&en.tracks&&Array.isArray(en.tracks))
-        en.tracks.forEach(t=>{ if(t&&Array.isArray(t.clips)) t.clips=t.clips.filter(c=>c.id!==clip.id); }); });
-      if(window._esSelClips)window._esSelClips.delete(clip.id);
-      (typeof E_renderTL==="function"?E_renderTL():null);
-      if(typeof toast==='function')toast('Clip deleted','ok',1500);}}
+    {i:'🗑',l:'Delete Clip',danger:true,fn:()=>{ try{_snapshotTracks();}catch(_e){}
+      /* durable delete: removes from both engines, tombstones, and PERSISTS to the project */
+      if(window.aabDeleteTimelineClip) window.aabDeleteTimelineClip(clip.id);
+    }}
   ]);
 }
 function trackCtx(track,e){
@@ -31233,6 +31228,52 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
       if (window.AABLog) AABLog.info('storage', 'reclaimed ~' + Math.round(freed/1024) + 'KB of base64 from assets — saving works again');
     }
   } catch (e) {}
+})();
+</script>
+<script id="aab-timeline-delete">
+/* ONE authoritative timeline-clip delete that actually PERSISTS. The keyboard-Delete handler
+   and the context-menu Delete both removed the clip from E.tracks and re-rendered but never
+   called saveProject / _saveTimelineToProject, so the deletion was not durable — the clip
+   could return on reload or be re-added by the relink/ingest loops ("delete doesn't fully
+   delete"). This removes by id from BOTH engine states, tombstones it so the loops won't
+   re-add it, saves the timeline to the project AND the project to storage, then re-renders. */
+(function () {
+  window.aabDeleteTimelineClip = function (clipId) {
+    if (!clipId || !window.E || !E.tracks) return;
+    // find the clip (for its sceneKey) before removing
+    var found = null;
+    E.tracks.forEach(function (t) { (t.clips || []).forEach(function (c) { if (c.id === clipId) found = c; }); });
+    // tombstone so relink/ingest never re-adds it
+    try { if (found && found.sceneKey && window.aabMarkClipDeleted) window.aabMarkClipDeleted(found.sceneKey); } catch (e) {}
+    // remove from every engine's track arrays
+    [window.E, window.AABE].forEach(function (en) {
+      if (en && Array.isArray(en.tracks)) en.tracks.forEach(function (t) {
+        if (t && Array.isArray(t.clips)) t.clips = t.clips.filter(function (c) { return c.id !== clipId; });
+      });
+    });
+    // clear selection in both selection systems
+    try { if (window._esSelClips) window._esSelClips.delete(clipId); } catch (e) {}
+    try { if (window.E) E.selectedClipId = null; } catch (e) {}
+    // PERSIST — this is what was missing
+    try { if (typeof _saveTimelineToProject === 'function') _saveTimelineToProject(); } catch (e) {}
+    try { if (typeof saveProject === 'function') saveProject(); } catch (e) {}
+    // re-render
+    try { if (typeof E_renderTL === 'function') E_renderTL(); } catch (e) {}
+    if (window.AABLog) AABLog.info('timeline', 'deleted clip ' + clipId + ' (persisted)');
+    if (typeof toast === 'function') toast('Clip deleted', 'ok', 1200);
+  };
+
+  // Route the keyboard Delete/Backspace through it, in capture phase, so the durable path wins.
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+    var ep = document.getElementById('edit-pg');
+    if (!ep || getComputedStyle(ep).display === 'none') return;
+    var t = e.target; if (t && /INPUT|TEXTAREA|SELECT/.test(t.tagName)) return;
+    if (t && t.isContentEditable) return;
+    var id = (window._esSelClips && window._esSelClips.size) ? [].slice.call(window._esSelClips)[0]
+           : (window.E && E.selectedClipId) ? E.selectedClipId : null;
+    if (id) { e.preventDefault(); e.stopImmediatePropagation(); window.aabDeleteTimelineClip(id); }
+  }, true);
 })();
 </script>
 </body>
