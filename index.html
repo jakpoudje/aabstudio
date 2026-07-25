@@ -31029,6 +31029,44 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   else { bind(); apply(); }
 })();
 </script>
+<script id="aab-deadblob-cleanup">
+/* DEAD BLOB CLEANUP. Some scenes have recordedUrl = "blob:..." from an earlier session.
+   A blob: URL only lives inside the tab that created it, so after any reload it is a dead
+   reference - nothing to delete from Supabase or Cloudflare (it was never uploaded). Those
+   dead references are baked into the saved project data, so every load re-tries them and the
+   console fills with WebKitBlobResource / dead-media errors, and Safari (which currently
+   cannot save) keeps restoring them. This strips the dead blob refs from the project so the
+   error storm stops, marks each affected scene as needing a re-record, and (once) saves the
+   cleaned project. It NEVER touches uploaded (https Supabase) urls - only blob: ones. */
+(function () {
+  function isDeadBlob(u){ return typeof u === 'string' && u.indexOf('blob:') === 0; }
+  function clean(reason){
+    var P = window.PROJECT; if (!P || !P.scenes) return 0;
+    var n = 0;
+    P.scenes.forEach(function (sc, i) {
+      ['recordedUrl','apsVideoUrl','videoUrl'].forEach(function (k) {
+        if (isDeadBlob(sc[k])) { sc[k] = null; sc._needsRerecord = true; sc._ingestDead = true; n++; }
+      });
+    });
+    // also drop any timeline clips still pointing at a blob: url
+    try {
+      if (window.E && E.tracks) E.tracks.forEach(function (t) {
+        if (t.clips) t.clips = t.clips.filter(function (c) { return !isDeadBlob(c.url); });
+      });
+    } catch (e) {}
+    if (n) {
+      if (window.AABLog) AABLog.warn('cleanup', 'removed ' + n + ' dead recording reference(s) — those scenes need re-recording (' + (reason||'load') + ')');
+      try { if (typeof saveProject === 'function') saveProject(); } catch (e) {}
+      try { if (typeof E_renderTL === 'function') E_renderTL(); } catch (e) {}
+    }
+    return n;
+  }
+  window.aabCleanDeadBlobs = clean;
+  // run shortly after boot (project is loaded by then), and once more after the first sync
+  setTimeout(function(){ clean('boot'); }, 2500);
+  setTimeout(function(){ clean('post-sync'); }, 8000);
+})();
+</script>
 </body>
 </html>
 
