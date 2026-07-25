@@ -8413,21 +8413,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
               onclick="startCheckout('price_1TNRx6BJVJa9ylUXwLr11VPm')">Start free trial →</button>
           </div>
 
-          <!-- TEAM -->
-          <div class="plan">
-            <div class="plan-name" style="color:rgba(255,255,255,.4);">Team</div>
-            <div class="plan-price">£89<sub>/mo</sub></div>
-            <div class="plan-period">or £744/yr — 5 seats</div>
-            <div class="plan-features">
-              <div class="plan-feat">Everything in Pro</div>
-              <div class="plan-feat">5 team members</div>
-              <div class="plan-feat">Shared workspaces</div>
-              <div class="plan-feat">Shared project library</div>
-              <div class="plan-feat">Collaboration tools</div>
-              <div class="plan-feat">Dedicated support</div>
-            </div>
-            <button class="btn btn-ghost" style="width:100%;" onclick="nav('pricing-pg')">See Team plan →</button>
-          </div>
+          <!-- TEAM plan removed: not offered on this platform -->
 
         </div>
         <div style="margin-top:20px;font-size:12px;color:rgba(255,255,255,.3);">All paid plans include a 7-day free
@@ -30975,6 +30961,72 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', bind); else bind();
   // Neutralise the polluted global so nothing else thinks a practice is already running.
   try { if(window.STUDIO_TP) STUDIO_TP.running=false; } catch(e){}
+})();
+</script>
+<style id="aab-dash-contrast">
+/* Dashboard My Videos / My Assets used very dim inline colours (rgba(255,255,255,.3)) on
+   empty-state text, sub-labels and asset meta, which Julius could barely read. These rules
+   lift the contrast, scoped strictly to the dashboard asset/video sections so nothing else
+   is affected. */
+#dash-my-assets .dash-sub, #dash-my-videos .dash-sub { color:#aeb9c9 !important; }
+#dash-my-assets [style*="rgba(255,255,255,.3)"],
+#dash-my-videos [style*="rgba(255,255,255,.3)"],
+#dash-my-assets [style*="rgba(255,255,255,0.3)"],
+#dash-my-videos [style*="rgba(255,255,255,0.3)"] { color:#c7d0dd !important; }
+#dash-my-assets .dash-asset-filter, #dash-my-videos .dash-vid-filter {
+  color:#dbe3ee !important; border-color:rgba(255,255,255,.22) !important;
+}
+#dash-my-assets .dash-asset-filter.on, #dash-my-videos .dash-vid-filter.on {
+  color:#ffffff !important; background:rgba(139,92,246,.28) !important; border-color:#8b5cf6 !important;
+}
+#dash-my-assets label.btn-ghost { color:#eef2f8 !important; border-color:rgba(255,255,255,.28) !important; }
+/* asset/video card titles + meta */
+#dash-videos-grid *, #dash-assets-grid * { }
+#dash-videos-grid [style*="rgba(255,255,255,.3)"],
+#dash-assets-grid [style*="rgba(255,255,255,.3)"] { color:#c7d0dd !important; }
+</style>
+<script id="aab-tp-font-controller">
+/* Isolated teleprompter font controller. A-/A+ had ~4 rival handlers and the word-by-word
+   renderer kept re-baking an inline clamp on #tp-cur, so presses did not stick. This owns ONE
+   size, applies it directly to every prompt text element with !important on each press, and
+   re-asserts it every 300ms so no rebuild can overwrite it. Binds the visible A-/A+ buttons in
+   capture phase so rivals cannot pre-empt. Persists across sessions. */
+(function () {
+  var KEY='aab_tp_font', F={ px: parseInt(localStorage.getItem(KEY)||'0')||26 };
+  var TARGETS = ['tp-cur','tp-body','tp-prev','tp-next','studio-tp-words'];
+  function apply(){
+    document.documentElement.style.setProperty('--tp-font-size', F.px+'px');
+    TARGETS.forEach(function(id){
+      var el=document.getElementById(id); if(!el) return;
+      el.style.setProperty('font-size', F.px+'px', 'important');
+      // also any single text child the renderer built
+      [].forEach.call(el.querySelectorAll('div,span,p'), function(c){
+        if(c.children.length===0) c.style.setProperty('font-size', F.px+'px', 'important');
+      });
+    });
+  }
+  function bump(d){ F.px=Math.max(12,Math.min(64,F.px+d)); try{localStorage.setItem(KEY,F.px);}catch(e){} apply();
+    if(window.AABLog) AABLog.info('teleprompter','font '+F.px+'px'); }
+  // Public, overrides the rival globals so onclick="increaseTpFont()" routes here too.
+  window.increaseTpFont=function(){ bump(2); };
+  window.decreaseTpFont=function(){ bump(-2); };
+  window._tpApplyFont=function(px){ if(px){F.px=px;} apply(); };
+  function bind(){
+    [].forEach.call(document.querySelectorAll('button'), function(b){
+      var t=(b.textContent||'').trim();
+      if((t==='A+'||t==='A-'||t==='A\u2212') && !b._fcBound){
+        b._fcBound=1;
+        b.addEventListener('click', function(ev){
+          ev.stopImmediatePropagation(); ev.preventDefault();
+          bump((t==='A+')?2:-2);
+        }, true);
+      }
+    });
+  }
+  setInterval(bind, 600);
+  setInterval(apply, 300);   // re-assert against WBW rebuilds
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ bind(); apply(); });
+  else { bind(); apply(); }
 })();
 </script>
 </body>
