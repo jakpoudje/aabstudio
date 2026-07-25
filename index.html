@@ -11977,13 +11977,39 @@ function loadDashboard() {
 
     function deleteSceneFromEditor() {
       if (_sceneEditorIdx === null) return;
-      aabConfirm('Delete Scene ' + (_sceneEditorIdx + 1) + '? This cannot be undone.', function(){ _doDeleteScene(); }, null, {title:'Delete Scene', yes:'Delete', danger:true}); return;
-      PROJECT.scenes.splice(_sceneEditorIdx, 1);
-      saveProject();
-      closeSceneEditor();
-      renderSceneBoard();
-      toast('Scene deleted', 'ok');
+      aabConfirm('Delete Scene ' + (_sceneEditorIdx + 1) + '? This cannot be undone.', function(){ _doDeleteScene(); }, null, {title:'Delete Scene', yes:'Delete', danger:true});
     }
+
+    // _doDeleteScene was referenced by deleteSceneFromEditor but never defined, so scene
+    // deletion from the editor silently did nothing. Define it: remove the scene's stored
+    // media from the cloud, drop its clips from the timeline, splice it out, persist, refresh.
+    function _doDeleteScene() {
+      if (_sceneEditorIdx === null || _sceneEditorIdx === undefined) return;
+      var sc = PROJECT.scenes[_sceneEditorIdx];
+      try {
+        if (sc && window.aabDeleteFromCloud) {
+          var urls = [];
+          [sc.recordedUrl, sc.apsVideoUrl, sc.videoUrl].forEach(function(u){ if(u) urls.push(u); });
+          if (PROJECT.apsVideos && sc.id && PROJECT.apsVideos[sc.id]) urls.push(PROJECT.apsVideos[sc.id]);
+          window.aabDeleteFromCloud(urls);
+        }
+        // drop this scene's clips from the Edit Suite timeline
+        if (sc && window.E && E.tracks) {
+          var dead = [sc.recordedUrl, sc.apsVideoUrl, sc.videoUrl].filter(Boolean);
+          E.tracks.forEach(function(t){ if(t.clips) t.clips = t.clips.filter(function(c){ return dead.indexOf(c.url) === -1; }); });
+          // tombstone so the relink/ingest loops don't re-add it
+          if (window.aabMarkClipDeleted && window.aabClipKey) { try { window.aabMarkClipDeleted(window.aabClipKey(_sceneEditorIdx, sc)); } catch(_e){} }
+          if (typeof E_renderTL === 'function') E_renderTL();
+        }
+      } catch(_e) {}
+      PROJECT.scenes.splice(_sceneEditorIdx, 1);
+      _sceneEditorIdx = null;
+      if (typeof saveProject === 'function') saveProject();
+      if (typeof closeSceneEditor === 'function') closeSceneEditor();
+      if (typeof renderSceneBoard === 'function') renderSceneBoard();
+      if (typeof toast === 'function') toast('Scene deleted', 'ok');
+    }
+    window._doDeleteScene = _doDeleteScene;
 
 
     function updateSceNarrWC() {
