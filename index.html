@@ -30857,6 +30857,126 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   } catch(e){}
 })();
 </script>
+<script id="aab-practice-controller">
+/* ONE clean, self-contained Practice/teleprompter controller. The studio had ~7 rival
+   functions all fighting over #btn-tp-start and a polluted global STUDIO_TP.running that was
+   already true at load, so clicking Practice hit the "stop" branch and nothing started. This
+   owns its OWN state (PC.running), reads the script from PROJECT.script, drives the
+   tp-prev/tp-cur/tp-next sentence display itself, and binds on the button in CAPTURE phase so
+   no rival handler can pre-empt it. Modes: auto (timed), word (word-by-word), manual (arrows),
+   adaptive (mic listens and advances at your pace). */
+(function () {
+  var PC = window.AABPractice = { running:false, mode:'auto', wpm:80, idx:0, timer:null, sentences:[], adaptive:false, rec:null };
+
+  function splitSentences(txt){
+    return (txt||'').replace(/\s+/g,' ').trim()
+      .split(/(?<=[.!?])\s+/).map(function(s){return s.trim();}).filter(Boolean);
+  }
+  function loadScript(){
+    var txt = (window.PROJECT && PROJECT.script) ? PROJECT.script
+            : (window.STUDIO && STUDIO.script) ? STUDIO.script
+            : (window.PROJECT && PROJECT.scenes ? PROJECT.scenes.map(function(x){return x.script||x.text||'';}).join(' ') : '');
+    PC.sentences = splitSentences(txt);
+  }
+  function render(){
+    var prev=document.getElementById('tp-prev'), cur=document.getElementById('tp-cur'), next=document.getElementById('tp-next');
+    if(cur) cur.textContent = PC.sentences[PC.idx] || '';
+    if(prev) prev.textContent = PC.idx>0 ? PC.sentences[PC.idx-1] : '';
+    if(next) next.textContent = PC.idx<PC.sentences.length-1 ? PC.sentences[PC.idx+1] : '';
+  }
+  function setBtn(running){
+    var b=document.getElementById('btn-tp-start'); if(!b) return;
+    if(running){ b.textContent='\u23f9 Stop Practice'; b.style.background='rgba(16,185,129,.2)'; b.style.color='#10b981'; }
+    else { b.textContent='\u25b6 Practice'; b.style.background=''; b.style.color=''; }
+  }
+  function msPerSentence(){
+    var words = (PC.sentences[PC.idx]||'').split(' ').length || 6;
+    return Math.max(900, (words / Math.max(20,PC.wpm)) * 60000);
+  }
+  function step(){
+    if(!PC.running) return;
+    PC.idx++;
+    if(PC.idx >= PC.sentences.length){ PC.idx = PC.sentences.length-1; render(); stop('finished'); return; }
+    render();
+    if(PC.mode!=='manual' && !PC.adaptive){ PC.timer = setTimeout(step, msPerSentence()); }
+  }
+  function startAdaptive(){
+    // Mic listens; when it hears speech near the end of the current sentence, advance.
+    try {
+      navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+        PC.rec = stream;
+        var ctx = new (window.AudioContext||window.webkitAudioContext)();
+        var src = ctx.createMediaStreamSource(stream);
+        var an = ctx.createAnalyser(); an.fftSize=512; src.connect(an);
+        var data = new Uint8Array(an.frequencyBinCount);
+        var quietFrames=0, spokeThisSentence=false;
+        PC._adaptiveLoop = setInterval(function(){
+          if(!PC.running || !PC.adaptive){ clearInterval(PC._adaptiveLoop); return; }
+          an.getByteFrequencyData(data);
+          var vol = data.reduce(function(a,b){return a+b;},0)/data.length;
+          if(vol > 12){ spokeThisSentence=true; quietFrames=0; }
+          else if(spokeThisSentence){ quietFrames++; }
+          // after a short pause following speech, advance to next sentence
+          if(spokeThisSentence && quietFrames > 8){ spokeThisSentence=false; quietFrames=0; step(); }
+        }, 120);
+        if(window.AABLog) AABLog.info('teleprompter','adaptive listening — advances at your pace');
+      }).catch(function(){ if(window.AABLog) AABLog.warn('teleprompter','mic denied — adaptive off'); PC.adaptive=false; });
+    } catch(e){}
+  }
+  function start(){
+    loadScript();
+    if(!PC.sentences.length){ typeof toast==='function'&&toast('No script to practise','info',1500); return; }
+    PC.running=true; setBtn(true); render();
+    if(PC.adaptive){ startAdaptive(); }
+    else if(PC.mode==='manual'){ /* arrows advance */ }
+    else { PC.timer = setTimeout(step, msPerSentence()); }
+    if(window.AABLog) AABLog.info('teleprompter','practice started — mode '+PC.mode+(PC.adaptive?' (adaptive)':'')+' @ '+PC.wpm+'wpm');
+    typeof toast==='function'&&toast('Practice running — not recording','ok',1500);
+  }
+  function stop(reason){
+    PC.running=false; setBtn(false);
+    if(PC.timer){ clearTimeout(PC.timer); PC.timer=null; }
+    if(PC._adaptiveLoop) clearInterval(PC._adaptiveLoop);
+    if(PC.rec){ try{ PC.rec.getTracks().forEach(function(t){t.stop();}); }catch(e){} PC.rec=null; }
+    if(window.AABLog) AABLog.info('teleprompter','practice stopped'+(reason?' ('+reason+')':''));
+    if(reason!=='finished') typeof toast==='function'&&toast('Practice stopped','info',1000);
+  }
+  PC.toggle = function(){ if(PC.running) stop(); else start(); };
+  PC.setMode = function(m){ PC.mode = (m==='wbw'?'word':m)||'auto'; if(PC.running){ stop(); start(); } };
+  PC.setWpm  = function(w){ PC.wpm = parseInt(w)||80; };
+  PC.reset   = function(){ PC.idx=0; render(); };
+  PC.toggleAdaptive = function(btn){
+    PC.adaptive=!PC.adaptive;
+    if(btn){ btn.style.background = PC.adaptive?'rgba(245,158,11,.25)':''; btn.style.color = PC.adaptive?'#f59e0b':''; }
+    typeof toast==='function'&&toast(PC.adaptive?'Adaptive on — mic sets the pace':'Adaptive off','info',1400);
+    if(PC.running){ stop(); start(); }
+  };
+
+  // Bind in CAPTURE phase so no rival click handler can pre-empt or double-fire.
+  function bind(){
+    var b=document.getElementById('btn-tp-start');
+    if(b && !b._pcBound){ b._pcBound=1;
+      b.addEventListener('click', function(ev){ ev.stopImmediatePropagation(); ev.preventDefault(); PC.toggle(); }, true);
+    }
+    var ad=document.getElementById('btn-adaptive');
+    if(ad && !ad._pcBound){ ad._pcBound=1;
+      ad.addEventListener('click', function(ev){ ev.stopImmediatePropagation(); ev.preventDefault(); PC.toggleAdaptive(ad); }, true);
+    }
+    var mode=document.getElementById('tp-mode-sel');
+    if(mode && !mode._pcBound){ mode._pcBound=1;
+      mode.addEventListener('change', function(){ PC.setMode(mode.value); }, true);
+    }
+    var spd=document.getElementById('tp-spd-range');
+    if(spd && !spd._pcBound){ spd._pcBound=1;
+      spd.addEventListener('input', function(){ PC.setWpm(spd.value); }, true);
+    }
+  }
+  setInterval(bind, 600);
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', bind); else bind();
+  // Neutralise the polluted global so nothing else thinks a practice is already running.
+  try { if(window.STUDIO_TP) STUDIO_TP.running=false; } catch(e){}
+})();
+</script>
 </body>
 </html>
 
