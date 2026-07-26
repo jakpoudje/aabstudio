@@ -31367,6 +31367,32 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   }, 5000);
 })();
 </script>
+<script id="aab-page-restore">
+/* Restore the exact page the user was on across a reload, winning over the boot sequence.
+   The boot path + openProject both navigate (e.g. openProject always nav('scenes-pg')), which
+   fired AFTER the earlier inline restore and overrode it — so a reload from the Edit Suite
+   landed on Scenes. This waits for the app to settle (~1.6s after load), then, if the user has
+   a saved page that differs from where boot left them, navigates there ONCE. Only known-safe
+   app pages; never auth/landing; only when signed in. Runs a single time. */
+(function () {
+  var SAFE = ['scenes-pg','record-pg','edit-pg','export-pg','script-pg','teleprompter-pg','ai-presenter-studio','dashboard-pg'];
+  function run() {
+    try {
+      if (!(window.APP && APP.user)) return;              // only when signed in
+      var saved = '';
+      try { saved = sessionStorage.getItem('aab_pg') || ''; } catch (e) {}
+      if (!saved || SAFE.indexOf(saved) < 0) return;
+      var cur = (document.querySelector('.pg.on,.pg-full.on') || {}).id || '';
+      if (cur === saved) return;                            // already there
+      // don't yank the user off the dashboard if that's a deliberate landing after fresh sign-in
+      if (typeof nav === 'function') { nav(saved); if (window.AABLog) AABLog.info('restore', 'returned to ' + saved); }
+    } catch (e) {}
+  }
+  // one settle pass after boot finishes its own navigations
+  if (document.readyState === 'complete') setTimeout(run, 1600);
+  else window.addEventListener('load', function () { setTimeout(run, 1600); });
+})();
+</script>
 </body>
 </html>
 
