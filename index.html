@@ -30868,7 +30868,7 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
    no rival handler can pre-empt it. Modes: auto (timed), word (word-by-word), manual (arrows),
    adaptive (mic listens and advances at your pace). */
 (function () {
-  var PC = window.AABPractice = { running:false, mode:'auto', wpm:80, idx:0, timer:null, sentences:[], adaptive:false, rec:null };
+  var PC = window.AABPractice = { running:false, mode:'auto', wpm:150, idx:0, timer:null, sentences:[], adaptive:false, rec:null };
 
   function splitSentences(txt){
     return (txt||'').replace(/\s+/g,' ').trim()
@@ -30893,7 +30893,11 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   }
   function msPerSentence(){
     var words = (PC.sentences[PC.idx]||'').split(' ').length || 6;
-    return Math.max(1800, (words / Math.max(20,PC.wpm)) * 60000 + 600);
+    // words / wordsPerMinute * 60000 = ms to read the sentence at PC.wpm. Clamp so very short
+    // sentences still hold ~1.5s and nothing exceeds ~12s. (Was miscalibrated: wpm defaulted to
+    // 80 which made a 22-word sentence dwell ~17s and look frozen.)
+    var ms = (words / Math.max(60, PC.wpm)) * 60000;
+    return Math.max(1500, Math.min(12000, ms));
   }
   function step(){
     if(!PC.running) return;
