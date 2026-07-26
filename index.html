@@ -31388,9 +31388,32 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
       if (typeof nav === 'function') { nav(saved); if (window.AABLog) AABLog.info('restore', 'returned to ' + saved); }
     } catch (e) {}
   }
-  // one settle pass after boot finishes its own navigations
-  if (document.readyState === 'complete') setTimeout(run, 1600);
-  else window.addEventListener('load', function () { setTimeout(run, 1600); });
+  // Boot's own navigations (openProject -> nav('scenes-pg')) can fire LATE and asynchronously,
+  // after a single settle pass, so poll for the first ~8s: as soon as the app has settled on a
+  // page that differs from the saved one, correct it ONCE, then stop. Guard against fighting a
+  // deliberate user navigation by only correcting while the user hasn't themselves navigated
+  // since load (we only override the boot-chosen page, detected within the early window).
+  var done = false, tries = 0, userActed = false;
+  ['pointerdown','keydown'].forEach(function(ev){
+    document.addEventListener(ev, function(){ userActed = true; }, { once:true, capture:true });
+  });
+  function poll() {
+    if (userActed) { done = true; return; }   // never override the user's own navigation
+    if (done) return;
+    tries++;
+    try {
+      if (window.APP && APP.user) {
+        var saved = ''; try { saved = sessionStorage.getItem('aab_pg') || ''; } catch (e) {}
+        var cur = (document.querySelector('.pg.on,.pg-full.on') || {}).id || '';
+        if (saved && SAFE.indexOf(saved) > -1 && cur && cur !== saved && cur !== 'auth-pg') {
+          if (typeof nav === 'function') { nav(saved); done = true; if (window.AABLog) AABLog.info('restore','returned to '+saved); return; }
+        }
+      }
+    } catch (e) {}
+    if (tries < 20) setTimeout(poll, 500);   // ~10s window
+  }
+  if (document.readyState === 'complete') setTimeout(poll, 800);
+  else window.addEventListener('load', function () { setTimeout(poll, 800); });
 })();
 </script>
 </body>
