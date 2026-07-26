@@ -31416,6 +31416,66 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   else window.addEventListener('load', function () { setTimeout(poll, 800); });
 })();
 </script>
+<script id="aab-scenekey-normalizer">
+/* FOUNDATION FIX for "delete doesn't stick" + duplicates. The timeline's Main Video track is
+   rebuilt from PROJECT.scenes at several sites, and those rebuilt clips get sceneKey=null. The
+   delete-tombstones match by sceneKey, so keyless rebuilt clips can never be matched → deleted
+   clips reappear, and duplicates aren't de-duped. This module runs continuously and:
+     1) stamps every main-track clip with sceneKey='scene_'+scene.id by matching the clip's url
+        back to the scene that owns it (recordedUrl/videoUrl/apsVideoUrl/apsVideos[id]);
+     2) removes any clip whose sceneKey is tombstoned (aabIsClipDeleted) — so a delete stays;
+     3) de-dupes the main track: at most ONE clip per sceneKey (keeps the earliest).
+   It never touches user-added B-Roll/audio/text clips (only the main video track, and only
+   clips it can map to a scene). Self-correcting, so it fixes the output of every rebuild site
+   without editing the fragile rebuild code itself. */
+(function () {
+  function sceneUrlMap() {
+    var m = {};
+    try {
+      var P = window.PROJECT; if (!P || !P.scenes) return m;
+      P.scenes.forEach(function (sc) {
+        var key = 'scene_' + (sc.id != null ? sc.id : P.scenes.indexOf(sc));
+        [sc.recordedUrl, sc.videoUrl, sc.apsVideoUrl,
+         (P.apsVideos && sc.id != null ? P.apsVideos[sc.id] : null)].forEach(function (u) {
+          if (u) m[u] = key;
+        });
+      });
+    } catch (e) {}
+    return m;
+  }
+  function normalize() {
+    try {
+      if (!window.E || !E.tracks) return;
+      var main = E.tracks.find(function (t) { return t.id === 'main' || t.id === 'main-video'; });
+      if (!main || !Array.isArray(main.clips)) return;
+      var map = sceneUrlMap();
+      var changed = false, seen = {}, keep = [];
+      main.clips.forEach(function (c) {
+        // stamp sceneKey from the url if missing
+        if (!c.sceneKey && c.url && map[c.url]) { c.sceneKey = map[c.url]; changed = true; }
+        // drop tombstoned clips (a delete that must stay deleted)
+        if (c.sceneKey && window.aabIsClipDeleted && window.aabIsClipDeleted(c.sceneKey)) { changed = true; return; }
+        // de-dupe: one clip per sceneKey, but NEVER drop split fragments (they legitimately
+        // share a sceneKey — detected by trim markers or an explicit split flag). Only collapse
+        // true duplicate FULL scene clips.
+        var isFragment = c._split || c.trimStart != null || c.trimEnd != null || c.in > 0;
+        if (c.sceneKey && !isFragment) {
+          if (seen[c.sceneKey]) { changed = true; return; }
+          seen[c.sceneKey] = 1;
+        }
+        keep.push(c);
+      });
+      if (changed) {
+        main.clips = keep;
+        if (typeof E_renderTL === 'function') { try { E_renderTL(); } catch (e) {} }
+        if (window.AABLog) AABLog.info('timeline', 'normalized main track — keys stamped, tombstones & dupes removed');
+      }
+    } catch (e) {}
+  }
+  window.aabNormalizeTimeline = normalize;
+  setInterval(normalize, 1500);
+})();
+</script>
 </body>
 </html>
 
