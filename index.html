@@ -31276,6 +31276,52 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   }, true);
 })();
 </script>
+<script id="aab-mixer-scope">
+/* The mixer panel is position:fixed on the body, so once opened it stayed visible on every
+   page (dashboard included). Keep it scoped to the Edit Suite: whenever #edit-pg is not the
+   visible page, hide the mixer panel (and remember it was open so it can be restored on return
+   is intentionally NOT done — Julius wants it gone off other pages). */
+(function () {
+  function editVisible() {
+    var ep = document.getElementById('edit-pg');
+    return ep && getComputedStyle(ep).display !== 'none';
+  }
+  setInterval(function () {
+    var mx = document.getElementById('aab-mixer-panel');
+    if (mx && !editVisible()) { mx.style.display = 'none'; }
+  }, 400);
+})();
+</script>
+<script id="aab-project-scope">
+/* NEW PROJECT / PROJECT SWITCH must show ONLY that project's media. E (the timeline engine) is
+   global and openProject sets window.PROJECT without ever clearing E.tracks, so the previous
+   project's clips stayed in the editor and the rebuild loops re-stamped them onto the new
+   project ("new project shows another project's clips"). This watches the active project id and,
+   when it changes, clears every track's clips so the editor starts clean; the project's own
+   scenes/timeline then repopulate from its saved data only. */
+(function () {
+  var lastId = (window.PROJECT && window.PROJECT.id) || null;
+  function clearTracks() {
+    try {
+      [window.E, window.AABE].forEach(function (en) {
+        if (en && Array.isArray(en.tracks)) en.tracks.forEach(function (t) { if (t) t.clips = []; });
+      });
+      if (typeof E_renderTL === 'function') E_renderTL();
+      if (window.AABLog) AABLog.info('project', 'timeline cleared for project switch');
+    } catch (e) {}
+  }
+  setInterval(function () {
+    var id = (window.PROJECT && window.PROJECT.id) || null;
+    if (id !== lastId) {
+      lastId = id;
+      // a real switch: clear the old project's clips out of the global engine
+      clearTracks();
+      // then let the project's own saved timeline restore (main rebuilds from its scenes)
+      try { if (typeof _restoreTimelineFromProject === 'function') _restoreTimelineFromProject(); } catch (e) {}
+    }
+  }, 500);
+})();
+</script>
 </body>
 </html>
 
