@@ -31473,7 +31473,44 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     } catch (e) {}
   }
   window.aabNormalizeTimeline = normalize;
-  setInterval(normalize, 1500);
+
+  // Hook E_renderTL so normalization happens synchronously on EVERY render — the rebuild loops
+  // (E_relinkClips/aabSweepIngest) all call E_renderTL after adding keyless clips, so stamping +
+  // tombstone-drop + de-dupe here wins the race instead of a 1.5s timer chasing it. A reentry
+  // guard prevents infinite recursion (normalize itself may call E_renderTL).
+  function hookRender() {
+    if (typeof window.E_renderTL !== 'function' || window.E_renderTL._normHooked) return;
+    var orig = window.E_renderTL;
+    var inNorm = false;
+    window.E_renderTL = function () {
+      if (!inNorm) {
+        inNorm = true;
+        try { normalizeInner(); } catch (e) {}
+        inNorm = false;
+      }
+      return orig.apply(this, arguments);
+    };
+    window.E_renderTL._normHooked = true;
+    if (window.AABLog) AABLog.info('timeline', 'render hook installed — clips normalized on every render');
+  }
+  // normalizeInner does the stamping/tombstone/de-dupe WITHOUT calling E_renderTL (avoids
+  // recursion); the public normalize() still renders for manual/interval calls.
+  function normalizeInner() {
+    if (!window.E || !E.tracks) return;
+    var main = E.tracks.find(function (t) { return t.id === 'main' || t.id === 'main-video'; });
+    if (!main || !Array.isArray(main.clips)) return;
+    var map = sceneUrlMap(), seen = {}, keep = [];
+    main.clips.forEach(function (c) {
+      if (!c.sceneKey && c.url && map[c.url]) c.sceneKey = map[c.url];
+      if (c.sceneKey && window.aabIsClipDeleted && window.aabIsClipDeleted(c.sceneKey)) return;
+      var isFragment = c._split || c.trimStart != null || c.trimEnd != null || c.in > 0;
+      if (c.sceneKey && !isFragment) { if (seen[c.sceneKey]) return; seen[c.sceneKey] = 1; }
+      keep.push(c);
+    });
+    main.clips = keep;
+  }
+  setInterval(function () { hookRender(); normalize(); }, 1500);
+  hookRender();
 })();
 </script>
 </body>
