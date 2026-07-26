@@ -30868,7 +30868,7 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
    no rival handler can pre-empt it. Modes: auto (timed), word (word-by-word), manual (arrows),
    adaptive (mic listens and advances at your pace). */
 (function () {
-  var PC = window.AABPractice = { running:false, mode:'auto', wpm:150, idx:0, timer:null, sentences:[], adaptive:false, rec:null };
+  var PC = window.AABPractice = { running:false, mode:'auto', wpm:150, idx:0, wordIdx:0, timer:null, sentences:[], adaptive:false, rec:null };
 
   function splitSentences(txt){
     return (txt||'').replace(/\s+/g,' ').trim()
@@ -30882,9 +30882,23 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   }
   function render(){
     var prev=document.getElementById('tp-prev'), cur=document.getElementById('tp-cur'), next=document.getElementById('tp-next');
-    if(cur) cur.textContent = PC.sentences[PC.idx] || '';
     if(prev) prev.textContent = PC.idx>0 ? PC.sentences[PC.idx-1] : '';
     if(next) next.textContent = PC.idx<PC.sentences.length-1 ? PC.sentences[PC.idx+1] : '';
+    if(!cur) return;
+    if(PC.mode==='word'){
+      // WORD-BY-WORD: reveal the current sentence up to PC.wordIdx, the active word highlighted,
+      // the rest dimmed — so it visibly advances word by word, not whole sentences.
+      var words=(PC.sentences[PC.idx]||'').split(' ');
+      var html='';
+      for(var w=0; w<words.length; w++){
+        if(w<PC.wordIdx) html+='<span style="opacity:.55">'+words[w]+'</span> ';
+        else if(w===PC.wordIdx) html+='<span style="color:#22d3ee;font-weight:700">'+words[w]+'</span> ';
+        else html+='<span style="opacity:.25">'+words[w]+'</span> ';
+      }
+      cur.innerHTML=html;
+    } else {
+      cur.textContent = PC.sentences[PC.idx] || '';
+    }
   }
   function setBtn(running){
     var b=document.getElementById('btn-tp-start'); if(!b) return;
@@ -30932,17 +30946,42 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   function start(){
     loadScript();
     if(!PC.sentences.length){ typeof toast==='function'&&toast('No script to practise','info',1500); return; }
-    PC.running=true; setBtn(true); render();
+    PC.running=true; PC.wordIdx=0; setBtn(true); render();
     if(PC.adaptive){ startAdaptive(); }
-    else if(PC.mode==='manual'){ /* arrows advance */ }
-    else { PC.timer = setTimeout(step, msPerSentence()); }
+    else if(PC.mode==='manual'){ bindManualKeys(); typeof toast==='function'&&toast('Manual mode — use → / Space to advance, ← to go back','info',2500); }
+    else if(PC.mode==='word'){ PC.timer = setTimeout(stepWord, msPerWord()); }
+    else { PC.timer = setTimeout(step, msPerSentence()); }   // auto / sentence
     if(window.AABLog) AABLog.info('teleprompter','practice started — mode '+PC.mode+(PC.adaptive?' (adaptive)':'')+' @ '+PC.wpm+'wpm');
-    typeof toast==='function'&&toast('Practice running — not recording','ok',1500);
+    typeof toast==='function'&&toast('Practice running ('+(PC.adaptive?'adaptive':PC.mode)+') — not recording','ok',1500);
+  }
+  function msPerWord(){ return Math.max(180, Math.min(1200, 60000/Math.max(60,PC.wpm))); }
+  function stepWord(){
+    if(!PC.running || PC.mode!=='word' || PC.adaptive) return;
+    var words=(PC.sentences[PC.idx]||'').split(' ');
+    PC.wordIdx++;
+    if(PC.wordIdx>=words.length){ PC.wordIdx=0; PC.idx++;
+      if(PC.idx>=PC.sentences.length){ render(); stop('finished'); PC.idx=0; return; } }
+    render();
+    PC.timer=setTimeout(stepWord, msPerWord());
+  }
+  var _manualBound=false;
+  function bindManualKeys(){
+    if(_manualBound) return; _manualBound=true;
+    PC._manualHandler=function(e){
+      if(!PC.running || PC.mode!=='manual') return;
+      var t=e.target; if(t && /INPUT|TEXTAREA|SELECT/.test(t.tagName)) return;
+      if(e.key==='ArrowRight' || e.key===' '){ e.preventDefault();
+        PC.idx=Math.min(PC.sentences.length-1, PC.idx+1); render(); }
+      else if(e.key==='ArrowLeft'){ e.preventDefault();
+        PC.idx=Math.max(0, PC.idx-1); render(); }
+    };
+    document.addEventListener('keydown', PC._manualHandler, true);
   }
   function stop(reason){
     PC.running=false; setBtn(false);
     if(PC.timer){ clearTimeout(PC.timer); PC.timer=null; }
     if(PC._adaptiveLoop) clearInterval(PC._adaptiveLoop);
+    if(PC._manualHandler){ document.removeEventListener('keydown', PC._manualHandler, true); PC._manualHandler=null; _manualBound=false; }
     if(PC.rec){ try{ PC.rec.getTracks().forEach(function(t){t.stop();}); }catch(e){} PC.rec=null; }
     if(window.AABLog) AABLog.info('teleprompter','practice stopped'+(reason?' ('+reason+')':''));
     if(reason!=='finished') typeof toast==='function'&&toast('Practice stopped','info',1000);
