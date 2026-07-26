@@ -13424,11 +13424,16 @@ function studioNext() {
           try { _savedPage = sessionStorage.getItem('aab_pg') || ''; } catch(e2) {}
           var _safePages = ['scenes-pg','record-pg','edit-pg','export-pg','script-pg','teleprompter-pg','ai-presenter-studio','dashboard-pg'];
           if (!_activePgId || _activePgId === 'auth-pg' || _activePgId === 'landing-pg' || _activePgId === 'home-pg') {
-            /* Land on the dashboard on every load (Julius spec: signed-in -> dashboard first).
-               Was: restore last page from sessionStorage, which dumped users straight back into
-               a project (incl. broken ones) and gave no way to reach the dashboard. Smart
-               per-project resume can return later once projects are guaranteed to load clean. */
-            nav('dashboard-pg');
+            /* RESTORE the page the user was on across a refresh/tab-switch, instead of always
+               dumping them to the dashboard. Julius: "you should go back to dashboard only when
+               I click Dash or sign out and back in." We only restore known-safe app pages; a
+               fresh sign-in path (doSignIn) still routes to the dashboard explicitly. Projects
+               now load clean (quota crash fixed), so restoring into a project is safe again. */
+            if (_savedPage && _safePages.indexOf(_savedPage) > -1 && _savedPage !== 'auth-pg') {
+              nav(_savedPage);
+            } else {
+              nav('dashboard-pg');
+            }
           }
           setTimeout(function(){if(typeof renderProjectList==='function')renderProjectList();},500);
         } else { updateNavState(); navFree('home'); }
@@ -31320,6 +31325,42 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
       try { if (typeof _restoreTimelineFromProject === 'function') _restoreTimelineFromProject(); } catch (e) {}
     }
   }, 500);
+})();
+</script>
+<script id="aab-autosave">
+/* Auto-save every few seconds so imported clips, edits and the state you're working on persist
+   without relying on you to trigger a save. Julius: "the platform should auto save every few
+   seconds or so." Guarded: only saves when a project is loaded and something actually changed
+   (cheap signature of the timeline + scene count), and only while signed in for the cloud part;
+   the local save always runs. Never fires on the landing/auth pages. */
+(function () {
+  var lastSig = '';
+  function sig() {
+    try {
+      var P = window.PROJECT; if (!P) return '';
+      var clipCount = 0, dur = 0;
+      if (window.E && E.tracks) E.tracks.forEach(function (t) {
+        (t.clips || []).forEach(function (c) { clipCount++; dur += (c.duration || 0); });
+      });
+      return (P.id || '') + '|' + (P.scenes ? P.scenes.length : 0) + '|' + clipCount + '|' + Math.round(dur) + '|' + (P.title || '');
+    } catch (e) { return ''; }
+  }
+  setInterval(function () {
+    try {
+      if (!window.PROJECT || !window.PROJECT.id) return;
+      // don't autosave on landing/auth
+      var onApp = !document.getElementById('home') || getComputedStyle(document.getElementById('home')).display === 'none';
+      if (!onApp) return;
+      var cur = sig();
+      if (cur && cur !== lastSig) {
+        lastSig = cur;
+        if (typeof _saveTimelineToProject === 'function') { try { _saveTimelineToProject(); } catch (e) {} }
+        if (typeof saveProject === 'function') { try { saveProject(); } catch (e) {} }
+        else if (typeof ap_save === 'function') { try { ap_save(true); } catch (e) {} }
+        if (window.AABLog) AABLog.info('autosave', 'saved');
+      }
+    } catch (e) {}
+  }, 5000);
 })();
 </script>
 </body>
