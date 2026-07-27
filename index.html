@@ -9041,8 +9041,9 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
             </div>
             <select id="tp-scroll-mode" aria-label="Teleprompter scroll mode" onchange="setTpScrollMode(this.value)" style="background:rgba(255,255,255,.04);border:.5px solid rgba(255,255,255,.07);color:rgba(255,255,255,.35);border-radius:3px;padding:2px 4px;font-size:9px;flex-shrink:0;" onchange="setTpScrollMode(this.value)">
               <option value="auto">Auto-scroll</option>
-              <option value="manual">Manual</option>
               <option value="word">Word-by-word</option>
+              <option value="manual">Manual</option>
+              <option value="sentence">Sentence</option>
             </select>
             <div style="margin-left:auto;display:flex;align-items:center;gap:5px;flex-shrink:0;">
               <button onclick="resetTpScroll()" style="background:none;border:none;cursor:pointer;font-size:9px;color:rgba(255,255,255,.2);">↺ Reset</button>
@@ -31550,6 +31551,32 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   }
   setInterval(function () { hookRender(); normalize(); }, 1500);
   hookRender();
+})();
+</script>
+<script id="aab-tp-mode-normalize">
+/* Ensure EVERY teleprompter mode selector offers all 4 modes (auto/word/manual/sentence).
+   Some copies rendered only 3 (missing Sentence), and there is a legacy hidden 3-button group
+   with no handlers that caused "some say 3, some say 4". This normalizes every tp mode <select>
+   to the full 4 and hides the dead legacy buttons, so the mode set is consistent everywhere. */
+(function(){
+  var WANT = [['auto','📜 Auto-scroll'],['word','💡 Word-by-word'],['manual','✋ Manual'],['sentence','📖 Sentence']];
+  function fix(){
+    ['tp-mode-sel','tp-scroll-mode'].forEach(function(id){
+      var sel=document.getElementById(id); if(!sel) return;
+      var have=[].map.call(sel.options,function(o){return o.value;});
+      if(have.length===4 && have.indexOf('sentence')>-1) return;
+      var cur=sel.value;
+      sel.innerHTML='';
+      WANT.forEach(function(w){ var o=document.createElement('option'); o.value=w[0]; o.textContent=w[1]; sel.appendChild(o); });
+      if(WANT.some(function(w){return w[0]===cur;})) sel.value=cur;
+    });
+    // hide the dead legacy emoji buttons (no onclick) to avoid a stale 3-mode UI
+    [].forEach.call(document.querySelectorAll('button'),function(b){
+      var t=(b.textContent||'');
+      if(/Auto-scroll|Word-by-word/.test(t) && !b.getAttribute('onclick') && !b.onclick){ b.style.display='none'; }
+    });
+  }
+  setInterval(fix,1000); fix();
 })();
 </script>
 </body>
