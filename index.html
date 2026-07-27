@@ -27587,7 +27587,27 @@ window.E_exportVideo=()=>{
   try{getAC();}catch(e){}
   var cap=document.createElement('canvas');cap.width=1280;cap.height=720;var ctx=cap.getContext('2d');
   var sup=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].find(t=>MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t))||'video/webm';
-  var rec=new MediaRecorder(cap.captureStream(30),{mimeType:sup,videoBitsPerSecond:8000000});
+  // Combine the canvas VIDEO track with the timeline AUDIO so exports are not silent. The old
+  // code recorded cap.captureStream(30) only (video), so the .webm had no sound. We route the
+  // program-monitor video's audio through an AudioContext into a MediaStreamDestination and add
+  // that audio track to the recorded stream. Any extra timeline audio elements (voice/music/sfx
+  // preloads) are mixed in too when present.
+  var _expStream=cap.captureStream(30);
+  try{
+    var _actx=(window._getAC&&_getAC())||new (window.AudioContext||window.webkitAudioContext)();
+    window._expAudioCtx=_actx;
+    var _dest=_actx.createMediaStreamDestination();
+    function _wireAud(elm){ if(!elm)return; try{
+      if(!elm._expSrcNode){ elm._expSrcNode=_actx.createMediaElementSource(elm); }
+      elm._expSrcNode.connect(_dest);
+      elm._expSrcNode.connect(_actx.destination); // keep it audible during export
+    }catch(e){} }
+    _wireAud(pv);
+    // include any other playing timeline audio/video media elements
+    Array.prototype.forEach.call(document.querySelectorAll('#edit-pg audio, #edit-pg video'),function(el){ if(el!==pv && !el.paused) _wireAud(el); });
+    _dest.stream.getAudioTracks().forEach(function(tr){ _expStream.addTrack(tr); });
+  }catch(e){ if(window.AABLog)AABLog.warn('export','audio mix failed, exporting video only: '+e.message); }
+  var rec=new MediaRecorder(_expStream,{mimeType:sup,videoBitsPerSecond:8000000});
   var chunks=[];rec.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data);};
   rec.onstop=()=>{var blob=new Blob(chunks,{type:'video/webm'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='AABStudio_'+Date.now()+'.webm';document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(()=>URL.revokeObjectURL(url),5000);ovl.remove();window._esExporting=false;toast&&toast('Export downloaded!','ok');};
   window._esExporting=true;window._esPH=0;if(window.E){E.playhead=0;E.currentTime=0;}pv._curUrl='';pv._rdy=false;
