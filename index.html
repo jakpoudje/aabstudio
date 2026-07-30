@@ -8139,6 +8139,143 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
 .aab-region-overlay { position:absolute;top:0;bottom:0;background:rgba(37,99,235,.12);border-left:2px solid #3b82f6;border-right:2px solid #3b82f6;pointer-events:none;z-index:28; }
 .aab-track-lane.drop-active { background: rgba(37,99,235,.15) !important; }
 </style><style id="aab-safe-css">.aab-track-tools{display:none!important;}.aab-tl-scroll::-webkit-scrollbar{width:5px;height:5px;}.aab-tl-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:3px;}</style>
+<style id="aab-mobile-layer">
+/* ============================================================================
+   AABStudio MOBILE LAYER — everything here is inside @media (max-width:768px),
+   so it is COMPLETELY INERT on desktop/tablet-wide. Desktop CSS is never touched.
+   Goal: make every page usable on a phone (~390px) with real access to tools.
+   ============================================================================ */
+@media (max-width: 768px) {
+
+  /* ---- global: kill fixed desktop widths, allow vertical flow ---- */
+  html, body { min-width: 0 !important; max-width: 100vw !important; overflow-x: hidden !important; }
+  * { max-width: 100vw; }
+  .pg, .pg-full { min-width: 0 !important; width: 100vw !important; }
+
+  /* ---- top app bar + hamburger (injected by shell) ---- */
+  #aab-m-bar {
+    display: flex !important; align-items: center; gap: 10px;
+    position: sticky; top: 0; z-index: 9000;
+    height: 52px; padding: 0 12px;
+    background: #0b0f17; border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+  #aab-m-bar .aab-m-logo { font-weight: 800; color: #38bdf8; font-size: 17px; }
+  #aab-m-burger { margin-left: auto; width: 40px; height: 40px; border-radius: 10px;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
+    color: #e2e8f0; font-size: 20px; display: flex; align-items: center; justify-content: center; }
+  /* slide-out drawer */
+  #aab-m-drawer {
+    position: fixed; top: 0; left: 0; bottom: 0; width: 78vw; max-width: 320px; z-index: 9500;
+    background: #0b0f17; border-right: 1px solid rgba(255,255,255,.1);
+    transform: translateX(-100%); transition: transform .25s ease; padding: 16px;
+    overflow-y: auto;
+  }
+  #aab-m-drawer.open { transform: translateX(0); }
+  #aab-m-scrim { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 9400;
+    opacity: 0; pointer-events: none; transition: opacity .25s; }
+  #aab-m-scrim.open { opacity: 1; pointer-events: auto; }
+  #aab-m-drawer a, #aab-m-drawer button { display: block; width: 100%; text-align: left;
+    padding: 14px 12px; color: #e2e8f0; font-size: 16px; background: transparent;
+    border: 0; border-radius: 10px; }
+  #aab-m-drawer a:active, #aab-m-drawer button:active { background: rgba(56,189,248,.15); }
+
+  /* ============ DASHBOARD / PROJECTS / ASSETS / VIDEOS ============ */
+  .dash-layout { display: block !important; }
+  .dash-sidebar { display: none !important; }              /* replaced by drawer */
+  .dash-main, .dash-content { width: 100% !important; margin: 0 !important; padding: 16px !important; }
+  /* project / asset / video cards → single column full width */
+  .dash-projects-grid, .dash-assets-grid, .dash-videos-grid,
+  #dash-videos-grid, #dash-assets-grid,
+  [class*="projects-grid"], [class*="assets-grid"], [class*="videos-grid"] {
+    display: grid !important; grid-template-columns: 1fr !important; gap: 14px !important;
+  }
+  .dash-project-card, .dash-asset-card, .dash-video-card { width: 100% !important; }
+  /* filter tabs + upload buttons wrap and scroll */
+  .dash-asset-filters, .dash-video-filters, [class*="asset-filter"], [class*="vid-filter"] {
+    display: flex !important; flex-wrap: wrap !important; gap: 8px !important;
+  }
+
+  /* ============ SCENES / SCRIPT ============ */
+  .scenes-layout { display: block !important; }
+  .scenes-layout > * { width: 100% !important; }
+  /* scene toolbar → horizontal scroll strip */
+  .scenes-toolbar, [class*="scenes-tool"] {
+    display: flex !important; overflow-x: auto !important; -webkit-overflow-scrolling: touch;
+    gap: 8px !important; padding: 8px !important; white-space: nowrap;
+  }
+  .scenes-toolbar button { flex: 0 0 auto !important; }
+
+  /* ============ RECORD STUDIO ============ */
+  .studio-wrap { display: block !important; height: auto !important; }
+  .studio-main { width: 100% !important; }
+  .studio-stage, .studio-cam, #studio-video, #studio-cam-preview {
+    width: 100% !important; height: auto !important; aspect-ratio: 9/16; max-height: 60vh; }
+  /* teleprompter panel becomes a scrollable band */
+  .studio-tp-panel, #studio-tp { width: 100% !important; max-height: 34vh !important; }
+  /* studio side panel (settings) → collapsible sheet via .aab-m-sheet toggling */
+  .studio-side, .studio-settings, [class*="studio-side"] {
+    position: fixed !important; left: 0; right: 0; bottom: 0; z-index: 8000;
+    max-height: 70vh; overflow-y: auto; transform: translateY(100%); transition: transform .25s;
+    background: #0b0f17; border-top: 1px solid rgba(255,255,255,.12);
+    border-radius: 16px 16px 0 0; padding: 16px !important; width: 100% !important; }
+  .studio-side.aab-m-open, .studio-settings.aab-m-open { transform: translateY(0); }
+  /* record controls fixed bottom bar */
+  .studio-controls, [class*="studio-control"] {
+    position: fixed !important; bottom: 0; left: 0; right: 0; z-index: 7900;
+    display: flex !important; justify-content: center; gap: 16px;
+    padding: 12px; background: rgba(11,15,23,.95); border-top: 1px solid rgba(255,255,255,.1); }
+
+  /* ============ AI PRESENTER STUDIO ============ */
+  #ai-presenter-studio { display: block !important; overflow-y: auto !important; }
+  #ai-presenter-studio > * { width: 100% !important; }
+  #aps-clips-bar { display: flex !important; overflow-x: auto !important; -webkit-overflow-scrolling: touch;
+    gap: 10px; padding: 10px; }
+  #aps-clips-bar > * { flex: 0 0 auto !important; }
+
+  /* ============ EDIT SUITE — tabbed single-panel layout ============ */
+  #edit-pg { display: flex !important; flex-direction: column !important; height: 100vh !important; }
+  #aab-edit-nav { flex: 0 0 auto; }
+  /* the 4-panel row becomes a single visible panel controlled by the mobile tab bar */
+  #e-main { display: block !important; flex: 1 1 auto !important; overflow: hidden !important; position: relative; }
+  #e-main > #e-bin, #e-main > #e-src, #e-main > #e-prog, #e-main > #e-insp {
+    display: none !important; position: absolute !important; inset: 0 !important;
+    width: 100% !important; height: 100% !important; overflow-y: auto !important;
+    border: 0 !important; }
+  /* body.aab-m-etab-* reveals the chosen panel */
+  body.aab-m-etab-bin  #e-main > #e-bin  { display: block !important; }
+  body.aab-m-etab-src  #e-main > #e-src  { display: block !important; }
+  body.aab-m-etab-prog #e-main > #e-prog { display: block !important; }
+  body.aab-m-etab-insp #e-main > #e-insp { display: block !important; }
+  /* default: show program monitor if no tab class set */
+  body:not([class*="aab-m-etab-"]) #e-main > #e-prog { display: block !important; }
+
+  /* timeline: horizontal scroll, capped height, below the panel */
+  #aab-tl-wrap { flex: 0 0 auto !important; height: 30vh !important; max-height: 30vh !important;
+    overflow: auto !important; -webkit-overflow-scrolling: touch; }
+  .aab-tl-scroll { overflow: auto !important; }
+
+  /* tools bar → horizontal scroll strip */
+  #e-tools-bar { display: flex !important; overflow-x: auto !important; -webkit-overflow-scrolling: touch;
+    gap: 6px !important; padding: 6px !important; white-space: nowrap; flex: 0 0 auto; }
+  #e-tools-bar > * { flex: 0 0 auto !important; }
+
+  /* the mobile edit tab bar (injected by shell) */
+  #aab-m-etabs { display: flex !important; flex: 0 0 auto; height: 54px;
+    border-top: 1px solid rgba(255,255,255,.1); background: #0b0f17; }
+  #aab-m-etabs button { flex: 1; background: transparent; border: 0; color: #94a3b8;
+    font-size: 11px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+  #aab-m-etabs button.on { color: #38bdf8; }
+  #aab-m-etabs button .ic { font-size: 18px; }
+
+  /* mixer / context menus never full-screen-block on mobile */
+  #aab-mixer-panel { left: 4px !important; right: 4px !important; width: auto !important;
+    max-width: none !important; bottom: 60px !important; }
+
+  /* generic: big tap targets */
+  button, .btn, [role="button"] { min-height: 40px; }
+}
+</style>
+
 </head>
 
     <style>
@@ -31636,6 +31773,120 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   }
 })();
 </script>
+<script id="aab-mobile-shell">
+/* Mobile shell: injects a top bar + slide-out nav drawer, an Edit Suite bottom tab bar, and a
+   record-settings sheet toggle. ALL gated behind matchMedia(max-width:768px) so on desktop it
+   does absolutely nothing (no DOM added, no listeners). Desktop behaviour is untouched. */
+(function () {
+  var MQ = window.matchMedia('(max-width: 768px)');
+  var built = false;
+
+  function isMobile() { return MQ.matches; }
+
+  function el(tag, attrs, html) {
+    var e = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+    if (html != null) e.innerHTML = html;
+    return e;
+  }
+
+  function buildBar() {
+    if (document.getElementById('aab-m-bar')) return;
+    // top bar
+    var bar = el('div', { id: 'aab-m-bar' },
+      '<span class="aab-m-logo">AABStudio</span>' +
+      '<button id="aab-m-burger" aria-label="Menu">&#9776;</button>');
+    document.body.insertBefore(bar, document.body.firstChild);
+
+    // scrim + drawer
+    var scrim = el('div', { id: 'aab-m-scrim' });
+    var drawer = el('div', { id: 'aab-m-drawer' });
+    var pages = [
+      ['Dashboard', 'dashboard-pg'], ['My Projects', 'dashboard-pg'],
+      ['Scenes', 'scenes-pg'], ['AI Presenter', 'ai-presenter-studio'],
+      ['Record', 'record-pg'], ['Edit Suite', 'edit-pg']
+    ];
+    var html = '<div style="font-weight:800;color:#38bdf8;font-size:18px;margin-bottom:16px;">Menu</div>';
+    pages.forEach(function (p) { html += '<a data-pg="' + p[1] + '">' + p[0] + '</a>'; });
+    html += '<hr style="border-color:rgba(255,255,255,.1);margin:12px 0;">';
+    html += '<button data-act="signout">Sign out</button>';
+    drawer.innerHTML = html;
+    document.body.appendChild(scrim);
+    document.body.appendChild(drawer);
+
+    function closeDrawer() { drawer.classList.remove('open'); scrim.classList.remove('open'); }
+    function openDrawer() { drawer.classList.add('open'); scrim.classList.add('open'); }
+    document.getElementById('aab-m-burger').addEventListener('click', openDrawer);
+    scrim.addEventListener('click', closeDrawer);
+    drawer.addEventListener('click', function (e) {
+      var a = e.target.closest('[data-pg]'); var b = e.target.closest('[data-act]');
+      if (a) { var pg = a.getAttribute('data-pg'); if (typeof nav === 'function') nav(pg); closeDrawer(); }
+      else if (b && b.getAttribute('data-act') === 'signout') {
+        if (typeof doSignOut === 'function') doSignOut(); else if (typeof signOut === 'function') signOut();
+        closeDrawer();
+      }
+    });
+  }
+
+  function buildEditTabs() {
+    if (document.getElementById('aab-m-etabs')) return;
+    var ep = document.getElementById('edit-pg'); if (!ep) return;
+    var tabs = el('div', { id: 'aab-m-etabs' },
+      '<button data-etab="bin"><span class="ic">🎬</span>Media</button>' +
+      '<button data-etab="src"><span class="ic">🔍</span>Source</button>' +
+      '<button data-etab="prog"><span class="ic">▶️</span>Preview</button>' +
+      '<button data-etab="insp"><span class="ic">⚙️</span>Inspect</button>');
+    ep.appendChild(tabs);
+    function setTab(t) {
+      var cls = document.body.className.split(' ').filter(function (c) { return c.indexOf('aab-m-etab-') !== 0; });
+      cls.push('aab-m-etab-' + t); document.body.className = cls.join(' ').trim();
+      [].forEach.call(tabs.querySelectorAll('button'), function (b) { b.classList.toggle('on', b.getAttribute('data-etab') === t); });
+    }
+    tabs.addEventListener('click', function (e) { var b = e.target.closest('[data-etab]'); if (b) setTab(b.getAttribute('data-etab')); });
+    setTab('prog'); // default to preview
+  }
+
+  function addRecordSheetToggle() {
+    if (document.getElementById('aab-m-rec-settings')) return;
+    var rp = document.getElementById('record-pg'); if (!rp) return;
+    var side = rp.querySelector('.studio-side, .studio-settings, [class*="studio-side"]');
+    if (!side) return;
+    var btn = el('button', { id: 'aab-m-rec-settings',
+      style: 'position:fixed;bottom:78px;right:14px;z-index:8100;width:52px;height:52px;border-radius:50%;background:#38bdf8;color:#04121f;border:0;font-size:22px;box-shadow:0 4px 14px rgba(0,0,0,.4);' }, '⚙️');
+    document.body.appendChild(btn);
+    btn.addEventListener('click', function () { side.classList.toggle('aab-m-open'); });
+  }
+
+  function build() {
+    if (!isMobile()) return;
+    buildBar();
+    // page-specific pieces are (re)checked on an interval since pages build lazily
+  }
+
+  function tick() {
+    if (!isMobile()) {
+      // ensure nothing mobile lingers if resized to desktop
+      ['aab-m-bar','aab-m-drawer','aab-m-scrim','aab-m-etabs','aab-m-rec-settings'].forEach(function (id) {
+        var e = document.getElementById(id); if (e) e.remove();
+      });
+      document.body.className = document.body.className.split(' ').filter(function (c) { return c.indexOf('aab-m-') !== 0; }).join(' ');
+      built = false;
+      return;
+    }
+    build();
+    var ep = document.getElementById('edit-pg');
+    if (ep && getComputedStyle(ep).display !== 'none') buildEditTabs();
+    var rp = document.getElementById('record-pg');
+    if (rp && getComputedStyle(rp).display !== 'none') addRecordSheetToggle();
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', tick);
+  else tick();
+  setInterval(tick, 800);
+  MQ.addListener && MQ.addListener(tick);
+})();
+</script>
 </body>
+
 </html>
 
