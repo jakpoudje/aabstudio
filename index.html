@@ -31599,6 +31599,43 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   setInterval(fix,1000); fix();
 })();
 </script>
+<script id="aab-ctx-scope">
+/* The clip/track right-click context menus (#aab-ctx, #aab-clip-ctx) are position:fixed on the
+   body, so once opened they could linger and show on the dashboard or other pages (exactly like
+   the mixer leak). Keep them scoped to the Edit Suite: remove any context menu whenever #edit-pg
+   is not the visible page, and dismiss on navigation / scroll. Right-click inside the Edit Suite
+   still works normally — this only cleans up a menu that escaped its page. */
+(function () {
+  var IDS = ['aab-ctx', 'aab-clip-ctx', 'aab-track-ctx'];
+  function editVisible() {
+    var ep = document.getElementById('edit-pg');
+    return ep && getComputedStyle(ep).display !== 'none';
+  }
+  function killMenus() {
+    IDS.forEach(function (id) { var m = document.getElementById(id); if (m) m.remove(); });
+    // also any stray menu by class
+    Array.prototype.forEach.call(document.querySelectorAll('.aab-ctx-menu, [class*="clip-ctx"]'), function (m) {
+      if (m && m.id && IDS.indexOf(m.id) > -1) m.remove();
+    });
+  }
+  // continuous guard: if we're not in the Edit Suite, no context menu may exist
+  setInterval(function () { if (!editVisible()) killMenus(); }, 300);
+  // dismiss on navigation intent
+  ['pointerdown'].forEach(function (ev) {
+    document.addEventListener(ev, function (e) {
+      // if the click is outside any context menu, close menus
+      var inMenu = e.target && e.target.closest && e.target.closest('#aab-ctx, #aab-clip-ctx, #aab-track-ctx, .aab-ctx-menu');
+      if (!inMenu) killMenus();
+    }, true);
+  });
+  // hook nav so leaving the editor always clears menus
+  if (typeof window.nav === 'function' && !window._ctxNavHooked) {
+    window._ctxNavHooked = true;
+    var _n = window.nav;
+    window.nav = function (pg) { if (pg && pg !== 'edit-pg') killMenus(); return _n.apply(this, arguments); };
+  }
+})();
+</script>
 </body>
 </html>
 
