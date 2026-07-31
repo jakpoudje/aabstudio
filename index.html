@@ -31958,6 +31958,76 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   MQ.addListener && MQ.addListener(tick);
 })();
 </script>
+<script id="aab-source-monitor-fix">
+/* SOURCE MONITOR was dead: E_loadSrc used a $() helper that resolves to null in its scope, so
+   sv was null and it bailed at if(!sv)return without ever setting the video src — the source
+   monitor stayed empty and the play button had nothing to play. This provides a robust
+   E_loadSrc (getElementById, no $()) and wires double-click on bin clips AND timeline clips to
+   load them into the source monitor. Isolated; replaces the broken loader cleanly. */
+(function () {
+  function el(id) { return document.getElementById(id); }
+
+  // Robust source loader — handles video and image, sets src directly.
+  window.E_loadSrc = function (url, name) {
+    if (!url) return;
+    var sv = el('e-src-vid'); var si = el('e-src-img');
+    if (!sv) return;
+    var ext = (url.split('?')[0].split('.').pop() || '').toLowerCase();
+    var isImg = ['jpg','jpeg','png','gif','webp','svg','bmp'].indexOf(ext) > -1 ||
+                (url.indexOf('blob:') === 0 && name && /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(name));
+    var lbl = el('e-src-label');
+    if (isImg) {
+      if (!si) { si = document.createElement('img'); si.id = 'e-src-img';
+        si.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:5;';
+        if (sv.parentElement) { sv.parentElement.style.position = 'relative'; sv.parentElement.appendChild(si); } }
+      sv.style.display = 'none'; si.src = url; si.style.display = 'block';
+      if (lbl) lbl.textContent = (name || url.split('/').pop()).slice(0, 30);
+    } else {
+      if (si) si.style.display = 'none';
+      sv.style.display = 'block'; sv.muted = false; sv.volume = 1;
+      if (sv.getAttribute('src') !== url) { sv.src = url; sv.load(); }
+      if (lbl) lbl.textContent = (name || url.split('/').pop()).slice(0, 30);
+      // autoplay once loaded, and flip the play button label
+      sv.addEventListener('loadeddata', function onld() {
+        sv.removeEventListener('loadeddata', onld);
+        sv.play().catch(function () {});
+        var b = el('e-src-play'); if (b) b.innerHTML = '&#9646;&#9646;';
+      }, { once: true });
+    }
+    if (window.AABLog) AABLog.info('editsuite', 'source monitor loaded: ' + (name || url).slice(0, 40));
+  };
+
+  // Robust play/pause toggle (mirror, in case the closure version is also broken).
+  window.E_srcToggle = function () {
+    var v = el('e-src-vid'); if (!v || !v.src || v.src === location.href) return;
+    var b = el('e-src-play');
+    if (v.paused) { v.muted = false; v.play().catch(function () {}); if (b) b.innerHTML = '&#9646;&#9646;'; }
+    else { v.pause(); if (b) b.innerHTML = '&#9654;'; }
+  };
+  if (window.AABE) { AABE.srcToggle = function () { return window.E_srcToggle(); }; }
+
+  // Wire double-click on bin clips + timeline clips to load into the source monitor.
+  function findClipUrl(node) {
+    // bin clip / timeline clip carry a data id or a background image; try to resolve via E.tracks
+    var id = node.getAttribute('data-clip-id') || node.getAttribute('data-id') || node.dataset.clipId;
+    if (id && window.E && E.tracks) {
+      for (var i = 0; i < E.tracks.length; i++) {
+        var c = (E.tracks[i].clips || []).filter(function (x) { return String(x.id) === String(id); })[0];
+        if (c && c.url) return { url: c.url, name: c.name };
+      }
+    }
+    // fallback: a data-url attribute
+    var u = node.getAttribute('data-url'); if (u) return { url: u, name: node.getAttribute('data-name') };
+    return null;
+  }
+  document.addEventListener('dblclick', function (e) {
+    var node = e.target.closest && e.target.closest('.aab-bin-clip, .aab-clip');
+    if (!node) return;
+    var info = findClipUrl(node);
+    if (info && info.url) { window.E_loadSrc(info.url, info.name); e.preventDefault(); }
+  }, true);
+})();
+</script>
 </body>
 
 </html>
