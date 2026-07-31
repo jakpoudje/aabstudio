@@ -778,7 +778,7 @@ app.post('/api/clip/upload', async (req, res) => {
     // ever persisted - which is why generated videos only ever existed as the provider's
     // temporary signed URLs and 403'd once those expired. Use the real clips bucket.
     const CLIP_BUCKET = process.env.CLIP_BUCKET || 'recorded-clips';
-    const { data, error } = await sb.storage.from(CLIP_BUCKET).upload(filename, buffer, { contentType: mimeType, upsert: true });
+    const { data, error } = await sb.storage.from(CLIP_BUCKET).upload(filename, buffer, { contentType: mimeType, upsert: true, cacheControl: '31536000' });
 
     if (error) {
       if (error.message?.includes('Bucket not found') || error.statusCode === 400) {
@@ -2056,7 +2056,7 @@ app.post('/api/asset/upload', async (req, res) => {
     const bucket = process.env.ASSET_BUCKET || 'project-assets';
     const path = 'assets/' + user.id + '/' + (projectId || 'proj') + '/' + Date.now() + '-' + safe + '.' + ext;
 
-    const { error } = await sb.storage.from(bucket).upload(path, buf, { contentType: mime, upsert: true });
+    const { error } = await sb.storage.from(bucket).upload(path, buf, { contentType: mime, upsert: true, cacheControl: '31536000' });
     if (error) {
       if (error.message?.includes('Bucket not found')) {
         return res.status(503).json({ error: 'Storage bucket "' + bucket + '" not found', setup: true });
@@ -2134,7 +2134,7 @@ async function persistGeneratedVideo(providerUrl, userId, meta) {
     if (!buf.length) return null;
     const bucket = process.env.CLIP_BUCKET || 'recorded-clips';
     const name = 'generated/' + (userId || 'anon') + '/' + ((meta && meta.sceneId) || 'scene') + '-' + Date.now() + '.mp4';
-    const { error } = await sb.storage.from(bucket).upload(name, buf, { contentType: 'video/mp4', upsert: true });
+    const { error } = await sb.storage.from(bucket).upload(name, buf, { contentType: 'video/mp4', upsert: true, cacheControl: '31536000' });
     if (error) { console.warn('[persist] upload failed:', error.message); return null; }
     let url = null;
     try {

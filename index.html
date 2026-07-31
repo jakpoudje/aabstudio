@@ -30144,6 +30144,28 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
         recover, so retrying them forever only burns the main thread. */
 (function () {
   var dead = Object.create(null);   // url -> true once it has failed
+  // Persist the dead set across reloads so known-dead clips are NEVER requested again — not even
+  // once per load. This is the main Supabase EGRESS fix: each dead clip was re-fetched (and 403'd)
+  // on every page load, and that failed traffic still counts as cached egress. Now the browser
+  // refuses them before the first request on every subsequent load.
+  var DEAD_KEY = 'aab_dead_media_v1';
+  try {
+    var saved = JSON.parse(localStorage.getItem(DEAD_KEY) || '[]');
+    if (Array.isArray(saved)) saved.forEach(function (u) { if (u) dead[u] = true; });
+  } catch (e) {}
+  var _deadSaveT = null;
+  function persistDead() {
+    if (_deadSaveT) return;
+    _deadSaveT = setTimeout(function () {
+      _deadSaveT = null;
+      try {
+        var keys = Object.keys(dead);
+        // cap to the most recent 500 so this can't grow unbounded in localStorage
+        if (keys.length > 500) keys = keys.slice(keys.length - 500);
+        localStorage.setItem(DEAD_KEY, JSON.stringify(keys));
+      } catch (e) {}
+    }, 1000);
+  }
 
   try {
     var proto = HTMLMediaElement.prototype;
@@ -30174,6 +30196,7 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     if (!u) return;
     if (!dead[u]) {
       dead[u] = true;
+      persistDead();
       var n = Object.keys(dead).length;
       if (n === 1 || n % 10 === 0) console.warn('[loop-guard] ' + n + ' dead media URL(s) blocked from retrying');
     }
@@ -30181,6 +30204,8 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   }, true);
 
   window.aabDeadMedia = function () { return Object.keys(dead); };
+  window.aabReviveMedia = function (u) { if (u && dead[u]) { delete dead[u]; persistDead(); } };  // call after a successful re-record/re-upload
+  window.aabClearDeadMedia = function () { for (var k in dead) delete dead[k]; try { localStorage.removeItem(DEAD_KEY); } catch (e) {} };
 })();
 </script>
 <script id="aab-ingest">
