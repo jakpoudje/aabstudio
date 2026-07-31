@@ -10454,6 +10454,18 @@ window.ap_restore = function() {
 window.ap_new = function(title) {
   window.PROJECT = _defaultProject();
   if (title) PROJECT.title = title;
+  // NORTH STAR: a brand-new project must start with an EMPTY Edit Suite. E (timeline engine) is
+  // global and holds the previous project's clips; aab-project-scope clears it on a 500ms poll,
+  // but that leaves a ~1-2s window showing stale clips. Clear it synchronously here so the new
+  // project is empty the instant it is created.
+  try {
+    if (window.E && Array.isArray(E.tracks)) {
+      E.tracks.forEach(function (t) { t.clips = []; });
+      if (typeof E_renderTL === 'function') E_renderTL();
+    }
+    // also clear any tombstones/deleted-key state carried from the old project
+    if (PROJECT && !PROJECT.deletedClipKeys) PROJECT.deletedClipKeys = [];
+  } catch (e) {}
   ap_save(true);
   return PROJECT;
 };
