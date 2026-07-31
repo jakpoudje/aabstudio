@@ -8273,6 +8273,41 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
 
   /* generic: big tap targets */
   button, .btn, [role="button"] { min-height: 40px; }
+
+  /* ===== PAGE ISOLATION (fix: pages stacked/scrolling behind each other on mobile) =====
+     A pre-existing rule (.pg-full{display:flex!important}) with no .on qualifier forces EVERY
+     full page visible at once, so on a phone they pile up and scroll through each other. Force
+     only the ACTIVE (.on) page to show; hide every non-.on page hard. High specificity + the
+     html prefix beats the offending !important rule. */
+  html body .pg-full:not(.on),
+  html body .pg:not(.on) { display: none !important; }
+  html body .pg-full.on { display: flex !important; flex-direction: column !important;
+    position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important;
+    overflow-y: auto !important; z-index: 1 !important; }
+  html body .pg.on { display: block !important; position: relative !important; z-index: 1 !important; }
+
+  /* ===== AI PRESENTER: one clean scrolling column, NO floating/overlapping panels ===== */
+  #ai-presenter-studio { display: block !important; position: fixed !important; inset: 0 !important;
+    padding-top: 60px !important; padding-bottom: 96px !important;
+    overflow-y: auto !important; -webkit-overflow-scrolling: touch; }
+  /* every APS panel flows in normal document order — kill any fixed/absolute pinning on mobile */
+  #ai-presenter-studio .aps-layout,
+  #ai-presenter-studio .aps-scenes,
+  #ai-presenter-studio .aps-presenter,
+  #ai-presenter-studio .aps-inspector,
+  #ai-presenter-studio .aps-right,
+  #ai-presenter-studio [class*="aps-panel"],
+  #ai-presenter-studio [class*="aps-col"] {
+    position: static !important; transform: none !important;
+    width: 100% !important; max-width: 100% !important; float: none !important;
+    left: auto !important; right: auto !important; top: auto !important; bottom: auto !important;
+    inset: auto !important; z-index: auto !important; display: block !important; }
+  #ai-presenter-studio .aps-layout { display: flex !important; flex-direction: column !important; gap: 12px !important; }
+  /* the SCENES filter panel must sit in-flow, not pinned over the scene card */
+  #ai-presenter-studio #aps-scene-list, #ai-presenter-studio .aps-scene-list {
+    position: static !important; max-width: 100% !important; width: 100% !important; }
+  /* scene preview keeps a sane aspect and doesn't overlap */
+  #ai-presenter-studio #aps-preview-wrap { position: static !important; width: 100% !important; }
 }
 </style>
 
