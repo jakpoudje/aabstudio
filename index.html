@@ -32028,6 +32028,41 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   }, true);
 })();
 </script>
+<script id="aab-legacy-bin-hide">
+/* THE DUPLICATE MEDIA BIN FIX. There are two bin renderers writing to two containers that were
+   BOTH visible: legacy #aab-bin-clips (inside .aab-edit-body) AND authoritative #ebin-clips.
+   Proven live: 15 legacy cards + 17 real cards = 32 doubled cards, squashed monitors, "17 clips"
+   mismatch. The authoritative editor is #e-main (#e-bin/#e-src/#e-prog/#e-insp). .aab-edit-body
+   is the legacy duplicate — the CSS meant to hide it (#edit-pg.on .aab-edit-body{display:none})
+   was not winning. We force it hidden with high specificity. We do NOT remove it (applyGrid keys
+   off its presence to pick the flex layout — removing it collapses the monitors). Hide only. */
+(function () {
+  var css = document.createElement('style');
+  css.id = 'aab-legacy-bin-css';
+  css.textContent =
+    'html body #edit-pg .aab-edit-body,' +
+    'html body #edit-pg #aab-bin-clips,' +
+    'html body #edit-pg #aab-bin-assets' +
+    '{ display: none !important; visibility: hidden !important; height: 0 !important;' +
+    '  max-height: 0 !important; overflow: hidden !important; position: absolute !important;' +
+    '  left: -99999px !important; pointer-events: none !important; }';
+  document.head.appendChild(css);
+
+  // Also kill any stray horizontal clip/preview strip that renders above the editor (the
+  // "N CLIPS · CLICK TO PREVIEW" REC strip that overlapped the nav and squashed the monitors).
+  function killStrays() {
+    var ep = document.getElementById('edit-pg');
+    if (!ep || getComputedStyle(ep).display === 'none') return;
+    // aps-clips-bar belongs to the AI Presenter, never the editor
+    var aps = document.getElementById('aps-clips-bar');
+    if (aps && ep.contains(aps)) aps.style.display = 'none';
+    // any legacy body that slipped visible
+    ep.querySelectorAll('.aab-edit-body').forEach(function (b) { b.style.display = 'none'; });
+  }
+  killStrays();
+  setInterval(killStrays, 500);
+})();
+</script>
 </body>
 
 </html>
