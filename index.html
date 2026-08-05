@@ -17208,7 +17208,19 @@ window.aps_onProviderChange=aps_onProviderChange;
       clip.title = 'Scene ' + sc.num + ' — click to preview';
       clip.innerHTML = '<span style="font-size:18px;">\uD83C\uDFAC</span><span style="font-size:9px;color:#10b981;font-weight:700;">Scene ' + sc.num + '</span>';
       clip.onclick = function () { window.open(sc.videoUrl, '_blank'); };
-      bar.appendChild(clip);
+      // Insert in SCENE ORDER (not completion order) so the tray always reads 1,2,3,... even when
+      // scenes finish generating out of order. Compare this clip's scene number to siblings.
+      clip.dataset.sceneNum = sc.num;
+      var myNum = parseInt(sc.num, 10);
+      var inserted = false;
+      if (!isNaN(myNum)) {
+        var sibs = bar.querySelectorAll('[data-scene-num]');
+        for (var si = 0; si < sibs.length; si++) {
+          var sn = parseInt(sibs[si].dataset.sceneNum, 10);
+          if (!isNaN(sn) && sn > myNum) { bar.insertBefore(clip, sibs[si]); inserted = true; break; }
+        }
+      }
+      if (!inserted) bar.appendChild(clip);
     }
 
     function aps_addClipToTimeline(sc){
@@ -26167,7 +26179,13 @@ window.aps_addClipToBar=function(idx,videoUrl,sceneName){
   lbl.style.cssText='font-size:9px;color:#94a3b8;text-align:center;white-space:nowrap;';
   wrap.appendChild(vid);wrap.appendChild(lbl);
   wrap.onclick=function(){var sv=document.getElementById('e-src-vid')||document.getElementById('aab-src-vid');if(sv){sv.src=videoUrl;sv.muted=false;sv.volume=1;sv.style.display='block';sv.load();sv.play().catch(function(){});}};
-  bar.appendChild(wrap);
+  // Insert in SCENE ORDER by data-scene-idx (not completion order) to prevent zigzag.
+  var myIdx=parseInt(idx,10),done=false;
+  if(!isNaN(myIdx)){
+    var sibs=bar.querySelectorAll('[data-scene-idx]');
+    for(var i=0;i<sibs.length;i++){var sn=parseInt(sibs[i].dataset.sceneIdx,10);if(!isNaN(sn)&&sn>myIdx){bar.insertBefore(wrap,sibs[i]);done=true;break;}}
+  }
+  if(!done)bar.appendChild(wrap);
 };
 
 // ── CLEAN CLIPS BAR (remove stale/non-session clips) ─────────────────────────
