@@ -24517,7 +24517,32 @@ window._syncUpdateSceneCounter=function(n,total){
     }
   });
 };
+/* TELEPROMPTER COUNTDOWN: show a 3-2-1 overlay before sync-record + teleprompter begin, so the
+   prompter does not start scrolling the instant you press the button. Respects settings-countdown
+   (0 = skip). This is the "no countdown on teleprompter" fix. */
 window.startSyncRecord_All=function(){
+  if(!window.PROJECT||!PROJECT.scenes||!PROJECT.scenes.length){ if(typeof toast==='function')toast('No scenes to record','error');return; }
+  if(!window.STUDIO||!STUDIO.stream||!STUDIO.stream.active){ if(typeof toast==='function')toast('Start your camera first (click Cam button)','error');return; }
+  if(STUDIO.recording){ if(typeof toast==='function')toast('Already recording','info'); return; }
+  var cdVal = parseInt((document.getElementById('settings-countdown')||document.getElementById('ss-count-sel')||{}).value);
+  if(isNaN(cdVal)) cdVal = (window.STUDIO&&STUDIO._countdown!=null)?STUDIO._countdown:3;
+  if(!cdVal||cdVal<=0){ return window._startSyncRecord_All_inner(); }
+  var stage = document.getElementById('studio-canvas') || document.getElementById('studio-stage') || document.getElementById('record-pg');
+  var ov = document.createElement('div');
+  ov.id='aab-tp-countdown';
+  ov.style.cssText='position:absolute;inset:0;background:rgba(0,0,0,.62);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:60;font-family:Sora,sans-serif;';
+  ov.innerHTML='<div id="aab-cd-num" style="font-size:6rem;font-weight:800;color:#fff;line-height:1;text-shadow:0 4px 24px rgba(0,0,0,.6);">'+cdVal+'</div><div style="font-size:14px;color:rgba(255,255,255,.6);margin-top:10px;letter-spacing:.5px;">Get ready — teleprompter starts…</div>';
+  if(stage){ if(getComputedStyle(stage).position==='static') stage.style.position='relative'; stage.appendChild(ov); }
+  var n=cdVal;
+  var t=setInterval(function(){
+    n--;
+    var el=document.getElementById('aab-cd-num');
+    if(n<=0){ clearInterval(t); if(ov.parentNode) ov.remove(); window._startSyncRecord_All_inner(); }
+    else if(el){ el.textContent=n; el.style.color = n===1?'#ef4444':'#fff'; }
+  },1000);
+};
+
+window._startSyncRecord_All_inner=function(){
   if(!window.PROJECT||!PROJECT.scenes||!PROJECT.scenes.length){
     if(typeof toast==='function')toast('No scenes to record','error');return;
   }
