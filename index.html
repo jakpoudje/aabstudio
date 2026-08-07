@@ -32183,6 +32183,13 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     if (aps && ep.contains(aps)) aps.style.display = 'none';
     // any legacy body that slipped visible
     ep.querySelectorAll('.aab-edit-body').forEach(function (b) { b.style.display = 'none'; });
+    // AUDIO DOUBLING FIX: the legacy monitor videos (aab-src-vid / aab-prog-vid) are hidden
+    // duplicates of the real e-src-vid / e-prog-vid, but a hidden <video> still plays AUDIO — so
+    // the same clip could be heard twice. Force the legacy duplicates permanently silent + paused.
+    ['aab-src-vid','aab-prog-vid'].forEach(function (vid) {
+      var v = document.getElementById(vid);
+      if (v) { v.muted = true; v.volume = 0; if (!v.paused) { try { v.pause(); } catch(e){} } }
+    });
   }
   killStrays();
   setInterval(killStrays, 500);
