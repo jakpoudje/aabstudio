@@ -24990,13 +24990,34 @@ window.stopTpForMode = function(){
 
 function setTpScrollMode(mode){
   if(typeof TP==='undefined')window.TP=window.TP||{speed:80,playing:false};
+  // Record the selected mode so the standalone engine + getTpMode read the right value.
+  // (The studio version below never set this, so Word/Manual/Sentence were ignored.)
+  window._tpMode = mode; window._tpScrollMode = mode;
+  // Keep every mode dropdown in sync.
+  ['tp-mode-sel','tp-scroll-mode','studio-scroll-mode'].forEach(function(id){var s=document.getElementById(id);if(s&&s.value!==mode)s.value=mode;});
+
+  // ── STANDALONE teleprompter (homepage) ── route to its OWN engine, not the studio one.
+  // Detect it: the teleprompter-pg is the visible page AND its tp-text container exists.
+  var tpPg = document.getElementById('teleprompter-pg');
+  var standalone = tpPg && getComputedStyle(tpPg).display !== 'none' && document.getElementById('tp-text');
+  if(standalone){
+    // stop whatever is running, then (re)start the consolidated tpScroll engine which now
+    // branches on _tpMode (auto=smooth, word=karaoke, sentence=per-sentence, manual=no motion).
+    clearInterval(TP.scrollTimer); clearInterval(TP._smoothTimer);
+    if(mode==='manual'){ TP.playing=false; var pbm=document.getElementById('tp-play-btn'); if(pbm)pbm.textContent='▶ Play'; toast&&toast('Manual mode: scroll freely','info',1500); return; }
+    TP.currentWord = 0; TP._sentenceIdx = 0; TP.playing = true;
+    if(typeof tpScroll==='function') tpScroll();
+    var pb2=document.getElementById('tp-play-btn'); if(pb2)pb2.textContent='⏸ Pause';
+    toast&&toast(mode==='auto'?'Auto-scroll mode':(mode==='word'?'Word-by-word mode':(mode==='sentence'?'Sentence mode':'Manual mode')),'info',1500);
+    return;
+  }
+
+  // ── STUDIO teleprompter ── original studio behaviour below.
   // Stop current mode (both engines + any WPM timer)
   if(typeof tpToggle==='function'&&typeof TP!=='undefined'&&TP.playing)tpToggle();
   if(typeof studioTpStop==='function' && window.STUDIO_TP && STUDIO_TP.running) studioTpStop();
   if(window._studioTpModeTimer){ clearInterval(window._studioTpModeTimer); window._studioTpModeTimer=null; }
   if(window._studioWBW&&_studioWBW.running){_studioWBW.running=false;clearInterval(_studioWBW.timer);}
-  // Update selects to reflect mode
-  ['tp-mode-sel','tp-scroll-mode'].forEach(function(id){var s=document.getElementById(id);if(s)s.value=mode;});
   // Apply mode
   if(mode==='auto'){
     // Auto-scroll — use the LIVE studio engine (STUDIO_TP), not the dead TP engine.
