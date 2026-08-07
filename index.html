@@ -13446,15 +13446,64 @@ function studioNext() {
     }
     function tpScroll() {
       clearInterval(TP.scrollTimer);
-      var wrap2 = document.getElementById('tp-text') || document.getElementById('tp-text'); var words = wrap2 ? wrap2.querySelectorAll('span') : null; if (!words || !words.length) return;
+      clearInterval(TP._smoothTimer);
+      var wrap2 = document.getElementById('tp-text'); if (!wrap2) return;
+      var words = wrap2.querySelectorAll('span'); if (!words || !words.length) return;
       var totalWords = words.length;
-      TP.scrollTimer = setInterval(function () {
-        if (TP.currentWord > 0) { var prev = document.getElementById('tpw' + (TP.currentWord - 1)); if (prev) prev.style.color = 'rgba(255,255,255,.2)'; }
-        var cur = document.getElementById('tpw' + TP.currentWord);
-        if (cur) { cur.style.color = 'var(--gold,#f59e0b)'; cur.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
-        TP.currentWord++;
-        if (TP.currentWord >= totalWords) { clearInterval(TP.scrollTimer); TP.playing = false; var btn = document.getElementById('tp-play-btn'); if (btn) btn.textContent = '▶ Play'; }
-      }, Math.round(60000 / (TP.speed || 80)));
+      // Respect the selected teleprompter mode (was always word-by-word regardless of selection).
+      var mode = window._tpMode || window._tpScrollMode || 'auto';
+
+      // MANUAL — no auto motion; the user scrolls the text themselves.
+      if (mode === 'manual') { TP.playing = false; var mb=document.getElementById('tp-play-btn'); if(mb) mb.textContent='▶ Play'; return; }
+
+      // WORD — karaoke highlight one word at a time (the original behaviour).
+      if (mode === 'word' || mode === 'wbw') {
+        TP.scrollTimer = setInterval(function () {
+          if (TP.currentWord > 0) { var prev = document.getElementById('tpw' + (TP.currentWord - 1)); if (prev) prev.style.color = 'rgba(255,255,255,.2)'; }
+          var cur = document.getElementById('tpw' + TP.currentWord);
+          if (cur) { cur.style.color = 'var(--gold,#f59e0b)'; cur.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+          TP.currentWord++;
+          if (TP.currentWord >= totalWords) { clearInterval(TP.scrollTimer); TP.playing = false; var b1 = document.getElementById('tp-play-btn'); if (b1) b1.textContent = '▶ Play'; }
+        }, Math.round(60000 / (TP.speed || 80)));
+        return;
+      }
+
+      // SENTENCE — reveal/advance one sentence at a time, highlighting the current sentence.
+      if (mode === 'sentence') {
+        // Group word spans into sentences by trailing . ! ? on the word text.
+        var groups = [], cur = [];
+        for (var i = 0; i < totalWords; i++) { cur.push(i); if (/[.!?]$/.test((words[i].textContent||'').trim())) { groups.push(cur); cur = []; } }
+        if (cur.length) groups.push(cur);
+        TP._sentenceIdx = 0;
+        var wpm = TP.speed || 80;
+        function showSentence() {
+          if (TP._sentenceIdx >= groups.length) { clearInterval(TP.scrollTimer); TP.playing = false; var b2=document.getElementById('tp-play-btn'); if(b2) b2.textContent='▶ Play'; return; }
+          words.forEach(function(w){ w.style.color = 'rgba(255,255,255,.2)'; });
+          var g = groups[TP._sentenceIdx];
+          g.forEach(function(wi){ var el = words[wi]; if(el){ el.style.color = 'var(--gold,#f59e0b)'; } });
+          var mid = document.getElementById('tpw' + g[Math.floor(g.length/2)]); if (mid) mid.scrollIntoView({behavior:'smooth',block:'center'});
+          // dwell time = words in sentence / wpm
+          var dwell = Math.max(1200, Math.round((g.length / wpm) * 60000));
+          TP._sentenceIdx++;
+          TP.scrollTimer = setTimeout(showSentence, dwell);
+        }
+        showSentence();
+        return;
+      }
+
+      // AUTO (default) — smooth continuous upward scroll of the whole text block.
+      var container = document.getElementById('tp-display-screen') || wrap2.parentElement || wrap2;
+      // pixels per tick derived from wpm (faster wpm = faster scroll)
+      var pxPerSec = Math.max(12, (TP.speed || 80) * 0.55);
+      var stepMs = 33; // ~30fps
+      var pxPerStep = pxPerSec * (stepMs / 1000);
+      TP._smoothTimer = setInterval(function () {
+        var scroller = (container.scrollHeight > container.clientHeight) ? container : wrap2;
+        scroller.scrollTop += pxPerStep;
+        if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1) {
+          clearInterval(TP._smoothTimer); TP.playing = false; var b3 = document.getElementById('tp-play-btn'); if (b3) b3.textContent = '▶ Play';
+        }
+      }, stepMs);
     }
     function tpSetSpd(v) { TP.speed = parseInt(v) || 80; var el = document.getElementById('tp-spd-disp'); if (el) el.textContent = v; if (TP.playing) { clearInterval(TP.scrollTimer); tpScroll(); } }
     function tpFontUp() { increaseTpFont(); }
