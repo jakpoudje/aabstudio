@@ -32131,6 +32131,36 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   setInterval(killStrays, 500);
 })();
 </script>
+<script id="aab-track-audio-init">
+/* Audio control plumbing: _esUpdateAudio already reads tr.volume and tr.muted to set playback
+   volume, but tracks were created WITHOUT a volume property (so it always defaulted to 100 and
+   felt like "audio cannot be controlled"). Ensure every track has volume, and expose a setter the
+   UI/console can call. Mute already works via E_muteTrack. */
+(function(){
+  function ensureVols(){
+    if(!window.E||!E.tracks)return;
+    E.tracks.forEach(function(t){ if(t.volume==null) t.volume=100; if(t.muted==null) t.muted=false; });
+  }
+  ensureVols();
+  setInterval(ensureVols, 2000);
+  window.E_setTrackVolume=function(trackId, vol){
+    if(!window.E||!E.tracks)return;
+    var tr=E.tracks.find(function(t){return t.id===trackId;});
+    if(!tr)return;
+    tr.volume=Math.max(0,Math.min(100, parseFloat(vol)));
+    // apply immediately if this track's clip is under the playhead
+    if(typeof _esUpdateAudio==='function') _esUpdateAudio(E.playhead||E.currentTime||0);
+    if(window.AABLog) AABLog.info('audio','track '+trackId+' volume '+tr.volume);
+  };
+  // convenience: master volume that actually scales the program video element
+  window.E_setMasterVolume=function(vol){
+    var pv=document.getElementById('e-prog-vid')||document.getElementById('aab-prog-vid');
+    var v=Math.max(0,Math.min(1, parseFloat(vol)));
+    if(pv) pv.volume=v;
+    window._aabMasterVol=v;
+  };
+})();
+</script>
 </body>
 
 </html>
