@@ -20055,8 +20055,12 @@ window._renderStudioAsset=function(asset){
 /* ── AI PRESENTER: fix navigation + scene loading ── */
 window._origOpenAPS=window.openAIPresenterStudio;
 window.openAIPresenterStudio=function(){
-  // Ensure project is loaded
-  if(!window.PROJECT||!window.PROJECT.scenes||!window.PROJECT.scenes.length){
+  // Ensure project is loaded. IMPORTANT: only fall back to an old project if there is NO current
+  // project at all. A deliberately-created new/empty project (scenes.length===0) must be RESPECTED
+  // - previously this block replaced any empty project with the first old project that had scenes,
+  // which is exactly why "old videos appear in a brand new project". Never overwrite a real
+  // current project just because it has no scenes yet.
+  if(!window.PROJECT){
     var projs=[];try{projs=JSON.parse(localStorage.getItem('aab_projects')||'[]').filter(Boolean).filter(function(p){return p.scenes&&p.scenes.length>0;});}catch(e){}
     if(projs[0])window.PROJECT=projs[0];
   }
