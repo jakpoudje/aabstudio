@@ -13422,7 +13422,24 @@ function studioNext() {
   var footer = document.getElementById('aab-footer');
   if (footer) footer.style.display='flex';
 }
-    function tpBack() { var disp = document.getElementById('tp-display-screen'), setup = document.getElementById('tp-setup-screen'); if (disp) disp.style.display = 'none'; if (setup) setup.style.display = 'flex'; clearInterval(TP.scrollTimer); TP.playing = false; navFree('home'); }
+    function tpBack() {
+  // RESTART: reset the standalone teleprompter to the top and start playing again from the
+  // beginning. (Previously this called navFree('home') which CLOSED the teleprompter instead of
+  // restarting the scroll — the ↺ Restart button appeared to "just close" it.)
+  clearInterval(TP.scrollTimer); clearInterval(TP._smoothTimer);
+  TP.playing = false; TP.currentWord = 0; TP._sentenceIdx = 0;
+  var txt = document.getElementById('tp-text');
+  var screen = document.getElementById('tp-display-screen');
+  // scroll both the text block and its scroll container back to the top
+  if (txt) { txt.scrollTop = 0; txt.querySelectorAll('span').forEach(function(s){ s.style.color = '#fff'; }); }
+  if (screen) screen.scrollTop = 0;
+  // replay from the top
+  TP.playing = false;
+  var btn = document.getElementById('tp-play-btn'); if (btn) btn.textContent = '▶ Play';
+  if (typeof tpToggle === 'function') tpToggle();
+}
+/* tpClose — the old behaviour (leave the teleprompter and go home), kept for the ✕ Exit button. */
+function tpClose() { var disp = document.getElementById('tp-display-screen'), setup = document.getElementById('tp-setup-screen'); if (disp) disp.style.display = 'none'; if (setup) setup.style.display = 'flex'; clearInterval(TP.scrollTimer); clearInterval(TP._smoothTimer); TP.playing = false; navFree('home'); }
     function tpStart() {
       var script = (document.getElementById('tp-input') || {}).value?.trim();
       if (!script || script.length < 10) { toast('Please enter your script first', 'error'); return; }
@@ -13508,7 +13525,19 @@ function studioNext() {
     function tpSetSpd(v) { TP.speed = parseInt(v) || 80; var el = document.getElementById('tp-spd-disp'); if (el) el.textContent = v; if (TP.playing) { clearInterval(TP.scrollTimer); tpScroll(); } }
     function tpFontUp() { increaseTpFont(); }
     function tpFontDown() { decreaseTpFont(); }
-    function tpMirror() { toggleMirror(); }
+    function tpMirror() {
+      // Mirror the STANDALONE teleprompter surface directly. Delegating to the studio toggleMirror
+      // only flipped studio elements (tp-body), so the homepage ↔ Mirror button did nothing.
+      var el = document.getElementById('tp-text') || document.getElementById('tp-display-screen');
+      if (el) {
+        var on = el.style.transform === 'scaleX(-1)';
+        el.style.transform = on ? '' : 'scaleX(-1)';
+        if (window.TP) TP.mirrored = !on;
+        document.querySelectorAll('[onclick*="tpMirror"]').forEach(function(b){
+          b.style.color = on ? '' : '#00d4ff';
+        });
+      }
+    }
     function tpFullscreen() { var el = document.getElementById('tp-display-screen'); if (!el) return; if (document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen && el.requestFullscreen(); }
     function tpSetTheme(v) { TP.theme = v; tpApplyTheme(v); }
     function tpApplyTheme(v) {
@@ -31413,7 +31442,9 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
    capture phase so rivals cannot pre-empt. Persists across sessions. */
 (function () {
   var KEY='aab_tp_font', F={ px: parseInt(localStorage.getItem(KEY)||'0')||26 };
-  var TARGETS = ['tp-cur','tp-body','tp-prev','tp-next','studio-tp-words'];
+  // 'tp-text' is the STANDALONE teleprompter's text container — it was missing, so A-/A+ did
+  // nothing on the homepage teleprompter (they only resized the studio prompter elements).
+  var TARGETS = ['tp-cur','tp-body','tp-prev','tp-next','studio-tp-words','tp-text'];
   function apply(){
     document.documentElement.style.setProperty('--tp-font-size', F.px+'px');
     TARGETS.forEach(function(id){
