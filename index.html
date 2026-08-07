@@ -27295,6 +27295,11 @@ function seekAll(t){
   if(window.E){E.playhead=t;E.currentTime=t;}
   movePH(t); _esUpdateProg(t); _esUpdateAudio(t); _esUpdateOvl(t);
 }
+// Expose for the background-tab playback watchdog (RAF is throttled when the tab is hidden,
+// which froze timeline + program-monitor playback). These let a setInterval fallback drive the
+// same update path without duplicating the engine.
+window.seekAll = seekAll;
+window._esTotalDur = function(){ var m=0; if(window.E&&E.tracks)E.tracks.forEach(function(t){t.clips.forEach(function(c){m=Math.max(m,(c.start||0)+(c.duration||0));});}); return m; };
 window.E_progJump=d=>AABE&&AABE.progJump(d);
 window.E_progStep=d=>AABE&&AABE.progStep(d);
 
@@ -32275,6 +32280,56 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     if(pv) pv.volume=v;
     window._aabMasterVol=v;
   };
+})();
+</script>
+<script id="aab-playback-watchdog">
+/* Timeline playback stability: the Edit Suite program engine advances the playhead with
+   requestAnimationFrame. Browsers throttle RAF to ~1fps (or pause it) in hidden/background tabs,
+   so switching away froze the playhead + program monitor mid-play. This watchdog runs on a
+   setInterval (which keeps firing in the background) and, ONLY while playback is active, advances
+   the playhead by real elapsed time whenever the RAF frame hasn't already done so. When the tab is
+   focused and RAF is healthy, the watchdog sees _esPH already moving and does nothing — so it never
+   double-advances or fights the RAF engine. Edit Suite only; inert on every other page. */
+(function(){
+  var lastPH = null, lastTs = 0;
+  function dur(){ return (typeof window._esTotalDur==='function') ? window._esTotalDur() : 0; }
+  setInterval(function(){
+    // Only act during active program playback in the Edit Suite.
+    if(!window._esPlaying) { lastPH=null; return; }
+    var ep = document.getElementById('edit-pg');
+    if(!ep || getComputedStyle(ep).display==='none') return;
+    if(typeof window.seekAll!=='function') return;
+    var now = Date.now();
+    var ph = (window._esPH||0);
+    // First tick after play starts: just record baseline.
+    if(lastPH===null){ lastPH=ph; lastTs=now; return; }
+    // If RAF already advanced the playhead since our last check, it's healthy — stand down.
+    if(ph > lastPH + 0.001){ lastPH=ph; lastTs=now; return; }
+    // RAF appears stalled (hidden tab). Advance by wall-clock elapsed time ourselves.
+    var dt = (now - lastTs)/1000;
+    if(dt <= 0){ return; }
+    var total = dur();
+    if(total<=0){ return; }
+    var next = ph + dt;
+    // Respect loop points if the engine set them.
+    if(window._esLoop && window._esInPt!=null && window._esOutPt!=null && next>=window._esOutPt){
+      next = window._esInPt;
+    } else if(next >= total){
+      // reached the end — stop cleanly, mirroring the RAF engine's end behaviour.
+      window._esPlaying = false;
+      if(window.E){ E.playhead=0; E.currentTime=0; }
+      window._esPH = 0;
+      try { window.seekAll(0); } catch(e){}
+      var pv=document.getElementById('e-prog-vid'); if(pv){ try{pv.pause();}catch(e){} }
+      var btn=document.getElementById('e-prog-play')||document.getElementById('aab-prog-play');
+      if(btn) btn.innerHTML='&#9654;';
+      lastPH=null; return;
+    }
+    window._esPH = next;
+    if(window.E){ E.playhead=next; E.currentTime=next; }
+    try { window.seekAll(next); } catch(e){}
+    lastPH = next; lastTs = now;
+  }, 100);
 })();
 </script>
 </body>
