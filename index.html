@@ -5886,17 +5886,28 @@ function E_renderTL(){
         e.stopPropagation();
         var sx=e.clientX;var os=clip.start;var od=clip.duration;var oi=clip.inPoint||0;
         if(_t==="select"){
-          var mv=function(e2){var ns=Math.max(0,os+(e2.clientX-sx)/E.pxPerSec);if(E.snap)ns=Math.round(ns*10)/10;clip.start=ns;E_renderTL();E_updatePH();};
-          var up=function(){document.removeEventListener("mousemove",mv);document.removeEventListener("mouseup",up);if(typeof saveProject==="function")saveProject();};
+          // FLICKER FIX: move only this clip's element during drag, one paint per animation frame
+          // (60fps). E_renderTL() (full timeline DOM rebuild) now runs ONCE on release, not on
+          // every mousemove — that per-move rebuild was the violent flicker + drag lag.
+          var _raf=null,_pend=null;
+          var _apply=function(){_raf=null;if(_pend==null)return;clip.start=_pend;_pend=null;ce2.style.left=(clip.start*E.pxPerSec)+'px';if(typeof E_updatePH==='function')E_updatePH();};
+          var mv=function(e2){var ns=Math.max(0,os+(e2.clientX-sx)/E.pxPerSec);if(E.snap)ns=Math.round(ns*10)/10;_pend=ns;if(!_raf)_raf=requestAnimationFrame(_apply);};
+          var up=function(){document.removeEventListener("mousemove",mv);document.removeEventListener("mouseup",up);if(_raf)cancelAnimationFrame(_raf);_apply();if(typeof E_renderTL==="function")E_renderTL();if(typeof saveProject==="function")saveProject();};
           document.addEventListener("mousemove",mv);document.addEventListener("mouseup",up);
         }else if(_t==="trim"){
           var rect=e.currentTarget.getBoundingClientRect();var left=(e.clientX-rect.left)<rect.width/2;
-          var mv=function(e2){var d=(e2.clientX-sx)/E.pxPerSec;if(left){clip.inPoint=Math.max(0,Math.min(od-0.1,oi+d));clip.start=Math.max(0,os+d);clip.duration=Math.max(0.1,od-d);}else{clip.duration=Math.max(0.1,od+d);}if(E.snap){clip.start=Math.round(clip.start*10)/10;clip.duration=Math.round(clip.duration*10)/10;}E_renderTL();};
-          var up=function(){document.removeEventListener("mousemove",mv);document.removeEventListener("mouseup",up);if(typeof saveProject==="function")saveProject();};
+          var _raf2=null,_pend2=null;
+          var _apply2=function(){_raf2=null;if(!_pend2)return;var p=_pend2;_pend2=null;if(left){clip.inPoint=p.ip;clip.start=p.st;clip.duration=p.du;}else{clip.duration=p.du;}ce2.style.width=(clip.duration*E.pxPerSec)+'px';if(!left)return;ce2.style.left=(clip.start*E.pxPerSec)+'px';};
+          var mv=function(e2){var d=(e2.clientX-sx)/E.pxPerSec;var st,du,ip;if(left){ip=Math.max(0,Math.min(od-0.1,oi+d));st=Math.max(0,os+d);du=Math.max(0.1,od-d);}else{du=Math.max(0.1,od+d);st=os;ip=oi;}if(E.snap){st=Math.round(st*10)/10;du=Math.round(du*10)/10;}_pend2={st:st,du:du,ip:ip};if(!_raf2)_raf2=requestAnimationFrame(_apply2);};
+          var up=function(){document.removeEventListener("mousemove",mv);document.removeEventListener("mouseup",up);if(_raf2)cancelAnimationFrame(_raf2);_apply2();if(typeof E_renderTL==="function")E_renderTL();if(typeof saveProject==="function")saveProject();};
           document.addEventListener("mousemove",mv);document.addEventListener("mouseup",up);
         }else if(_t==="slip"){
-          var mv=function(e2){clip.inPoint=Math.max(0,oi+(e2.clientX-sx)/E.pxPerSec);E_renderTL();};
-          var up=function(){document.removeEventListener("mousemove",mv);document.removeEventListener("mouseup",up);if(typeof saveProject==="function")saveProject();};
+          // slip changes inPoint only (no width/position change) — a light render is cheap, but
+          // still throttle to rAF so rapid moves don't stack full rebuilds.
+          var _raf3=null,_pend3=null;
+          var _apply3=function(){_raf3=null;if(_pend3==null)return;clip.inPoint=_pend3;_pend3=null;if(typeof E_renderTL==="function")E_renderTL();};
+          var mv=function(e2){_pend3=Math.max(0,oi+(e2.clientX-sx)/E.pxPerSec);if(!_raf3)_raf3=requestAnimationFrame(_apply3);};
+          var up=function(){document.removeEventListener("mousemove",mv);document.removeEventListener("mouseup",up);if(_raf3)cancelAnimationFrame(_raf3);_apply3();if(typeof saveProject==="function")saveProject();};
           document.addEventListener("mousemove",mv);document.addEventListener("mouseup",up);
         }
       });
@@ -23664,8 +23675,15 @@ function _applyUniqueIcons(){
             if(clip.locked||(track&&track.locked))return;
             var os=clip.start,od=clip.duration,sx=e.clientX;
             document.body.style.cursor='col-resize';
-            var mv=function(e2){var dx=(e2.clientX-sx)/pps;var ns=Math.max(0,Math.min(os+dx,os+od-0.1));clip.start=ns;clip.duration=od-(ns-os);if(typeof E_renderTL==='function')E_renderTL();};
-            var up=function(){document.body.style.cursor='';document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);};
+            // FLICKER FIX: update only THIS clip's element during the drag, throttled to one paint
+            // per animation frame (60fps). Previously every mousemove called E_renderTL() which
+            // rebuilds the entire timeline DOM -> violent flicker + lag. Full render runs once on up.
+            var raf=null, pend=null;
+            var apply=function(){ raf=null; if(pend==null)return; var ns=pend; pend=null;
+              clip.start=ns; clip.duration=od-(ns-os);
+              el.style.left=(clip.start*pps)+'px'; el.style.width=(clip.duration*pps)+'px'; };
+            var mv=function(e2){var dx=(e2.clientX-sx)/pps;pend=Math.max(0,Math.min(os+dx,os+od-0.1));if(!raf)raf=requestAnimationFrame(apply);};
+            var up=function(){document.body.style.cursor='';document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);if(raf)cancelAnimationFrame(raf);apply();if(typeof E_renderTL==='function')E_renderTL();};
             document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
           });
           var tr=document.createElement('div'); tr.className='aab-clip-trim-r'; tr.title='Drag to trim end';
@@ -23675,8 +23693,11 @@ function _applyUniqueIcons(){
             if(clip.locked||(track&&track.locked))return;
             var od=clip.duration,sx=e.clientX;
             document.body.style.cursor='col-resize';
-            var mv=function(e2){clip.duration=Math.max(0.1,od+(e2.clientX-sx)/pps);if(typeof E_renderTL==='function')E_renderTL();};
-            var up=function(){document.body.style.cursor='';document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);};
+            // FLICKER FIX: update only this clip's width during drag, throttled to rAF (60fps).
+            var raf=null, pend=null;
+            var apply=function(){ raf=null; if(pend==null)return; clip.duration=pend; pend=null; el.style.width=(clip.duration*pps)+'px'; };
+            var mv=function(e2){pend=Math.max(0.1,od+(e2.clientX-sx)/pps);if(!raf)raf=requestAnimationFrame(apply);};
+            var up=function(){document.body.style.cursor='';document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);if(raf)cancelAnimationFrame(raf);apply();if(typeof E_renderTL==='function')E_renderTL();};
             document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
           });
         }
