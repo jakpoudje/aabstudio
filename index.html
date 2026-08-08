@@ -14169,6 +14169,13 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
         return;
       }
 
+      // CONCURRENCY GUARD: the studio has two entry hooks (openRecordingStudio + initStudio) that
+      // can BOTH call startCamera within a few hundred ms (the console showed two "starting
+      // acquisition" lines back-to-back). Two getUserMedia requests racing for the same camera can
+      // collide and BOTH reject with NotFoundError on macOS. Only let one acquisition run at a time.
+      if (STUDIO._acquiring) { console.info('[AAB-CAM] acquisition already in progress — skipping duplicate start'); return; }
+      STUDIO._acquiring = true;
+
       if (noCamera) noCamera.style.display = 'flex';
       if (vid) vid.style.display = 'none';
 
@@ -14180,6 +14187,7 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
 
       // Helper: wire stream to UI
       function _applyStream(stream) {
+        STUDIO._acquiring = false;
         STUDIO.stream = stream; STUDIO.camOn = true; STUDIO.micOn = true;
         if (vid) { vid.srcObject = stream; vid.muted = true; vid.volume = 0; vid.setAttribute('muted',''); vid.style.display = 'block'; }
         // PERSISTENT mute enforcer: something re-unmutes the camera preview (causing mic
@@ -14200,6 +14208,7 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
         toast('Camera ready', 'ok');
       }
       function _camError(e) {
+        STUDIO._acquiring = false;
         // If this failure came from the AUTO camera-start on studio ENTRY (not an explicit user
         // click on Cam/Retry/REC), stay quiet: just show the idle "camera off" state and let the
         // user start it when they want. Previously every studio entry on a machine without an
