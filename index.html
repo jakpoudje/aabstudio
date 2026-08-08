@@ -6601,7 +6601,7 @@ setTimeout(function(){
     }
     // Post-nav hooks
     if(pg==='record-pg'){setTimeout(function(){
-    if(typeof startCamera==='function'&&typeof STUDIO!=='undefined'&&!STUDIO.stream)startCamera();
+    if(typeof startCamera==='function'&&typeof STUDIO!=='undefined'&&!STUDIO.stream){STUDIO._autoStartAttempt=true;startCamera();}
     // Load project scenes into STUDIO every time record page opens
     if(typeof STUDIO!=='undefined'&&window.PROJECT&&window.PROJECT.scenes&&window.PROJECT.scenes.length){
       if(STUDIO.currentScene==null||STUDIO.currentScene===undefined)STUDIO.currentScene=0;
@@ -12577,7 +12577,7 @@ window._loadStudioTpText = function() {
 };
 function openRecordingStudio() {
   if (!PROJECT.scenes || !PROJECT.scenes.length) { toast('Add scenes first', 'err'); return; }
-  if (!STUDIO.stream || !STUDIO.stream.active) { startCamera(); }
+  if (!STUDIO.stream || !STUDIO.stream.active) { STUDIO._autoStartAttempt = true; startCamera(); }
   STUDIO.currentScene = STUDIO.currentScene || 0;
   nav('record-pg');
   setTimeout(function() {
@@ -14167,6 +14167,26 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
         toast('Camera ready', 'ok');
       }
       function _camError(e) {
+        // If this failure came from the AUTO camera-start on studio ENTRY (not an explicit user
+        // click on Cam/Retry/REC), stay quiet: just show the idle "camera off" state and let the
+        // user start it when they want. Previously every studio entry on a machine without an
+        // immediately-available camera logged a scary NotFoundError + error toast — noise that
+        // looked like a broken app. Explicit user attempts still get the full guidance below.
+        var _auto = STUDIO._autoStartAttempt;
+        STUDIO._autoStartAttempt = false;
+        if (_auto) {
+          console.info('[AAB] Camera not started on entry ('+e.name+') — will start when you click Cam or Record.');
+          if (noCamera) {
+            noCamera.style.display = 'flex';
+            noCamera.innerHTML = '<div style="padding:20px;text-align:center;">'
+              +'<div style="font-size:28px;margin-bottom:8px;">📷</div>'
+              +'<div style="color:rgba(255,255,255,.75);font-size:13px;font-weight:600;margin-bottom:6px;">Camera is off</div>'
+              +'<div style="color:rgba(255,255,255,.5);font-size:12px;line-height:1.5;margin-bottom:14px;">Click below when you\u2019re ready to start your camera.</div>'
+              +'<button class="s-btn" onclick="STUDIO._userCamClick=true;startCamera()" style="margin:0 auto;">Start camera</button>'
+              +'</div>';
+          }
+          return;
+        }
         console.error('[AAB] Camera error:',e.name,e.message);
         var msg,hint='';
         if(e.name==='NotAllowedError'||e.name==='PermissionDeniedError'){
@@ -14281,7 +14301,8 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
       // Update teleprompter text for first scene
       updateTP();
 
-      // Auto-start camera
+      // Auto-start camera (silent if it fails on entry — user can start it manually)
+      STUDIO._autoStartAttempt = true;
       startCamera();
       startElapsedTimer();
       startAutoSave();
