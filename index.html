@@ -6601,7 +6601,7 @@ setTimeout(function(){
     }
     // Post-nav hooks
     if(pg==='record-pg'){setTimeout(function(){
-    if(typeof startCamera==='function'&&typeof STUDIO!=='undefined'&&!STUDIO.stream){STUDIO._autoStartAttempt=true;startCamera();}
+    if(typeof _autoStartCamera==='function'&&typeof STUDIO!=='undefined'&&!STUDIO.stream){_autoStartCamera();}
     // Load project scenes into STUDIO every time record page opens
     if(typeof STUDIO!=='undefined'&&window.PROJECT&&window.PROJECT.scenes&&window.PROJECT.scenes.length){
       if(STUDIO.currentScene==null||STUDIO.currentScene===undefined)STUDIO.currentScene=0;
@@ -12577,7 +12577,7 @@ window._loadStudioTpText = function() {
 };
 function openRecordingStudio() {
   if (!PROJECT.scenes || !PROJECT.scenes.length) { toast('Add scenes first', 'err'); return; }
-  if (!STUDIO.stream || !STUDIO.stream.active) { STUDIO._autoStartAttempt = true; startCamera(); }
+  if (!STUDIO.stream || !STUDIO.stream.active) { _autoStartCamera(); }
   STUDIO.currentScene = STUDIO.currentScene || 0;
   nav('record-pg');
   setTimeout(function() {
@@ -12628,7 +12628,7 @@ function openRecordingStudio() {
         tick();
       } catch (e) { console.warn('Audio meter:', e); }
     }
-    function toggleCamera() { if (!STUDIO.stream) { startCamera(); return; } STUDIO.camOn = !STUDIO.camOn; STUDIO.stream.getVideoTracks().forEach(function (t) { t.enabled = STUDIO.camOn; }); updateCamBtn(); }
+    function toggleCamera() { if (!STUDIO.stream) { STUDIO._userClosedCam = false; STUDIO._userCamClick = true; startCamera(); return; } STUDIO.camOn = !STUDIO.camOn; STUDIO._userClosedCam = !STUDIO.camOn; STUDIO.stream.getVideoTracks().forEach(function (t) { t.enabled = STUDIO.camOn; }); updateCamBtn(); }
     function toggleMic() { if (!STUDIO.stream) return; STUDIO.micOn = !STUDIO.micOn; STUDIO.stream.getAudioTracks().forEach(function (t) { t.enabled = STUDIO.micOn; }); updateMicBtn(); }
     function updateCamBtn() {
       var b = document.getElementById('btn-cam');
@@ -14123,6 +14123,39 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
       }
     }
 
+    // Permission-aware auto-start for STUDIO ENTRY. Browsers only reliably show the camera
+    // permission popup when getUserMedia is called from a real user gesture (a click). Firing it
+    // automatically on navigation (no gesture), before permission is granted, can fail with
+    // NotFoundError and never prompt — which is exactly the "device not found on a Mac that has a
+    // camera" symptom. So: if permission is already GRANTED, auto-start silently (camera opens on
+    // entry as expected). If NOT yet granted, show a calm "Start camera" prompt whose click gives
+    // the gesture the browser needs to show the popup. Camera+mic both come from startCamera.
+    function _autoStartCamera() {
+      if (STUDIO.stream && STUDIO.stream.active) return;
+      if (STUDIO._userClosedCam) return; // user explicitly turned the camera off — respect that
+      function _prompt() {
+        var nc = document.getElementById('studio-no-camera');
+        if (nc) {
+          nc.style.display = 'flex';
+          nc.innerHTML = '<div style="padding:20px;text-align:center;">'
+            + '<div style="font-size:30px;margin-bottom:8px;">📷</div>'
+            + '<div style="color:rgba(255,255,255,.8);font-size:14px;font-weight:700;margin-bottom:6px;">Start your camera</div>'
+            + '<div style="color:rgba(255,255,255,.55);font-size:12px;line-height:1.5;margin-bottom:14px;max-width:320px;">Your browser will ask for permission to use your camera and microphone.</div>'
+            + '<button class="s-btn" onclick="STUDIO._userCamClick=true;startCamera()" style="margin:0 auto;font-size:14px;padding:9px 18px;">📷 Start camera</button>'
+            + '</div>';
+        }
+      }
+      if (navigator.permissions && navigator.permissions.query) {
+        navigator.permissions.query({ name: 'camera' }).then(function (st) {
+          if (st.state === 'granted') { STUDIO._autoStartAttempt = true; startCamera(); }
+          else { _prompt(); } // 'prompt' or 'denied' — need a user click to (re)request
+        }).catch(function () { STUDIO._autoStartAttempt = true; startCamera(); });
+      } else {
+        // No Permissions API — attempt silently; if it fails, _camError shows the prompt.
+        STUDIO._autoStartAttempt = true; startCamera();
+      }
+    }
+
     // Override startCamera to use selected devices
     function startCamera() {
       var vid = document.getElementById('studio-cam');
@@ -14306,9 +14339,8 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
       // Update teleprompter text for first scene
       updateTP();
 
-      // Auto-start camera (silent if it fails on entry — user can start it manually)
-      STUDIO._autoStartAttempt = true;
-      startCamera();
+      // Auto-start camera (permission-aware: silent if granted, else shows Start prompt)
+      _autoStartCamera();
       startElapsedTimer();
       startAutoSave();
       enumerateDevices();
