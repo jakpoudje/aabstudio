@@ -10485,6 +10485,13 @@ window.ap_new = function(title) {
     }
     // also clear any tombstones/deleted-key state carried from the old project
     if (PROJECT && !PROJECT.deletedClipKeys) PROJECT.deletedClipKeys = [];
+    // CRITICAL: reset the on-screen title fields to the NEW project's title. ap_new was leaving
+    // #proj-title showing the PREVIOUS project's name; startSegmentation() then read that stale
+    // field and stamped the old title/identity onto the new project, causing the old project's
+    // videos to load in the Edit Suite (project data bleeding). Sync both title fields here.
+    var _newTitle = PROJECT.title || 'My Video';
+    var _pt = document.getElementById('proj-title'); if (_pt) _pt.value = _newTitle;
+    var _st = document.getElementById('scenes-title'); if (_st) _st.textContent = _newTitle;
   } catch (e) {}
   ap_save(true);
   return PROJECT;
@@ -26607,6 +26614,13 @@ window.startSegmentation=function(){
   var titleEl=document.getElementById('proj-title');
   var title=titleEl?titleEl.value.trim():'';
   if(!title||title==='My Video')title=(window.PROJECT&&PROJECT.title)||'My Video';
+  // GUARD against project bleeding: segmentation must apply to the CURRENT project. If a real
+  // current project exists, keep ITS id/title as the source of truth and sync the field to it,
+  // rather than letting a stale #proj-title value re-stamp an old project's identity here.
+  if(window.PROJECT && PROJECT.id){
+    if(PROJECT.title && PROJECT.title!=='My Video') title=PROJECT.title;
+    if(titleEl) titleEl.value=title;
+  }
   var script='';
   var upTab=document.getElementById('tab-upload');var paTab=document.getElementById('tab-paste');
   if(upTab&&upTab.style.display!=='none')script=(document.getElementById('t-extracted')||{}).value||'';
