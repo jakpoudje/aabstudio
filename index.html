@@ -14200,14 +14200,28 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
           +'</div>';
         toast('Camera: '+msg,'error');
       }
-      // Check permission state first — if not yet granted, bare call triggers the popup
-      navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: audioConstraints })
+      // Acquire the stream with progressive fallback. A STALE preferred-device id (saved from a
+      // previous session / different machine) makes {deviceId:{exact:...}} throw NotFoundError even
+      // when a perfectly good camera is present — so on failure we CLEAR the stale preference and
+      // retry with generic constraints, then finally try video-only in case the MIC is the problem.
+      function _tryGUM() {
+        return navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: audioConstraints });
+      }
+      _tryGUM()
         .then(_applyStream)
-        .catch(function(e){
-          // Retry once with bare constraints in case the ideal resolution/facingMode is unsupported
-          navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        .catch(function(e1){
+          // Drop any exact-device pins that may be stale, then retry with generic constraints.
+          var hadPin = !!(STUDIO._preferredCam || STUDIO._preferredMic);
+          STUDIO._preferredCam = null; STUDIO._preferredMic = null;
+          navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true })
             .then(_applyStream)
-            .catch(_camError);
+            .catch(function(e2){
+              // Maybe the MICROPHONE is what's failing — try camera-only so a mic problem doesn't
+              // block a working camera. (Recording audio can be handled separately.)
+              navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+                .then(function(s){ _applyStream(s); toast('Camera on (no microphone found)', 'info'); })
+                .catch(function(e3){ _camError(e3 || e2 || e1); });
+            });
         });
     }
 
