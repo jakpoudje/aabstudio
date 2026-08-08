@@ -8838,7 +8838,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
   <button onclick="nav('dashboard-pg')" style="font-size:11px;padding:4px 9px;border-radius:5px;border:1px solid #d1d5db;background:#f9fafb;cursor:pointer;color:#374151;font-weight:500;">← Dashboard</button>
   <button onclick="nav('scenes-pg')" style="font-size:11px;padding:4px 9px;border-radius:5px;border:1px solid #d1d5db;background:#f9fafb;cursor:pointer;color:#374151;font-weight:500;">🎬 Scenes</button>
   <button onclick="nav('ai-presenter-studio')" style="font-size:11px;padding:4px 9px;border-radius:5px;border:1px solid #d1d5db;background:#f9fafb;cursor:pointer;color:#374151;font-weight:500;">🤖 AI Presenter</button>
-  <button onclick="nav('record-pg')" style="font-size:11px;padding:4px 9px;border-radius:5px;border:1px solid #d1d5db;background:#f9fafb;cursor:pointer;color:#374151;font-weight:500;">🎥 Record</button>
+  <button onclick="typeof openRecordingStudio==='function'?openRecordingStudio():nav('record-pg')" style="font-size:11px;padding:4px 9px;border-radius:5px;border:1px solid #d1d5db;background:#f9fafb;cursor:pointer;color:#374151;font-weight:500;">🎥 Record</button>
   <button onclick="nav('edit-pg')" style="font-size:11px;padding:4px 9px;border-radius:5px;border:1px solid #6366f1;background:#eef2ff;cursor:pointer;color:#6366f1;font-weight:600;">✂ Edit Suite</button>
 </div>
 <div class="script-layout">
@@ -14378,7 +14378,25 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
       if(window.STUDIO_TP){STUDIO_TP.running=false;clearInterval(STUDIO_TP.timer);}
       if(typeof TP!=='undefined'&&TP.playing&&typeof tpToggle==='function')tpToggle();
       if (!STUDIO.stream || !STUDIO.stream.active) {
-        toast('Camera not started — click \uD83D\uDCF7 Cam first', 'error');
+        // The camera simply wasn't started yet (e.g. entered the studio via a path that didn't
+        // init it). Rather than dead-ending, start the camera and auto-retry the recording once
+        // the stream is live — so a working webcam that's merely slow/uninitialised still records.
+        if (!STUDIO._recAutoStarting) {
+          STUDIO._recAutoStarting = true;
+          toast('Starting camera…', 'info');
+          if (typeof startCamera === 'function') startCamera();
+          var _tries = 0;
+          var _wait = setInterval(function () {
+            _tries++;
+            if (STUDIO.stream && STUDIO.stream.active) {
+              clearInterval(_wait); STUDIO._recAutoStarting = false;
+              startRec(); // retry now that the camera is live
+            } else if (_tries >= 20) { // ~5s
+              clearInterval(_wait); STUDIO._recAutoStarting = false;
+              toast('Camera not available — check the 📷 Cam button', 'error');
+            }
+          }, 250);
+        }
         return;
       }
       if (STUDIO.currentScene === null || STUDIO.currentScene === undefined) {
