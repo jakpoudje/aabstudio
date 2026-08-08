@@ -14130,9 +14130,10 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
     // camera" symptom. So: if permission is already GRANTED, auto-start silently (camera opens on
     // entry as expected). If NOT yet granted, show a calm "Start camera" prompt whose click gives
     // the gesture the browser needs to show the popup. Camera+mic both come from startCamera.
-    function _autoStartCamera() {
+    function _autoStartCamera(_attempt) {
       if (STUDIO.stream && STUDIO.stream.active) return;
       if (STUDIO._userClosedCam) return; // user explicitly turned the camera off — respect that
+      _attempt = _attempt || 1;
       function _prompt() {
         var nc = document.getElementById('studio-no-camera');
         if (nc) {
@@ -14145,14 +14146,33 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
             + '</div>';
         }
       }
+      // RETRY-ON-ENTRY: right after navigating into the studio the camera can momentarily
+      // enumerate as 0 videoinputs (device not ready yet) and getUserMedia throws NotFoundError.
+      // Instead of giving up on the first miss, keep re-checking for up to ~4s. This is the
+      // behaviour regression: a single entry attempt that failed on the not-ready window.
+      function _tryOrRetry() {
+        navigator.mediaDevices.enumerateDevices().then(function (ds) {
+          var hasCam = ds.some(function (d) { return d.kind === 'videoinput'; });
+          if (hasCam) {
+            STUDIO._autoStartAttempt = true;
+            startCamera();
+          } else if (_attempt < 8) {
+            // camera not visible yet — wait and retry (250ms * 8 ≈ 2s)
+            setTimeout(function () { _autoStartCamera(_attempt + 1); }, 250);
+          } else {
+            // genuinely no camera after retries — attempt once more so _camError shows the prompt
+            STUDIO._autoStartAttempt = true;
+            startCamera();
+          }
+        }).catch(function () { STUDIO._autoStartAttempt = true; startCamera(); });
+      }
       if (navigator.permissions && navigator.permissions.query) {
         navigator.permissions.query({ name: 'camera' }).then(function (st) {
-          if (st.state === 'granted') { STUDIO._autoStartAttempt = true; startCamera(); }
-          else { _prompt(); } // 'prompt' or 'denied' — need a user click to (re)request
-        }).catch(function () { STUDIO._autoStartAttempt = true; startCamera(); });
+          if (st.state === 'denied') { _prompt(); return; }
+          _tryOrRetry(); // granted OR prompt — enumerate/retry, startCamera triggers the popup if needed
+        }).catch(function () { _tryOrRetry(); });
       } else {
-        // No Permissions API — attempt silently; if it fails, _camError shows the prompt.
-        STUDIO._autoStartAttempt = true; startCamera();
+        _tryOrRetry();
       }
     }
 
@@ -14188,6 +14208,7 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
       // Helper: wire stream to UI
       function _applyStream(stream) {
         STUDIO._acquiring = false;
+        STUDIO._camRetries = 0;
         STUDIO.stream = stream; STUDIO.camOn = true; STUDIO.micOn = true;
         if (vid) { vid.srcObject = stream; vid.muted = true; vid.volume = 0; vid.setAttribute('muted',''); vid.style.display = 'block'; }
         // PERSISTENT mute enforcer: something re-unmutes the camera preview (causing mic
@@ -14297,6 +14318,19 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
                   } catch(_d){}
                   // Report the error from the BARE request (e2) — it is the true "can we get any
                   // camera" answer — not e1 which may just be an unsupported constraint.
+                  // SELF-HEAL: NotFoundError right after entry usually means the camera is not
+                  // ready yet (videoinputs momentarily 0). Retry the whole acquisition a few times
+                  // before declaring it unavailable, instead of giving up on the first miss.
+                  var errName = (e2 && e2.name) || (e3 && e3.name) || (e1 && e1.name);
+                  STUDIO._camRetries = (STUDIO._camRetries || 0);
+                  if (errName === 'NotFoundError' && STUDIO._camRetries < 6) {
+                    STUDIO._camRetries++;
+                    STUDIO._acquiring = false;
+                    console.info('[AAB-CAM] retry ' + STUDIO._camRetries + '/6 in 500ms (camera may not be ready yet)');
+                    setTimeout(function () { startCamera(); }, 500);
+                    return;
+                  }
+                  STUDIO._camRetries = 0;
                   _camError(e2 || e3 || e1);
                 });
             });
