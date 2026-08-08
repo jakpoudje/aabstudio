@@ -5470,7 +5470,25 @@ function E_drawProg(){
     pvid.src=vc.url;
     pvid.load();
     pvid._aabLoading=true;
-    pvid.oncanplay=function(){pvid._aabLoading=false;};
+    pvid.oncanplay=function(){pvid._aabLoading=false;var ph=document.getElementById('aab-clip-unavailable');if(ph)ph.style.display='none';};
+    // GRACEFUL DEGRADATION: if this clip's stored file won't load (Supabase 400/503 on a broken
+    // object = "black video"), show a clear placeholder instead of a silent black monitor.
+    pvid.onerror=function(){
+      pvid._aabLoading=false;
+      var host=pvid.parentElement; if(!host) return;
+      var ph=document.getElementById('aab-clip-unavailable');
+      if(!ph){
+        ph=document.createElement('div'); ph.id='aab-clip-unavailable';
+        ph.style.cssText='position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0a0d14;color:#e5e7eb;text-align:center;z-index:6;font-family:Sora,sans-serif;padding:16px;';
+        if(getComputedStyle(host).position==='static')host.style.position='relative';
+        host.appendChild(ph);
+      }
+      var nm=(vc && vc.name) ? String(vc.name).slice(0,40) : 'This clip';
+      ph.innerHTML='<div style="font-size:30px;margin-bottom:8px;">\u26A0\uFE0F</div>'
+        +'<div style="font-size:14px;font-weight:700;margin-bottom:5px;color:#f87171;">Clip unavailable</div>'
+        +'<div style="font-size:12px;color:rgba(255,255,255,.6);line-height:1.5;max-width:340px;">'+nm+' could not be loaded from storage. The recording may not have saved fully \u2014 please re-record this scene.</div>';
+      ph.style.display='flex';
+    };
   }
   if(E.playing){
     var cT=Math.max(0,t-(vc.start||0));
@@ -19243,28 +19261,49 @@ console.log('UI v2 — redesigned studio, edit suite, teleprompter ✓');
   }, 30000);
 
   // ── 6. Recording — upload blob and store URL ─────────────────
+  // Verify a freshly-created media URL actually serves (a signed URL can be valid while the stored
+  // object is missing/corrupt/partial — Supabase then returns 400/503 and the clip shows black).
+  // Returns a Promise<boolean>.
+  window._verifyMediaUrl = function(url) {
+    if (!url) return Promise.resolve(false);
+    return fetch(url, { method: 'GET', headers: { 'Range': 'bytes=0-1' } })
+      .then(function(resp){ return resp.status >= 200 && resp.status < 300; })
+      .catch(function(){ return false; });
+  };
   window._uploadRecordingBlob = function(blob, clipKey, projectId) {
     if (!blob || !window._sbSession) return Promise.resolve(null);
     var supa = getSupa();
     var uid = APP && APP.user ? APP.user.id : 'user';
-    var filename = uid + '/' + projectId + '/' + clipKey + '_' + Date.now() + '.webm';
-    return supa.storage.from('recorded-clips').upload(filename, blob, { contentType: 'video/webm', upsert: true })
-      .then(function(r) {
-        if (r.error) { console.warn('Upload failed:', r.error.message); return null; }
-        // Create a signed URL (7 days) so <video src> can load it WITHOUT an auth header.
-        // The old 'authenticated' path URL returned 403 in <video>/<img> tags because
-        // those elements cannot send an Authorization header.
-        return supa.storage.from('recorded-clips').createSignedUrl(filename, 604800)
-          .then(function(sr){
-            if (sr.error || !sr.data || !sr.data.signedUrl) {
-              console.warn('Signed URL failed:', sr.error && sr.error.message);
-              // Fall back to public URL (works if the bucket is public)
-              var pub = supa.storage.from('recorded-clips').getPublicUrl(filename);
-              return (pub && pub.data && pub.data.publicUrl) ? pub.data.publicUrl : null;
-            }
-            return sr.data.signedUrl;
-          });
-      }).catch(function(e) { console.warn('Upload error:', e.message); return null; });
+    function _doUpload(attempt) {
+      var filename = uid + '/' + projectId + '/' + clipKey + '_' + Date.now() + '.webm';
+      return supa.storage.from('recorded-clips').upload(filename, blob, { contentType: 'video/webm', upsert: true })
+        .then(function(r) {
+          if (r.error) { console.warn('Upload failed:', r.error.message); return null; }
+          // Create a signed URL (7 days) so <video src> can load it WITHOUT an auth header.
+          // The old 'authenticated' path URL returned 403 in <video>/<img> tags because
+          // those elements cannot send an Authorization header.
+          return supa.storage.from('recorded-clips').createSignedUrl(filename, 604800)
+            .then(function(sr){
+              var signed = (sr.error || !sr.data || !sr.data.signedUrl) ? null : sr.data.signedUrl;
+              if (!signed) {
+                console.warn('Signed URL failed:', sr.error && sr.error.message);
+                var pub = supa.storage.from('recorded-clips').getPublicUrl(filename);
+                signed = (pub && pub.data && pub.data.publicUrl) ? pub.data.publicUrl : null;
+              }
+              if (!signed) return null;
+              // VERIFY the object really serves before handing back the URL. If the upload landed
+              // corrupt/partial (common cause of "black video"), retry the whole upload ONCE.
+              return window._verifyMediaUrl(signed).then(function(ok){
+                if (ok) return signed;
+                if (attempt < 2) { console.warn('Uploaded clip did not verify, retrying upload…'); return _doUpload(attempt + 1); }
+                console.warn('Uploaded clip failed verification after retry.');
+                if (typeof toast === 'function') toast('Recording may not have saved correctly — please re-record this scene', 'error');
+                return null; // do NOT persist a broken URL as a good recording
+              });
+            });
+        }).catch(function(e) { console.warn('Upload error:', e.message); return null; });
+    }
+    return _doUpload(1);
   };
 
   // ── 7. Credits display ──────────────────────────────────────
