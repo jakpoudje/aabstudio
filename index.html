@@ -14227,22 +14227,25 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
       function _tryGUM() {
         return navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: audioConstraints });
       }
+      console.info('[AAB-CAM] starting acquisition; preferredCam='+(STUDIO._preferredCam||'none')+' preferredMic='+(STUDIO._preferredMic||'none'));
       _tryGUM()
         .then(_applyStream)
         .catch(function(e1){
-          // First attempt failed. The usual cause is a STALE {deviceId:{exact:...}} pin or a
-          // facingMode constraint that a desktop camera rejects. Clear the pins and retry with the
-          // BAREST possible request — exactly what the original working code used — no facingMode,
-          // no deviceId. On any machine that actually has a camera this succeeds.
+          console.warn('[AAB-CAM] stage1 (constrained) failed:', e1 && e1.name, e1 && e1.message);
+          // Clear any stale pins and retry with the BAREST possible request.
           STUDIO._preferredCam = null; STUDIO._preferredMic = null;
           navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-            .then(_applyStream)
+            .then(function(s){ console.info('[AAB-CAM] stage2 (bare video+audio) SUCCEEDED'); _applyStream(s); })
             .catch(function(e2){
-              // Camera+audio together failed — try camera-only, in case the MIC is what's failing,
-              // so a mic problem never blocks a working camera.
+              console.warn('[AAB-CAM] stage2 (bare video+audio) failed:', e2 && e2.name, e2 && e2.message);
               navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-                .then(function(s){ _applyStream(s); toast('Camera on (no microphone found)', 'info'); })
-                .catch(function(e3){ _camError(e1 || e2 || e3); });
+                .then(function(s){ console.info('[AAB-CAM] stage3 (video-only) SUCCEEDED'); _applyStream(s); toast('Camera on (no microphone found)', 'info'); })
+                .catch(function(e3){
+                  console.error('[AAB-CAM] ALL stages failed. stage3:', e3 && e3.name, e3 && e3.message);
+                  // Report the error from the BARE request (e2) — it is the true "can we get any
+                  // camera" answer — not e1 which may just be an unsupported constraint.
+                  _camError(e2 || e3 || e1);
+                });
             });
         });
     }
