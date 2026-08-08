@@ -9704,7 +9704,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
       <input type="range" id="e-prog-seek" min="0" max="100" value="0" style="flex:1;accent-color:#a78bfa;height:2px;" oninput="AABE.progSeek(+this.value)">
       <span id="e-prog-tc2" style="font-size:8px;color:rgba(255,255,255,.3);font-family:monospace;min-width:70px;text-align:right;">0:00 / 0:00</span>
       <button onclick="AABE.toggleSubs()" id="e-sub-btn" class="etrans-btn" title="CC/Subtitles">CC</button>
-      <button onclick="AABE.toggleLoop()" id="e-loop-btn" class="etrans-btn" title="Loop">↻</button>
+      <button onclick="AABE.toggleLoop()" id="e-loop-btn" class="etrans-btn" title="Loop the marked In/Out region" aria-pressed="false" style="font-weight:700;">&#x1F501;</button>
     </div>
   </div>
 
@@ -27456,7 +27456,42 @@ window.E_addTrackClip=function(trackId,mediaType){
    ═══════════════════════════════════════════════════════════════════════════ */
 window.E_setIn=()=>{window._esInPt=window._esPH;if(window.E)E.regionIn=window._esInPt;(typeof E_renderTL==="function"?E_renderTL():null);toast&&toast('In: '+ft(window._esInPt),'ok');};
 window.E_setOut=()=>{window._esOutPt=window._esPH;if(window.E)E.regionOut=window._esOutPt;(typeof E_renderTL==="function"?E_renderTL():null);toast&&toast('Out: '+ft(window._esOutPt),'ok');};
-window.E_toggleLoop=()=>{window._esLoop=!window._esLoop;if(window.AABE)AABE._loop=window._esLoop;toast&&toast('Loop '+(window._esLoop?'ON':'OFF'),'info');};
+window.E_toggleLoop=()=>{
+  window._esLoop=!window._esLoop;
+  if(window.AABE)AABE._loop=window._esLoop;
+  if(window._esLoop){
+    // Sync the loop region from whichever mark system was used. The [In/Out] buttons set
+    // E.inPoint/AABE.inPoint, while E_setIn/Out set _esInPt/_esOutPt — the playback loop engine
+    // reads _esInPt/_esOutPt, so pull marks in from AABE if the es points aren't set.
+    if(window._esInPt==null && window.AABE && AABE.inPoint!=null) window._esInPt=AABE.inPoint;
+    if(window._esOutPt==null && window.AABE && AABE.outPoint!=null) window._esOutPt=AABE.outPoint;
+    var hasRegion = window._esInPt!=null && window._esOutPt!=null && window._esOutPt>window._esInPt;
+    toast&&toast(hasRegion? ('Loop ON — '+(typeof ft==='function'?ft(window._esInPt)+' to '+ft(window._esOutPt):'marked region')) : 'Loop ON — whole timeline (set In/Out to loop a region)','info',2200);
+  } else {
+    toast&&toast('Loop OFF','info',1500);
+  }
+  // Visible ON/OFF state on the loop button so the user can SEE it's active (it gave no feedback
+  // before, which is why it felt like "no way to loop").
+  var lb=document.getElementById('e-loop-btn');
+  if(lb){
+    if(window._esLoop){
+      lb.style.background='rgba(167,139,250,.9)';
+      lb.style.color='#fff';
+      lb.style.boxShadow='0 0 0 1px rgba(167,139,250,.6)';
+      lb.title='Loop is ON — click to turn off';
+      lb.setAttribute('aria-pressed','true');
+    } else {
+      lb.style.background='';
+      lb.style.color='';
+      lb.style.boxShadow='';
+      lb.title='Loop';
+      lb.setAttribute('aria-pressed','false');
+    }
+  }
+  // Also reflect on the timeline region band if present.
+  var band=document.getElementById('aab-marker-region')||document.querySelector('.aab-marker-region');
+  if(band) band.style.outline = window._esLoop ? '1px solid rgba(167,139,250,.9)' : '';
+};
 window.E_generateSubtitles=function(){
   if(!window.E||!E.tracks||!window.PROJECT)return 0;
   var subs=E.tracks.find(function(t){return t.id==='subs'||t.type==='text';});
