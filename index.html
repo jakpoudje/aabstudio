@@ -14284,6 +14284,17 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
                 .then(function(s){ console.info('[AAB-CAM] stage3 (video-only) SUCCEEDED'); _applyStream(s); toast('Camera on (no microphone found)', 'info'); })
                 .catch(function(e3){
                   console.error('[AAB-CAM] ALL stages failed. stage3:', e3 && e3.name, e3 && e3.message);
+                  // DIAGNOSTIC: dump what devices the browser actually sees inside THIS page. If
+                  // videoinput count is 0 here, the page/tab genuinely cannot see the camera (OS/
+                  // policy). If it's >0, the device is visible but getUserMedia still refused it.
+                  try {
+                    navigator.mediaDevices.enumerateDevices().then(function(ds){
+                      var v = ds.filter(function(x){return x.kind==='videoinput';});
+                      var a = ds.filter(function(x){return x.kind==='audioinput';});
+                      console.error('[AAB-CAM] enumerateDevices at failure: videoinputs='+v.length+' audioinputs='+a.length+' | video labels='+JSON.stringify(v.map(function(d){return d.label||'(unlabeled)';})));
+                      console.error('[AAB-CAM] context: secureContext='+window.isSecureContext+' protocol='+location.protocol+' inIframe='+(window.top!==window.self));
+                    });
+                  } catch(_d){}
                   // Report the error from the BARE request (e2) — it is the true "can we get any
                   // camera" answer — not e1 which may just be an unsupported constraint.
                   _camError(e2 || e3 || e1);
