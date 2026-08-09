@@ -14133,47 +14133,17 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
     function _autoStartCamera(_attempt) {
       if (STUDIO.stream && STUDIO.stream.active) return;
       if (STUDIO._userClosedCam) return; // user explicitly turned the camera off — respect that
-      _attempt = _attempt || 1;
-      function _prompt() {
-        var nc = document.getElementById('studio-no-camera');
-        if (nc) {
-          nc.style.display = 'flex';
-          nc.innerHTML = '<div style="padding:20px;text-align:center;">'
-            + '<div style="font-size:30px;margin-bottom:8px;">📷</div>'
-            + '<div style="color:rgba(255,255,255,.8);font-size:14px;font-weight:700;margin-bottom:6px;">Start your camera</div>'
-            + '<div style="color:rgba(255,255,255,.55);font-size:12px;line-height:1.5;margin-bottom:14px;max-width:320px;">Your browser will ask for permission to use your camera and microphone.</div>'
-            + '<button class="s-btn" onclick="STUDIO._userCamClick=true;startCamera()" style="margin:0 auto;font-size:14px;padding:9px 18px;">📷 Start camera</button>'
-            + '</div>';
-        }
-      }
-      // RETRY-ON-ENTRY: right after navigating into the studio the camera can momentarily
-      // enumerate as 0 videoinputs (device not ready yet) and getUserMedia throws NotFoundError.
-      // Instead of giving up on the first miss, keep re-checking for up to ~4s. This is the
-      // behaviour regression: a single entry attempt that failed on the not-ready window.
-      function _tryOrRetry() {
-        navigator.mediaDevices.enumerateDevices().then(function (ds) {
-          var hasCam = ds.some(function (d) { return d.kind === 'videoinput'; });
-          if (hasCam) {
-            STUDIO._autoStartAttempt = true;
-            startCamera();
-          } else if (_attempt < 8) {
-            // camera not visible yet — wait and retry (250ms * 8 ≈ 2s)
-            setTimeout(function () { _autoStartCamera(_attempt + 1); }, 250);
-          } else {
-            // genuinely no camera after retries — attempt once more so _camError shows the prompt
-            STUDIO._autoStartAttempt = true;
-            startCamera();
-          }
-        }).catch(function () { STUDIO._autoStartAttempt = true; startCamera(); });
-      }
-      if (navigator.permissions && navigator.permissions.query) {
-        navigator.permissions.query({ name: 'camera' }).then(function (st) {
-          if (st.state === 'denied') { _prompt(); return; }
-          _tryOrRetry(); // granted OR prompt — enumerate/retry, startCamera triggers the popup if needed
-        }).catch(function () { _tryOrRetry(); });
-      } else {
-        _tryOrRetry();
-      }
+      // Auto-start the camera on studio entry. We do NOT gate this behind
+      // navigator.permissions.query or enumerateDevices: both can report stale/misleading results
+      // (e.g. enumerateDevices hides camera labels until permission resolves, and the permission
+      // query can lag), which caused the studio to show a manual "Start camera" prompt even when
+      // permission was already granted. startCamera() itself now retries NotFoundError (the
+      // camera-not-ready-yet window right after nav) up to 6x, so calling it directly is the most
+      // reliable path: if permission is granted the feed comes up automatically; if it is in the
+      // 'prompt' state the getUserMedia call itself surfaces the browser's permission popup (still
+      // a valid gesture chain because studio entry came from a user click on Record).
+      STUDIO._autoStartAttempt = true;
+      startCamera();
     }
 
     // Override startCamera to use selected devices
