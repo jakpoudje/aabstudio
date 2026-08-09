@@ -5497,7 +5497,7 @@ function E_drawProg(){
       // Always seek to correct position before playing
       if(Math.abs(pvid.currentTime-cT)>0.15)pvid.currentTime=cT;
       pvid.muted=false;pvid.volume=_cVol;
-      if(!pvid._acWired&&typeof getAC==="function"&&typeof _masterGain!=="undefined"){try{var _ac=getAC();if(_ac&&_masterGain){var _ms=_ac.createMediaElementSource(pvid);_ms.connect(_masterGain);pvid._acWired=true;}}catch(e){}}
+      window._aabWireProgAudio&&window._aabWireProgAudio(pvid);
       pvid.play().catch(function(e){pvid.muted=false;pvid.play().catch(function(){});});
     } else {
       if(pvid.volume!==_cVol)pvid.volume=_cVol;   // live volume changes while playing
@@ -27254,6 +27254,31 @@ function _esClipAt(t){
 var _progVideoEl=null; // the active program video element
 function _getProgVid(){return $('e-prog-vid')||$('aab-prog-vid');}
 
+/* ONE shared program-video WebAudio wiring. A media element can have only ONE
+   MediaElementSourceNode created for it — ever. Four different code paths used to each call
+   createMediaElementSource(pv) with their OWN guard flag (_mediaSrc/_vuWired/_acWired), so a second
+   path would throw InvalidStateError and could leave the element's audio captured into WebAudio but
+   not connected onward — the program monitor went SILENT while the source monitor (never wired to
+   WebAudio) still played. This helper wires exactly once, sets ALL the legacy flags together so no
+   other path re-attempts, and on any failure marks it failed + leaves the element's native audio
+   intact (muted=false) so sound still comes out of the element directly. */
+window._aabWireProgAudio=function(pv){
+  if(!pv) return;
+  if(pv._aabAudioWired||pv._mediaSrc||pv._vuWired||pv._acWired||pv._mediaFailed) return;
+  if(typeof getAC!=='function'||typeof _masterGain==='undefined'||!_masterGain){ return; }
+  try{
+    var ac=getAC(); if(!ac||!_masterGain) return;
+    var ms=ac.createMediaElementSource(pv);
+    ms.connect(_masterGain);
+    pv._mediaSrc=ms; pv._vuWired=true; pv._acWired=true; pv._aabAudioWired=true;
+  }catch(e){
+    // Already wired elsewhere OR CORS-tainted: do NOT retry (throws are permanent). Ensure the
+    // element itself stays audible so the program monitor is never silent.
+    pv._mediaFailed=true; pv._aabAudioWired=true;
+    try{ pv.muted=false; }catch(_e){}
+  }
+};
+
 function _esUpdateProg(t){
   var pv=_getProgVid(); if(!pv)return;
   var clip=_esClipAt(t);
@@ -27267,12 +27292,9 @@ function _esUpdateProg(t){
   var pe2=$('e-prog-empty')||$('aab-prog-empty');
   if(pe2){pe2.style.display='none';pe2.classList.add('hidden');}
   pv.style.display='block';
-  // Route video audio through Web Audio for VU metering (only once per element)
-  // Wire to WebAudio once only; CORS errors are permanent so flag and skip retry
-  if(!pv._mediaSrc&&!pv._mediaFailed&&window._AC&&_masterGain){
-    try{var ms=_AC.createMediaElementSource(pv);ms.connect(_masterGain);pv._mediaSrc=ms;}
-    catch(e){pv._mediaFailed=true;} // Retry suppressed — CORS blocks HeyGen URLs
-  }
+  // Route video audio through Web Audio for VU metering — via the ONE shared wiring helper
+  // (only one MediaElementSource may ever exist per element; competing wirings silenced audio).
+  window._aabWireProgAudio&&window._aabWireProgAudio(pv);
   var cT=Math.max(0,t-(clip.start||0));
   
   if(pv._curUrl!==clip.url){
@@ -27474,9 +27496,7 @@ window.E_progToggle=function(){
       try{pv.currentTime=Math.max(0,Math.min(window._esPH||0,pv.duration-0.1));}catch(e){}
     }
     // Wire to AudioContext for VU meter
-    if(!pv._vuWired&&typeof getAC==='function'&&typeof _masterGain!=='undefined'&&_masterGain){
-      try{getAC().createMediaElementSource(pv).connect(_masterGain);pv._vuWired=true;}catch(e){}
-    }
+    window._aabWireProgAudio&&window._aabWireProgAudio(pv);
   }
   window._esRAF=requestAnimationFrame(_esFrame);
 };
@@ -27880,9 +27900,7 @@ window.E_toggleMixer=()=>{var _epx=document.getElementById('edit-pg');if(!_epx||
       getAC(); // Create AudioContext on user gesture
       // Route program video audio through Web Audio if not already done
       var pv2=document.getElementById('e-prog-vid')||document.getElementById('aab-prog-vid');
-      if(pv2&&!pv2._mediaSrc&&_AC&&_masterGain){
-        try{var ms=_AC.createMediaElementSource(pv2);ms.connect(_masterGain);pv2._mediaSrc=ms;}catch(e){}
-      }
+      window._aabWireProgAudio&&window._aabWireProgAudio(pv2);
     }catch(e){}
     p.style.display='block';
   }else{_mixPos.x=parseInt(p.style.left)||null;_mixPos.y=parseInt(p.style.top)||null;p.style.display='none';}};
