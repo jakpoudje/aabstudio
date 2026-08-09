@@ -14144,6 +14144,25 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
       // a valid gesture chain because studio entry came from a user click on Record).
       STUDIO._autoStartAttempt = true;
       startCamera();
+      // AUTO-RECOVERY: if the camera is currently unavailable to this page (e.g. macOS has the
+      // FaceTime camera handed to another process / Continuity Camera, so videoinputs=0 even with
+      // permission granted), listen for the moment a video device appears and start it then — so
+      // the feed comes up on its own the instant the camera is freed, no reload needed.
+      if (navigator.mediaDevices && navigator.mediaDevices.addEventListener && !STUDIO._devChangeWired) {
+        STUDIO._devChangeWired = true;
+        navigator.mediaDevices.addEventListener('devicechange', function () {
+          if (STUDIO.stream && STUDIO.stream.active) return;   // already have it
+          if (STUDIO._userClosedCam) return;                    // user chose off
+          var recPg = document.getElementById('record-pg');
+          if (!recPg || getComputedStyle(recPg).display === 'none') return; // only in studio
+          navigator.mediaDevices.enumerateDevices().then(function (ds) {
+            if (ds.some(function (d) { return d.kind === 'videoinput'; })) {
+              STUDIO._camRetries = 0; STUDIO._autoStartAttempt = true;
+              startCamera();
+            }
+          }).catch(function () {});
+        });
+      }
     }
 
     // Override startCamera to use selected devices
