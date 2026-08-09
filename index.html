@@ -16329,7 +16329,20 @@ window._reapplyNav=function(){
             var rows = await r.json();
             if(rows && rows.length) {
               var fullProjects = rows.map(function(row){
-                if(row.project_data){ try{ var p=JSON.parse(row.project_data); if(!p.id)p.id=row.id; return p; }catch(e){} }
+                // The aab_projects column is `data` (JSON), NOT `project_data`. Reading the wrong
+                // field meant every cloud row fell through unparsed and projects never synced across
+                // browsers/devices. Parse row.data (string or object), keep id/title from the row.
+                var d = row.data;
+                if(d){
+                  try{
+                    var p = (typeof d === 'string') ? JSON.parse(d) : d;
+                    if(p && typeof p === 'object'){
+                      if(!p.id) p.id = row.id;
+                      if(!p.title && row.title) p.title = row.title;
+                      return p;
+                    }
+                  }catch(e){}
+                }
                 return row;
               }).filter(Boolean);
               if(fullProjects.length) {
