@@ -28185,8 +28185,8 @@ window.E_startVoiceRecord=()=>{if(_micSt){_stopMic();return;}navigator.mediaDevi
 function _stopMic(){if(_micSt){_micSt.getTracks().forEach(t=>t.stop());_micSt=null;}if(_micAA){try{_micAA.close();}catch(e){}}_micAA=null;if(_vuRAF2){cancelAnimationFrame(_vuRAF2);_vuRAF2=null;}document.querySelectorAll('.aab-vu-bar').forEach(b=>{b.style.height='20%';b.style.background='rgba(16,185,129,.35)';});document.querySelectorAll('.aab-mic-name-btn').forEach(b=>b.classList.remove('active'));}
 function _vuRun2(){if(!_micAn)return;var buf=new Uint8Array(_micAn.frequencyBinCount);(function tick(){_vuRAF2=requestAnimationFrame(tick);_micAn.getByteFrequencyData(buf);var avg=0;for(var i=0;i<buf.length;i++)avg+=buf[i];avg/=(buf.length*255);document.querySelectorAll('.aab-vu-bar').forEach((b,i)=>{var on=avg>[.02,.10,.22,.40,.60,.80][i];b.style.height=on?'90%':'20%';b.style.background=on?(avg>.75?'#ef4444':avg>.45?'#f59e0b':'#10b981'):'rgba(16,185,129,.35)';});})();}
 window.E_toggleRecord=()=>{
-  if(_recSt){if(_recInt){clearInterval(_recInt);_recInt=null;}if(_recRec&&_recRec.state!=='inactive')_recRec.stop();if(_recSt){_recSt.getTracks().forEach(t=>t.stop());_recSt=null;}document.querySelectorAll('.aab-rec-btn').forEach(b=>{b.classList.remove('recording');b.innerHTML='⏺';});return;}
-  navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{_recSt=stream;_recChunks=[];_recDur=0;var sup=['audio/webm;codecs=opus','audio/webm','audio/ogg'].find(t=>MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t))||'audio/webm';_recRec=new MediaRecorder(stream,{mimeType:sup});_recRec.ondataavailable=e=>{if(e.data.size>0)_recChunks.push(e.data);};_recRec.onstop=()=>{var blob=new Blob(_recChunks,{type:'audio/webm'});var url=URL.createObjectURL(blob);var dur=_recDur||3;var vo=window.E&&E.tracks?E.tracks.find(t=>t.id==='voice'):null;if(vo)vo.clips.push({id:'rec'+Date.now(),name:'Recording '+ft(dur),url,type:'audio',start:window._esPH||0,duration:dur,color:'#dc2626'});(window._esBinFiles=window._esBinFiles||[]).push({url,name:'Recording.webm',type:'audio',dur});_binRender();(typeof E_renderTL==="function"?E_renderTL():null);toast&&toast('Recording saved ('+ft(dur)+')','ok');};_recRec.start();_recInt=setInterval(()=>_recDur++,1000);document.querySelectorAll('.aab-rec-btn').forEach(b=>{b.classList.add('recording');b.innerHTML='⏹';});toast&&toast('🔴 Recording…','ok');}).catch(e=>toast&&toast('Mic: '+e.message,'error'));
+  if(_recSt){if(_recInt){clearInterval(_recInt);_recInt=null;}if(_recRec&&_recRec.state!=='inactive')_recRec.stop();if(_recSt){try{_recSt._aabProtect=false;}catch(_p){}_recSt.getTracks().forEach(t=>t.stop());_recSt=null;}document.querySelectorAll('.aab-rec-btn').forEach(b=>{b.classList.remove('recording');b.innerHTML='⏺';});return;}
+  navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{_recSt=stream;_recChunks=[];_recDur=0;var sup=['audio/webm;codecs=opus','audio/webm','audio/ogg'].find(t=>MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t))||'audio/webm';_recRec=new MediaRecorder(stream,{mimeType:sup});_recRec.ondataavailable=e=>{if(e.data.size>0)_recChunks.push(e.data);};_recRec.onstop=()=>{var blob=new Blob(_recChunks,{type:'audio/webm'});var url=URL.createObjectURL(blob);var dur=_recDur||3;var vo=window.E&&E.tracks?E.tracks.find(t=>t.id==='voice'):null;if(vo)vo.clips.push({id:'rec'+Date.now(),name:'Recording '+ft(dur),url,type:'audio',start:window._esPH||0,duration:dur,color:'#dc2626'});(window._esBinFiles=window._esBinFiles||[]).push({url,name:'Recording.webm',type:'audio',dur});_binRender();(typeof E_renderTL==="function"?E_renderTL():null);toast&&toast('Recording saved ('+ft(dur)+')','ok');};try{_recSt._aabProtect=true;stream.getTracks().forEach(function(t){t._aabProtect=true;});}catch(_p){}_recRec.start(1000);_recInt=setInterval(()=>_recDur++,1000);document.querySelectorAll('.aab-rec-btn').forEach(b=>{b.classList.add('recording');b.innerHTML='⏹';});toast&&toast('🔴 Recording…','ok');}).catch(e=>toast&&toast('Mic: '+e.message,'error'));
 };
 function _addVOControls(){
   document.querySelectorAll('.aab-track-row').forEach(function(row){
@@ -29794,14 +29794,18 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   // One authoritative kill switch for every stream we handed out.
   window.aabStopAllMedia = function (reason) {
     var stopped = 0;
+    // Never kill a stream/track marked _aabProtect — that is an in-progress voiceover recording.
+    // Stopping it mid-record was ending voiceovers after a few seconds.
     live.forEach(function (s) {
-      try { s.getTracks().forEach(function (t) { if (t.readyState === 'live') { t.stop(); stopped++; } }); } catch (e) {}
+      if (s && s._aabProtect) return;
+      try { s.getTracks().forEach(function (t) { if (t.readyState === 'live' && !t._aabProtect) { t.stop(); stopped++; } }); } catch (e) {}
     });
-    live = [];
-    // Also release anything held by the known module-level references.
+    live = live.filter(function (s) { return s && s._aabProtect; });
+    // Also release anything held by the known module-level references — except a protected recorder.
     ['_micSt', '_recSt', '_studioStream', '_camStream', '_vuStream'].forEach(function (k) {
       var s = window[k];
-      if (s && s.getTracks) { try { s.getTracks().forEach(function (t) { if (t.readyState === 'live') { t.stop(); stopped++; } }); } catch (e) {} window[k] = null; }
+      if (s && s._aabProtect) return;
+      if (s && s.getTracks) { try { s.getTracks().forEach(function (t) { if (t.readyState === 'live' && !t._aabProtect) { t.stop(); stopped++; } }); } catch (e) {} window[k] = null; }
     });
     // Detach any media element still bound to a camera/mic stream.
     [].forEach.call(document.querySelectorAll('video,audio'), function (el) {
