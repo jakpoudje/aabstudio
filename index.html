@@ -13766,18 +13766,29 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
           setTimeout(function(){if(typeof renderProjectList==='function')renderProjectList();},500);
         } else { updateNavState(); navFree('home'); }
       }).catch(function (e) {
-        /* Safari case: getSession() REJECTS when the stored refresh token is invalid/expired
-           (Supabase token endpoint returns 400). With no catch, _aabAuthPending stayed true
-           forever and the whole app hung at "80% - waiting on Auth resolved". Clear the dead
-           token + pending flag and fall back to a clean sign-in. */
+        /* getSession() REJECTED. The ESSENTIAL fix is to clear _aabAuthPending so the app never
+           hangs at "80% - waiting on Auth resolved" (the Safari dead-token symptom). But we must
+           be CONSERVATIVE about destroying the stored session: only purge it when the error is a
+           genuinely dead REFRESH token. A transient/network rejection must leave the token intact
+           so a VALID session recovers on the next getSession/poll - otherwise good sessions (e.g.
+           Chrome) get logged out. */
         window._aabAuthPending = false;
-        try { (window._aabSafeStorage||window.localStorage).removeItem('aab-supabase-auth'); } catch(_e){}
-        try { window.localStorage.removeItem('aab-supabase-auth'); } catch(_e){}
-        try { supa.auth.signOut({scope:'local'}); } catch(_e){ try{ supa.auth.signOut(); }catch(_e2){} }
-        window._sbSession = null;
+        var _msg=(e && (e.message||e.error_description||e.msg))||String(e||'');
+        var _ml=_msg.toLowerCase();
+        var _deadRefresh = (e && e.code==='refresh_token_not_found') ||
+          ((_ml.indexOf('refresh token')>-1 || _ml.indexOf('refresh_token')>-1) &&
+           (_ml.indexOf('not found')>-1 || _ml.indexOf('invalid')>-1 || _ml.indexOf('expired')>-1 || _ml.indexOf('revoked')>-1));
+        if (_deadRefresh) {
+          try { (window._aabSafeStorage||window.localStorage).removeItem('aab-supabase-auth'); } catch(_e){}
+          try { window.localStorage.removeItem('aab-supabase-auth'); } catch(_e){}
+          try { supa.auth.signOut({scope:'local'}); } catch(_e){ try{ supa.auth.signOut(); }catch(_e2){} }
+          window._sbSession = null;
+          try { console.warn('[auth] stored refresh token was dead — cleared; please sign in.', _msg); } catch(_e){}
+        } else {
+          try { console.warn('[auth] getSession failed (transient) — keeping stored session for retry.', _msg); } catch(_e){}
+        }
         try { updateNavState(); } catch(_e){}
-        try { navFree('home'); } catch(_e){}
-        try { console.warn('[auth] stored session was invalid — cleared; please sign in.', e && e.message); } catch(_e){}
+        try { if (!(window._sbSession && window._sbSession.access_token)) navFree('home'); } catch(_e){}
       });
       supa.auth.onAuthStateChange(function (event, session) {
         if (event === 'SIGNED_IN' && session) {
@@ -31008,9 +31019,13 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     //    so this also repairs a token that expired while the tab was in the background.
     function _isBadRefresh(err){
       if(!err) return false;
+      // ONLY a genuinely dead REFRESH token is unrecoverable. A plain "access token expired" is
+      // routine - getSession() refreshes it - and must NOT trigger a purge, or valid sessions get
+      // logged out (that was logging Chrome out). Match the specific refresh-token failures only.
+      if(err.code==='refresh_token_not_found') return true;
       var m=(err.message||err.error_description||err.msg||String(err)||'').toLowerCase();
-      return m.indexOf('refresh token')>-1 || m.indexOf('invalid') >-1 && m.indexOf('token')>-1
-        || m.indexOf('expired')>-1 || err.status===400 || err.code==='refresh_token_not_found';
+      if(m.indexOf('refresh token')===-1 && m.indexOf('refresh_token')===-1) return false;
+      return m.indexOf('not found')>-1 || m.indexOf('invalid')>-1 || m.indexOf('expired')>-1 || m.indexOf('revoked')>-1;
     }
     var _recovered=false;
     function _purgeBadSession(why){
