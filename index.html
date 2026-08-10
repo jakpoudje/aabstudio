@@ -13765,6 +13765,19 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
           }
           setTimeout(function(){if(typeof renderProjectList==='function')renderProjectList();},500);
         } else { updateNavState(); navFree('home'); }
+      }).catch(function (e) {
+        /* Safari case: getSession() REJECTS when the stored refresh token is invalid/expired
+           (Supabase token endpoint returns 400). With no catch, _aabAuthPending stayed true
+           forever and the whole app hung at "80% - waiting on Auth resolved". Clear the dead
+           token + pending flag and fall back to a clean sign-in. */
+        window._aabAuthPending = false;
+        try { (window._aabSafeStorage||window.localStorage).removeItem('aab-supabase-auth'); } catch(_e){}
+        try { window.localStorage.removeItem('aab-supabase-auth'); } catch(_e){}
+        try { supa.auth.signOut({scope:'local'}); } catch(_e){ try{ supa.auth.signOut(); }catch(_e2){} }
+        window._sbSession = null;
+        try { updateNavState(); } catch(_e){}
+        try { navFree('home'); } catch(_e){}
+        try { console.warn('[auth] stored session was invalid — cleared; please sign in.', e && e.message); } catch(_e){}
       });
       supa.auth.onAuthStateChange(function (event, session) {
         if (event === 'SIGNED_IN' && session) {
@@ -30993,11 +31006,35 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
 
     // 2. Safety net: pull the current session periodically. getSession() refreshes if needed,
     //    so this also repairs a token that expired while the tab was in the background.
+    function _isBadRefresh(err){
+      if(!err) return false;
+      var m=(err.message||err.error_description||err.msg||String(err)||'').toLowerCase();
+      return m.indexOf('refresh token')>-1 || m.indexOf('invalid') >-1 && m.indexOf('token')>-1
+        || m.indexOf('expired')>-1 || err.status===400 || err.code==='refresh_token_not_found';
+    }
+    var _recovered=false;
+    function _purgeBadSession(why){
+      if(_recovered) return; _recovered=true;
+      try{ console.warn('[auth] clearing stale/invalid session ('+why+') — sign in again'); }catch(e){}
+      // Remove the stored Supabase session so getSession() stops replaying a dead refresh token.
+      try{ supa.auth.signOut({scope:'local'}); }catch(e){ try{ supa.auth.signOut(); }catch(_e){} }
+      try{ (window._aabSafeStorage||window.localStorage).removeItem('aab-supabase-auth'); }catch(e){}
+      try{ window.localStorage.removeItem('aab-supabase-auth'); }catch(e){}
+      window._sbSession=null;
+      // Let the readiness sequence finish instead of hanging on "Auth resolved".
+      try{ if(window.APP){ APP.user=null; APP.plan='free'; } }catch(e){}
+      try{ if(typeof updateNavState==='function') updateNavState(); }catch(e){}
+      try{ if(window.AABLog) AABLog.info('auth','stale session cleared — ready for fresh sign-in'); }catch(e){}
+    }
     async function pull(why) {
       try {
         var r = await supa.auth.getSession();
+        if (r && r.error && _isBadRefresh(r.error)) { _purgeBadSession('getSession error'); return; }
         if (r && r.data && r.data.session) adopt(r.data.session, why);
-      } catch (e) {}
+      } catch (e) {
+        // A thrown 400/invalid-refresh means the stored token is dead - purge it (Safari case).
+        if (_isBadRefresh(e)) _purgeBadSession('getSession threw');
+      }
     }
     pull('startup');
     setInterval(function () { pull('poll'); }, 4 * 60 * 1000);          // well inside the ~1h expiry
