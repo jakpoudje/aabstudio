@@ -26992,10 +26992,22 @@ var clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 .aab-track-lbl{width:185px!important;min-width:185px!important;overflow:hidden!important;flex-shrink:0!important;}
 .aab-track-controls{overflow:hidden!important;max-width:185px!important;display:flex!important;
   align-items:center!important;gap:2px!important;padding:0 3px!important;flex-shrink:0!important;}
+/* AUTHORITATIVE track-row heights (latest in cascade wins). Earlier rules set height:40/50px
+   !important on audio/text rows while another set min-height:56px !important on ALL rows - the
+   mismatch made clips (sized to their type) overflow into the next track. Here height==min-height
+   per type so every row is always at least as tall as its clip, and the lane matches. */
 .aab-track-row{min-height:56px!important;transition:min-height .2s;}
-.aab-track-row.hidden-track{min-height:24px!important;opacity:.5!important;}
+.aab-track-row.video-row{height:72px!important;min-height:72px!important;}
+.aab-track-row.audio-row{height:52px!important;min-height:52px!important;}
+.aab-track-row.text-row{height:42px!important;min-height:42px!important;}
+.aab-track-row.hidden-track{height:24px!important;min-height:24px!important;opacity:.5!important;}
 .aab-lane{min-height:56px!important;}
+.aab-track-row.video-row .aab-lane{min-height:72px!important;}
+.aab-track-row.audio-row .aab-lane{min-height:52px!important;}
+.aab-track-row.text-row .aab-lane{min-height:42px!important;}
 .aab-lane.hidden-lane{min-height:24px!important;}
+/* Clips never taller than their row - keeps them inside their own track */
+.aab-track-row .aab-clip{max-height:calc(100% - 4px)!important;}
 /* Clips */
 .aab-clip{user-select:none!important;border-radius:3px!important;min-height:50px!important;}
 .aab-clip.sel{outline:2px solid #00d4ff!important;z-index:5!important;}
@@ -27259,6 +27271,19 @@ function _updateMarkerRegion(){
   var mIn=document.getElementById('aab-marker-in');
   var mOut=document.getElementById('aab-marker-out');
   var mReg=document.getElementById('aab-marker-region');
+  /* AUTO-FIT height: span the full stack of track lanes (incl. user-added tracks). Measure from the
+     first track row's top to the last row's bottom so the markers always cover every track. */
+  try{
+    var rows=document.querySelectorAll('.aab-track-row');
+    if(rows.length){
+      var tlRect=tl.getBoundingClientRect();
+      var firstTop=rows[0].getBoundingClientRect().top - tlRect.top + tl.scrollTop;
+      var last=rows[rows.length-1].getBoundingClientRect();
+      var lastBottom=last.top - tlRect.top + tl.scrollTop + last.height;
+      var stackH=Math.max(0, lastBottom - firstTop);
+      [mIn,mOut,mReg].forEach(function(el){ if(el){ el.style.top=firstTop+'px'; el.style.bottom='auto'; el.style.height=stackH+'px'; } });
+    }
+  }catch(e){}
   if(inPt!=null&&mIn){mIn.style.left=(off+inPt*pps)+'px';mIn.style.display='block';}
   if(outPt!=null&&mOut){mOut.style.left=(off+outPt*pps)+'px';mOut.style.display='block';}
   if(inPt!=null&&outPt!=null&&outPt>inPt&&mReg){
@@ -32621,6 +32646,96 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     if(pv) pv.volume=v;
     window._aabMasterVol=v;
   };
+})();
+</script>
+<script id="aab-editsuite-diagnostic">
+/* READ-ONLY diagnostic instrument. Changes NO behaviour - only counts what fires so we can find the
+   rogue caller behind "audio plays then cuts off / clips keep reloading". Prints a report to the
+   console. Usage: open Edit Suite, press Play, wait ~6s, then look at the console (or run
+   window.__aabDiag()). It wraps E_renderTL and the program video's reload events with counters and
+   samples the call stack that triggered each one. */
+(function(){
+  if(window._aabDiagInstalled) return; window._aabDiagInstalled=true;
+  var D=window.__aabDiagData={renderTL:0, progLoadstart:0, progEmptied:0, progStalled:0,
+    srcSet:0, byCaller:{}, started:Date.now(), lastReport:0};
+
+  function shortStack(){
+    try{
+      var s=(new Error()).stack||''; var lines=s.split('\n').slice(2,7);
+      // pull the first frame that is NOT this instrument
+      for(var i=0;i<lines.length;i++){
+        var ln=lines[i].trim();
+        if(ln && ln.indexOf('aab-editsuite-diagnostic')===-1 && ln.indexOf('shortStack')===-1){
+          return ln.replace(/^at\s+/,'').replace(/\s*\(.*\)$/,'').slice(0,60);
+        }
+      }
+      return lines[0]?lines[0].trim().slice(0,60):'?';
+    }catch(e){ return '?'; }
+  }
+  function tally(bucket){ D.byCaller[bucket]=(D.byCaller[bucket]||0)+1; }
+
+  // Wrap E_renderTL (and window.E_renderTL) to count + attribute
+  function wrapRender(){
+    if(window.E_renderTL && !window.E_renderTL._aabDiagWrapped){
+      var orig=window.E_renderTL;
+      window.E_renderTL=function(){ D.renderTL++; tally('renderTL<-'+shortStack()); return orig.apply(this,arguments); };
+      window.E_renderTL._aabDiagWrapped=true;
+      window.E_renderTL._aabOrig=orig;
+    }
+  }
+  wrapRender();
+  // E_renderTL may be defined after us / reassigned; keep trying briefly
+  var wrapTries=0, wrapIv=setInterval(function(){ wrapRender(); if(++wrapTries>40) clearInterval(wrapIv); }, 250);
+
+  // Watch the program video's reload signals
+  function wireVid(){
+    var pv=document.getElementById('e-prog-vid'); if(!pv || pv._aabDiagWired) return;
+    pv._aabDiagWired=true;
+    pv.addEventListener('loadstart',function(){ D.progLoadstart++; tally('prog.loadstart<-'+shortStack()); });
+    pv.addEventListener('emptied',function(){ D.progEmptied++; });
+    pv.addEventListener('stalled',function(){ D.progStalled++; });
+    // Intercept src assignments to see who re-sets them (define an accessor on THIS element only)
+    try{
+      var proto=Object.getPrototypeOf(pv);
+      var desc=Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype,'src');
+      if(desc && desc.set && !pv._aabSrcHooked){
+        pv._aabSrcHooked=true;
+        Object.defineProperty(pv,'src',{
+          configurable:true,
+          get:function(){ return desc.get.call(this); },
+          set:function(v){ D.srcSet++; tally('SRC='+String(v).slice(-24)+' <-'+shortStack()); return desc.set.call(this,v); }
+        });
+      }
+    }catch(e){}
+  }
+  wireVid();
+  var vidTries=0, vidIv=setInterval(function(){ wireVid(); if(++vidTries>40) clearInterval(vidIv); }, 250);
+
+  window.__aabDiag=function(){
+    var secs=((Date.now()-D.started)/1000).toFixed(1);
+    var top=Object.keys(D.byCaller).map(function(k){return [k,D.byCaller[k]];})
+      .sort(function(a,b){return b[1]-a[1];}).slice(0,12);
+    var out='===== AAB EDIT-SUITE DIAGNOSTIC ('+secs+'s) =====\n'+
+      'E_renderTL calls: '+D.renderTL+'\n'+
+      'program video loadstart (reloads): '+D.progLoadstart+'\n'+
+      'program video emptied: '+D.progEmptied+'  stalled: '+D.progStalled+'\n'+
+      'program src assignments: '+D.srcSet+'\n'+
+      '----- top triggers (count) -----\n'+
+      top.map(function(r){return '  '+r[1]+'x  '+r[0];}).join('\n')+
+      '\n=================================================';
+    console.log(out);
+    return out;
+  };
+
+  // Auto-report ~5s after play starts, and every 5s while playing, so Julius just needs to press Play
+  setInterval(function(){
+    if(window._esPlaying){
+      if(!D._playT0){ D._playT0=Date.now(); }
+      if(Date.now()-D.lastReport>4500){ D.lastReport=Date.now(); window.__aabDiag(); }
+    }
+  }, 1000);
+
+  console.log('[AAB-DIAG] instrument ready — press Play in the Edit Suite, then read the console (or call __aabDiag()).');
 })();
 </script>
 <script id="aab-editsuite-stabilizer">
