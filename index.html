@@ -3974,6 +3974,7 @@
   transition: color .12s, background .12s;
 }
 .emenu-btn:hover { color: #fff; background: rgba(255,255,255,.05); }
+#e-mixer-btn:hover { background: linear-gradient(135deg,rgba(0,212,255,.32),rgba(139,92,246,.28)) !important; color: #fff !important; border-color: rgba(0,212,255,.7) !important; }
 .emenu-panel {
   position: absolute; bottom: 0; left: 0; transform: translateY(100%);
   background: #0d1117; border: .5px solid rgba(255,255,255,.12);
@@ -9595,7 +9596,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
     <button onclick="AABE.import('video')" class="eadd-btn">+ Video</button>
     <button onclick="AABE.import('audio')" class="eadd-btn">+ Audio</button>
     <button onclick="AABE.import('image')" class="eadd-btn">+ Image</button>
-    <button onclick="try{window.E_toggleMixer&&E_toggleMixer();}catch(e){}" class="eadd-btn" title="Audio mixer — levels for every track" style="white-space:nowrap;">\ud83c\udf9a\ufe0f Mixer</button>
+    <button id="e-mixer-btn" onclick="try{window.E_toggleMixer&&E_toggleMixer();}catch(e){}" title="Audio Mixer — adjust volume levels for every track" style="white-space:nowrap;display:inline-flex;align-items:center;gap:5px;background:linear-gradient(135deg,rgba(0,212,255,.18),rgba(139,92,246,.16));border:1px solid rgba(0,212,255,.4);color:#7dd3fc;font-weight:700;font-size:11px;padding:4px 12px;border-radius:6px;cursor:pointer;margin-left:4px;">\ud83c\udf9a\ufe0f Mixer</button>
   </div>
   <!-- Snap/extras -->
   <div style="display:flex;align-items:center;gap:3px;padding:0 6px;height:100%;flex-shrink:0;">
@@ -24061,6 +24062,49 @@ window._pushClip = function(trackId, name, url, type, dur, color){
   if(typeof E_renderTL==='function'){try{E_renderTL();}catch(e){}}
   setTimeout(function(){if(typeof E_build==='function')try{E_build();}catch(e){}},400);
   if(typeof toast==='function') toast(name+' added \u2014 '+Math.round(dur)+'s','ok');
+  return clipId;
+};
+
+/* Upload persistence: an uploaded file first plays via a session objectURL (instant), but that blob
+   dies on reload so the clip would go dead/black. This uploads the file to Supabase project-assets in
+   the background and swaps the clip's URL (in E.tracks + PROJECT.clips + PROJECT.apsVideos) to the
+   permanent public URL, then saves. Verifies the object serves before swapping so a failed upload
+   never replaces a working local blob. Self-contained; no rivals. */
+window._aabPersistUpload = function(file, clipId, type){
+  try{
+    if(!file||!clipId) return;
+    var supa = (typeof getSupa==='function') ? getSupa() : null;
+    if(!supa || !window._sbSession){ return; } // not signed in: keep session objectURL (still works this session)
+    var uid = (window.APP && APP.user ? APP.user.id : 'user');
+    var safe = (file.name||'file').replace(/[^a-z0-9._-]/gi,'_').slice(-60);
+    var filename = 'uploads/'+uid+'/'+Date.now()+'_'+safe;
+    if(typeof toast==='function') toast('Saving '+(type||'file')+' to your library\u2026','info');
+    supa.storage.from('project-assets').upload(filename, file, { upsert:true, contentType:file.type||undefined })
+      .then(function(r){
+        if(r && r.error){ if(typeof toast==='function') toast('Upload could not be saved to cloud (will work this session)','info'); return; }
+        var pub = supa.storage.from('project-assets').getPublicUrl(filename);
+        var permUrl = pub && pub.data ? pub.data.publicUrl : (pub && pub.publicURL);
+        if(!permUrl) return;
+        function swap(){
+          // Swap the clip URL everywhere it was stored
+          if(window.E && E.tracks){
+            E.tracks.forEach(function(t){(t.clips||[]).forEach(function(c){ if(c.id===clipId){ c.url=permUrl; c._persisted=true; } });});
+          }
+          if(window.PROJECT){
+            if(PROJECT.clips && PROJECT.clips[clipId]) PROJECT.clips[clipId].url=permUrl;
+            if(PROJECT.apsVideos && PROJECT.apsVideos[clipId]) PROJECT.apsVideos[clipId].url=permUrl;
+          }
+          if(typeof E_renderTL==='function'){try{E_renderTL();}catch(e){}}
+          if(typeof saveProject==='function'){try{saveProject();}catch(e){}}
+          if(typeof toast==='function') toast('\u2713 Saved to your library \u2014 will persist next session','ok');
+        }
+        // Verify it actually serves before committing the swap
+        if(typeof window._verifyMediaUrl==='function'){
+          window._verifyMediaUrl(permUrl).then(function(ok){ if(ok) swap(); else if(typeof toast==='function') toast('Saved file not reachable yet \u2014 kept local copy','info'); }).catch(swap);
+        } else { swap(); }
+      })
+      .catch(function(e){ if(typeof toast==='function') toast('Upload save failed (works this session)','info'); });
+  }catch(e){}
 };
 
 // ── E_selectClip: handle full clip object from E_renderTL onclick ──
@@ -24130,8 +24174,8 @@ window.E_uploadVideo = function(){
     if(!inp.files[0])return;
     var f=inp.files[0], url=URL.createObjectURL(f);
     var vid=document.createElement('video');vid.preload='metadata';vid.src=url;
-    vid.onloadedmetadata=function(){_pushClip('main',f.name,url,'video',Math.round(vid.duration)||30,'#2563eb');};
-    vid.onerror=function(){_pushClip('main',f.name,url,'video',30,'#2563eb');};
+    vid.onloadedmetadata=function(){var id=_pushClip('main',f.name,url,'video',Math.round(vid.duration)||30,'#2563eb');window._aabPersistUpload&&window._aabPersistUpload(f,id,'video');};
+    vid.onerror=function(){var id=_pushClip('main',f.name,url,'video',30,'#2563eb');window._aabPersistUpload&&window._aabPersistUpload(f,id,'video');};
   };
   inp.click();
 };
@@ -24143,7 +24187,7 @@ window.E_uploadAudio = function(targetTrackId){
     var aud=document.createElement('audio');aud.preload='metadata';aud.src=url;
     aud.onloadedmetadata=function(){
       var tid=targetTrackId||(window.E&&E.tracks&&E.tracks.find(function(k){return k.id==='voice';})||E.tracks&&E.tracks.find(function(k){return k.type==='audio'&&k.id!=='main';})||{id:'voice'}).id;
-      _pushClip(tid,f.name,url,'audio',Math.round(aud.duration)||30,'#7c3aed');
+      var id=_pushClip(tid,f.name,url,'audio',Math.round(aud.duration)||30,'#7c3aed');window._aabPersistUpload&&window._aabPersistUpload(f,id,'audio');
     };
   };
   inp.click();
@@ -24153,7 +24197,7 @@ window.E_uploadImage = function(){
   inp.onchange=function(){
     if(!inp.files[0])return;
     var f=inp.files[0], url=URL.createObjectURL(f);
-    _pushClip('overlay',f.name,url,'image',5,'#059669');
+    var id=_pushClip('overlay',f.name,url,'image',5,'#059669');window._aabPersistUpload&&window._aabPersistUpload(f,id,'image');
   };
   inp.click();
 };
