@@ -32611,6 +32611,101 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   }, 100);
 })();
 </script>
+<script id="aab-fx-help">
+/* ISOLATED discoverability helper for Transitions & Effects. Adds NOTHING to the apply logic —
+   all it does is TEACH the user how/where to use the transitions, filters, and overlays that
+   already exist (transitions menu, Media Bin FX tab, right-click Set Transition). Edit-Suite
+   only. Self-contained: own state, own DOM, own style; binds late; no rivals to conflict with. */
+(function(){
+  if(window._aabFxHelp) return; window._aabFxHelp=true;
+  var SEEN_KEY='aab_fx_help_seen';
+
+  var css=document.createElement('style'); css.id='aab-fx-help-css';
+  css.textContent=[
+    '#aab-fxhelp-chip{display:inline-flex;align-items:center;gap:5px;height:100%;padding:0 10px;background:linear-gradient(135deg,rgba(139,92,246,.16),rgba(0,212,255,.12));border:none;border-right:.5px solid rgba(255,255,255,.05);color:#c4b5fd;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit;flex-shrink:0;}',
+    '#aab-fxhelp-chip:hover{color:#fff;background:linear-gradient(135deg,rgba(139,92,246,.3),rgba(0,212,255,.22));}',
+    '#aab-fxhelp-ov{position:fixed;inset:0;background:rgba(2,6,20,.72);z-index:2147483600;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(3px);}',
+    '#aab-fxhelp-card{max-width:460px;width:100%;background:#0f1626;border:1px solid rgba(139,92,246,.35);border-radius:14px;box-shadow:0 24px 80px rgba(0,0,0,.6);padding:22px 24px;font-family:inherit;color:#e5e7eb;}',
+    '#aab-fxhelp-card h3{margin:0 0 4px;font-size:17px;font-weight:800;color:#fff;letter-spacing:-.2px;}',
+    '#aab-fxhelp-card .sub{font-size:12px;color:rgba(255,255,255,.5);margin-bottom:16px;}',
+    '#aab-fxhelp-card ol{margin:0;padding:0;list-style:none;counter-reset:s;}',
+    '#aab-fxhelp-card li{counter-increment:s;position:relative;padding:10px 0 10px 40px;border-top:1px solid rgba(255,255,255,.06);font-size:13px;line-height:1.5;}',
+    '#aab-fxhelp-card li:first-child{border-top:none;}',
+    '#aab-fxhelp-card li::before{content:counter(s);position:absolute;left:0;top:9px;width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#8b5cf6,#00d4ff);color:#04101e;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;}',
+    '#aab-fxhelp-card li b{color:#fff;}',
+    '#aab-fxhelp-card .tag{display:inline-block;background:rgba(139,92,246,.18);border:1px solid rgba(139,92,246,.3);color:#c4b5fd;border-radius:5px;padding:1px 6px;font-size:11px;font-weight:600;white-space:nowrap;}',
+    '#aab-fxhelp-foot{display:flex;align-items:center;justify-content:space-between;margin-top:18px;gap:10px;}',
+    '#aab-fxhelp-foot label{font-size:11px;color:rgba(255,255,255,.45);display:flex;align-items:center;gap:6px;cursor:pointer;}',
+    '#aab-fxhelp-foot button{background:linear-gradient(135deg,#8b5cf6,#6d28d9);border:none;color:#fff;font-weight:700;font-size:13px;padding:8px 20px;border-radius:8px;cursor:pointer;font-family:inherit;}',
+    '#aab-fxhelp-foot button:hover{filter:brightness(1.1);}'
+  ].join('');
+  document.head.appendChild(css);
+
+  function buildCard(){
+    if(document.getElementById('aab-fxhelp-ov')) return;
+    var ov=document.createElement('div'); ov.id='aab-fxhelp-ov';
+    ov.addEventListener('mousedown',function(e){ if(e.target===ov) closeCard(); });
+    var card=document.createElement('div'); card.id='aab-fxhelp-card';
+    card.innerHTML=
+      '<h3>\u2728 Effects &amp; Transitions</h3>'+
+      '<div class="sub">Add polish between clips and style your footage \u2014 here\u2019s how.</div>'+
+      '<ol>'+
+        '<li><b>Click a clip</b> on the timeline to select it (hold to multi-select more).</li>'+
+        '<li>Open <span class="tag">\u27FF Transitions</span> in the top toolbar and pick one \u2014 or use the <span class="tag">FX</span> tab in the Media Bin (left) for transitions &amp; filters.</li>'+
+        '<li>For colour looks, use <span class="tag">\uD83C\uDFAC Video \u25BE</span> \u2192 Filters. For titles &amp; lower-thirds, <span class="tag">\uD83D\uDCDD Text \u25BE</span>. For logos/images, <span class="tag">\uD83D\uDDBC Overlay \u25BE</span>.</li>'+
+        '<li>Right-click any clip for quick <b>Set Transition</b>, <b>Fade in/out</b>, speed and more.</li>'+
+        '<li>Want the same transition everywhere? Open Transitions and hit <b>\u26A1 Apply to ALL</b>.</li>'+
+      '</ol>'+
+      '<div id="aab-fxhelp-foot">'+
+        '<label><input type="checkbox" id="aab-fxhelp-dont"> Don\u2019t show this automatically</label>'+
+        '<button id="aab-fxhelp-ok">Got it</button>'+
+      '</div>';
+    ov.appendChild(card); document.body.appendChild(ov);
+    document.getElementById('aab-fxhelp-ok').onclick=function(){
+      var dc=document.getElementById('aab-fxhelp-dont');
+      if(dc&&dc.checked){ try{localStorage.setItem(SEEN_KEY,'1');}catch(e){} }
+      closeCard();
+    };
+  }
+  function closeCard(){ var ov=document.getElementById('aab-fxhelp-ov'); if(ov) ov.remove(); }
+  window._aabShowFxHelp=buildCard;
+
+  // Inject the help chip into the edit toolbar (next to Transitions). Poll until the toolbar exists.
+  function placeChip(){
+    var editPg=document.getElementById('edit-pg');
+    if(!editPg) return false;
+    if(document.getElementById('aab-fxhelp-chip')) return true;
+    var trBtn=Array.prototype.slice.call(editPg.querySelectorAll('.emenu-btn'))
+      .filter(function(b){return /Transition/i.test(b.textContent);})[0];
+    var wrap=trBtn?trBtn.closest('.emenu-wrap'):null;
+    if(!wrap||!wrap.parentNode) return false;
+    var chip=document.createElement('button');
+    chip.id='aab-fxhelp-chip'; chip.type='button';
+    chip.title='How to add effects & transitions';
+    chip.innerHTML='\u2728 How to add effects';
+    chip.onclick=function(e){ e.stopPropagation(); buildCard(); };
+    wrap.parentNode.insertBefore(chip, wrap);
+    return true;
+  }
+
+  var tries=0;
+  var iv=setInterval(function(){
+    tries++;
+    var editVisible=(function(){var e=document.getElementById('edit-pg');return e&&e.classList.contains('on');})();
+    if(editVisible){
+      var placed=placeChip();
+      if(placed){
+        var seen='0'; try{seen=localStorage.getItem(SEEN_KEY)||'0';}catch(e){}
+        if(seen!=='1' && !window._aabFxAutoShown){
+          window._aabFxAutoShown=true;
+          setTimeout(buildCard,600);
+        }
+      }
+    }
+    if(tries>600) clearInterval(iv);
+  },500);
+})();
+</script>
 </body>
 
 </html>
