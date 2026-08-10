@@ -32750,6 +32750,81 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   },500);
 })();
 </script>
+<script id="aab-mobile-editsuite-fallback">
+/* AUTHORITATIVE mobile Edit Suite policy (Julius's brief): the 7-track editor is NOT usable on a
+   phone, and prior attempts to cram it in (aab-mobile-layer etab tabs) left mobile broken. Instead,
+   on a small screen the Edit Suite shows ONE clean fallback screen telling the user to switch to
+   Chrome on desktop, with a Dashboard button. Script / Teleprompter / Record / Dashboard are left to
+   normal flow (they work on mobile). Desktop-inert: everything is gated on a <=768px media query /
+   matchMedia, so at desktop widths nothing here renders or applies. Self-contained; no rivals. */
+(function(){
+  if(window._aabMobileEditFallback) return; window._aabMobileEditFallback=true;
+
+  var css=document.createElement('style'); css.id='aab-mobile-editfallback-css';
+  css.textContent=[
+    '@media (max-width:768px){',
+    /* Neutralise the older mobile-layer attempt to show the editor panels/tabs — the fallback owns mobile edit now */
+    '  #edit-pg #e-main, #edit-pg #aab-tl-wrap, #edit-pg #e-tools-bar, #edit-pg #e-nav-bar,',
+    '  #aab-m-etabs, #e-mobile-toolbar, #aab-mob-tabs { display:none !important; }',
+    '  #aab-edit-mobile-block { display:flex !important; }',
+    '}',
+    /* The fallback card itself (hidden by default; shown only inside the media query above + when edit-pg on) */
+    '#aab-edit-mobile-block{ display:none; position:fixed; inset:0; z-index:2147483000;',
+    '  background:linear-gradient(160deg,#0a0e1a,#111a2e); color:#e5e7eb; flex-direction:column;',
+    '  align-items:center; justify-content:center; text-align:center; padding:32px 26px; font-family:inherit; }',
+    '#aab-edit-mobile-block .ico{ font-size:44px; margin-bottom:14px; }',
+    '#aab-edit-mobile-block h2{ margin:0 0 10px; font-size:20px; font-weight:800; color:#fff; letter-spacing:-.3px; }',
+    '#aab-edit-mobile-block p{ margin:0 0 8px; font-size:14px; line-height:1.55; color:rgba(255,255,255,.68); max-width:340px; }',
+    '#aab-edit-mobile-block .hint{ font-size:12px; color:rgba(255,255,255,.4); margin-top:4px; max-width:340px; }',
+    '#aab-edit-mobile-block .acts{ display:flex; flex-direction:column; gap:10px; margin-top:24px; width:100%; max-width:280px; }',
+    '#aab-edit-mobile-block button{ font-family:inherit; font-weight:700; font-size:14px; padding:12px 18px; border-radius:10px; cursor:pointer; border:none; }',
+    '#aab-edit-mobile-block .primary{ background:linear-gradient(135deg,#3b82f6,#2563eb); color:#fff; }',
+    '#aab-edit-mobile-block .ghost{ background:rgba(255,255,255,.08); color:#e5e7eb; border:1px solid rgba(255,255,255,.14); }'
+  ].join('');
+  document.head.appendChild(css);
+
+  // Build the fallback screen (once). It lives at body level so it can cover the broken editor.
+  function ensureBlock(){
+    if(document.getElementById('aab-edit-mobile-block')) return;
+    var d=document.createElement('div'); d.id='aab-edit-mobile-block';
+    d.innerHTML=
+      '<div class="ico">\uD83D\uDCBB</div>'+
+      '<h2>Editing works best on desktop</h2>'+
+      '<p>The multi-track Edit Suite needs a bigger screen. For the best experience, open AABStudio in <b>Google Chrome on a desktop or laptop</b>.</p>'+
+      '<p class="hint">You can still write scripts, use the teleprompter, and record video here on your phone.</p>'+
+      '<div class="acts">'+
+        '<button class="primary" onclick="(function(){var b=document.getElementById(\'aab-edit-mobile-block\');if(b)b.style.display=\'none\';if(typeof nav===\'function\')nav(\'dashboard-pg\');})()">\u2190 Back to Dashboard</button>'+
+        '<button class="ghost" onclick="(function(){var b=document.getElementById(\'aab-edit-mobile-block\');if(b)b.style.display=\'none\';if(typeof nav===\'function\')nav(\'record-pg\');})()">\uD83C\uDFA5 Go to Record instead</button>'+
+      '</div>';
+    document.body.appendChild(d);
+  }
+
+  var MQ=window.matchMedia('(max-width:768px)');
+  function apply(){
+    ensureBlock();
+    var block=document.getElementById('aab-edit-mobile-block');
+    if(!block) return;
+    var editOn=(function(){var e=document.getElementById('edit-pg');return e&&e.classList.contains('on');})();
+    // Show the fallback ONLY on small screens AND when the Edit Suite is the active page.
+    if(MQ.matches && editOn){ block.style.display='flex'; }
+    else { block.style.display='none'; }
+  }
+
+  // React to nav (page changes toggle #edit-pg.on) and to viewport changes.
+  var mo=new MutationObserver(apply);
+  function startObserve(){
+    var ep=document.getElementById('edit-pg');
+    if(ep){ mo.observe(ep,{attributes:true,attributeFilter:['class','style']}); }
+    apply();
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',startObserve);
+  else startObserve();
+  if(MQ.addEventListener) MQ.addEventListener('change',apply); else if(MQ.addListener) MQ.addListener(apply);
+  window.addEventListener('resize',function(){clearTimeout(window._aabMEFrt);window._aabMEFrt=setTimeout(apply,150);});
+  // Safety re-check in case nav swaps pages without an attribute mutation we caught
+  setInterval(apply,1200);
+})();
+</script>
 </body>
 
 </html>
