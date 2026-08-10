@@ -5615,7 +5615,15 @@ function E_drawTextLayers(ctx,canvas,t){
 }
 
 function E_progToggle(){
-  /* legacy setInterval version - overridden by RAF engine below */
+  /* legacy setInterval version - SUPERSEDED by the authoritative RAF engine assigned to
+     window.E_progToggle later. Two engines writing _esPH at once caused the timeline flicker +
+     playhead fight. If the RAF engine is installed and is a DIFFERENT function than this one,
+     delegate to it so there is exactly ONE playback engine. */
+  if(window.E_progToggle && window.E_progToggle!==E_progToggle && !window._aabInLegacyProg){
+    window._aabInLegacyProg=true;
+    try{ return window.E_progToggle.apply(this,arguments); }
+    finally{ window._aabInLegacyProg=false; }
+  }
   if(false){
     E.playing=false;window._esPlaying=false;
     if(E.playInterval){clearInterval(E.playInterval);E.playInterval=null;}
@@ -27009,7 +27017,8 @@ var clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 .aab-rec-btn{display:inline-flex!important;align-items:center!important;justify-content:center!important;
   width:18px!important;height:18px!important;border-radius:50%!important;border:1px solid rgba(239,68,68,.5)!important;
   background:rgba(239,68,68,.15)!important;cursor:pointer!important;font-size:8px!important;margin-left:2px!important;}
-.aab-rec-btn.recording{background:#ef4444!important;color:white!important;}
+.aab-rec-btn.recording{background:#ef4444!important;color:white!important;animation:aabRecPulse 1s ease-in-out infinite!important;}
+@keyframes aabRecPulse{0%{box-shadow:0 0 0 0 rgba(239,68,68,.7);}70%{box-shadow:0 0 0 8px rgba(239,68,68,0);}100%{box-shadow:0 0 0 0 rgba(239,68,68,0);}}
 /* Bin */
 .aab-bin-clip{display:flex!important;align-items:center!important;gap:6px!important;padding:6px 7px!important;
   border-radius:5px!important;cursor:pointer!important;margin-bottom:2px!important;
@@ -27819,9 +27828,8 @@ function _buildMixer(){
   var p=document.createElement('div');p.id='aab-mixer-panel';
   if(_mixPos.x!=null){p.style.left=_mixPos.x+'px';p.style.top=_mixPos.y+'px';}
   else{p.style.right='16px';p.style.bottom='80px';}
-  // Pre-wire all gains
-  // Pre-wire gain nodes for audio tracks only
-  if(window.E&&E.tracks)E.tracks.filter(function(tr){return ['main','broll','voice','music','sfx'].includes(tr.id)||tr.type==='audio'||tr.type==='video';}).forEach(function(tr){var g=typeof tGain==='function'?tGain(tr.id):null;if(g)g.gain.value=tr.muted?0:clamp((tr.volume!=null?tr.volume:100)/100,0,1.5);});
+  // Pre-wire gain nodes for every track that carries a signal (matches the strip filter below)
+  if(window.E&&E.tracks)E.tracks.filter(function(tr){return ['main','main-video','broll','voice','music','bg-music','background','sfx','fx'].includes(tr.id)||['audio','video','music','fx','voice'].includes(tr.type)||(tr.clips&&tr.clips.length);}).forEach(function(tr){var g=typeof tGain==='function'?tGain(tr.id):null;if(g)g.gain.value=tr.muted?0:clamp((tr.volume!=null?tr.volume:100)/100,0,1.5);});
   // Header with drag
   var hdr=document.createElement('div');hdr.className='mix-drag';
   hdr.innerHTML='<span style="font-size:10px;font-weight:700;color:rgba(255,255,255,.55);display:flex;align-items:center;gap:6px"><span style="opacity:.35;font-size:16px">⠿⠿</span>🎚 MIXER</span><button onclick="this.closest(\'#aab-mixer-panel\').style.display=\'none\'" style="background:none;border:none;color:rgba(255,255,255,.4);cursor:pointer;font-size:16px;line-height:1">✕</button>';
@@ -27868,10 +27876,19 @@ function _buildMixer(){
   vuRow.appendChild(resetBtn);
   p.appendChild(vuRow);
   // Track rows
-  // Tracks that carry audio (skip visual-only tracks)
-  var AUDIO_TRACKS=['main','broll','voice','music','sfx'];
+  // Show EVERY track that can carry a signal: known audio/video tracks, anything typed
+  // audio/video/music/fx, OR any track that actually has clips on it. (The old hardcoded id
+  // whitelist hid main-video, background music, fx, etc.)
+  var AUDIO_TRACKS=['main','main-video','broll','voice','music','bg-music','background','sfx','fx'];
+  function _mixTrackHasSignal(tr){
+    if(!tr) return false;
+    if(AUDIO_TRACKS.indexOf(tr.id)>-1) return true;
+    if(['audio','video','music','fx','voice'].indexOf(tr.type)>-1) return true;
+    if(tr.clips && tr.clips.length) return true; // any track with media = show it
+    return false;
+  }
   if(window.E&&E.tracks){
-    E.tracks.filter(function(tr){return AUDIO_TRACKS.includes(tr.id)||tr.type==='audio'||tr.type==='video';}).forEach(tr=>{
+    E.tracks.filter(_mixTrackHasSignal).forEach(tr=>{
       var vol=tr.volume!=null?tr.volume:80;
       var db=Math.round(20*Math.log10(Math.max(.001,vol/100)));
       var col=tr.color||'#64748b';
@@ -28231,8 +28248,8 @@ window.E_startVoiceRecord=()=>{if(_micSt){_stopMic();return;}navigator.mediaDevi
 function _stopMic(){if(_micSt){_micSt.getTracks().forEach(t=>t.stop());_micSt=null;}if(_micAA){try{_micAA.close();}catch(e){}}_micAA=null;if(_vuRAF2){cancelAnimationFrame(_vuRAF2);_vuRAF2=null;}document.querySelectorAll('.aab-vu-bar').forEach(b=>{b.style.height='20%';b.style.background='rgba(16,185,129,.35)';});document.querySelectorAll('.aab-mic-name-btn').forEach(b=>b.classList.remove('active'));}
 function _vuRun2(){if(!_micAn)return;var buf=new Uint8Array(_micAn.frequencyBinCount);(function tick(){_vuRAF2=requestAnimationFrame(tick);_micAn.getByteFrequencyData(buf);var avg=0;for(var i=0;i<buf.length;i++)avg+=buf[i];avg/=(buf.length*255);document.querySelectorAll('.aab-vu-bar').forEach((b,i)=>{var on=avg>[.02,.10,.22,.40,.60,.80][i];b.style.height=on?'90%':'20%';b.style.background=on?(avg>.75?'#ef4444':avg>.45?'#f59e0b':'#10b981'):'rgba(16,185,129,.35)';});})();}
 window.E_toggleRecord=()=>{
-  if(_recSt){if(_recInt){clearInterval(_recInt);_recInt=null;}if(_recRec&&_recRec.state!=='inactive')_recRec.stop();if(_recSt){try{_recSt._aabProtect=false;}catch(_p){}_recSt.getTracks().forEach(t=>t.stop());_recSt=null;}document.querySelectorAll('.aab-rec-btn').forEach(b=>{b.classList.remove('recording');b.innerHTML='⏺';});return;}
-  navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{_recSt=stream;_recChunks=[];_recDur=0;var sup=['audio/webm;codecs=opus','audio/webm','audio/ogg'].find(t=>MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t))||'audio/webm';_recRec=new MediaRecorder(stream,{mimeType:sup});_recRec.ondataavailable=e=>{if(e.data.size>0)_recChunks.push(e.data);};_recRec.onstop=()=>{var blob=new Blob(_recChunks,{type:'audio/webm'});var url=URL.createObjectURL(blob);var dur=_recDur||3;var vo=window.E&&E.tracks?E.tracks.find(t=>t.id==='voice'):null;if(vo)vo.clips.push({id:'rec'+Date.now(),name:'Recording '+ft(dur),url,type:'audio',start:window._esPH||0,duration:dur,color:'#dc2626'});(window._esBinFiles=window._esBinFiles||[]).push({url,name:'Recording.webm',type:'audio',dur});_binRender();(typeof E_renderTL==="function"?E_renderTL():null);toast&&toast('Recording saved ('+ft(dur)+')','ok');};try{_recSt._aabProtect=true;stream.getTracks().forEach(function(t){t._aabProtect=true;});}catch(_p){}_recRec.start(1000);_recInt=setInterval(()=>_recDur++,1000);document.querySelectorAll('.aab-rec-btn').forEach(b=>{b.classList.add('recording');b.innerHTML='⏹';});toast&&toast('🔴 Recording…','ok');}).catch(e=>toast&&toast('Mic: '+e.message,'error'));
+  if(_recSt){if(_recInt){clearInterval(_recInt);_recInt=null;}if(_recRec&&_recRec.state!=='inactive')_recRec.stop();if(_recSt){try{_recSt._aabProtect=false;}catch(_p){}_recSt.getTracks().forEach(t=>t.stop());_recSt=null;}document.querySelectorAll('.aab-rec-btn').forEach(b=>{b.classList.remove('recording');b.innerHTML='⏺';});try{if(window._esPlaying&&typeof window.E_progToggle==='function'){window.E_progToggle();}}catch(_pp){}return;}
+  navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{_recSt=stream;_recChunks=[];_recDur=0;var sup=['audio/webm;codecs=opus','audio/webm','audio/ogg'].find(t=>MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t))||'audio/webm';_recRec=new MediaRecorder(stream,{mimeType:sup});_recRec.ondataavailable=e=>{if(e.data.size>0)_recChunks.push(e.data);};_recRec.onstop=()=>{var blob=new Blob(_recChunks,{type:'audio/webm'});var url=URL.createObjectURL(blob);var dur=_recDur||3;var vo=window.E&&E.tracks?E.tracks.find(t=>t.id==='voice'):null;if(vo)vo.clips.push({id:'rec'+Date.now(),name:'Recording '+ft(dur),url,type:'audio',start:window._esPH||0,duration:dur,color:'#dc2626'});(window._esBinFiles=window._esBinFiles||[]).push({url,name:'Recording.webm',type:'audio',dur});_binRender();(typeof E_renderTL==="function"?E_renderTL():null);toast&&toast('Recording saved ('+ft(dur)+')','ok');};try{_recSt._aabProtect=true;stream.getTracks().forEach(function(t){t._aabProtect=true;});}catch(_p){}_recRec.start(1000);_recInt=setInterval(()=>_recDur++,1000);document.querySelectorAll('.aab-rec-btn').forEach(b=>{b.classList.add('recording');b.innerHTML='⏹';});toast&&toast('🔴 Recording…','ok');try{if(!window._esPlaying&&typeof window.E_progToggle==='function'){window.E_progToggle();}}catch(_pp){}}).catch(e=>toast&&toast('Mic: '+e.message,'error'));
 };
 function _addVOControls(){
   document.querySelectorAll('.aab-track-row').forEach(function(row){
@@ -32605,6 +32622,43 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   };
 })();
 </script>
+<script id="aab-editsuite-stabilizer">
+/* ISOLATED Edit Suite stabilizer. Two jobs, both defensive, both edit-suite only:
+   (1) When the Edit Suite becomes the active page and playback is NOT running, force the playhead
+       to 0 so the timeline always starts at the beginning (fixes "does not start at point 0").
+   (2) Kill any stray legacy play interval (E.playInterval) whenever the RAF engine is the winner,
+       so two engines never advance the playhead at once (the flicker/reload cause). Touches no
+       render logic; only clears a rogue timer + zeroes the playhead when idle. */
+(function(){
+  if(window._aabEsStabilizer) return; window._aabEsStabilizer=true;
+  function editOn(){ var e=document.getElementById('edit-pg'); return e && e.classList.contains('on'); }
+  var wasOn=false;
+  function tick(){
+    var on=editOn();
+    // On the transition INTO the edit page, if not playing, snap playhead to 0.
+    if(on && !wasOn){
+      if(!window._esPlaying){
+        window._esPH=0;
+        try{ if(window.E){E.playhead=0;E.currentTime=0;} }catch(e){}
+        try{ if(typeof window.seekAll==='function') window.seekAll(0); }catch(e){}
+      }
+    }
+    wasOn=on;
+    // Kill a stray legacy interval while the RAF engine owns playback.
+    if(on && window.E && window.E.playInterval && !window.E.playing){
+      try{ clearInterval(window.E.playInterval); window.E.playInterval=null; }catch(e){}
+    }
+  }
+  setInterval(tick, 400);
+  // Also react immediately to nav class changes on #edit-pg
+  function observe(){
+    var ep=document.getElementById('edit-pg');
+    if(ep){ new MutationObserver(tick).observe(ep,{attributes:true,attributeFilter:['class']}); }
+    tick();
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',observe); else observe();
+})();
+</script>
 <script id="aab-playback-watchdog">
 /* Timeline playback stability: the Edit Suite program engine advances the playhead with
    requestAnimationFrame. Browsers throttle RAF to ~1fps (or pause it) in hidden/background tabs,
@@ -32766,22 +32820,32 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     /* Neutralise the older mobile-layer attempt to show the editor panels/tabs — the fallback owns mobile edit now */
     '  #edit-pg #e-main, #edit-pg #aab-tl-wrap, #edit-pg #e-tools-bar, #edit-pg #e-nav-bar,',
     '  #aab-m-etabs, #e-mobile-toolbar, #aab-mob-tabs { display:none !important; }',
-    '  #aab-edit-mobile-block { display:flex !important; }',
     '}',
-    /* The fallback card itself (hidden by default; shown only inside the media query above + when edit-pg on) */
+    /* Visibility is driven by the .aab-show class (JS-authoritative). NO !important display rule, so the',
+    '   buttons can navigate away and JS can hide it. It only ever shows when JS adds .aab-show. */
     '#aab-edit-mobile-block{ display:none; position:fixed; inset:0; z-index:2147483000;',
     '  background:linear-gradient(160deg,#0a0e1a,#111a2e); color:#e5e7eb; flex-direction:column;',
     '  align-items:center; justify-content:center; text-align:center; padding:32px 26px; font-family:inherit; }',
+    '#aab-edit-mobile-block.aab-show{ display:flex; }',
     '#aab-edit-mobile-block .ico{ font-size:44px; margin-bottom:14px; }',
     '#aab-edit-mobile-block h2{ margin:0 0 10px; font-size:20px; font-weight:800; color:#fff; letter-spacing:-.3px; }',
     '#aab-edit-mobile-block p{ margin:0 0 8px; font-size:14px; line-height:1.55; color:rgba(255,255,255,.68); max-width:340px; }',
     '#aab-edit-mobile-block .hint{ font-size:12px; color:rgba(255,255,255,.4); margin-top:4px; max-width:340px; }',
     '#aab-edit-mobile-block .acts{ display:flex; flex-direction:column; gap:10px; margin-top:24px; width:100%; max-width:280px; }',
-    '#aab-edit-mobile-block button{ font-family:inherit; font-weight:700; font-size:14px; padding:12px 18px; border-radius:10px; cursor:pointer; border:none; }',
+    '#aab-edit-mobile-block button{ font-family:inherit; font-weight:700; font-size:14px; padding:14px 18px; border-radius:10px; cursor:pointer; border:none; -webkit-tap-highlight-color:rgba(255,255,255,.2); touch-action:manipulation; }',
     '#aab-edit-mobile-block .primary{ background:linear-gradient(135deg,#3b82f6,#2563eb); color:#fff; }',
     '#aab-edit-mobile-block .ghost{ background:rgba(255,255,255,.08); color:#e5e7eb; border:1px solid rgba(255,255,255,.14); }'
   ].join('');
   document.head.appendChild(css);
+
+  function hideBlock(){ var b=document.getElementById('aab-edit-mobile-block'); if(b) b.classList.remove('aab-show'); }
+  // Navigate away and hide immediately; called by the two buttons. Exposed so onclick can be a simple call.
+  window._aabMobileLeaveEdit=function(pg){
+    hideBlock();
+    // Also proactively pull edit-pg's 'on' so apply() won't re-show before nav lands
+    var ep=document.getElementById('edit-pg'); if(ep) ep.classList.remove('on');
+    if(typeof window.nav==='function') window.nav(pg);
+  };
 
   // Build the fallback screen (once). It lives at body level so it can cover the broken editor.
   function ensureBlock(){
@@ -32793,10 +32857,14 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
       '<p>The multi-track Edit Suite needs a bigger screen. For the best experience, open AABStudio in <b>Google Chrome on a desktop or laptop</b>.</p>'+
       '<p class="hint">You can still write scripts, use the teleprompter, and record video here on your phone.</p>'+
       '<div class="acts">'+
-        '<button class="primary" onclick="(function(){var b=document.getElementById(\'aab-edit-mobile-block\');if(b)b.style.display=\'none\';if(typeof nav===\'function\')nav(\'dashboard-pg\');})()">\u2190 Back to Dashboard</button>'+
-        '<button class="ghost" onclick="(function(){var b=document.getElementById(\'aab-edit-mobile-block\');if(b)b.style.display=\'none\';if(typeof nav===\'function\')nav(\'record-pg\');})()">\uD83C\uDFA5 Go to Record instead</button>'+
+        '<button type="button" class="primary" onclick="window._aabMobileLeaveEdit(\'dashboard-pg\')">\u2190 Back to Dashboard</button>'+
+        '<button type="button" class="ghost" onclick="window._aabMobileLeaveEdit(\'record-pg\')">\uD83C\uDFA5 Go to Record instead</button>'+
       '</div>';
     document.body.appendChild(d);
+    // Extra safety: bind listeners directly too (in case inline handlers are stripped by any sanitizer)
+    var btns=d.querySelectorAll('button');
+    if(btns[0]) btns[0].addEventListener('click',function(e){e.preventDefault();window._aabMobileLeaveEdit('dashboard-pg');});
+    if(btns[1]) btns[1].addEventListener('click',function(e){e.preventDefault();window._aabMobileLeaveEdit('record-pg');});
   }
 
   var MQ=window.matchMedia('(max-width:768px)');
@@ -32805,12 +32873,11 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     var block=document.getElementById('aab-edit-mobile-block');
     if(!block) return;
     var editOn=(function(){var e=document.getElementById('edit-pg');return e&&e.classList.contains('on');})();
-    // Show the fallback ONLY on small screens AND when the Edit Suite is the active page.
-    if(MQ.matches && editOn){ block.style.display='flex'; }
-    else { block.style.display='none'; }
+    // Show ONLY on small screens AND when the Edit Suite is the active page. Class toggle = JS authoritative.
+    if(MQ.matches && editOn){ block.classList.add('aab-show'); }
+    else { block.classList.remove('aab-show'); }
   }
 
-  // React to nav (page changes toggle #edit-pg.on) and to viewport changes.
   var mo=new MutationObserver(apply);
   function startObserve(){
     var ep=document.getElementById('edit-pg');
@@ -32821,7 +32888,6 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   else startObserve();
   if(MQ.addEventListener) MQ.addEventListener('change',apply); else if(MQ.addListener) MQ.addListener(apply);
   window.addEventListener('resize',function(){clearTimeout(window._aabMEFrt);window._aabMEFrt=setTimeout(apply,150);});
-  // Safety re-check in case nav swaps pages without an attribute mutation we caught
   setInterval(apply,1200);
 })();
 </script>
