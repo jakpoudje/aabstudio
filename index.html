@@ -27384,19 +27384,16 @@ function _getProgVid(){return $('e-prog-vid')||$('aab-prog-vid');}
    intact (muted=false) so sound still comes out of the element directly. */
 window._aabWireProgAudio=function(pv){
   if(!pv) return;
-  if(pv._aabAudioWired||pv._mediaSrc||pv._vuWired||pv._acWired||pv._mediaFailed) return;
-  if(typeof getAC!=='function'||typeof _masterGain==='undefined'||!_masterGain){ return; }
-  try{
-    var ac=getAC(); if(!ac||!_masterGain) return;
-    var ms=ac.createMediaElementSource(pv);
-    ms.connect(_masterGain);
-    pv._mediaSrc=ms; pv._vuWired=true; pv._acWired=true; pv._aabAudioWired=true;
-  }catch(e){
-    // Already wired elsewhere OR CORS-tainted: do NOT retry (throws are permanent). Ensure the
-    // element itself stays audible so the program monitor is never silent.
-    pv._mediaFailed=true; pv._aabAudioWired=true;
-    try{ pv.muted=false; }catch(_e){}
-  }
+  // DO NOT route the program video through Web Audio. createMediaElementSource() permanently
+  // captures the element's audio into the graph, and if the AudioContext was suspended when it ran
+  // (which happens on the first Play, before resume() completes), the captured signal never
+  // reaches the speakers - the video then plays with muted=false/volume=1 and a connected graph
+  // yet produces NO sound (exactly the symptom seen). The VU meter is driven separately by a
+  // synthetic ConstantSource in _esUpdateAudio, so we do not need the element's real signal here.
+  // Keeping the program video on its NATIVE audio path (element -> speakers) guarantees output.
+  if(pv._aabAudioWired) return;
+  pv._aabAudioWired=true;
+  try{ pv.muted=false; }catch(e){}
 };
 
 function _esUpdateProg(t){
