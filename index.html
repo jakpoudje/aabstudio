@@ -27178,6 +27178,11 @@ function _esUpdateAudio(t){
         var vol=tr.muted?0:clamp((tr.volume!=null?tr.volume:100)/100,0,1);
         _pv.volume=vol;
         _pv.muted=!!(tr.muted);
+        // AUTHORITATIVE during playback: guarantee the program monitor is audible unless the user
+        // explicitly muted this track. Other writers (aabAudioFocus, _esUpdateProg) also touch
+        // muted/volume; setting it here every frame - the LAST writer in the frame - ensures a
+        // stray sweep can't leave the program video silent while it is playing.
+        if(window._esPlaying && !tr.muted){ _pv.muted=false; if(_pv.volume===0)_pv.volume=vol||1; }
       }
       // Drive VU meter from video element volume as a proxy signal
       if(_pv&&!_pv.paused&&window._masterAnalyser){
