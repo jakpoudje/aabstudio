@@ -32728,9 +32728,13 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   function applyState(on){
     ['e-prog-subs','aab-prog-subs'].forEach(function(id){
       var el=document.getElementById(id);
-      if(el) el.style.display = on ? '' : 'none';
+      if(el){
+        el.style.setProperty('display', on?'':'none', 'important');
+        if(!on){ el.textContent=''; el.innerHTML=''; }   // OFF = truly cleared, not just hidden
+      }
     });
-    window._aabCCEnabled = on;               // keep the existing CC-writer in sync
+    window._aabCCEnabled = on;               // gates the E_drawProg CC writer
+    try{ if(window.TL) TL.subtitlesOn = on; }catch(e){}  // neutralise the 3rd (TL) subtitle path
     // Reflect on the button
     var b=document.getElementById('aab-cc-toggle');
     if(b){ b.classList.toggle('on', on); b.style.background = on?'rgba(167,139,250,.9)':'transparent';
