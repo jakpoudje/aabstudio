@@ -25961,6 +25961,13 @@ window.E_selectClip = function(clipId){
   function isMonitor(v){ return v.id === 'e-src-vid' || v.id === 'e-prog-vid'; }
   window.aabAudioFocus = function (active) {
     var vids = document.querySelectorAll('video');
+    // If the edit engine is playing, the program monitor is ALWAYS the audible one - even if it is
+    // momentarily paused between clips or during a seek. Without this, the periodic
+    // aabAudioFocus(null) sweep found no !paused monitor and muted e-prog-vid to volume 0, and
+    // nothing turned it back on = program monitor plays silently.
+    if (!active && window._esPlaying) {
+      active = document.getElementById('e-prog-vid') || null;
+    }
     if (!active) {
       for (var i = 0; i < vids.length; i++) { if (isMonitor(vids[i]) && !vids[i].paused) { active = vids[i]; break; } }
     }
@@ -25968,6 +25975,9 @@ window.E_selectClip = function(clipId){
       var v = vids[j];
       if (!isMonitor(v)) { v.muted = true; v.volume = 0; continue; }   // preloads never make sound
       var on = (v === active);
+      // When the engine is playing, never mute the program monitor even if 'active' resolved to
+      // something else (e.g. a transient state) - the program monitor owns the audio during play.
+      if (!on && window._esPlaying && v.id === 'e-prog-vid') on = true;
       v.muted = !on; v.volume = on ? 1 : 0;
     }
   };
@@ -32679,6 +32689,76 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   }
   killStrays();
   setInterval(killStrays, 500);
+})();
+</script>
+<script id="aab-subtitle-control">
+/* SUBTITLE CONTROL - fixes three reported issues, all edit-suite only, isolated:
+   (1) Subtitles extended outside the program viewer on scenes after the first -> clamp BOTH
+       subtitle elements strictly inside the program monitor for every scene.
+   (2) No reliable on/off -> one authoritative toggle that controls BOTH subtitle elements
+       (e-prog-subs and aab-prog-subs were two different nodes; the old CC button only touched one,
+       which is why hiding/showing felt broken).
+   (3) When hidden there was no way to show it again -> the toggle button is always visible in the
+       program transport and reflects on/off state, so it can always be turned back on. */
+(function(){
+  if(window._aabSubCtl) return; window._aabSubCtl=true;
+  // Persisted preference (default ON)
+  var KEY='aab_subs_on';
+  function subsOn(){ var v=null; try{v=localStorage.getItem(KEY);}catch(e){} return v===null?true:v==='1'; }
+  function setPref(on){ try{localStorage.setItem(KEY,on?'1':'0');}catch(e){} }
+
+  // Clamp CSS - keep every subtitle inside the program viewer on ALL scenes
+  if(!document.getElementById('aab-subs-clamp-css')){
+    var st=document.createElement('style'); st.id='aab-subs-clamp-css';
+    st.textContent=
+      '#edit-pg.on #e-prog-subs, #edit-pg.on #aab-prog-subs{'+
+      'position:absolute!important;left:50%!important;transform:translateX(-50%)!important;'+
+      'bottom:9%!important;top:auto!important;max-width:86%!important;width:max-content!important;'+
+      'box-sizing:border-box!important;text-align:center!important;white-space:normal!important;'+
+      'overflow-wrap:anywhere!important;word-break:break-word!important;line-height:1.25!important;'+
+      'max-height:32%!important;overflow:hidden!important;pointer-events:none!important;z-index:24!important;}';
+    document.head.appendChild(st);
+  }
+
+  function applyState(on){
+    ['e-prog-subs','aab-prog-subs'].forEach(function(id){
+      var el=document.getElementById(id);
+      if(el) el.style.display = on ? '' : 'none';
+    });
+    window._aabCCEnabled = on;               // keep the existing CC-writer in sync
+    // Reflect on the button
+    var b=document.getElementById('aab-cc-toggle');
+    if(b){ b.classList.toggle('on', on); b.style.background = on?'rgba(167,139,250,.9)':'transparent';
+      b.style.color = on?'#fff':'rgba(255,255,255,.6)'; b.setAttribute('aria-pressed', on?'true':'false'); }
+  }
+  window.aabToggleSubs = function(){ var on=!subsOn(); setPref(on); applyState(on);
+    if(typeof toast==='function') toast(on?'Subtitles ON (shown in preview & export)':'Subtitles OFF','info'); };
+
+  // Inject a single always-visible toggle button into the program transport (next to the old CC btn)
+  function ensureBtn(){
+    if(document.getElementById('aab-cc-toggle')) return;
+    var host = document.getElementById('e-sub-btn');           // the existing CC button, if present
+    var bar = host ? host.parentNode : (document.querySelector('#e-prog .etrans-bar, #e-prog-transport, #e-prog')||null);
+    if(!bar) return;
+    var b=document.createElement('button');
+    b.id='aab-cc-toggle'; b.className='etrans-btn'; b.type='button';
+    b.title='Show/hide subtitles (also controls whether they appear in the export)';
+    b.textContent='CC';
+    b.style.cssText='min-width:30px;border-radius:5px;font-weight:800;font-size:11px;border:1px solid rgba(167,139,250,.6);cursor:pointer;';
+    b.onclick=function(e){ e.preventDefault(); e.stopPropagation(); window.aabToggleSubs(); };
+    if(host){ host.style.display='none'; host.parentNode.insertBefore(b, host.nextSibling); }
+    else bar.appendChild(b);
+    applyState(subsOn());
+  }
+
+  function tick(){
+    var ep=document.getElementById('edit-pg');
+    if(!ep||!ep.classList.contains('on')) return;
+    ensureBtn();
+    // re-assert display state (a re-render can recreate the subs node with default display)
+    applyState(subsOn());
+  }
+  tick(); setInterval(tick, 800);
 })();
 </script>
 <script id="aab-track-audio-init">
