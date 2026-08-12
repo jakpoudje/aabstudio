@@ -4955,9 +4955,7 @@ _css.textContent=""+
 ".aab-tl-tracks-wrap{position:relative;will-change:transform;}"+
 /* Track rows */
 ".aab-track-row{display:flex;border-bottom:1.5px solid #151d2e;position:relative;margin-bottom:2px;}"+
-".aab-track-row.video-row{height:72px;}"+
-".aab-track-row.audio-row{height:52px;}"+
-".aab-track-row.text-row{height:42px;}"+
+/* heights come from inline track.h (single source of truth) - no fixed per-type height here */
 ".aab-track-lbl{flex:0 0 200px;display:flex;flex-direction:column;justify-content:center;padding:8px 10px;gap:5px;background:#080c15;border-right:1px solid #1f2937;position:sticky;left:0;z-index:8;min-width:180px;}"+
 ".aab-track-name{font-size:10px;font-weight:600;color:#9ca3af;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.01em;}"+
 ".aab-track-btn{background:none;border:none;color:#374151;cursor:pointer;font-size:9px;padding:2px;border-radius:2px;line-height:1;}"+
@@ -5013,13 +5011,13 @@ var E={
   activeTool:"select",
   _progVideo:null,
   tracks:[
-    {id:"main",name:"▶ Main Video",type:"video",clips:[],muted:false,locked:false,color:"#3b82f6",h:58},
-    {id:"broll",name:"\uD83C\uDFAC B-Roll",type:"video",clips:[],muted:false,locked:false,color:"#8b5cf6",h:58},
-    {id:"voice",name:"\uD83C\uDFA4 Voice Over",type:"audio",clips:[],muted:false,locked:false,color:"#10b981",h:40},
-    {id:"music",name:"\uD83C\uDFB5 Music",type:"audio",clips:[],muted:false,locked:false,color:"#f97316",h:40},
-    {id:"sfx",name:"\uD83D\uDD0A Sound FX",type:"audio",clips:[],muted:false,locked:false,color:"#eab308",h:40},
-    {id:"subs",name:"\uD83D\uDCAC Subtitles",type:"text",clips:[],muted:false,locked:false,color:"#06b6d4",h:32},
-    {id:"overlays",name:"\uD83D\uDDBC Text Overlays",type:"text",clips:[],muted:false,locked:false,color:"#f472b6",h:32}
+    {id:"main",name:"▶ Main Video",type:"video",clips:[],muted:false,locked:false,color:"#3b82f6",h:64},
+    {id:"broll",name:"\uD83C\uDFAC B-Roll",type:"video",clips:[],muted:false,locked:false,color:"#8b5cf6",h:64},
+    {id:"voice",name:"\uD83C\uDFA4 Voice Over",type:"audio",clips:[],muted:false,locked:false,color:"#10b981",h:56},
+    {id:"music",name:"\uD83C\uDFB5 Music",type:"audio",clips:[],muted:false,locked:false,color:"#f97316",h:56},
+    {id:"sfx",name:"\uD83D\uDD0A Sound FX",type:"audio",clips:[],muted:false,locked:false,color:"#eab308",h:56},
+    {id:"subs",name:"\uD83D\uDCAC Subtitles",type:"text",clips:[],muted:false,locked:false,color:"#06b6d4",h:52},
+    {id:"overlays",name:"\uD83D\uDDBC Text Overlays",type:"text",clips:[],muted:false,locked:false,color:"#f472b6",h:52}
   ]
 };
 
@@ -22938,8 +22936,8 @@ console.log('[ClipEditor v1] Loaded — trim handles, unique icons, full context
 /* ── Track row heights with breathing room ── */
 /* removed conflicting height — inline track.h is authoritative */
 /* removed conflicting height — inline track.h is authoritative */
-.aab-track-row.audio-row { height: 50px !important; min-height: 50px !important; }
-.aab-track-row.text-row  { height: 40px !important; min-height: 40px !important; }
+/* removed conflicting height — inline track.h is authoritative */
+/* removed conflicting height — inline track.h is authoritative */
 
 /* ── Track label: show name + controls without cramping ── */
 .aab-track-lbl {
@@ -27030,20 +27028,17 @@ var clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
    !important on audio/text rows while another set min-height:56px !important on ALL rows - the
    mismatch made clips (sized to their type) overflow into the next track. Here height==min-height
    per type so every row is always at least as tall as its clip, and the lane matches. */
-.aab-track-row{min-height:56px!important;transition:min-height .2s;}
-.aab-track-row.video-row{height:72px!important;min-height:72px!important;}
-.aab-track-row.audio-row{height:52px!important;min-height:52px!important;}
-.aab-track-row.text-row{height:42px!important;min-height:42px!important;}
-.aab-track-row.hidden-track{height:24px!important;min-height:24px!important;opacity:.5!important;}
-.aab-lane{min-height:56px!important;}
-.aab-track-row.video-row .aab-lane{min-height:72px!important;}
-.aab-track-row.audio-row .aab-lane{min-height:52px!important;}
-.aab-track-row.text-row .aab-lane{min-height:42px!important;}
-.aab-lane.hidden-lane{min-height:24px!important;}
-/* Clips never taller than their row - keeps them inside their own track */
-.aab-track-row .aab-clip{max-height:calc(100% - 4px)!important;}
+/* SINGLE SOURCE OF TRUTH: the inline track.h (applied to BOTH the row @5719 and the lane @5779)
+   drives every track's height - built-in AND added. We deliberately do NOT set fixed per-type
+   height/min-height here anymore; those fought the inline value and made rows thin + overlapping.
+   Only a low floor + box-sizing so borders never push a row taller than its neighbour. */
+.aab-track-row{box-sizing:border-box!important;min-height:40px;transition:height .15s;align-items:stretch!important;}
+.aab-track-row.hidden-track{opacity:.5!important;}
+.aab-lane{box-sizing:border-box!important;min-height:40px;}
+/* Clip fills its row exactly (row height == track.h), never taller - stays inside its own track */
+.aab-track-row .aab-clip{height:calc(100% - 4px)!important;max-height:calc(100% - 4px)!important;top:2px!important;}
 /* Clips */
-.aab-clip{user-select:none!important;border-radius:3px!important;min-height:50px!important;}
+.aab-clip{user-select:none!important;border-radius:3px!important;}
 .aab-clip.sel{outline:2px solid #00d4ff!important;z-index:5!important;}
 .aab-clip[data-type=audio]{background:linear-gradient(135deg,#064e3b,#047857)!important;}
 .aab-clip[data-type=image]{background:linear-gradient(135deg,#1e1b4b,#312e81)!important;}
@@ -27477,13 +27472,31 @@ function _esUpdateOvl(t){
         var h=w*(img.naturalHeight/img.naturalWidth||.5625);
         _ovlCtx.globalAlpha=c.opacity!=null?c.opacity:1;_ovlCtx.drawImage(img,x,y,w,h);_ovlCtx.globalAlpha=1;
       } else if(c.text||c.name){
-        var txt=c.text||c.name,fs=c.fontSize||(Math.round(ch*.048));
-        var tx=(c.ovlX!=null?c.ovlX:.5)*cw,ty=(c.ovlY!=null?c.ovlY:.8)*ch;
-        _ovlCtx.font=`bold ${fs}px Sora,Arial,sans-serif`; _ovlCtx.textAlign=c.align||'center'; _ovlCtx.textBaseline='top';
+        /* UNIFORM READER - understands both clip shapes:
+           - flat: c.fontSize, c.ovlX, c.ovlY, c.align, c.color (from AABE.addText)
+           - style object: c.style.{fontSize,color,fontFamily,position,bold,italic} (from E_addTextClip)
+           so whatever the user typed reflects regardless of which add-path made the clip. */
+        var st=c.style||c.textStyle||{};
+        var txt=(c.textStyle&&c.textStyle.text)||c.text||c.name;
+        var fs=c.fontSize||st.fontSize||(Math.round(ch*.048));
+        if(typeof fs==='string')fs=parseInt(fs)||Math.round(ch*.048);
+        // position: explicit ovlX/ovlY (0..1) wins; else map a named position (style.position) to coords
+        var posName=(st.position||c.position||'').toLowerCase();
+        var px=(c.ovlX!=null?c.ovlX:(posName.indexOf('left')>-1?.18:posName.indexOf('right')>-1?.82:.5));
+        var py=(c.ovlY!=null?c.ovlY:(posName.indexOf('top')>-1?.12:posName.indexOf('middle')>-1||posName==='center'?.5:.8));
+        var tx=px*cw, ty=py*ch;
+        var align=c.align||st.align||(posName.indexOf('left')>-1?'left':posName.indexOf('right')>-1?'right':'center');
+        var fam=st.fontFamily&&st.fontFamily!=='inherit'?st.fontFamily:'Sora,Arial,sans-serif';
+        var weight=(st.bold?'bold ':'700 ')+'';var italic=st.italic?'italic ':'';
+        _ovlCtx.font=`${italic}${weight}${fs}px ${fam}`; _ovlCtx.textAlign=align; _ovlCtx.textBaseline='top';
         var tw=_ovlCtx.measureText(txt).width;
-        _ovlCtx.fillStyle='rgba(0,0,0,.7)';_ovlCtx.beginPath();
-        if(_ovlCtx.roundRect)_ovlCtx.roundRect(tx-tw/2-14,ty-6,tw+28,fs+12,6);else _ovlCtx.rect(tx-tw/2-14,ty-6,tw+28,fs+12);
-        _ovlCtx.fill(); _ovlCtx.fillStyle=c.color||'#ffffff'; _ovlCtx.fillText(txt,tx,ty);
+        // background chip position follows alignment so it wraps the text correctly
+        var bx=align==='left'?tx-10:align==='right'?tx-tw-4:tx-tw/2-14;
+        _ovlCtx.fillStyle=st.bg||'rgba(0,0,0,.7)';_ovlCtx.beginPath();
+        if(_ovlCtx.roundRect)_ovlCtx.roundRect(bx,ty-6,tw+28,fs+12,6);else _ovlCtx.rect(bx,ty-6,tw+28,fs+12);
+        _ovlCtx.fill(); _ovlCtx.fillStyle=c.color||st.color||'#ffffff'; _ovlCtx.fillText(txt,tx,ty);
+        // also honour position from textStyle for py if not already set by ovlY
+        
       }
     });
   }
@@ -27954,11 +27967,12 @@ function _buildMixer(){
   // whitelist hid main-video, background music, fx, etc.)
   var AUDIO_TRACKS=['main','main-video','broll','voice','music','bg-music','background','sfx','fx'];
   function _mixTrackHasSignal(tr){
+    // Uniform base: show EVERY track (built-in AND added), even empty ones, so every track's
+    // signal can be seen and its volume/mute controlled. Text-only tracks (subtitles/overlays)
+    // have no audio, so they are the only ones skipped from the audio mixer.
     if(!tr) return false;
-    if(AUDIO_TRACKS.indexOf(tr.id)>-1) return true;
-    if(['audio','video','music','fx','voice'].indexOf(tr.type)>-1) return true;
-    if(tr.clips && tr.clips.length) return true; // any track with media = show it
-    return false;
+    if(tr.type==='text') return false;
+    return true;
   }
   if(window.E&&E.tracks){
     E.tracks.filter(_mixTrackHasSignal).forEach(tr=>{
