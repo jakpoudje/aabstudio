@@ -32439,7 +32439,7 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
       return orig.apply(this, arguments);
     };
     window.E_renderTL._normHooked = true;
-    if (window.AABLog) AABLog.info('timeline', 'render hook installed — clips normalized on every render');
+    if (!window._aabNormHookLogged) { window._aabNormHookLogged = true; if (window.AABLog) AABLog.info('timeline', 'render hook installed — clips normalized on every render'); }
   }
   // normalizeInner does the stamping/tombstone/de-dupe WITHOUT calling E_renderTL (avoids
   // recursion); the public normalize() still renders for manual/interval calls.
@@ -32457,7 +32457,14 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     });
     main.clips = keep;
   }
-  setInterval(function () { hookRender(); normalize(); }, 1500);
+  setInterval(function () {
+    // Only normalize/re-render when the Edit Suite is actually open. Running this on every page
+    // (dashboard included) cascaded normalize() -> E_renderTL() through all the render wrappers
+    // every 1.5s, flooding the console and stalling the dashboard. No timeline = nothing to do.
+    var ep = document.getElementById('edit-pg');
+    if (!ep || !ep.classList.contains('on')) return;
+    hookRender(); normalize();
+  }, 1500);
   hookRender();
 })();
 </script>
