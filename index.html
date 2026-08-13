@@ -27179,34 +27179,25 @@ function _esUpdateAudio(t){
         // stray sweep can't leave the program video silent while it is playing.
         if(window._esPlaying && !tr.muted){ _pv.muted=false; if(_pv.volume===0)_pv.volume=vol||1; }
       }
-      // Drive VU meter from video element volume as a proxy signal
-      if(_pv&&!_pv.paused&&window._masterAnalyser){
-        // Inject a synthetic gain signal scaled to video volume
-        // so VU meter reflects the actual loudness level
+      // Drive VU meter from the AUTHORITATIVE play flag (window._esPlaying), not _pv.paused.
+      // The program video now plays natively, so _pv.paused no longer tracks timeline playback and
+      // the meter read inverted (-60 while playing, signal while paused). Feed the synthetic signal
+      // whenever the timeline is playing and this (video) track is active + audible.
+      if(window._esPlaying && !tr.muted && window._masterAnalyser){
         if(!window._vuSynthSrc){
           try{
             var _ac=getAC();
             window._vuSynthGain=_ac.createGain();
             window._vuSynthGain.gain.value=0;
-            // WHITE-NOISE FIX: this used to connect to _masterGain, i.e. straight to the
-            // speakers. The comment below says the ConstantSource is "inaudible" and only
-            // drives the analyser, and a steady DC offset IS silent - but the gain is
-            // re-stepped on every update (setValueAtTime(vol*0.1,...)), and every abrupt step
-            // in a DC signal is a click. Continuous re-stepping produced the intermittent
-            // noise/crackle heard even with the studio closed. Connect it to the analyser
-            // ONLY: the VU meter still reads it, but nothing reaches the output bus.
             if(window._masterAnalyser) window._vuSynthGain.connect(window._masterAnalyser);
-            // ConstantSourceNode outputs DC offset — drives the analyser only, never the output
             window._vuSynthSrc=_ac.createConstantSource();
             window._vuSynthSrc.offset.value=1;
             window._vuSynthSrc.connect(window._vuSynthGain);
             window._vuSynthSrc.start();
           }catch(e){}
         }
-        // Scale synthetic signal to current video volume
         if(window._vuSynthGain){
-          // Responsive level update
-          try{window._vuSynthGain.gain.cancelScheduledValues(getAC().currentTime);window._vuSynthGain.gain.setValueAtTime(vol*0.1,getAC().currentTime);}catch(e){}
+          try{window._vuSynthGain.gain.cancelScheduledValues(getAC().currentTime);window._vuSynthGain.gain.setValueAtTime(Math.max(0.02,vol*0.1),getAC().currentTime);}catch(e){}
         }
       } else if(window._vuSynthGain){
         try{window._vuSynthGain.gain.cancelScheduledValues(getAC().currentTime);window._vuSynthGain.gain.setValueAtTime(0,getAC().currentTime);}catch(e){}
@@ -28047,10 +28038,10 @@ window._mixResetAll=v=>{if(window.E&&E.tracks)E.tracks.forEach(tr=>{tr.volume=v;
 function _rebuildMixer(){var p=$('aab-mixer-panel');if(p&&p.style.display!=='none'){_buildMixer();p=$('aab-mixer-panel');p.style.display='block';}}
 window.E_toggleMixer=()=>{var _epx=document.getElementById('edit-pg');if(!_epx||(!_epx.classList.contains('on')&&_epx.style.display!=='flex'&&_epx.style.display!=='block')){if(typeof toast==='function')toast('Open Edit Suite first','info');return;}var p=$('aab-mixer-panel');if(!p){_buildMixer();p=$('aab-mixer-panel');}if(p.style.display==='none'||!p.style.display){
     try{
-      getAC(); // Create AudioContext on user gesture
-      // Route program video audio through Web Audio if not already done
-      var pv2=document.getElementById('e-prog-vid')||document.getElementById('aab-prog-vid');
-      window._aabWireProgAudio&&window._aabWireProgAudio(pv2);
+      getAC(); // Create/resume AudioContext on user gesture (drives the VU meter)
+      // NOTE: program video plays on its NATIVE audio path now; we deliberately do NOT re-route it
+      // into Web Audio here (that used to capture + silence it). The VU meter is fed by the
+      // synthetic ConstantSource in _esUpdateAudio, keyed off window._esPlaying.
     }catch(e){}
     p.style.display='block';
   }else{_mixPos.x=parseInt(p.style.left)||null;_mixPos.y=parseInt(p.style.top)||null;p.style.display='none';}};
