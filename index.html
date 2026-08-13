@@ -6115,6 +6115,14 @@ function E_openExport(){
 }
 
 function E_doExport(){
+  // MVP: use the working client-side timeline render (produces a real .webm with video+overlays+
+  // audio). The previous Creatomate server path returned a page/JSON that downloaded as a 0-byte /
+  // non-playable file ("blank Chrome file"), so it is bypassed here until the backend returns a
+  // real MP4. E_exportTimeline records the full timeline, all non-muted tracks, subtitles + overlays.
+  if(typeof window.E_exportTimeline==='function'){ return window.E_exportTimeline(); }
+  return _E_doExport_creatomate.apply(this,arguments);
+}
+function _E_doExport_creatomate(){
   var clips=[];
   E.tracks.filter(function(t){return t.type==="video"&&!t.muted;}).forEach(function(t){
     t.clips.forEach(function(c){
@@ -6906,13 +6914,26 @@ window.E_exportTimeline=async function(){
     var ac=typeof getAC==='function'?getAC():null;
     var dest=ac?ac.createMediaStreamDestination():null;
 
-    // Wire audio into the recording stream
-    if(ac&&dest&&typeof _masterGain!=='undefined'&&_masterGain){
-      try{_masterGain.connect(dest);}catch(e){}
-    }
+    var canvasStream_unused=null; // (audio wiring handled below)
 
     var canvasStream=canvas.captureStream(30);
-    var audioTracks=dest?dest.stream.getAudioTracks():[];
+    // AUDIO: the program video plays on its NATIVE path (not through _masterGain), so capturing
+    // _masterGain alone gave a SILENT export. Grab the program video's own audio via captureStream()
+    // - this does NOT permanently rewire the element the way createMediaElementSource does, so it
+    // won't break subsequent playback. Also mix in _masterGain (any other timeline audio) if present.
+    var audioTracks=[];
+    try{
+      if(progVid && typeof progVid.captureStream==='function'){
+        var pvStream=progVid.captureStream();
+        audioTracks=audioTracks.concat(pvStream.getAudioTracks());
+      }
+    }catch(e){}
+    try{
+      if(ac&&dest&&typeof _masterGain!=='undefined'&&_masterGain){
+        _masterGain.connect(dest);
+        audioTracks=audioTracks.concat(dest.stream.getAudioTracks());
+      }
+    }catch(e){}
     var combinedStream=new MediaStream([...canvasStream.getVideoTracks(),...audioTracks]);
 
     var recorder=new MediaRecorder(combinedStream,{mimeType:'video/webm;codecs=vp9'});
@@ -6944,23 +6965,18 @@ window.E_exportTimeline=async function(){
       if(ts-lastT>=33){ // ~30fps
         lastT=ts;
         ctx.fillStyle='#000';ctx.fillRect(0,0,1280,720);
-        if(progVid&&progVid.readyState>=2&&!progVid.paused){
+        // Draw the current program-video frame whenever it has data. Do NOT gate on !paused: during
+        // export the natively-playing video is momentarily paused at start and at scene boundaries,
+        // and gating on !paused produced an all-black/navy file (nothing ever drawn).
+        if(progVid&&progVid.readyState>=2){
           try{ctx.drawImage(progVid,0,0,1280,720);}catch(e){}
         }
-        // Draw subtitles
-        var subs=window.E.tracks.find(function(tr){return tr.id==='subs';});
-        var esPH=window._esPH||0;
-        if(subs){
-          var activeSub=subs.clips.find(function(c){return esPH>=(c.start||0)&&esPH<(c.start||0)+(c.duration||4);});
-          var subText2=activeSub&&(activeSub.narration||activeSub.text||activeSub.name||'');
-        if(activeSub&&subText2){
-            ctx.font='bold 32px sans-serif';ctx.fillStyle='rgba(0,0,0,0.6)';
-            ctx.fillRect(60,640,1160,64);
-            ctx.fillStyle='#ffffff';ctx.textAlign='center';
-            ctx.fillText(String(subText2||'').slice(0,80),640,682);
-            ctx.textAlign='left';
-          }
+        // Draw text overlays + subtitles exactly as seen on the monitor (the overlay canvas already
+        // renders both), so the export matches the preview.
+        if(typeof _ovlCanvas!=='undefined'&&_ovlCanvas){
+          try{ctx.drawImage(_ovlCanvas,0,0,1280,720);}catch(e){}
         }
+        // (subtitles + text overlays are drawn via _ovlCanvas above — matches the preview)
       }
       var _td=manifest.totalDuration||59;
       var _elapsed=Date.now()-(window._exportStartedAt||0);
