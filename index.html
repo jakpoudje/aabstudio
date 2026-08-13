@@ -32912,7 +32912,43 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     return out;
   };
 
-  // Auto-report ~5s after play starts, and every 5s while playing, so Julius just needs to press Play
+  // MULTI-SCENE BOUNDARY WATCHER (read-only). Logs each scene transition during playback with the
+  // program video's audio state at that instant, so we can see exactly what happens to Scene 2's
+  // sound at the Scene1->Scene2 boundary.
+  (function(){
+    var lastUrl=null, lastName=null;
+    function clipAt(t){
+      if(!window.E||!E.tracks)return null;
+      var f=null;
+      E.tracks.forEach(function(tr){
+        if(tr.type==='audio'||tr.type==='subtitle'||tr.type==='text')return;
+        if((tr.type!=='video'&&tr.id!=='main'&&tr.id!=='main-video'&&tr.id!=='broll')||tr.muted||tr.hidden)return;
+        (tr.clips||[]).forEach(function(c){if(c.url&&c.url.length>10&&!c.muted&&t>=(c.start||0)-0.01&&t<(c.start||0)+(c.duration||0)+0.01)f=c;});
+      });
+      return f;
+    }
+    setInterval(function(){
+      if(!window._esPlaying)return;
+      var t=window._esPH||0;
+      var c=clipAt(t);
+      var url=c?c.url:null, nm=c?(c.name||c.id):'(none)';
+      if(url!==lastUrl){
+        var pv=(typeof _getProgVid==='function'?_getProgVid():null)||document.getElementById('e-prog-vid');
+        var line='[AAB-SCENE] t='+t.toFixed(2)+'  '+(lastName||'(start)')+' -> '+nm;
+        if(pv){
+          line+='  | progVid paused='+pv.paused+' muted='+pv.muted+' vol='+pv.volume+
+            ' rdy='+pv.readyState+' curT='+(pv.currentTime||0).toFixed(2)+
+            ' src=...'+(pv.currentSrc?String(pv.currentSrc).slice(-16):'(none)')+
+            ' _curUrl=...'+(pv._curUrl?String(pv._curUrl).slice(-16):'(none)')+' _rdy='+!!pv._rdy;
+        }
+        if(c){ line+='  | clip.start='+(c.start||0).toFixed(2)+' dur='+(c.duration||0).toFixed(2); }
+        console.log(line);
+        lastUrl=url; lastName=nm;
+      }
+    }, 200);
+  })();
+
+
   setInterval(function(){
     if(window._esPlaying){
       if(!D._playT0){ D._playT0=Date.now(); }
