@@ -3,6 +3,37 @@
 <html lang="en">
 
 <head>
+<meta name="aab-build" content="20260814-e2984c51-autorefresh">
+<script id="aab-stale-guard">
+/* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
+   BROWSER can still hold an old copy of a versioned URL. On boot, fetch a fresh copy of the live
+   page and compare build stamps; if the running page is older, reload ONCE (guarded by
+   sessionStorage so it can never loop). This removes the need to manually Empty-Cache-and-Hard-Reload. */
+(function(){
+  try{
+    var meta = document.querySelector('meta[name="aab-build"]');
+    var myBuild = meta ? meta.getAttribute('content') : null;
+    if(!myBuild) return;
+    if(sessionStorage.getItem('aab_stale_reloaded') === myBuild) return; // already refreshed to/at this build
+    var x = new XMLHttpRequest();
+    x.open('GET', location.origin + '/?bust=' + Date.now(), true);
+    x.onreadystatechange = function(){
+      if(x.readyState !== 4) return;
+      if(x.status < 200 || x.status >= 300) return;
+      try{
+        var m = x.responseText.match(/<meta name="aab-build" content="([^"]+)"/);
+        var liveBuild = m ? m[1] : null;
+        if(liveBuild && liveBuild !== myBuild){
+          // running page is stale — reload once to the fresh build
+          sessionStorage.setItem('aab_stale_reloaded', liveBuild);
+          location.replace(location.origin + location.pathname + '?v=' + Date.now());
+        }
+      }catch(e){}
+    };
+    x.send();
+  }catch(e){}
+})();
+</script>
 <script id="aab-logger">
 /* AAB Studio — central developer logger (aab-logger)
    Lightweight structured console: platform states, module tags, colours,
