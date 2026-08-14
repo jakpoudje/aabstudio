@@ -6917,17 +6917,12 @@ window.E_exportTimeline=async function(){
     var canvasStream_unused=null; // (audio wiring handled below)
 
     var canvasStream=canvas.captureStream(30);
-    // AUDIO: the program video plays on its NATIVE path (not through _masterGain), so capturing
-    // _masterGain alone gave a SILENT export. Grab the program video's own audio via captureStream()
-    // - this does NOT permanently rewire the element the way createMediaElementSource does, so it
-    // won't break subsequent playback. Also mix in _masterGain (any other timeline audio) if present.
+    // AUDIO: capture ONLY from _masterGain (timeline audio tracks). We deliberately do NOT call
+    // progVid.captureStream() - capturing a stream from the LIVE program video element permanently
+    // disturbs its audio output (mixer goes to -60dB / playback silent / only scene 1 after an
+    // export), the same failure class as createMediaElementSource. Keeping the live element
+    // untouched means exporting can never regress playback or the mixer.
     var audioTracks=[];
-    try{
-      if(progVid && typeof progVid.captureStream==='function'){
-        var pvStream=progVid.captureStream();
-        audioTracks=audioTracks.concat(pvStream.getAudioTracks());
-      }
-    }catch(e){}
     try{
       if(ac&&dest&&typeof _masterGain!=='undefined'&&_masterGain){
         _masterGain.connect(dest);
@@ -28417,11 +28412,17 @@ window.E_exportVideo=()=>{
     var _actx=(window._getAC&&_getAC())||new (window.AudioContext||window.webkitAudioContext)();
     window._expAudioCtx=_actx;
     var _dest=_actx.createMediaStreamDestination();
-    function _wireAud(elm){ if(!elm)return; try{
-      if(!elm._expSrcNode){ elm._expSrcNode=_actx.createMediaElementSource(elm); }
-      elm._expSrcNode.connect(_dest);
-      elm._expSrcNode.connect(_actx.destination); // keep it audible during export
-    }catch(e){} }
+    function _wireAud(elm){
+      // NEVER createMediaElementSource on the LIVE program video (pv) - it permanently captures the
+      // element's audio into the graph and leaves it silent afterward (mixer -60dB / only scene 1).
+      // Only wire NON-program audio elements (voice/music/sfx preloads) for export mixing.
+      if(!elm || elm===pv || elm.id==='e-prog-vid' || elm.id==='aab-prog-vid') return;
+      try{
+        if(!elm._expSrcNode){ elm._expSrcNode=_actx.createMediaElementSource(elm); }
+        elm._expSrcNode.connect(_dest);
+        elm._expSrcNode.connect(_actx.destination);
+      }catch(e){}
+    }
     _wireAud(pv);
     // include any other playing timeline audio/video media elements
     Array.prototype.forEach.call(document.querySelectorAll('#edit-pg audio, #edit-pg video'),function(el){ if(el!==pv && !el.paused) _wireAud(el); });
