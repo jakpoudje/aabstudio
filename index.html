@@ -12894,7 +12894,15 @@ function studioNext() {
     }
     function jumpScene(i) {
       if (STUDIO.recording) stopRec();
-      STUDIO.currentScene = i; updateTP();
+      // STUDIO_SCENE (1-based) is the canonical pointer updateTP reads; setting only
+      // STUDIO.currentScene left it ignored so the scene never actually changed. Set both.
+      window.STUDIO_SCENE = (i|0) + 1;
+      STUDIO.currentScene = i|0;
+      if (window.PROJECT) PROJECT.currentScene = i|0;
+      updateTP();
+      // Refresh the queue highlight + scene counters immediately
+      if (typeof renderStudioQueue === 'function') try { renderStudioQueue(); } catch(e){}
+      if (typeof window._updateStudioCounters === 'function') try { window._updateStudioCounters(); } catch(e){}
     }
 
     // ══ TELEPROMPTER IN STUDIO ════════════════════════════════════════════════════
