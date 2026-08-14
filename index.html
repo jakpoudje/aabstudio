@@ -13153,9 +13153,74 @@ function studioNext() {
     var _bgCompositingRaf = null;
     var _bgCompositingType = null;
 
+    // ── MediaPipe Selfie Segmentation (real virtual background) ──────────────────
+    // Lazy-loaded on first background use. Produces a per-frame person mask so blur/photo/custom
+    // backgrounds composite ONLY the person over the background (instead of covering the bg with the
+    // full camera = the old "looks like lighting" behaviour). If MediaPipe fails to load, _aabSegReady
+    // stays false and compositingFrame falls back to the old full-cam draw so nothing breaks.
+    window._aabSeg = window._aabSeg || { ready:false, loading:false, mask:null, seg:null, lastSentTs:0 };
+    function _aabEnsureSegmentation() {
+      var S = window._aabSeg;
+      if (S.ready || S.loading) return;
+      S.loading = true;
+      function _init() {
+        try {
+          var seg = new SelfieSegmentation({ locateFile: function(f){ return 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/' + f; } });
+          seg.setOptions({ modelSelection: 1, selfieMode: false });
+          seg.onResults(function(res){
+            if (!res || !res.segmentationMask) return;
+            var m = S.maskCanvas || (S.maskCanvas = document.createElement('canvas'));
+            m.width = res.segmentationMask.width; m.height = res.segmentationMask.height;
+            var mc = m.getContext('2d');
+            mc.clearRect(0,0,m.width,m.height);
+            mc.drawImage(res.segmentationMask, 0, 0, m.width, m.height);
+            S.mask = m; S.ready = true;
+          });
+          S.seg = seg;
+        } catch(e){ S.loading = false; }
+      }
+      if (typeof window.SelfieSegmentation === 'function') { _init(); return; }
+      var sc = document.createElement('script');
+      sc.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js';
+      sc.onload = _init;
+      sc.onerror = function(){ S.loading = false; };
+      document.head.appendChild(sc);
+    }
+    // Feed a frame to the segmenter (throttled ~30fps); safe no-op until ready.
+    function _aabSegSend(cam) {
+      var S = window._aabSeg;
+      if (!S.seg || !cam || cam.readyState < 2 || !cam.videoWidth) return;
+      var now = performance.now();
+      if (now - S.lastSentTs < 33) return;
+      S.lastSentTs = now;
+      try { S.seg.send({ image: cam }); } catch(e){}
+    }
+    // Composite the person over an already-drawn background using the latest mask.
+    // Returns true if it drew the masked person, false if no mask yet (caller should fall back).
+    function _aabDrawMaskedPerson(ctx, cam, W, H) {
+      var S = window._aabSeg;
+      if (!S.ready || !S.mask) return false;
+      var tmp = S._tmp || (S._tmp = document.createElement('canvas'));
+      tmp.width = W; tmp.height = H;
+      var tctx = tmp.getContext('2d');
+      tctx.clearRect(0,0,W,H);
+      // Draw the mask, then keep only the camera pixels where the mask is opaque (the person)
+      tctx.drawImage(S.mask, 0, 0, W, H);
+      tctx.globalCompositeOperation = 'source-in';
+      tctx.drawImage(cam, 0, 0, W, H);
+      tctx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(tmp, 0, 0, W, H);
+      return true;
+    }
+
     function startBgCompositing(type) {
       stopBgCompositing();
       _bgCompositingType = type;
+      // Kick off segmentation for background types that place the person in a scene.
+      if (type === 'blur' || type === 'custom-img' || type === 'custom-vid' ||
+          (type !== 'none' && type !== 'dark' && type !== 'green')) {
+        try { _aabEnsureSegmentation(); } catch(e){}
+      }
 
       var canvas = document.getElementById('studio-composite-canvas');
       var cam = document.getElementById('studio-cam');
@@ -13200,24 +13265,28 @@ function studioNext() {
 
         if (type === 'blur') {
           if (camOk) {
-            // Blurred background
+            _aabSegSend(cam);
+            // Blurred background (full frame)
             ctx.save();
             ctx.filter = 'blur(22px) brightness(0.6) saturate(1.2)';
             ctx.drawImage(cam, -50, -50, W + 100, H + 100);
             ctx.filter = 'none';
             ctx.restore();
-            // Sharp portrait in center
-            var cw = Math.round(W * 0.52);
-            var ch = Math.round(H * 0.92);
-            var cx = (W - cw) / 2;
-            var cy = (H - ch) / 2;
-            ctx.save();
-            ctx.beginPath();
-            if (ctx.roundRect) ctx.roundRect(cx, cy, cw, ch, 12);
-            else ctx.rect(cx, cy, cw, ch);
-            ctx.clip();
-            ctx.drawImage(cam, cx, cy, cw, ch);
-            ctx.restore();
+            // Sharp SEGMENTED person on top. If the mask isn't ready yet, fall back to the old
+            // rectangular centre crop so there's always something visible.
+            if (!_aabDrawMaskedPerson(ctx, cam, W, H)) {
+              var cw = Math.round(W * 0.52);
+              var ch = Math.round(H * 0.92);
+              var cx = (W - cw) / 2;
+              var cy = (H - ch) / 2;
+              ctx.save();
+              ctx.beginPath();
+              if (ctx.roundRect) ctx.roundRect(cx, cy, cw, ch, 12);
+              else ctx.rect(cx, cy, cw, ch);
+              ctx.clip();
+              ctx.drawImage(cam, cx, cy, cw, ch);
+              ctx.restore();
+            }
           } else {
             // Placeholder while camera starts
             var gr = ctx.createLinearGradient(0, 0, W, H);
@@ -13236,7 +13305,7 @@ function studioNext() {
             var sc = Math.max(W / bgImg.naturalWidth, H / bgImg.naturalHeight);
             ctx.drawImage(bgImg, (W - bgImg.naturalWidth * sc) / 2, (H - bgImg.naturalHeight * sc) / 2, bgImg.naturalWidth * sc, bgImg.naturalHeight * sc);
           }
-          if (camOk) ctx.drawImage(cam, 0, 0, W, H);
+          if (camOk) { _aabSegSend(cam); if (!_aabDrawMaskedPerson(ctx, cam, W, H)) ctx.drawImage(cam, 0, 0, W, H); }
 
         } else if (type === 'custom-vid') {
           var bgVid = document.getElementById('studio-bg-vid');
@@ -13244,7 +13313,7 @@ function studioNext() {
             var sv = Math.max(W / bgVid.videoWidth, H / bgVid.videoHeight);
             ctx.drawImage(bgVid, (W - bgVid.videoWidth * sv) / 2, (H - bgVid.videoHeight * sv) / 2, bgVid.videoWidth * sv, bgVid.videoHeight * sv);
           }
-          if (camOk) ctx.drawImage(cam, 0, 0, W, H);
+          if (camOk) { _aabSegSend(cam); if (!_aabDrawMaskedPerson(ctx, cam, W, H)) ctx.drawImage(cam, 0, 0, W, H); }
 
         } else {
           // Photo background: news / office / library etc
@@ -13258,7 +13327,7 @@ function studioNext() {
             gr2.addColorStop(0, '#0d1b2a'); gr2.addColorStop(1, '#1a3a5f');
             ctx.fillStyle = gr2; ctx.fillRect(0, 0, W, H);
           }
-          if (camOk) ctx.drawImage(cam, 0, 0, W, H);
+          if (camOk) { _aabSegSend(cam); if (!_aabDrawMaskedPerson(ctx, cam, W, H)) ctx.drawImage(cam, 0, 0, W, H); }
         }
 
         _bgCompositingRaf = requestAnimationFrame(compositingFrame);
