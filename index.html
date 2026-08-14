@@ -7447,11 +7447,20 @@ window.setTpBg = function(color) {
   // Update CSS custom properties for TP
   document.documentElement.style.setProperty('--tp-text-color', baseColor);
   document.documentElement.style.setProperty('--tp-active-color', activeColor);
-  // Update existing word spans
+  // Update existing word spans — cover BOTH the studio word spans (.tp-word) AND the standalone
+  // teleprompter spans (#tpw* / .tpw-span). Previously only .tp-word was updated, so the standalone
+  // teleprompter kept hardcoded-white text and went invisible on a light background.
   document.querySelectorAll('.tp-word').forEach(function(w, i) {
     var wbwIdx = window._studioWBW ? _studioWBW.idx : -1;
     if (i < wbwIdx) w.style.color = doneColor;
     else if (i === wbwIdx) w.style.color = activeColor;
+    else w.style.color = baseColor;
+  });
+  document.querySelectorAll('.tpw-span,[id^="tpw"]').forEach(function(w){
+    var cur = window.TP ? TP.currentWord : -1;
+    var idx = parseInt((w.id||'').replace('tpw','')); if(isNaN(idx)) idx=-1;
+    if (idx>-1 && idx < cur) w.style.color = doneColor;
+    else if (idx>-1 && idx === cur) w.style.color = activeColor;
     else w.style.color = baseColor;
   });
 };
@@ -13507,7 +13516,7 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
     function tpRender(script) {
       var words = script.trim().split(/\s+/); TP.currentWord = 0;
       var wrap = document.getElementById('tp-text') || document.getElementById('tp-text'); if (!wrap) return;
-      wrap.innerHTML = words.map(function (w, i) { return '<span id="tpw' + i + '" style="color:#fff;transition:color .15s;">' + w + '</span> '; }).join('');
+      wrap.innerHTML = words.map(function (w, i) { return '<span id="tpw' + i + '" class="tpw-span" style="color:var(--tp-text-color,#fff);transition:color .15s;">' + w + '</span> '; }).join('');
     }
     function tpToggle() {
       TP.playing = !TP.playing;
@@ -13530,9 +13539,9 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
       // WORD — karaoke highlight one word at a time (the original behaviour).
       if (mode === 'word' || mode === 'wbw') {
         TP.scrollTimer = setInterval(function () {
-          if (TP.currentWord > 0) { var prev = document.getElementById('tpw' + (TP.currentWord - 1)); if (prev) prev.style.color = 'rgba(255,255,255,.2)'; }
+          if (TP.currentWord > 0) { var prev = document.getElementById('tpw' + (TP.currentWord - 1)); if (prev) prev.style.color = 'var(--tp-text-color,rgba(255,255,255,.2))'; }
           var cur = document.getElementById('tpw' + TP.currentWord);
-          if (cur) { cur.style.color = 'var(--gold,#f59e0b)'; cur.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+          if (cur) { cur.style.color = 'var(--tp-active-color,var(--gold,#f59e0b))'; cur.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
           TP.currentWord++;
           if (TP.currentWord >= totalWords) { clearInterval(TP.scrollTimer); TP.playing = false; var b1 = document.getElementById('tp-play-btn'); if (b1) b1.textContent = '▶ Play'; }
         }, Math.round(60000 / (TP.speed || 80)));
