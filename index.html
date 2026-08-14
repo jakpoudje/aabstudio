@@ -13163,9 +13163,10 @@ function studioNext() {
       var S = window._aabSeg;
       if (S.ready || S.loading) return;
       S.loading = true;
+      var _MPVER = '0.1.1675465747'; // pinned stable build (unversioned 'latest' aborted with Module.arguments on some browsers)
       function _init() {
         try {
-          var seg = new SelfieSegmentation({ locateFile: function(f){ return 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/' + f; } });
+          var seg = new SelfieSegmentation({ locateFile: function(f){ return 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@' + _MPVER + '/' + f; } });
           seg.setOptions({ modelSelection: 1, selfieMode: false });
           seg.onResults(function(res){
             if (!res || !res.segmentationMask) return;
@@ -13180,10 +13181,15 @@ function studioNext() {
         } catch(e){ S.loading = false; }
       }
       if (typeof window.SelfieSegmentation === 'function') { _init(); return; }
+      // Defensive: a foreign global `Module` (from another wasm/emscripten lib on the page) makes
+      // MediaPipe's Emscripten loader abort with "Module.arguments has been replaced". Stash + clear
+      // any pre-existing window.Module so MediaPipe gets a clean runtime, then restore.
+      var _prevModule = window.Module;
+      try { if (window.Module) { delete window.Module; } } catch(e){ try{ window.Module = undefined; }catch(_){} }
       var sc = document.createElement('script');
-      sc.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js';
-      sc.onload = _init;
-      sc.onerror = function(){ S.loading = false; };
+      sc.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@' + _MPVER + '/selfie_segmentation.js';
+      sc.onload = function(){ _init(); if (_prevModule !== undefined) { try { window.Module = _prevModule; } catch(e){} } };
+      sc.onerror = function(){ S.loading = false; if (_prevModule !== undefined) { try { window.Module = _prevModule; } catch(e){} } };
       document.head.appendChild(sc);
     }
     // Feed a frame to the segmenter (throttled ~30fps); safe no-op until ready.
