@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260816-btn-symmetry">
+<meta name="aab-build" content="20260816-mobile-rebuild">
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
    BROWSER can still hold an old copy of a versioned URL. On boot, fetch a fresh copy of the live
@@ -30388,93 +30388,245 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
 }
 </style>
 <script id="aab-rwd-record-nav">
-/* Record bottom navigation. ADDITIVE and BODY-MOUNTED.
-   Body-mounted because a page ancestor carries a transform while it is the active page, and a
-   transformed ancestor makes position:fixed resolve against THAT element instead of the
-   viewport - measured earlier as a nav with height 0. Switching views only sets a data
-   attribute; the panels are shown/hidden by CSS in place. No node is ever moved. */
-(function () {
-  var VIEWS = [
-    { id: 'record', ico: '\u23FA', label: 'Record' },
-    { id: 'scenes', ico: '\uD83C\uDFAC', label: 'Scenes' },
-    { id: 'prompt', ico: '\uD83D\uDCD6', label: 'Prompter' },
-    { id: 'tools',  ico: '\uD83D\uDD27', label: 'Tools' },
-    { id: 'assets', ico: '\uD83D\uDDBC', label: 'Assets' }
-  ];
+/* SUPERSEDED by aab-rwd-record-nav2 (mobile redesign per mockup). Neutralized to avoid conflict. */
+(function(){})();
+</script>
+<style id="aab-rwd-record2">
+/* ═══ AABStudio mobile RECORD STUDIO 2.1 (from Julius's mockup) ═══
+   Layout top→bottom: [horizontal SCENE STRIP] → [CAMERA + Upload/PIP row, FIXED] → [teleprompter]
+   → [inline TAB GRID] → [selected panel] → [REC bar].
+   The scene strip + camera + teleprompter stay put; only the tabbed panels scroll.
+   Every control keeps its existing wired element - nothing is reparented except surfacing the
+   existing Upload/PIP buttons into the camera area. Desktop is untouched (all inside @media). */
+@media (max-width: 767px) {
+  #record-pg .studio-main { flex-direction: column !important; min-width: 0 !important; }
 
-  /* Tag each desktop control group with the mobile view it belongs to, by reading its OWN
-     label. Nothing is moved - the tag only drives CSS visibility. Read from the live DOM:
-     Input, Record, Scene, Teleprompter, SESSION, Background, Lighting, Annotate, View. */
-  var ROUTE = [
-    { re: /record/i,       v: 'record' },
-    { re: /scene/i,        v: 'record' },
-    { re: /session/i,      v: 'record' },
-    { re: /teleprompter/i, v: 'prompt' },
-    { re: /input/i,        v: 'tools'  },
-    { re: /background/i,   v: 'tools'  },
-    { re: /lighting/i,     v: 'tools'  },
-    { re: /annotate/i,     v: 'tools'  },
-    { re: /view/i,         v: 'tools'  }
+  /* MOCKUP ORDER: scene strip(1) -> [cam-zone: teleprompter -> camera -> Upload/PIP](2) -> tabs(5) -> panel(6).
+     The camera + teleprompter live inside one wrapper div (tagged #aab-cam-zone by the JS); we order
+     that whole zone to sit between the strip and the tabs, and stack its contents per the mockup. */
+  #record-pg #aab-cam-zone {
+    order: 2 !important; display: flex !important; flex-direction: column !important;
+    width: 100% !important; min-width: 0 !important; align-items: stretch !important;
+    background: transparent !important; overflow: visible !important;
+  }
+  /* Teleprompter + reading script ABOVE the camera (per the mockup). */
+  #record-pg #studio-tp-panel {
+    position: relative !important; order: 1 !important; width: 100% !important;
+    min-height: 150px !important; max-height: 30vh !important; overflow-y: auto !important;
+    margin: 0 0 8px !important; border-radius: 12px !important;
+  }
+  #record-pg .studio-tp { flex: 1 !important; }
+  /* Camera below the teleprompter, a bit bigger. */
+  #record-pg #studio-cam-row {
+    order: 2 !important; width: 100% !important; height: 40vh !important; flex: 0 0 auto !important;
+  }
+  #record-pg .studio-canvas {
+    width: 100% !important; max-width: 100vw !important; height: 40vh !important;
+    min-height: 0 !important; max-height: 40vh !important; flex: 0 0 auto !important; border-radius: 12px !important;
+  }
+
+  /* Hide the desktop left scene list + right asset panel on mobile — replaced by the scene strip
+     (top) and the Input/Assets handled via tabs / the camera Upload button. */
+  #record-pg .studio-q { display: none !important; }
+  #record-pg .studio-panel { display: none !important; }
+
+  /* ── SCENE STRIP: horizontal, on TOP of everything, tap a scene to select/re-record ── */
+  #aab-scene-strip {
+    order: 1 !important; display: flex !important; gap: 8px !important; overflow-x: auto !important;
+    overflow-y: hidden !important; padding: 8px !important; margin: 0 0 8px !important;
+    background: #0a0e1a !important; border-radius: 12px !important;
+    border: .5px solid rgba(255,255,255,.10) !important; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none !important;
+  }
+  #aab-scene-strip::-webkit-scrollbar { display: none !important; }
+  .aab-scene-chip {
+    flex: 0 0 auto !important; min-width: 84px !important; max-width: 120px !important;
+    display: flex !important; flex-direction: column !important; gap: 3px !important;
+    padding: 8px 10px !important; border-radius: 10px !important; cursor: pointer !important;
+    background: rgba(255,255,255,.04) !important; border: 1.5px solid rgba(255,255,255,.08) !important;
+    font-family: inherit !important; text-align: left !important; color: #e2e8f0 !important;
+    transition: border-color .15s, background .15s !important;
+  }
+  .aab-scene-chip .n { font-size: 11px !important; font-weight: 700 !important; color: #94a3b8 !important; }
+  .aab-scene-chip .t { font-size: 10px !important; line-height: 1.25 !important; color: rgba(255,255,255,.55) !important;
+    overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+  .aab-scene-chip .s { font-size: 9px !important; margin-top: 1px !important; }
+  .aab-scene-chip.active { border-color: #00d4ff !important; background: rgba(0,212,255,.12) !important; }
+  .aab-scene-chip.done .n { color: #10b981 !important; }
+
+  /* ── Upload Asset + PIP row, INSIDE the camera area (order 2.5 → sits right after camera) ── */
+  #aab-cam-actions {
+    order: 3 !important; display: grid !important; grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important; margin: 8px 0 0 !important;
+  }
+  #aab-cam-actions > * {
+    min-height: 46px !important; display: flex !important; align-items: center !important;
+    justify-content: center !important; gap: 6px !important; border-radius: 10px !important;
+    background: rgba(255,255,255,.05) !important; border: .5px solid rgba(255,255,255,.12) !important;
+    color: #e2e8f0 !important; font-size: 13px !important; font-family: inherit !important;
+    cursor: pointer !important;
+  }
+  /* Keep the top zone (strip, teleprompter, camera, cam-actions) from shrinking. */
+  #record-pg #aab-scene-strip,
+  #record-pg #studio-tp-panel,
+  #record-pg #studio-cam-row,
+  #record-pg #aab-cam-actions { flex: 0 0 auto !important; }
+
+  /* ── control panels: one per tab, expand inline ── */
+  #record-pg .panel-group { display: none !important; }
+  #record-pg[data-mtab="input"]      .panel-group[data-mtab="input"],
+  #record-pg[data-mtab="record"]     .panel-group[data-mtab="record"],
+  #record-pg[data-mtab="scene"]      .panel-group[data-mtab="scene"],
+  #record-pg[data-mtab="prompt"]     .panel-group[data-mtab="prompt"],
+  #record-pg[data-mtab="background"] .panel-group[data-mtab="background"],
+  #record-pg[data-mtab="lighting"]   .panel-group[data-mtab="lighting"],
+  #record-pg[data-mtab="annotate"]   .panel-group[data-mtab="annotate"],
+  #record-pg[data-mtab="view"]       .panel-group[data-mtab="view"] { display: block !important; }
+  #record-pg .panel-group { width: 100% !important; max-width: 100vw !important; min-width: 0 !important; margin-bottom: 8px !important; }
+  #record-pg .panel-group-body { display: flex !important; flex-wrap: wrap !important; height: auto !important; gap: 6px !important; justify-content: stretch !important; align-content: flex-start !important; }
+  #record-pg .panel-group-body > * { min-width: 0 !important; }
+  #record-pg .panel-group-body > button, #record-pg .panel-group-body > select, #record-pg .panel-group-body > label { flex: 1 1 auto !important; min-width: 72px !important; }
+  #record-pg .panel-group button, #record-pg .panel-group select { min-height: 44px !important; }
+
+  /* ── inline TAB GRID (after teleprompter, before panels) ── */
+  #aab-rec-tabs {
+    order: 5 !important; display: grid !important; grid-template-columns: repeat(4, 1fr) !important;
+    gap: 6px !important; padding: 8px !important; margin: 4px 0 8px !important;
+    background: #0a0e1a !important; border-radius: 12px !important; border: .5px solid rgba(255,255,255,.10) !important;
+  }
+  #record-pg .studio-ctrl-v2 { order: 6 !important; }
+  .aab-rec-tab {
+    display: flex !important; flex-direction: column !important; align-items: center !important;
+    justify-content: center !important; gap: 3px !important; min-height: 54px !important;
+    background: rgba(255,255,255,.03) !important; border: .5px solid rgba(255,255,255,.08) !important;
+    border-radius: 10px !important; color: #6b7280 !important; cursor: pointer !important;
+    font-family: inherit !important; font-size: 11px !important; padding: 6px 4px !important;
+    transition: color .15s, background .15s, border-color .15s !important;
+  }
+  .aab-rec-tab .ico { font-size: 18px !important; line-height: 1 !important; }
+  .aab-rec-tab .lbl { font-size: 10px !important; line-height: 1.1 !important; text-align: center !important; }
+  .aab-rec-tab.active { color: #00d4ff !important; background: rgba(0,212,255,.12) !important; border-color: rgba(0,212,255,.45) !important; }
+
+  /* top bar condensed */
+  #record-pg .studio-bar { flex-wrap: wrap !important; height: auto !important; max-height: none !important; gap: 6px !important; padding: 6px 8px !important; }
+  #record-pg .studio-bar > * { min-width: 0 !important; }
+  #record-pg .studio-bar button { min-height: 44px !important; }
+
+  #record-pg { padding-top: var(--aab-topnav-h, 64px) !important; }
+  #record-pg .studio-wrap { padding-bottom: 16px !important; overflow-y: auto !important; }
+}
+</style>
+<script id="aab-rwd-record-nav2">
+/* Mobile record studio: build the horizontal scene strip + inline tab grid + surface Upload/PIP
+   into the camera area. Nothing reparented that would break wiring - the strip calls the existing
+   jumpScene(i) (re-record), the tabs toggle data-mtab, Upload/PIP proxy the existing controls. */
+(function () {
+  var TABS = [
+    { id: 'input',      re: /input/i,        ico: '\uD83C\uDF99\uFE0F', label: 'Input' },
+    { id: 'record',     re: /record/i,       ico: '\u23FA',            label: 'Record' },
+    { id: 'scene',      re: /scene/i,        ico: '\uD83C\uDFAC',       label: 'Scene' },
+    { id: 'prompt',     re: /teleprompter/i, ico: '\uD83D\uDCD6',       label: 'Prompter' },
+    { id: 'background', re: /background/i,   ico: '\uD83D\uDDBC\uFE0F', label: 'Background' },
+    { id: 'lighting',   re: /lighting/i,     ico: '\uD83D\uDCA1',       label: 'Lighting' },
+    { id: 'annotate',   re: /annotate/i,     ico: '\u270F\uFE0F',       label: 'Annotate' },
+    { id: 'view',       re: /view/i,         ico: '\uD83D\uDC41\uFE0F', label: 'View' }
   ];
   function tagGroups() {
-    var pg = document.getElementById('record-pg');
-    if (!pg) return 0;
-    var n = 0;
+    var pg = document.getElementById('record-pg'); if (!pg) return;
     [].forEach.call(pg.querySelectorAll('.panel-group'), function (g) {
-      if (g.getAttribute('data-m')) return;
+      if (g.getAttribute('data-mtab')) return;
       var lbl = g.querySelector('.panel-group-label');
       var t = (lbl && lbl.textContent || '').trim();
-      var hit = ROUTE.filter(function (r) { return r.re.test(t); })[0];
-      g.setAttribute('data-m', hit ? hit.v : 'tools');   // unknown -> Tools, never lost
-      n++;
+      var hit = TABS.filter(function (tb) { return tb.re.test(t); })[0];
+      g.setAttribute('data-mtab', hit ? hit.id : 'record'); // SESSION/unknown -> record
     });
-    return n;
   }
-  function build() {
-    if (document.getElementById('aab-rec-nav')) return true;
-    if (!document.getElementById('record-pg')) return false;
-    var nav = document.createElement('nav');
-    nav.id = 'aab-rec-nav';
-    nav.style.cssText = 'display:none;position:fixed;left:0;right:0;bottom:0;z-index:901;height:80px;'
-      + 'align-items:stretch;background:#0a0e1a;border-top:.5px solid rgba(255,255,255,.12);'
-      + 'padding-bottom:env(safe-area-inset-bottom,0px);';
-    VIEWS.forEach(function (v, i) {
-      var b = document.createElement('button');
-      b.type = 'button';
-      b.dataset.view = v.id;
-      b.innerHTML = '<span style="font-size:20px;line-height:1">' + v.ico + '</span><span>' + v.label + '</span>';
-      b.style.cssText = 'flex:1;min-height:48px;display:flex;flex-direction:column;align-items:center;'
-        + 'justify-content:center;gap:3px;background:transparent;border:0;cursor:pointer;'
-        + 'font-size:12px;font-family:inherit;transition:color 150ms;color:' + (i === 0 ? '#00d4ff' : '#6b7280') + ';';
+  function buildTabs() {
+    var pg = document.getElementById('record-pg'); if (!pg) return;
+    var main = pg.querySelector('.studio-main'); if (!main) return;
+    if (document.getElementById('aab-rec-tabs')) return;
+    var ctrl = main.querySelector('.studio-ctrl-v2'); if (!ctrl) return;
+    tagGroups();
+    var grid = document.createElement('div'); grid.id = 'aab-rec-tabs';
+    TABS.forEach(function (tb, i) {
+      var b = document.createElement('button'); b.type = 'button'; b.dataset.mtab = tb.id;
+      b.className = 'aab-rec-tab' + (i === 1 ? ' active' : '');
+      b.innerHTML = '<span class="ico">' + tb.ico + '</span><span class="lbl">' + tb.label + '</span>';
       b.onclick = function () {
-        var pg = document.getElementById('record-pg');
-        if (pg) pg.setAttribute('data-mview', v.id);
-        [].forEach.call(nav.children, function (c) { c.style.color = '#6b7280'; });
-        b.style.color = '#00d4ff';
+        pg.setAttribute('data-mtab', tb.id);
+        [].forEach.call(grid.children, function (c) { c.classList.remove('active'); });
+        b.classList.add('active');
       };
-      nav.appendChild(b);
+      grid.appendChild(b);
     });
-    document.body.appendChild(nav);          // body-mounted: transform-proof
-    var pg = document.getElementById('record-pg');
-    if (pg && !pg.getAttribute('data-mview')) pg.setAttribute('data-mview', 'record');
-    var tagged = tagGroups();
-    if (tagged) console.log('[rwd] routed ' + tagged + ' control group(s) to mobile views');
-    return true;
+    main.insertBefore(grid, ctrl);
+    if (!pg.getAttribute('data-mtab')) pg.setAttribute('data-mtab', 'record');
+    var oldNav = document.getElementById('aab-rec-nav'); if (oldNav) oldNav.remove();
   }
-  function sync() {
-    var nav = document.getElementById('aab-rec-nav');
-    var pg = document.getElementById('record-pg');
-    if (!nav || !pg) return;
-    var show = pg.classList.contains('on') && window.innerWidth <= 767;
-    nav.style.display = show ? 'flex' : 'none';
+  function buildStrip() {
+    var pg = document.getElementById('record-pg'); if (!pg) return;
+    var main = pg.querySelector('.studio-main'); if (!main) return;
+    var strip = document.getElementById('aab-scene-strip');
+    if (!strip) {
+      strip = document.createElement('div'); strip.id = 'aab-scene-strip';
+      main.insertBefore(strip, main.firstChild);
+    }
+    // Rebuild chips from PROJECT.scenes (same source + wiring as the desktop queue)
+    var scenes = (window.PROJECT && PROJECT.scenes) || [];
+    var cur = (window.STUDIO_SCENE ? STUDIO_SCENE - 1 : (window.STUDIO && STUDIO.currentScene) || 0);
+    var sig = scenes.length + ':' + cur + ':' + Object.keys((window.PROJECT && PROJECT.clips) || {}).length;
+    if (strip.getAttribute('data-sig') === sig) return; // no change
+    strip.setAttribute('data-sig', sig);
+    strip.innerHTML = '';
+    scenes.forEach(function (s, i) {
+      var recorded = !!(window.PROJECT && PROJECT.clips && PROJECT.clips[s.id]);
+      var chip = document.createElement('button'); chip.type = 'button';
+      chip.className = 'aab-scene-chip' + (i === cur ? ' active' : '') + (recorded ? ' done' : '');
+      chip.innerHTML = '<span class="n">SCENE ' + (i + 1) + '</span>'
+        + '<span class="t">' + ((s.narration || s.title || '').slice(0, 24) || 'Scene ' + (i + 1)) + '</span>'
+        + '<span class="s">' + (recorded ? '\u2705 recorded' : '\u25CB not yet') + '</span>';
+      chip.onclick = function () { if (typeof jumpScene === 'function') jumpScene(i); setTimeout(buildStrip, 60); };
+      strip.appendChild(chip);
+    });
+    var act = strip.querySelector('.active'); if (act) act.scrollIntoView({ inline: 'center', block: 'nearest' });
   }
-  if (!build()) { var n = 0, iv = setInterval(function () { if (build() || ++n > 60) clearInterval(iv); }, 250); }
-  document.addEventListener('click', function () { setTimeout(function () { tagGroups(); sync(); }, 60); }, true);
-  window.addEventListener('resize', sync);
-  setInterval(function () { tagGroups(); sync(); }, 800);
-  sync();
+  function tagCamZone() {
+    var camRow = document.getElementById('studio-cam-row'); if (!camRow) return;
+    var zone = camRow.parentElement; // the unnamed wrapper holding cam-row + tp-panel
+    if (zone && !zone.id) zone.id = 'aab-cam-zone';
+  }
+  function buildCamActions() {
+    var pg = document.getElementById('record-pg'); if (!pg) return;
+    var main = pg.querySelector('.studio-main'); if (!main) return;
+    tagCamZone();
+    if (document.getElementById('aab-cam-actions')) return;
+    var camRow = document.getElementById('studio-cam-row'); if (!camRow) return;
+    var row = document.createElement('div'); row.id = 'aab-cam-actions';
+    // Upload proxies the existing hidden asset input; PIP proxies the existing PiP position button.
+    var up = document.createElement('button'); up.type = 'button';
+    up.innerHTML = '\u2B06\uFE0F Upload Asset';
+    up.onclick = function () {
+      var inp = pg.querySelector('input[type="file"][onchange*="uploadStudioAssets"]')
+        || pg.querySelector('input[type="file"]');
+      if (inp) inp.click();
+    };
+    var pip = document.createElement('button'); pip.type = 'button';
+    pip.innerHTML = '\uD83D\uDDBC\uFE0F PIP Overlay';
+    pip.onclick = function () {
+      var b = pg.querySelector('.pos-btn[data-pos="pip-right"]') || pg.querySelector('.pos-btn');
+      if (b) b.click();
+    };
+    row.appendChild(up); row.appendChild(pip);
+    // place right after the camera row
+    if (camRow.parentNode) camRow.parentNode.insertBefore(row, camRow.nextSibling);
+  }
+  function buildAll() { buildTabs(); buildStrip(); buildCamActions(); }
+  buildAll();
+  var tries = 0; var iv = setInterval(function () { buildAll(); if (++tries > 80) clearInterval(iv); }, 300);
+  document.addEventListener('click', function () { setTimeout(buildStrip, 120); }, true);
 })();
 </script>
+
 <style id="aab-rwd-rest">
 /* ── AABStudio 2.0 responsive — AI PRESENTER / EDIT SUITE / EXPORT ───────────
    All selectors below were read from the live DOM, not guessed. Panels are shown and hidden
