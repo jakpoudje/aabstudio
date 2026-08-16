@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260816-desktop-hide">
+<meta name="aab-build" content="20260816-desktop-revert-tplegible">
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
    BROWSER can still hold an old copy of a versioned URL. On boot, fetch a fresh copy of the live
@@ -22484,18 +22484,20 @@ window._E2_saveProjectToSupabase = function(project) {
    MOBILE LAYOUT: camera priority
    ══════════════════════════════════════ */
 window._E2_setupMobileLayout = function(){
-  if(window.innerWidth>768)return;
-  // Recording Studio: camera fills top, tools in bottom drawer
   var canvas=document.getElementById('studio-canvas');
-  var tp=document.getElementById('studio-tp-panel')||document.querySelector('.studio-tp-panel');
-  var scenes=document.querySelector('.studio-scenes-col,.studio-scenes');
-  var assetCol=document.querySelector('.studio-asset-col');
-
-  if(canvas){
-    canvas.style.cssText+='width:100vw!important;height:56vw!important;min-height:200px!important;';
+  // DESKTOP: clear any leftover mobile inline sizing so a narrow->wide resize never sticks a
+  // distorted camera on desktop (this was breaking the desktop record studio after resizing).
+  if(window.innerWidth>768){
+    if(canvas){
+      canvas.style.removeProperty('width');
+      canvas.style.removeProperty('height');
+      canvas.style.removeProperty('min-height');
+    }
+    return;
   }
-
-  // Add mobile drawer toggle button for asset panel
+  // MOBILE: the new aab-rwd-record2 module + its CSS now own the mobile camera sizing, so we no
+  // longer set an inline 56vw here (it conflicted). Keep only the asset-drawer button.
+  var assetCol=document.querySelector('.studio-asset-col');
   if(assetCol&&!assetCol._drawerWired){
     assetCol._drawerWired=true;
     var toggleBtn=document.createElement('button');
@@ -30493,7 +30495,28 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
   #record-pg .panel-group-body > button, #record-pg .panel-group-body > select, #record-pg .panel-group-body > label { flex: 1 1 auto !important; min-width: 72px !important; }
   #record-pg .panel-group button, #record-pg .panel-group select { min-height: 44px !important; }
 
-  /* ── inline TAB GRID (after teleprompter, before panels) ── */
+  /* Teleprompter controls were rendered at low opacity (0.5-0.8) = looked greyed-out/disabled on
+     mobile. Force full-contrast, clearly-visible controls in the Prompter tab so mode + settings
+     read as active and tappable. Specific selectors to beat the .s-btn-gold/.s-btn class colours. */
+  #record-pg .panel-group[data-mtab="prompt"] button,
+  #record-pg .panel-group[data-mtab="prompt"] button.s-btn,
+  #record-pg .panel-group[data-mtab="prompt"] button.s-btn-gold,
+  #record-pg .panel-group[data-mtab="prompt"] select,
+  #record-pg .panel-group[data-mtab="prompt"] label,
+  #record-pg .panel-group[data-mtab="prompt"] .tp-mode-btn {
+    color: #ffffff !important; opacity: 1 !important;
+    background: rgba(255,255,255,.10) !important;
+    border: 1px solid rgba(255,255,255,.24) !important;
+  }
+  /* Practice / Adapt keep a bright amber (they are the primary actions) - full opacity, not dim. */
+  #record-pg .panel-group[data-mtab="prompt"] button.s-btn-gold {
+    color: #fcd34d !important; background: rgba(252,211,77,.14) !important; border-color: rgba(252,211,77,.4) !important;
+  }
+  #record-pg .panel-group[data-mtab="prompt"] .panel-group-label { color: #cbd5e1 !important; opacity: 1 !important; }
+  #record-pg .panel-group[data-mtab="prompt"] button.active,
+  #record-pg .panel-group[data-mtab="prompt"] .tp-mode-btn.active {
+    color: #00d4ff !important; background: rgba(0,212,255,.16) !important; border-color: rgba(0,212,255,.5) !important;
+  }
   #aab-rec-tabs {
     order: 5 !important; display: grid !important; grid-template-columns: repeat(4, 1fr) !important;
     gap: 6px !important; padding: 8px !important; margin: 4px 0 8px !important;
