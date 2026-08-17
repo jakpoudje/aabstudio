@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260816-tp-nooverlap">
+<meta name="aab-build" content="20260816-practice-onestate">
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
    BROWSER can still hold an old copy of a versioned URL. On boot, fetch a fresh copy of the live
@@ -12981,7 +12981,12 @@ function studioNext() {
 
     // ══ TELEPROMPTER IN STUDIO ════════════════════════════════════════════════════
     var _tpAutoTimer = null;
-    var STUDIO_TP = { running: false };
+    // ONE authoritative teleprompter state. Previously this was a local `var STUDIO_TP={running:false}`
+    // that shadowed window.STUDIO_TP inside this IIFE, so the scroll engine (same scope) read the LOCAL
+    // object while _studioPracticeToggle (a top-level window fn) wrote window.STUDIO_TP - run-state never
+    // matched and Practice never scrolled. Bind them to the SAME object.
+    window.STUDIO_TP = window.STUDIO_TP || { running: false };
+    var STUDIO_TP = window.STUDIO_TP;
     function studioTpToggle() { STUDIO_TP.running ? studioTpStop() : studioTpStart(); }
     function studioTpStart() {
       STUDIO_TP.running = true;
