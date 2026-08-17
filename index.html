@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260816-afontscroll">
+<meta name="aab-build" content="20260817-siglogo-dragtouch">
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
    BROWSER can still hold an old copy of a versioned URL. On boot, fetch a fresh copy of the live
@@ -9385,6 +9385,14 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
               <input type="file" style="display:none;" multiple accept="image/*,.pdf"
                 onchange="uploadStudioAssets(this)">
             </label>
+            <label class="sp-upload-btn" style="margin-top:6px;">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                <path d="M1 9c1.5-4 3-4 4.5 0S9 13 11 3" stroke="rgba(255,255,255,.45)" stroke-width="1.2" stroke-linecap="round" fill="none"/>
+              </svg>
+              Signature / Logo
+              <input type="file" style="display:none;" accept="image/*"
+                onchange="uploadSignatureLogo(this)">
+            </label>
           </div>
           <div class="sp-assets" id="sp-assets">
             <div style="font-size:11px;color:rgba(255,255,255,.2);text-align:center;padding:14px;">No assets yet</div>
@@ -15307,6 +15315,39 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
     }
 
     // ── uploadStudioAssets — studio right panel upload ────────────────────────────
+    // ── Signature / Logo upload — adds a small draggable branding overlay ─────────
+    // Works on mobile AND desktop (drag handled by makeDraggableOverlay, touch+mouse).
+    function uploadSignatureLogo(inp) {
+      if (!inp || !inp.files || !inp.files.length) return;
+      var file = inp.files[0];
+      if (!file.type.startsWith('image/')) { toast('Please choose an image (PNG/JPG/SVG)', 'error'); return; }
+      var rd = new FileReader();
+      rd.onload = function (e) {
+        var asset = {
+          id: 'logo_' + Date.now() + '_' + Math.floor(Math.random() * 99999),
+          name: file.name,
+          dataUrl: e.target.result,
+          type: 'image',
+          isLogo: true,
+          position: 'bot-right',
+          sizePercent: 22,
+          animation: 'fade'
+        };
+        if (!PROJECT.assets) PROJECT.assets = [];
+        PROJECT.assets.push(asset);
+        if (typeof saveProject === 'function') saveProject();
+        if (typeof renderStudioAssets === 'function') renderStudioAssets();
+        // Show immediately as a draggable overlay (smaller default size for a logo/signature)
+        STUDIO._lastAssetSize = 22;
+        if (typeof showAssetNow === 'function') showAssetNow(asset.id);
+        toast('Signature / logo added — drag it anywhere', 'ok');
+      };
+      rd.readAsDataURL(file);
+      // reset so the same file can be re-picked
+      try { inp.value = ''; } catch (_e) {}
+    }
+    window.uploadSignatureLogo = uploadSignatureLogo;
+
     function uploadStudioAssets(inp) {
       if (!inp.files.length) return;
       var total = inp.files.length, count = 0;
@@ -15460,27 +15501,36 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
 
     function makeDraggableOverlay(el) {
       var isDragging = false, startX = 0, startY = 0, origLeft = 0, origTop = 0;
-      el.addEventListener('mousedown', function (e) {
-        if (e.target.tagName === 'IMG' || e.target.tagName === 'VIDEO') {
-          isDragging = true;
-          startX = e.clientX; startY = e.clientY;
-          var rect = el.getBoundingClientRect();
-          var area = document.getElementById('studio-overlay-area');
-          var areaRect = area ? area.getBoundingClientRect() : { left: 0, top: 0 };
-          origLeft = rect.left - areaRect.left;
-          origTop = rect.top - areaRect.top;
-          el.style.left = origLeft + 'px'; el.style.right = 'auto';
-          el.style.top = origTop + 'px'; el.style.bottom = 'auto';
-          el.style.transform = '';
-          e.preventDefault();
-        }
-      });
-      document.addEventListener('mousemove', function (e) {
+      function pointX(e){ return (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX; }
+      function pointY(e){ return (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY; }
+      function down(e){
+        // Grab from the media OR the overlay box itself (but not the resize handle)
+        if (e.target && e.target.classList && e.target.classList.contains('ov-rsz')) return;
+        isDragging = true;
+        startX = pointX(e); startY = pointY(e);
+        var rect = el.getBoundingClientRect();
+        var area = document.getElementById('studio-overlay-area');
+        var areaRect = area ? area.getBoundingClientRect() : { left: 0, top: 0 };
+        origLeft = rect.left - areaRect.left;
+        origTop = rect.top - areaRect.top;
+        el.style.left = origLeft + 'px'; el.style.right = 'auto';
+        el.style.top = origTop + 'px'; el.style.bottom = 'auto';
+        el.style.transform = '';
+        if (e.cancelable) e.preventDefault();
+      }
+      function move(e){
         if (!isDragging) return;
-        el.style.left = (origLeft + (e.clientX - startX)) + 'px';
-        el.style.top = (origTop + (e.clientY - startY)) + 'px';
-      });
-      document.addEventListener('mouseup', function () { isDragging = false; });
+        el.style.left = (origLeft + (pointX(e) - startX)) + 'px';
+        el.style.top = (origTop + (pointY(e) - startY)) + 'px';
+        if (e.cancelable) e.preventDefault();
+      }
+      function up(){ isDragging = false; }
+      el.addEventListener('mousedown', down);
+      el.addEventListener('touchstart', down, { passive: false });
+      document.addEventListener('mousemove', move);
+      document.addEventListener('touchmove', move, { passive: false });
+      document.addEventListener('mouseup', up);
+      document.addEventListener('touchend', up);
     }
 
     // ── renderStudioAssets — DOM-based to avoid quote issues ──────────────────────
