@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-aps-bg-fastmodel">
+<meta name="aab-build" content="20260817-aps-logo">
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
    BROWSER can still hold an old copy of a versioned URL. On boot, fetch a fresh copy of the live
@@ -15348,6 +15348,48 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
     }
     window.uploadSignatureLogo = uploadSignatureLogo;
 
+    // ── AI Presenter: logo / watermark overlay ────────────────────────────────
+    window.aps_loadLogo = function(inp){
+      var f = inp && inp.files && inp.files[0];
+      if(!f || !f.type.startsWith('image/')){ if(typeof toast==='function') toast('Please choose an image (PNG best)', 'error'); return; }
+      var r = new FileReader();
+      r.onload = function(e){
+        var url = e.target.result;
+        if(!window.APS) window.APS = { settings:{} };
+        APS.logoB64 = url.split(',')[1];
+        APS.logoDataUrl = url;
+        APS.logoPos = APS.logoPos || 'top-right';
+        if(window.PROJECT){ window.PROJECT.apsLogo = { dataUrl:url, pos: APS.logoPos }; if(typeof saveProject==='function') saveProject(); }
+        var wrap = document.getElementById('aps-logo-preview-wrap');
+        var img  = document.getElementById('aps-logo-preview');
+        var nm   = document.getElementById('aps-logo-name');
+        if(img) img.src = url;
+        if(nm) nm.textContent = f.name;
+        if(wrap) wrap.style.display = 'flex';
+        var lt = document.getElementById('aps-logo-label-text');
+        if(lt) lt.textContent = 'Change logo / watermark';
+        if(typeof toast==='function') toast('Logo added — shown on every scene', 'ok');
+      };
+      r.readAsDataURL(f);
+      try { inp.value = ''; } catch(_e){}
+    };
+    window.aps_removeLogo = function(){
+      if(window.APS){ APS.logoB64 = null; APS.logoDataUrl = null; }
+      if(window.PROJECT){ window.PROJECT.apsLogo = null; if(typeof saveProject==='function') saveProject(); }
+      var wrap = document.getElementById('aps-logo-preview-wrap');
+      if(wrap) wrap.style.display = 'none';
+      var lt = document.getElementById('aps-logo-label-text');
+      if(lt) lt.textContent = 'Upload logo / watermark (PNG)';
+      if(typeof toast==='function') toast('Logo removed', 'info');
+    };
+    window.aps_setLogoPos = function(btn){
+      var pos = btn.getAttribute('data-logopos') || 'top-right';
+      if(!window.APS) window.APS = { settings:{} };
+      APS.logoPos = pos;
+      if(window.PROJECT && window.PROJECT.apsLogo){ window.PROJECT.apsLogo.pos = pos; if(typeof saveProject==='function') saveProject(); }
+      document.querySelectorAll('#aps-logo-pos-grid .aps-bg-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
+    };
+
     function uploadStudioAssets(inp) {
       if (!inp.files.length) return;
       var total = inp.files.length, count = 0;
@@ -17383,6 +17425,8 @@ window.closeAIPresenterStudio=function(){
               referenceImageBase64: APS.photoB64 || null,
               referenceImageMimeType: APS.photoMimeType || 'image/jpeg',
               customBgBase64: APS.customBgB64 || null,
+              logoBase64: APS.logoB64 || null,
+              logoPos: APS.logoPos || 'top-right',
               provider: APS.settings.provider || 'did',
               studioType: APS.settings.bg || 'news-studio',
               framingStyle: APS.settings.framing || 'medium',
@@ -18406,6 +18450,35 @@ window.aps_clearPhoto = aps_clearPhoto;
           </label>
         </div>
 
+        <!-- 3b. Logo / Watermark -->
+        <div class="aps-section">
+          <div class="aps-section-hdr">🏷 Logo / Watermark</div>
+          <label id="aps-logo-upload-label"
+            style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border:1.5px dashed rgba(255,255,255,.15);border-radius:8px;cursor:pointer;font-size:12px;color:#9ca3af;transition:all .2s;background:rgba(255,255,255,.02);margin-bottom:8px;"
+            onmouseover="this.style.borderColor='#00d4ff';this.style.color='#00d4ff';"
+            onmouseout="this.style.borderColor='rgba(255,255,255,.15)';this.style.color='#9ca3af';">
+            <span>🏷</span>
+            <span id="aps-logo-label-text">Upload logo / watermark (PNG)</span>
+            <input id="aps-logo-input" type="file" accept="image/*" style="opacity:0;position:absolute;width:1px;height:1px;pointer-events:none;"
+              onchange="aps_loadLogo(this)">
+          </label>
+          <div id="aps-logo-preview-wrap" style="display:none;align-items:center;gap:10px;margin-bottom:8px;">
+            <img id="aps-logo-preview" style="width:44px;height:44px;object-fit:contain;border-radius:6px;border:.5px solid rgba(255,255,255,.15);background:rgba(0,0,0,.3);flex-shrink:0;">
+            <div style="flex:1;min-width:0;">
+              <div id="aps-logo-name" style="font-size:10px;color:rgba(255,255,255,.6);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">logo.png</div>
+              <button onclick="aps_removeLogo()" style="font-size:9px;color:rgba(239,68,68,.8);background:none;border:none;cursor:pointer;padding:0;margin-top:2px;">✕ Remove logo</button>
+            </div>
+          </div>
+          <div class="aps-label">Logo position</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;" id="aps-logo-pos-grid">
+            <button class="aps-bg-btn" data-logopos="top-left" onclick="aps_setLogoPos(this)">◤ Top left</button>
+            <button class="aps-bg-btn active" data-logopos="top-right" onclick="aps_setLogoPos(this)">◥ Top right</button>
+            <button class="aps-bg-btn" data-logopos="bot-left" onclick="aps_setLogoPos(this)">◣ Bottom left</button>
+            <button class="aps-bg-btn" data-logopos="bot-right" onclick="aps_setLogoPos(this)">◢ Bottom right</button>
+          </div>
+          <div style="font-size:9px;color:rgba(255,255,255,.3);margin-top:6px;">Overlaid on every generated scene</div>
+        </div>
+
         <!-- 4. Camera -->
         <div class="aps-section">
           <div class="aps-section-hdr">🎥 Camera & Motion</div>
@@ -19224,6 +19297,8 @@ window.aps_generateScene = async function(idx) {
         audioBase64:          vd.audio,
         referenceImageBase64: APS.photoB64    || null,
         customBgBase64:       APS.customBgB64 || null,
+        logoBase64:           APS.logoB64     || null,
+        logoPos:              APS.logoPos     || 'top-right',
         studioType:           APS.settings.bg,
         ratio:                APS.settings.ratio,
         sceneText:            sc.narration,

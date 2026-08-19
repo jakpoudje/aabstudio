@@ -1306,7 +1306,7 @@ async function getStudioBackgroundB64(studioType, customBgBase64, ratio) {
   return buf.toString('base64');
 }
 
-async function buildSceneImage(presenterB64, bgB64, framingStyle, ratio) {
+async function buildSceneImage(presenterB64, bgB64, framingStyle, ratio, logoB64, logoPos) {
   const DIMS = { '16:9': {w:1280,h:720}, '9:16': {w:720,h:1280}, '1:1': {w:1024,h:1024} };
   const {w: W, h: H} = DIMS[ratio] || DIMS['16:9'];
   let bgResized;
@@ -1315,7 +1315,24 @@ async function buildSceneImage(presenterB64, bgB64, framingStyle, ratio) {
   } else {
     bgResized = await sharp({ create: {width:W, height:H, channels:3, background:{r:10,g:20,b:50}} }).jpeg().toBuffer();
   }
-  if (!presenterB64) return bgResized.toString('base64');
+  // Helper: composite a logo/watermark into a chosen corner (used whether or not a presenter is present)
+  async function applyLogo(baseBuf) {
+    if (!logoB64) return baseBuf;
+    try {
+      const logoW = Math.round(W * 0.14);
+      const logoBuf = await sharp(Buffer.from(logoB64, 'base64')).resize(logoW, null, {fit:'inside'}).png().toBuffer();
+      const lm = await sharp(logoBuf).metadata();
+      const lw = lm.width || logoW, lh = lm.height || logoW;
+      const margin = Math.round(W * 0.03);
+      const pos = logoPos || 'top-right';
+      let lx = margin, ly = margin;
+      if (pos === 'top-right')  { lx = W - lw - margin; ly = margin; }
+      if (pos === 'bot-left')   { lx = margin;          ly = H - lh - margin; }
+      if (pos === 'bot-right')  { lx = W - lw - margin; ly = H - lh - margin; }
+      return await sharp(baseBuf).composite([{ input: logoBuf, top: ly, left: lx, blend: 'over' }]).jpeg({quality:93}).toBuffer();
+    } catch(logoErr) { console.warn('Logo composite failed:', logoErr.message); return baseBuf; }
+  }
+  if (!presenterB64) { const withLogo = await applyLogo(bgResized); return withLogo.toString('base64'); }
   const FRAMING = {
     'medium':    { hPct: 0.85, xPct: 0.50, topPct: 0.15 },
     'close':     { hPct: 0.95, xPct: 0.50, topPct: 0.05 },
@@ -1340,10 +1357,11 @@ async function buildSceneImage(presenterB64, bgB64, framingStyle, ratio) {
     </radialGradient></defs>
     <ellipse cx="${left + presW/2}" cy="${H}" rx="${presW * 0.45}" ry="${H * 0.05}" fill="url(#sh)"/>
   </svg>`;
-  const out = await sharp(bgResized).composite([
+  let out = await sharp(bgResized).composite([
     { input: Buffer.from(shadow), blend: 'multiply' },
     { input: presResized, top, left, blend: 'over' }
   ]).jpeg({quality:93}).toBuffer();
+  out = await applyLogo(out);
   console.log('Composited:', out.length, 'bytes');
   return out.toString('base64');
 }
@@ -1354,7 +1372,7 @@ async function buildSceneImage(presenterB64, bgB64, framingStyle, ratio) {
 app.post('/api/presenter', async (req, res) => {
   try {
     const {
-      audioBase64, referenceImageBase64, customBgBase64,
+      audioBase64, referenceImageBase64, customBgBase64, logoBase64, logoPos,
       studioType, bgType,
       ratio         = '16:9',
       framingStyle, framing,
@@ -1378,7 +1396,7 @@ app.post('/api/presenter', async (req, res) => {
     const bgB64 = await getStudioBackgroundB64(bgTypeResolved, customBgBase64, ratio);
     let compositeImageB64 = null;
     try {
-      compositeImageB64 = await buildSceneImage(referenceImageBase64 || null, bgB64, framingResolved, ratio);
+      compositeImageB64 = await buildSceneImage(referenceImageBase64 || null, bgB64, framingResolved, ratio, logoBase64 || null, logoPos || "top-right");
       console.log('Composite:', Math.round(compositeImageB64.length / 1024) + 'KB');
     } catch(e) {
       console.warn('Composite failed:', e.message);
