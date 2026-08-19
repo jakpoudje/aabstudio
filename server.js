@@ -1434,6 +1434,7 @@ app.post('/api/presenter', async (req, res) => {
       stability, clarity,
       studioType: bgTypeResolved,
       talkingPhotoId,   // Pass through pre-created ID
+      plainBgB64: bgB64,   // plain studio background (no user face) — for stock-avatar fallback
       sceneText, sceneNum, sceneTotal, duration
     };
 
@@ -1580,6 +1581,7 @@ async function generateWithHeyGen(req, res, args) {
     referenceImageBase64, compositeImageB64, audioBase64,
     ratio, sceneText, gender, framing, studioType,
     talkingPhotoId: preCreatedPhotoId,
+    plainBgB64,
     voiceId, voiceName,
     stability, clarity,
     sceneNum, sceneTotal, allScenes
@@ -1713,13 +1715,29 @@ async function generateWithHeyGen(req, res, args) {
         : (process.env.HEYGEN_AVATAR_ID || femaleAvatars[0]);
       console.log('HeyGen: stock avatar fallback | gender:', gender, '| avatar:', avatarId);
 
+      // AVATAR-OVER-IMAGE FIX: the stock avatar is NOT the user's face, so the background must NOT
+      // be the composite image (which has the user's uploaded face baked in) — otherwise the stock
+      // avatar renders in front of the user's photo (two people). Use the PLAIN studio background.
+      let stockBgUrl = null;
+      try {
+        if (plainBgB64) {
+          const pbBuf = Buffer.from(plainBgB64, 'base64');
+          const pbId  = storeTempFile(pbBuf, 'image/jpeg', 600);
+          const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+            ? 'https://' + process.env.RAILWAY_PUBLIC_DOMAIN
+            : 'https://aabstudio-production.up.railway.app';
+          stockBgUrl = baseUrl + '/api/temp/' + pbId + '/bg.jpg';
+          console.log('HeyGen: stock-avatar plain background hosted (no user face)');
+        }
+      } catch(pbErr) { console.warn('HeyGen: plain bg hosting failed:', pbErr.message); }
+
       payload = {
         test: false,
         video_inputs: [{
           character:  { type: 'avatar', avatar_id: avatarId, avatar_style: 'normal' },
           voice:      { type: 'audio', audio_asset_id: audioAssetId },
-          background: backgroundUrl
-            ? { type: 'image', url: backgroundUrl }
+          background: stockBgUrl
+            ? { type: 'image', url: stockBgUrl }
             : { type: 'color', value: '#0f172a' }
         }],
         aspect_ratio: ratio || '16:9'
