@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-mobile-tp2line-v3">
+<meta name="aab-build" content="20260817-mobile-tp2line-v4">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -31067,7 +31067,30 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     // place right after the camera row
     if (camRow.parentNode) camRow.parentNode.insertBefore(row, camRow.nextSibling);
   }
-  function buildAll() { buildTabs(); buildStrip(); buildCamActions(); }
+  function buildAll() { buildTabs(); buildStrip(); buildCamActions(); enforceTp2Line(); }
+  // MOBILE 2-LINE TELEPROMPTER: the font-resize code writes an inline font-size:NNpx !important on the
+  // reading node (#tp-cur), which no external CSS can beat. On mobile only, force that inline size down
+  // so ~2 lines fit and the camera stays visible. Re-applied whenever the node is rewritten.
+  function enforceTp2Line() {
+    if (window.innerWidth > 767) return;
+    var body = document.getElementById('tp-body'); if (!body) return;
+    ['#tp-cur', '.tp-cur-txt', '#tp-cur-inner', '.tp-text', '#studio-tp-words'].forEach(function (sel) {
+      [].forEach.call(body.querySelectorAll(sel), function (el) {
+        if (el.style.getPropertyValue('font-size') !== '19px') {
+          el.style.setProperty('font-size', '19px', 'important');
+          el.style.setProperty('line-height', '1.5', 'important');
+        }
+      });
+    });
+    if (!body._tp2lineObs) {
+      body._tp2lineObs = new MutationObserver(function () {
+        if (window.innerWidth > 767) return;
+        clearTimeout(body._tp2lineT);
+        body._tp2lineT = setTimeout(enforceTp2Line, 30);
+      });
+      body._tp2lineObs.observe(body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+    }
+  }
   buildAll();
   var tries = 0; var iv = setInterval(function () { buildAll(); if (++tries > 80) clearInterval(iv); }, 300);
   document.addEventListener('click', function () { setTimeout(buildStrip, 120); }, true);
