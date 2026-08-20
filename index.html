@@ -3,7 +3,8 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-did-default">
+<meta name="aab-build" content="20260817-remote-socketio">
+<script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
    BROWSER can still hold an old copy of a versioned URL. On boot, fetch a fresh copy of the live
@@ -19174,51 +19175,214 @@ setInterval(function() {
   } catch(e){}
 }, 250);
 
+// Host-side: execute a remote command against the REAL teleprompter controls. Works on ANY page that
+// has the teleprompter (standalone teleprompter-pg, the homepage teleprompter, or the record studio).
+window._aabExecRemote = function(cmd, val) {
+  try {
+    switch (cmd) {
+      case 'play':
+        if (window.TP && window.TP.playing) break;               // already playing
+        if (typeof window.tpToggle === 'function') window.tpToggle();
+        else if (typeof window.tpStart === 'function') window.tpStart();
+        break;
+      case 'pause':
+        if (window.TP && !window.TP.playing) break;              // already paused
+        if (typeof window.tpToggle === 'function') window.tpToggle();
+        break;
+      case 'toggle':
+        if (typeof window.tpToggle === 'function') window.tpToggle();
+        break;
+      case 'restart': {
+        var body = document.getElementById('tp-body') || document.getElementById('tp-cur');
+        if (body) body.scrollTop = 0;
+        if (window.TP) window.TP.currentWord = 0;
+        if (typeof window.startTpAutoTimer === 'function' && window.TP && window.TP.playing) window.startTpAutoTimer();
+        break;
+      }
+      case 'faster': {
+        var nv = Math.min(300, ((window.TP && window.TP.speed) || 80) + 15);
+        if (typeof window.setTpSpd === 'function') window.setTpSpd(nv);
+        _syncSpeedInputs(nv);
+        break;
+      }
+      case 'slower': {
+        var nv2 = Math.max(10, ((window.TP && window.TP.speed) || 80) - 15);
+        if (typeof window.setTpSpd === 'function') window.setTpSpd(nv2);
+        _syncSpeedInputs(nv2);
+        break;
+      }
+      case 'speed': {
+        var sv = parseInt(val) || 80;
+        if (typeof window.setTpSpd === 'function') window.setTpSpd(sv);
+        _syncSpeedInputs(sv);
+        break;
+      }
+      case 'next':
+        if (typeof window.tpNextScene === 'function') window.tpNextScene();
+        else if (typeof window.studioNext === 'function') window.studioNext();
+        break;
+      case 'prev':
+        if (typeof window.tpPrevScene === 'function') window.tpPrevScene();
+        break;
+      case 'rec':
+        if (typeof window.startSyncRecord === 'function') window.startSyncRecord();
+        else if (typeof window.tpToggle === 'function') window.tpToggle();
+        break;
+    }
+    // Reflect state back to the phone (best-effort)
+    if (window._aabHostSocket && window._aabHostRoom) {
+      window._aabHostSocket.emit('tp_state', { room: window._aabHostRoom, playing: !!(window.TP && window.TP.playing), speed: (window.TP && window.TP.speed) || 80 });
+    }
+  } catch (e) { /* ignore */ }
+  function _syncSpeedInputs(v){
+    ['tp-spd','tp-spd-range','tp-speed-slider'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=v; });
+    var disp=document.getElementById('tp-spd-disp'); if(disp) disp.textContent=v;
+  }
+};
+
+// Legacy same-device path kept as a fallback (used only if Socket.IO isn't available).
 window.remoteSend = function(cmd, val) {
-  var sid = new URLSearchParams(window.location.search).get('remote') || window._aabSid || localStorage.getItem('aab_remote_session');
-  if (!sid) return;
-  localStorage.setItem('aab_remote_cmd_' + sid, cmd + (val!==undefined?':'+val:''));
-  if (_bc) _bc.postMessage({cmd:cmd,val:val});
+  window._aabExecRemote(cmd, val);
 };
 
 window.tpShowRemote = function() {
   var modal = document.getElementById('tp-remote-modal');
   if (modal) modal.classList.add('on');
-  var sid = 'aab_' + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
-  window._aabSid = sid;
-  localStorage.setItem('aab_remote_session', sid);
-  var url = location.origin + location.pathname + '?remote=' + sid;
+  window.AAB_API = window.AAB_API || 'https://aabstudio-production.up.railway.app';
+  // Short, human-friendly room code
+  var room = (Date.now().toString(36).slice(-4) + Math.random().toString(36).slice(2,4)).toUpperCase();
+  window._aabSid = room;
+  window._aabHostRoom = room;
+  var url = location.origin + location.pathname + '?remote=' + room;
   var qr  = document.getElementById('tp-qr');
   if (qr) qr.innerHTML = '<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data='+encodeURIComponent(url)+'" style="width:200px;height:200px;border-radius:8px;">';
   var ud = document.getElementById('tp-remote-url-disp');
   if (ud) ud.textContent = url;
+  var statusEl = document.getElementById('tp-conn-txt');
+
+  if (typeof io === 'undefined') {
+    if (statusEl) statusEl.textContent = 'Remote server unavailable';
+    return;
+  }
+  // Connect once as the desktop host and listen for commands from the phone.
+  if (window._aabHostSocket) { try { window._aabHostSocket.disconnect(); } catch(e){} }
+  var socket = io(window.AAB_API, { transports:['websocket','polling'], reconnection:true });
+  window._aabHostSocket = socket;
+  socket.on('connect', function(){
+    socket.emit('pair_devices', { room: room, device: 'desktop' });
+    if (statusEl) statusEl.textContent = 'Waiting for phone…';
+  });
+  socket.on('device_joined', function(d){
+    if (d && d.device === 'phone' && statusEl) statusEl.textContent = 'Phone connected \u2713';
+    if (typeof toast === 'function') toast('Phone remote connected', 'ok');
+  });
+  // Phone commands arrive as remote_execute — run them on the real teleprompter.
+  socket.on('remote_execute', function(data){
+    if (!data) return;
+    window._aabExecRemote(data.cmd, data.val);
+  });
 };
 
-// ── Remote page ────────────────────────────────────────────────────────────
+// ── PHONE REMOTE (Socket.IO, cross-device) ──────────────────────────────────
+// The phone opens ?remote=<room>. It connects to the server Socket.IO relay, joins the room as the
+// 'phone' device, and emits 'command' events; the desktop in the same room receives 'remote_execute'
+// and drives the real teleprompter. localStorage/BroadcastChannel can't work phone->laptop (different
+// devices), so this uses the server relay that already exists (io pair_devices/command/remote_execute).
 var _rsid = new URLSearchParams(location.search).get('remote');
 if (_rsid) {
+  // HARD remote-mode flag — the phone must NEVER leave the remote UI (fixes "jumps to scripts page").
+  window._aabRemoteMode = true;
   window._aabSid = _rsid;
-  document.querySelectorAll('.pg,.pg-flex,.pg-full').forEach(function(p){ p.classList.remove('on'); });
-  var tn = document.getElementById('topnav'); if(tn) tn.style.display='none';
-  var rp = document.getElementById('remote-pg');
-  if (!rp) {
-    rp = document.createElement('div');
-    rp.style.cssText='position:fixed;inset:0;background:#080d14;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;';
-    rp.innerHTML='<div style="font-size:22px;font-weight:800;color:#e2e8f0;">\uD83D\uDCF1 Remote Control</div>'
-      +'<div style="font-size:12px;color:#64748b;margin-bottom:8px;">Controlling AABStudio</div>'
-      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%;max-width:320px;">'
-      +'<button class="btn-primary" style="padding:18px;font-size:16px;" onclick="remoteSend(\'play\')">▶ Play</button>'
-      +'<button class="btn-danger"  style="padding:18px;font-size:16px;" onclick="remoteSend(\'pause\')">⏸ Pause</button>'
-      +'<button class="btn-ghost"   style="padding:18px;font-size:16px;" onclick="remoteSend(\'restart\')">↺ Restart</button>'
-      +'<button class="btn-ghost"   style="padding:18px;font-size:16px;" onclick="remoteSend(\'toggle\')">⏯ Toggle</button>'
-      +'<button class="btn-ghost"   style="padding:18px;font-size:14px;" onclick="remoteSend(\'slower\')">\uD83D\uDC22 Slower</button>'
-      +'<button class="btn-ghost"   style="padding:18px;font-size:14px;" onclick="remoteSend(\'faster\')">\uD83D\uDC07 Faster</button>'
-      +'<button class="btn-gold"    style="padding:18px;font-size:14px;" onclick="remoteSend(\'prev\')">← Prev</button>'
-      +'<button class="btn-gold"    style="padding:18px;font-size:14px;" onclick="remoteSend(\'next\')">Next →</button>'
+  window.AAB_API = window.AAB_API || 'https://aabstudio-production.up.railway.app';
+
+  var _lockRemote = function(){
+    document.querySelectorAll('.pg,.pg-flex,.pg-full').forEach(function(p){ p.classList.remove('on'); p.style.display='none'; });
+    var tn = document.getElementById('topnav'); if(tn) tn.style.display='none';
+    var ft = document.getElementById('aab-footer'); if(ft) ft.style.display='none';
+    var rp = document.getElementById('aab-remote-live');
+    if (rp) rp.style.display='flex';
+  };
+  // Neutralise app routing on the phone: nav() becomes a no-op that re-locks the remote UI.
+  window.nav = function(){ _lockRemote(); };
+  window.navFree = function(){ _lockRemote(); };
+
+  function _buildRemoteUI(){
+    var rp = document.createElement('div');
+    rp.id = 'aab-remote-live';
+    rp.style.cssText='position:fixed;inset:0;background:#080d14;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:14px;padding:26px 20px;overflow-y:auto;';
+    rp.innerHTML=''
+      +'<div style="font-size:20px;font-weight:800;color:#e2e8f0;margin-top:8px;">\uD83D\uDCF1 Teleprompter Remote</div>'
+      +'<div id="aab-rc-status" style="font-size:12px;padding:5px 14px;border-radius:16px;background:rgba(245,158,11,.12);border:.5px solid rgba(245,158,11,.3);color:#fbbf24;">Connecting…</div>'
+      +'<div style="font-size:12px;color:#64748b;">Scroll speed</div>'
+      +'<div style="font-size:2.6rem;font-weight:800;color:#f59e0b;line-height:1;" id="aab-rc-spd">80</div>'
+      +'<input type="range" min="10" max="300" value="80" id="aab-rc-range" style="width:88%;max-width:320px;accent-color:#f59e0b;" '
+        +'oninput="document.getElementById(\'aab-rc-spd\').textContent=this.value;window._aabRC(\'speed\',this.value);">'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%;max-width:340px;margin-top:6px;">'
+      +'<button style="padding:22px;font-size:18px;border-radius:14px;border:.5px solid rgba(0,212,255,.3);background:rgba(0,212,255,.1);color:#00d4ff;font-weight:700;" onclick="window._aabRC(\'play\')">▶ Play</button>'
+      +'<button style="padding:22px;font-size:18px;border-radius:14px;border:.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#e2e8f0;font-weight:700;" onclick="window._aabRC(\'pause\')">⏸ Pause</button>'
+      +'<button style="padding:18px;font-size:15px;border-radius:14px;border:.5px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#cbd5e1;" onclick="window._aabRC(\'slower\')">\uD83D\uDC22 Slower</button>'
+      +'<button style="padding:18px;font-size:15px;border-radius:14px;border:.5px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#cbd5e1;" onclick="window._aabRC(\'faster\')">\uD83D\uDC07 Faster</button>'
+      +'<button style="padding:18px;font-size:15px;border-radius:14px;border:.5px solid rgba(245,158,11,.25);background:rgba(245,158,11,.08);color:#fbbf24;" onclick="window._aabRC(\'prev\')">← Prev</button>'
+      +'<button style="padding:18px;font-size:15px;border-radius:14px;border:.5px solid rgba(245,158,11,.25);background:rgba(245,158,11,.08);color:#fbbf24;" onclick="window._aabRC(\'next\')">Next →</button>'
       +'</div>'
-      +'<button class="btn-danger" style="margin-top:8px;padding:16px 40px;font-size:16px;" onclick="remoteSend(\'rec\')">⏺ Record</button>';
+      +'<button style="margin-top:4px;padding:14px 30px;font-size:14px;border-radius:12px;border:.5px solid rgba(255,255,255,.1);background:transparent;color:#94a3b8;" onclick="window._aabRC(\'restart\')">↺ Restart</button>'
+      +'<button style="margin-top:2px;padding:16px 40px;font-size:16px;border-radius:12px;border:.5px solid rgba(239,68,68,.35);background:rgba(239,68,68,.12);color:#f87171;font-weight:700;" onclick="window._aabRC(\'rec\')">⏺ Record</button>'
+      +'<div style="font-size:10px;color:#475569;margin-top:6px;">Room '+_rsid+'</div>';
     document.body.appendChild(rp);
-  } else { rp.classList.add('on'); }
+  }
+
+  function _initPhoneRemote(){
+    _buildRemoteUI();
+    _lockRemote();
+    var statusEl = document.getElementById('aab-rc-status');
+    function setStatus(txt, ok){
+      if(!statusEl) return;
+      statusEl.textContent = txt;
+      statusEl.style.background = ok ? 'rgba(16,185,129,.12)' : 'rgba(245,158,11,.12)';
+      statusEl.style.borderColor = ok ? 'rgba(16,185,129,.3)' : 'rgba(245,158,11,.3)';
+      statusEl.style.color = ok ? '#34d399' : '#fbbf24';
+    }
+    if (typeof io === 'undefined') {
+      setStatus('Remote server unavailable', false);
+      // Fallback: still allow same-device (localStorage) so nothing regresses on same-browser tests.
+      window._aabRC = function(cmd, val){ try{ localStorage.setItem('aab_remote_cmd_'+_rsid, cmd+(val!==undefined?':'+val:'')); }catch(e){} };
+      return;
+    }
+    var socket = io(window.AAB_API, { transports:['websocket','polling'], reconnection:true });
+    window._aabRemoteSocket = socket;
+    socket.on('connect', function(){
+      setStatus('Connected \u2713', true);
+      socket.emit('pair_devices', { room: _rsid, device: 'phone' });
+    });
+    socket.on('paired', function(){ setStatus('Paired \u2713', true); });
+    socket.on('device_joined', function(){ setStatus('Studio linked \u2713', true); });
+    socket.on('disconnect', function(){ setStatus('Reconnecting…', false); });
+    socket.on('connect_error', function(){ setStatus('Connection issue — retrying…', false); });
+    // Phone -> studio: emit a command into the room.
+    window._aabRC = function(cmd, val){
+      if (navigator.vibrate) { try { navigator.vibrate(10); } catch(e){} }
+      socket.emit('command', { room: _rsid, cmd: cmd, val: val });
+    };
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _initPhoneRemote);
+  else _initPhoneRemote();
+
+  // Watchdog: the master script re-wraps window.nav on load, and session-restore may try to show a
+  // page. Re-assert the remote lock for the first few seconds and whenever an app page reappears, so
+  // the phone can never drift to the scripts page.
+  var _reassert = setInterval(function(){
+    if (!window._aabRemoteMode) { clearInterval(_reassert); return; }
+    var anyOn = document.querySelector('.pg.on, .pg-full.on, .pg-flex.on');
+    var rp = document.getElementById('aab-remote-live');
+    if (anyOn || (rp && rp.style.display === 'none')) _lockRemote();
+    // keep nav neutralised even if it was re-wrapped
+    if (window.nav && window.nav._aabNeutralised !== true) {
+      window.nav = function(){ _lockRemote(); }; window.nav._aabNeutralised = true;
+      window.navFree = window.nav;
+    }
+  }, 400);
+  setTimeout(function(){ clearInterval(_reassert); }, 8000);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
