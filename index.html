@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-remote-socketio">
+<meta name="aab-build" content="20260817-remote-roomfix">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -19231,7 +19231,7 @@ window._aabExecRemote = function(cmd, val) {
     }
     // Reflect state back to the phone (best-effort)
     if (window._aabHostSocket && window._aabHostRoom) {
-      window._aabHostSocket.emit('tp_state', { room: window._aabHostRoom, playing: !!(window.TP && window.TP.playing), speed: (window.TP && window.TP.speed) || 80 });
+      window._aabHostSocket.emit('tp_state', { project_id: window._aabHostRoom, room: window._aabHostRoom, playing: !!(window.TP && window.TP.playing), speed: (window.TP && window.TP.speed) || 80 });
     }
   } catch (e) { /* ignore */ }
   function _syncSpeedInputs(v){
@@ -19269,7 +19269,7 @@ window.tpShowRemote = function() {
   var socket = io(window.AAB_API, { transports:['websocket','polling'], reconnection:true });
   window._aabHostSocket = socket;
   socket.on('connect', function(){
-    socket.emit('pair_devices', { room: room, device: 'desktop' });
+    socket.emit('pair_devices', { project_id: room, room: room, device: 'desktop' });
     if (statusEl) statusEl.textContent = 'Waiting for phone…';
   });
   socket.on('device_joined', function(d){
@@ -19352,7 +19352,7 @@ if (_rsid) {
     window._aabRemoteSocket = socket;
     socket.on('connect', function(){
       setStatus('Connected \u2713', true);
-      socket.emit('pair_devices', { room: _rsid, device: 'phone' });
+      socket.emit('pair_devices', { project_id: _rsid, room: _rsid, device: 'phone' });
     });
     socket.on('paired', function(){ setStatus('Paired \u2713', true); });
     socket.on('device_joined', function(){ setStatus('Studio linked \u2713', true); });
@@ -19361,7 +19361,7 @@ if (_rsid) {
     // Phone -> studio: emit a command into the room.
     window._aabRC = function(cmd, val){
       if (navigator.vibrate) { try { navigator.vibrate(10); } catch(e){} }
-      socket.emit('command', { room: _rsid, cmd: cmd, val: val });
+      socket.emit('command', { project_id: _rsid, room: _rsid, action: cmd, value: val, cmd: cmd, val: val });
     };
   }
 
