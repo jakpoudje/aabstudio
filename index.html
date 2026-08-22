@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-src-setattr">
+<meta name="aab-build" content="20260817-master-vol">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -28096,11 +28096,11 @@ function _esUpdateProg(t){
     if(pre&&pre._ready&&pre.readyState>=3){
       // Swap: copy position from preloaded video
       pv.src=clip.url; pv._curUrl=clip.url; pv._curClipKey=_clipKey; pv._rdy=true;
-      pv.currentTime=cT; pv.muted=false; pv.volume=1;
+      pv.currentTime=cT; pv.muted=false; pv.volume=(window._aabMasterVol==null?1:window._aabMasterVol);
       if(window._esPlaying)pv.play().catch(()=>{});
     } else {
       pv._curUrl=clip.url; pv._curClipKey=_clipKey; pv._rdy=false;
-      pv.src=clip.url; pv.muted=false; pv.volume=1;
+      pv.src=clip.url; pv.muted=false; pv.volume=(window._aabMasterVol==null?1:window._aabMasterVol);
       // NOTE: pv.load() + waiting for 'canplay' leaves this element at networkState/readyState 0/0
       // forever on this setup (the fetch never starts from load() alone). Actively calling play()
       // kicks off the network load and fires the media events, so we play immediately and seek once
@@ -28116,7 +28116,7 @@ function _esUpdateProg(t){
   }
   if(window._esPlaying){
     if(!pv._rdy)return;
-    if(pv.paused){pv.currentTime=cT;pv.muted=false;pv.volume=1;pv.play().catch(()=>{});}
+    if(pv.paused){pv.currentTime=cT;pv.muted=false;pv.volume=(window._aabMasterVol==null?1:window._aabMasterVol);pv.play().catch(()=>{});}
     else if(Math.abs(pv.currentTime-cT)>2.0)pv.currentTime=cT; // Only seek if badly off-sync
   } else {
     if(!pv.paused)pv.pause();
@@ -28716,7 +28716,12 @@ function _buildMixer(){
   mr.style.cssText='border-top:1px solid rgba(255,255,255,.07);margin-top:4px;padding-top:8px;';
   mr.innerHTML='<div style="width:3px;height:28px;border-radius:2px;background:linear-gradient(#10b981,#f59e0b,#ef4444);flex-shrink:0"></div><div class="mix-label" style="color:#e2e8f0;font-weight:600">MASTER</div><button class="mix-m" title="Mute master" onclick="window._mixMasterMute()" id="mix-master-m">M</button><input id="mix-master" class="mix-fader" type="range" min="0" max="150" value="100" style="accent-color:white"><div id="mixdb-master" class="mix-db">0dB</div>';
   var mf=mr.querySelector('#mix-master'),mdb=mr.querySelector('#mixdb-master');
-  mf.addEventListener('input',()=>{var v=+mf.value;if(_masterGain)_masterGain.gain.value=clamp(v/100,0,1.5);mdb.textContent=Math.round(20*Math.log10(Math.max(.001,v/100)))+'dB';});
+  mf.addEventListener('input',()=>{var v=+mf.value;if(_masterGain)_masterGain.gain.value=clamp(v/100,0,1.5);mdb.textContent=Math.round(20*Math.log10(Math.max(.001,v/100)))+'dB';
+    // The monitors play on the NATIVE element path (not through _masterGain), so scale their element
+    // volume too - otherwise the master fader is inaudible. Store it so native playback re-applies it.
+    var nv=clamp(v/100,0,1); window._aabMasterVol=nv;
+    ['e-prog-vid','aab-prog-vid','e-src-vid','aab-src-vid'].forEach(function(id){var el=document.getElementById(id);if(el&&!window._mixMuted)el.volume=nv;});
+  });
   p.appendChild(mr);
   document.body.appendChild(p);
   // Start VU animation for mixer
@@ -28741,7 +28746,10 @@ function _startMixerVU(vuMeter){
     if(peakEl)peakEl.style.color=peak>-3?'#ef4444':peak>-12?'#f59e0b':'#10b981';
   })();
 }
-window._mixMasterMute=()=>{window._mixMuted=!window._mixMuted;if(_masterGain)_masterGain.gain.value=window._mixMuted?0:clamp(+($('mix-master')||{value:100}).value/100,0,1.5);var b=$('mix-master-m');if(b){b.classList.toggle('muted',window._mixMuted);}};
+window._mixMasterMute=()=>{window._mixMuted=!window._mixMuted;if(_masterGain)_masterGain.gain.value=window._mixMuted?0:clamp(+($('mix-master')||{value:100}).value/100,0,1.5);var b=$('mix-master-m');if(b){b.classList.toggle('muted',window._mixMuted);}
+  // Also mute/unmute the NATIVE monitor elements (they bypass _masterGain).
+  var nv=window._mixMuted?0:clamp(+($('mix-master')||{value:100}).value/100,0,1);window._aabMasterVol=nv;
+  ['e-prog-vid','aab-prog-vid','e-src-vid','aab-src-vid'].forEach(function(id){var el=document.getElementById(id);if(el)el.volume=nv;});};
 window._mixResetAll=v=>{if(window.E&&E.tracks)E.tracks.forEach(tr=>{tr.volume=v;var f=$('mix-'+tr.id);if(f)f.value=v;if(_trackGains[tr.id])_trackGains[tr.id].gain.value=clamp(v/100,0,1.5);var db=$('mixdb-'+tr.id);if(db)db.textContent=Math.round(20*Math.log10(Math.max(.001,v/100)))+'dB';});};
 function _rebuildMixer(){var p=$('aab-mixer-panel');if(p&&p.style.display!=='none'){_buildMixer();p=$('aab-mixer-panel');p.style.display='block';}}
 window.E_toggleMixer=()=>{var _epx=document.getElementById('edit-pg');if(!_epx||(!_epx.classList.contains('on')&&_epx.style.display!=='flex'&&_epx.style.display!=='block')){if(typeof toast==='function')toast('Open Edit Suite first','info');return;}var p=$('aab-mixer-panel');if(!p){_buildMixer();p=$('aab-mixer-panel');}if(p.style.display==='none'||!p.style.display){
@@ -33618,7 +33626,7 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
       if (lbl) lbl.textContent = (name || url.split('/').pop()).slice(0, 30);
     } else {
       if (si) si.style.display = 'none';
-      sv.style.display = 'block'; sv.muted = false; sv.volume = 1;
+      sv.style.display = 'block'; sv.muted = false; sv.volume = (window._aabMasterVol==null?1:window._aabMasterVol);
       // Use setAttribute, not sv.src = url: the long Supabase signed URL does not stick via the .src
       // property assignment on this element (comes back empty) but does via setAttribute.
       if (sv.getAttribute('src') !== url) { sv.setAttribute('src', url); }
@@ -33628,7 +33636,7 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
       // the load, fires the media events, and makes this the audible monitor (aabAudioFocus unmutes it).
       var _srcBtn = el('e-src-play');
       sv.addEventListener('playing', function opl() { sv.removeEventListener('playing', opl); if (_srcBtn) _srcBtn.innerHTML = '&#9646;&#9646;'; }, { once: true });
-      sv.muted = false; sv.volume = 1;
+      sv.muted = false; sv.volume = (window._aabMasterVol==null?1:window._aabMasterVol);
       var _p = sv.play();
       if (_p && _p.catch) _p.catch(function () { setTimeout(function () { sv.muted = false; sv.play().catch(function () {}); }, 60); });
     }
