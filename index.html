@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-tp-jitter-fix">
+<meta name="aab-build" content="20260817-tp-jitter-v2">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -13074,6 +13074,11 @@ function studioNext() {
     }
     function _tpApplyFont(px) {
       px = Math.round(px);
+      // MOBILE RECORD STUDIO: the teleprompter is capped to ~2 lines so the camera stays in view.
+      // Clamp the applied size to 19px there so A+/A- (and any re-apply during scroll) can't push the
+      // reading text past two lines — this also removes the 19px->big font snap at scroll start.
+      var _mobileRec = window.innerWidth <= 767 && (function(){ var r=document.getElementById('record-pg'); return r && r.classList.contains('on'); })();
+      if (_mobileRec) px = 19;
       if (window.STUDIO) STUDIO.tpFontPx = px;   // persist the user's choice
       document.documentElement.style.setProperty('--tp-font-size', px + 'px');
       document.documentElement.style.setProperty('--tp-font-size-px', px);
