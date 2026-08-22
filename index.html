@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-cam-bigger3">
+<meta name="aab-build" content="20260817-logo-bgstrip">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -15391,27 +15391,35 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
       if (!file.type.startsWith('image/')) { toast('Please choose an image (PNG/JPG/SVG)', 'error'); return; }
       var rd = new FileReader();
       rd.onload = function (e) {
-        var asset = {
-          id: 'logo_' + Date.now() + '_' + Math.floor(Math.random() * 99999),
-          name: file.name,
-          dataUrl: e.target.result,
-          type: 'image',
-          isLogo: true,
-          position: 'bot-right',
-          sizePercent: 22,
-          animation: 'fade'
+        var srcUrl = e.target.result;
+        var proceed = function(finalUrl){
+          var asset = {
+            id: 'logo_' + Date.now() + '_' + Math.floor(Math.random() * 99999),
+            name: file.name,
+            dataUrl: finalUrl,
+            type: 'image',
+            isLogo: true,
+            position: 'bot-right',
+            sizePercent: 22,
+            animation: 'fade'
+          };
+          if (!PROJECT.assets) PROJECT.assets = [];
+          PROJECT.assets.push(asset);
+          if (typeof saveProject === 'function') saveProject();
+          // Auto-save the (background-removed) logo to the global library for one-click reuse anywhere.
+          if (typeof window.aabSaveLogo === 'function') window.aabSaveLogo(finalUrl, file.name);
+          if (typeof renderStudioAssets === 'function') renderStudioAssets();
+          if (typeof window.aabRenderSavedLogos === 'function') window.aabRenderSavedLogos();
+          STUDIO._lastAssetSize = 22;
+          if (typeof showAssetNow === 'function') showAssetNow(asset.id);
+          toast('Signature / logo added — drag it anywhere', 'ok');
         };
-        if (!PROJECT.assets) PROJECT.assets = [];
-        PROJECT.assets.push(asset);
-        if (typeof saveProject === 'function') saveProject();
-        // Auto-save to the global saved-logos library so it can be reused in any project with one click.
-        if (typeof window.aabSaveLogo === 'function') window.aabSaveLogo(e.target.result, file.name);
-        if (typeof renderStudioAssets === 'function') renderStudioAssets();
-        if (typeof window.aabRenderSavedLogos === 'function') window.aabRenderSavedLogos();
-        // Show immediately as a draggable overlay (smaller default size for a logo/signature)
-        STUDIO._lastAssetSize = 22;
-        if (typeof showAssetNow === 'function') showAssetNow(asset.id);
-        toast('Signature / logo added — drag it anywhere', 'ok');
+        // SVGs are vector/often already transparent — skip the raster bg-removal modal.
+        if (window.aabOpenLogoBgModal && !/svg/i.test(file.type)) {
+          window.aabOpenLogoBgModal(srcUrl, file.name, function(finalUrl){ proceed(finalUrl); });
+        } else {
+          proceed(srcUrl);
+        }
       };
       rd.readAsDataURL(file);
       // reset so the same file can be re-picked
@@ -15498,6 +15506,160 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
     };
     // Render the strip on load if the host exists.
     try { if(document.getElementById('aab-saved-logos')) window.aabRenderSavedLogos(); } catch(_e){}
+
+    // ── Logo background removal (enterprise pattern: auto-detect + override + AI fallback) ──────
+    // Load an image dataURL into an offscreen canvas and hand back {canvas,ctx,w,h,imgData}.
+    function _aabLoadToCanvas(dataUrl){
+      return new Promise(function(res,rej){
+        var img=new Image();
+        img.onload=function(){
+          // Cap working size so huge uploads stay fast; preserve aspect.
+          var maxDim=900, w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+          if(Math.max(w,h)>maxDim){ var s=maxDim/Math.max(w,h); w=Math.round(w*s); h=Math.round(h*s); }
+          var c=document.createElement('canvas'); c.width=w; c.height=h;
+          var ctx=c.getContext('2d',{willReadFrequently:true});
+          ctx.drawImage(img,0,0,w,h);
+          res({canvas:c,ctx:ctx,w:w,h:h,imgData:ctx.getImageData(0,0,w,h)});
+        };
+        img.onerror=function(){ rej(new Error('image load failed')); };
+        img.src=dataUrl;
+      });
+    }
+    // Auto-detect the background colour by sampling the four corners (bg is almost always in the corners).
+    window.aabDetectBgColor=function(imgData,w,h){
+      var d=imgData.data;
+      function px(x,y){ var i=(y*w+x)*4; return [d[i],d[i+1],d[i+2],d[i+3]]; }
+      var pts=[px(0,0),px(w-1,0),px(0,h-1),px(w-1,h-1),
+               px(Math.floor(w*0.02),Math.floor(h*0.02)),px(w-1-Math.floor(w*0.02),h-1-Math.floor(h*0.02))];
+      // average the corner samples (ignore fully transparent ones)
+      var r=0,g=0,b=0,n=0;
+      pts.forEach(function(p){ if(p[3]>10){ r+=p[0]; g+=p[1]; b+=p[2]; n++; } });
+      if(!n) return {r:255,g:255,b:255};
+      return {r:Math.round(r/n),g:Math.round(g/n),b:Math.round(b/n)};
+    };
+    // Strip a solid-ish background: make pixels within `tolerance` of `bg` transparent, feather the edge.
+    // tolerance 0..1 (default ~0.18). Returns a transparent PNG dataURL. Non-destructive to the source.
+    window.aabStripBg=function(dataUrl,opts){
+      opts=opts||{};
+      return _aabLoadToCanvas(dataUrl).then(function(o){
+        var bg=opts.bg||window.aabDetectBgColor(o.imgData,o.w,o.h);
+        var tol=(opts.tolerance!=null?opts.tolerance:0.18);
+        var maxDist=tol*441.673; // 441.673 = sqrt(255^2*3), the max RGB distance
+        var feather=maxDist*0.5; // soft edge band
+        var d=o.imgData.data;
+        for(var i=0;i<d.length;i+=4){
+          var dr=d[i]-bg.r, dg=d[i+1]-bg.g, db=d[i+2]-bg.b;
+          var dist=Math.sqrt(dr*dr+dg*dg+db*db);
+          if(dist<=maxDist-feather){ d[i+3]=0; }                 // clearly background -> transparent
+          else if(dist<maxDist){ d[i+3]=Math.round(d[i+3]*((dist-(maxDist-feather))/feather)); } // edge -> partial
+        }
+        o.ctx.putImageData(o.imgData,0,0);
+        return {dataUrl:o.canvas.toDataURL('image/png'), bg:bg, tolerance:tol};
+      });
+    };
+    // AI fallback hook — used when the in-browser key isn't clean enough. Calls the server, which needs a
+    // provider key configured. If no key/endpoint, rejects so the UI can say "AI removal isn't enabled yet".
+    window.aabAiStripBg=function(dataUrl){
+      return fetch('/api/remove-bg',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:dataUrl})})
+        .then(function(r){ if(!r.ok) throw new Error('ai-bg '+r.status); return r.json(); })
+        .then(function(j){ if(!j || !j.dataUrl) throw new Error('ai-bg no result'); return j.dataUrl; });
+    };
+
+    // ── Logo background-removal PREVIEW MODAL ──────────────────────────────────────────
+    // Enterprise flow: auto-detect + strip instantly, show live preview, allow override (click to
+    // re-pick bg colour, tolerance slider), AI fallback, then Use / Keep original.
+    window.aabOpenLogoBgModal=function(dataUrl,name,onDone){
+      var state={ src:dataUrl, bg:null, tol:0.18, remove:true, result:dataUrl };
+      // build modal
+      var ov=document.createElement('div');
+      ov.id='aab-logobg-modal';
+      ov.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:16px;';
+      var checker='background-image:linear-gradient(45deg,#3a3a3a 25%,transparent 25%),linear-gradient(-45deg,#3a3a3a 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#3a3a3a 75%),linear-gradient(-45deg,transparent 75%,#3a3a3a 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0;background-color:#2a2a2a;';
+      ov.innerHTML=''
+        +'<div style="background:#0f1117;border:1px solid rgba(255,255,255,.1);border-radius:14px;max-width:560px;width:100%;padding:18px 18px 16px;box-shadow:0 20px 60px rgba(0,0,0,.5);">'
+        +'  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'
+        +'    <div style="font-size:14px;font-weight:700;color:#e2e8f0;">Remove logo background</div>'
+        +'    <button id="albg-x" style="background:none;border:none;color:rgba(255,255,255,.4);font-size:18px;cursor:pointer;">&times;</button>'
+        +'  </div>'
+        +'  <div style="display:flex;gap:12px;margin-bottom:12px;">'
+        +'    <div style="flex:1;text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,.35);margin-bottom:4px;">ORIGINAL</div>'
+        +'      <div style="'+checker+'border-radius:8px;height:150px;display:flex;align-items:center;justify-content:center;overflow:hidden;"><img src="'+dataUrl+'" style="max-width:100%;max-height:100%;object-fit:contain;"></div></div>'
+        +'    <div style="flex:1;text-align:center;"><div style="font-size:10px;color:rgba(255,255,255,.35);margin-bottom:4px;">RESULT <span style="color:rgba(255,255,255,.25);">(click bg to re-pick)</span></div>'
+        +'      <div id="albg-preview-wrap" style="'+checker+'border-radius:8px;height:150px;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:crosshair;"><img id="albg-preview" src="'+dataUrl+'" style="max-width:100%;max-height:100%;object-fit:contain;"></div></div>'
+        +'  </div>'
+        +'  <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#cbd5e1;margin-bottom:10px;cursor:pointer;">'
+        +'    <input type="checkbox" id="albg-toggle" checked style="accent-color:#10b981;"> Remove background (in-browser)'
+        +'  </label>'
+        +'  <div id="albg-controls">'
+        +'    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'
+        +'      <span style="font-size:11px;color:rgba(255,255,255,.4);">Background</span>'
+        +'      <span id="albg-swatch" title="Detected background colour" style="width:20px;height:20px;border-radius:4px;border:1px solid rgba(255,255,255,.3);background:#fff;"></span>'
+        +'      <span style="font-size:11px;color:rgba(255,255,255,.4);margin-left:8px;">Tolerance</span>'
+        +'      <input type="range" id="albg-tol" min="4" max="45" value="18" style="flex:1;accent-color:#10b981;">'
+        +'      <span id="albg-tolval" style="font-size:11px;color:rgba(255,255,255,.5);min-width:26px;">18%</span>'
+        +'    </div>'
+        +'    <button id="albg-ai" style="width:100%;background:rgba(139,92,246,.15);border:1px solid rgba(139,92,246,.4);color:#c4b5fd;border-radius:8px;padding:8px;font-size:12px;cursor:pointer;margin-bottom:12px;">&#10024; Enhance with AI (busy backgrounds)</button>'
+        +'  </div>'
+        +'  <div style="display:flex;gap:8px;">'
+        +'    <button id="albg-keep" style="flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#cbd5e1;border-radius:8px;padding:9px;font-size:12px;cursor:pointer;">Keep original</button>'
+        +'    <button id="albg-use" style="flex:2;background:#10b981;border:none;color:#04120c;border-radius:8px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;">Use this logo</button>'
+        +'  </div>'
+        +'</div>';
+      document.body.appendChild(ov);
+      var previewImg=ov.querySelector('#albg-preview');
+      var swatch=ov.querySelector('#albg-swatch');
+      var tolInput=ov.querySelector('#albg-tol');
+      var tolVal=ov.querySelector('#albg-tolval');
+      var toggle=ov.querySelector('#albg-toggle');
+      var controls=ov.querySelector('#albg-controls');
+      var busy=false;
+      function close(){ try{ document.body.removeChild(ov); }catch(_e){} }
+      function rgbCss(c){ return c?('rgb('+c.r+','+c.g+','+c.b+')'):'#fff'; }
+      function rerender(){
+        if(!state.remove){ previewImg.src=state.src; state.result=state.src; controls.style.opacity='.4'; controls.style.pointerEvents='none'; return; }
+        controls.style.opacity='1'; controls.style.pointerEvents='auto';
+        if(busy) return; busy=true;
+        window.aabStripBg(state.src,{bg:state.bg,tolerance:state.tol}).then(function(r){
+          state.bg=r.bg; state.result=r.dataUrl; previewImg.src=r.dataUrl;
+          swatch.style.background=rgbCss(r.bg);
+          busy=false;
+        }).catch(function(){ busy=false; });
+      }
+      // initial strip
+      rerender();
+      toggle.addEventListener('change',function(){ state.remove=toggle.checked; rerender(); });
+      tolInput.addEventListener('input',function(){ state.tol=(+tolInput.value)/100; tolVal.textContent=tolInput.value+'%'; rerender(); });
+      // click the RESULT preview to re-pick the background colour from that pixel
+      ov.querySelector('#albg-preview-wrap').addEventListener('click',function(ev){
+        var img=previewImg, rect=img.getBoundingClientRect();
+        if(!img.naturalWidth) return;
+        // map click to source pixel (account for object-fit:contain letterboxing)
+        var scale=Math.min(rect.width/img.naturalWidth, rect.height/img.naturalHeight);
+        var dispW=img.naturalWidth*scale, dispH=img.naturalHeight*scale;
+        var offX=(rect.width-dispW)/2, offY=(rect.height-dispH)/2;
+        var x=Math.floor((ev.clientX-rect.left-offX)/scale), y=Math.floor((ev.clientY-rect.top-offY)/scale);
+        if(x<0||y<0||x>=img.naturalWidth||y>=img.naturalHeight) return;
+        var tc=document.createElement('canvas'); tc.width=img.naturalWidth; tc.height=img.naturalHeight;
+        var tctx=tc.getContext('2d',{willReadFrequently:true}); 
+        var srcImg=new Image(); srcImg.onload=function(){ tctx.drawImage(srcImg,0,0); var p=tctx.getImageData(x,y,1,1).data; state.bg={r:p[0],g:p[1],b:p[2]}; rerender(); }; srcImg.src=state.src;
+      });
+      ov.querySelector('#albg-ai').addEventListener('click',function(){
+        var btn=this; btn.textContent='Working…'; btn.disabled=true;
+        window.aabAiStripBg(state.src).then(function(url){
+          state.result=url; previewImg.src=url; state.remove=true; toggle.checked=true;
+          btn.textContent='&#10024; AI removal applied'; setTimeout(function(){btn.disabled=false;btn.innerHTML='&#10024; Enhance with AI (busy backgrounds)';},1500);
+        }).catch(function(){
+          btn.innerHTML='&#10024; Enhance with AI (busy backgrounds)'; btn.disabled=false;
+          if(typeof toast==='function') toast('AI background removal isn\'t enabled yet — using in-browser removal', 'info');
+        });
+      });
+      ov.querySelector('#albg-keep').addEventListener('click',function(){ close(); onDone && onDone(state.src, false); });
+      ov.querySelector('#albg-use').addEventListener('click',function(){ var out=state.remove?state.result:state.src; close(); onDone && onDone(out, state.remove); });
+      ov.querySelector('#albg-x').addEventListener('click',function(){ close(); });
+      ov.addEventListener('click',function(e){ if(e.target===ov){ close(); } });
+    };
+
+
 
     // ── AI Presenter: logo / watermark overlay ────────────────────────────────
     window.aps_loadLogo = function(inp){
