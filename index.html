@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-scene-follow-v2">
+<meta name="aab-build" content="20260817-cam-tpbg-flicker">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -7479,17 +7479,31 @@ window.setTpBg = function(color) {
   var tpPg = document.getElementById('teleprompter-pg'); if(tpPg) tpPg.style.background = color;
   if(window.TP) TP.bg = color;
   if(window.PROJECT){ if(!PROJECT.tpSettings)PROJECT.tpSettings={}; PROJECT.tpSettings.bg=color; }
-  // Adjust text and active word colour for readability on light backgrounds
-  var isLight = color === '#ffffff' || color === '#fff' || color === 'white' || color === '#f8f8f8';
-  var baseColor = isLight ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.55)';
-  var doneColor = isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.2)';
-  var activeColor = isLight ? '#b45309' : '#f59e0b'; // amber on white, gold on dark
+  // Adjust text and active word colour for readability — compute luminance so ANY light bg gets dark text.
+  function _lum(c){
+    if(!c) return 0;
+    if(c[0]==='#'){ var h=c.slice(1); if(h.length===3) h=h.split('').map(function(x){return x+x;}).join(''); var r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16); return (0.299*r+0.587*g+0.114*b)/255; }
+    var m=c.match(/rgba?\(([^)]+)\)/); if(m){ var p=m[1].split(',').map(parseFloat); var a=p.length>3?p[3]:1; if(a<0.5) return 0; return (0.299*p[0]+0.587*p[1]+0.114*p[2])/255; }
+    return 0;
+  }
+  var isLight = _lum(color) > 0.6;
+  var baseColor = isLight ? 'rgba(0,0,0,0.82)' : 'rgba(255,255,255,0.72)';
+  var doneColor = isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.25)';
+  var activeColor = isLight ? '#b45309' : '#f59e0b'; // amber on light, gold on dark
   // Update CSS custom properties for TP
   document.documentElement.style.setProperty('--tp-text-color', baseColor);
   document.documentElement.style.setProperty('--tp-active-color', activeColor);
+  // Recolour the MAIN reading text nodes (auto-scroll uses #tp-cur, which carries an inline white colour
+  // from _loadStudioTpText — without this it stays white and vanishes on a light background).
+  ['tp-cur','tp-cur-inner','studio-tp-words','tp-text'].forEach(function(id){
+    var el=document.getElementById(id); if(el) el.style.setProperty('color', baseColor, 'important');
+  });
+  document.querySelectorAll('#tp-cur, .tp-cur-txt, #tp-body > div, .tp-text').forEach(function(el){
+    // don't recolour word spans here (handled below); only the plain reading blocks
+    if(!el.classList.contains('tp-word')) el.style.setProperty('color', baseColor, 'important');
+  });
   // Update existing word spans — cover BOTH the studio word spans (.tp-word) AND the standalone
-  // teleprompter spans (#tpw* / .tpw-span). Previously only .tp-word was updated, so the standalone
-  // teleprompter kept hardcoded-white text and went invisible on a light background.
+  // teleprompter spans (#tpw* / .tpw-span).
   document.querySelectorAll('.tp-word').forEach(function(w, i) {
     var wbwIdx = window._studioWBW ? _studioWBW.idx : -1;
     if (i < wbwIdx) w.style.color = doneColor;
@@ -9348,8 +9362,8 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
             <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
               <span style="font-size:8px;color:rgba(255,255,255,.3);letter-spacing:.05em;">BG</span>
               <span onclick="setTpBg('#000000');this.parentElement.querySelectorAll('span[onclick]').forEach(s=>s.style.outline='');this.style.outline='2px solid #f59e0b';" title="Black" style="display:inline-block;width:16px;height:16px;border-radius:3px;background:#000;cursor:pointer;border:1.5px solid rgba(255,255,255,.4);outline:2px solid #f59e0b;"></span>
-              <span onclick="setTpBg('#111827');this.parentElement.querySelectorAll('span[onclick]').forEach(s=>s.style.outline='');this.style.outline='2px solid #f59e0b';" title="Dark" style="display:inline-block;width:16px;height:16px;border-radius:3px;background:#111827;cursor:pointer;border:1.5px solid rgba(255,255,255,.2);"></span>
-              <span onclick="setTpBg('rgba(0,0,0,.75)');this.parentElement.querySelectorAll('span[onclick]').forEach(s=>s.style.outline='');this.style.outline='2px solid #f59e0b';" title="Transparent" style="display:inline-block;width:16px;height:16px;border-radius:3px;background:repeating-linear-gradient(45deg,#333 0,#333 3px,#555 3px,#555 6px);cursor:pointer;border:1.5px solid rgba(255,212,0,.4);"></span>
+              <span onclick="setTpBg('#111827');this.parentElement.querySelectorAll('span[onclick]').forEach(s=>s.style.outline='');this.style.outline='2px solid #f59e0b';" title="Navy" style="display:inline-block;width:16px;height:16px;border-radius:3px;background:#111827;cursor:pointer;border:1.5px solid rgba(255,255,255,.2);"></span>
+              <span onclick="setTpBg('#4b5563');this.parentElement.querySelectorAll('span[onclick]').forEach(s=>s.style.outline='');this.style.outline='2px solid #f59e0b';" title="Grey" style="display:inline-block;width:16px;height:16px;border-radius:3px;background:#4b5563;cursor:pointer;border:1.5px solid rgba(255,255,255,.3);"></span>
               <span onclick="setTpBg('#ffffff');this.parentElement.querySelectorAll('span[onclick]').forEach(s=>s.style.outline='');this.style.outline='2px solid #00d4ff';" title="White" style="display:inline-block;width:16px;height:16px;border-radius:3px;background:#fff;cursor:pointer;border:1.5px solid rgba(255,255,255,.6);"></span>
             </div>
             <select id="tp-scroll-mode" aria-label="Teleprompter scroll mode" onchange="setTpScrollMode(this.value)" style="background:rgba(255,255,255,.04);border:.5px solid rgba(255,255,255,.07);color:rgba(255,255,255,.35);border-radius:3px;padding:2px 4px;font-size:9px;flex-shrink:0;" onchange="setTpScrollMode(this.value)">
@@ -12660,8 +12674,12 @@ window._fitStudioLayout = function() {
   var barH = bar ? bar.offsetHeight : 52;
   var ctrlH = ctrl ? ctrl.offsetHeight : 150;
   var tpH = tpPanel ? tpPanel.offsetHeight : 160;
-  var camH = Math.min(329, Math.max(150, totalH - barH - ctrlH - tpH));
+  var avail = totalH - barH - ctrlH - tpH;
+  var camH = Math.max(220, avail);
   var camW = Math.round(camH * 16/9);
+  // Don't let the 16:9 width exceed the stage width (would overflow); cap to the wrap width if needed.
+  var stageW = wrap.clientWidth - 8;
+  if (camW > stageW) { camW = stageW; camH = Math.round(camW * 9/16); }
   document.documentElement.style.setProperty('--cam-h', camH + 'px');
   document.documentElement.style.setProperty('--cam-w', camW + 'px');
 };
@@ -12681,6 +12699,13 @@ window._loadStudioTpText = function() {
   var text = scene.narration || scene.script || scene.text || scene.content || '';
   var tpBody = document.getElementById('tp-body');
   if(!tpBody) return;
+  // Skip a needless rebuild: if #tp-cur already shows THIS scene's text, don't tear it down and
+  // recreate it (that innerHTML churn is what made the desktop teleprompter flicker at scroll start).
+  var _existing = document.getElementById('tp-cur');
+  if(_existing && _existing.getAttribute('data-scene') === String(n1) && (_existing.textContent||'').trim() === (text||'').trim()){
+    if(typeof window._syncUpdateSceneCounter==='function') window._syncUpdateSceneCounter(n1, scenes.length);
+    return;
+  }
   // Stop any word-by-word run — the renderer owns the DOM
   if(window._studioWBW) { _studioWBW.running=false; clearInterval(_studioWBW.timer); _studioWBW.idx=0; _studioWBW.words=[]; _studioWBW.highlight=null; }
   // Fixed structure the whole TP system relies on: tp-body(viewport) > tp-cur(content)
@@ -12691,7 +12716,8 @@ window._loadStudioTpText = function() {
   // On mobile the record-studio teleprompter is capped to ~2 lines; render at the enforced 19px
   // from the start so there is NO 40px->19px snap (which showed as a font "fluctuation" at scroll start).
   if (_isMobileTp) { fontCss = '19px'; lineH = '1.5'; }
-  tpBody.innerHTML = '<div id="tp-cur" style="font-family:Sora,monospace;font-size:'+fontCss+';line-height:'+lineH+';color:rgba(255,255,255,0.7);padding:12px 20px;white-space:pre-wrap;word-break:keep-all;">'+text.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>';
+  var _txtColor = getComputedStyle(document.documentElement).getPropertyValue('--tp-text-color').trim() || 'rgba(255,255,255,0.7)';
+  tpBody.innerHTML = '<div id="tp-cur" data-scene="'+n1+'" style="font-family:Sora,monospace;font-size:'+fontCss+';line-height:'+lineH+';color:'+_txtColor+';padding:12px 20px;white-space:pre-wrap;word-break:keep-all;">'+text.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>';
   // Update every scene counter element (fragmented across ids + unlabeled divs)
   if(typeof window._syncUpdateSceneCounter==='function') window._syncUpdateSceneCounter(n1, scenes.length);
 };
