@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-cam-idfix">
+<meta name="aab-build" content="20260817-cam-fitwin">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -21644,16 +21644,24 @@ window._fitStudioLayout=function(){
   var wrap=document.querySelector('.studio-wrap');
   var ctrl=document.querySelector('.studio-ctrl-v2');
   var tpPanel=document.getElementById('studio-tp-panel');
+  var camRow=document.getElementById('studio-cam-row');
+  var camActions=document.getElementById('aab-cam-actions');
   if(!wrap)return;
   var totalH=wrap.offsetHeight;
   var barH=ctrl?ctrl.offsetHeight:0;
   var tpH=tpPanel?tpPanel.offsetHeight:0;
-  var camAvail=totalH-barH-tpH;
-  var colW=tpPanel?tpPanel.offsetWidth:wrap.offsetWidth;
-  var camWbyW=Math.round(colW*0.99),camHbyW=Math.round(camWbyW*9/16);
-  var camWbyH=Math.round(camAvail*(16/9)*0.98),camHbyH=Math.round(camAvail*0.98);
-  var camW,camH;
-  if(camHbyW<=camAvail){camW=camWbyW;camH=camHbyW;}else{camW=camWbyH;camH=camHbyH;}
+  var actH=camActions?camActions.offsetHeight:0;
+  // All the vertical space the camera row may use (everything except controls, teleprompter, cam-actions).
+  var camAvail=Math.max(240, totalH-barH-tpH-actH-6);
+  // Column width available for the camera (the middle column the cam-row sits in).
+  var colW=camRow?camRow.offsetWidth:(tpPanel?tpPanel.offsetWidth:wrap.offsetWidth);
+  // The camera fills the column WIDTH at 16:9 (CSS handles this); it only needs a height cap so it does
+  // not push controls off-screen. Cap = the smaller of (available height) and (height that width implies).
+  var hByWidth=Math.round(colW*9/16);
+  var camMaxH=Math.min(camAvail, hByWidth);
+  document.documentElement.style.setProperty('--cam-max-h',camMaxH+'px');
+  // Legacy vars kept in sync for any code that still reads them.
+  var camW=Math.round(camMaxH*16/9),camH=camMaxH;
   document.documentElement.style.setProperty('--cam-w',camW+'px');
   document.documentElement.style.setProperty('--cam-h',camH+'px');
 };
