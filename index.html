@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-cam-fill-height">
+<meta name="aab-build" content="20260817-cam-fillwidth">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -2358,18 +2358,21 @@
       flex-shrink: 0;
     }
 
-    /* Camera canvas */
+    /* Camera canvas — fill the available column width, keep 16:9, cap height so it never overflows.
+       (Was a fixed --cam-w box centered in a wide column, which left big black bars on each side.) */
     .studio-canvas {
       position: relative;
       background: #000;
       overflow: hidden;
-      width: var(--cam-w, 588px);
-      height: var(--cam-h, 330px);
-      flex: 0 0 auto;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      height: auto;
+      max-height: var(--cam-max-h, 62vh);
+      flex: 0 1 auto;
     }
     .studio-cam-row {
-      height: var(--cam-h, 330px);
-      flex: 0 0 var(--cam-h, 330px);
+      flex: 1 1 auto;
+      min-height: 0;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -12674,15 +12677,14 @@ window._fitStudioLayout = function() {
   var barH = bar ? bar.offsetHeight : 52;
   var ctrlH = ctrl ? ctrl.offsetHeight : 150;
   var tpH = tpPanel ? tpPanel.offsetHeight : 160;
-  var avail = totalH - barH - ctrlH - tpH;
-  var stageW = Math.max(0, wrap.clientWidth - 8);
-  // Fill the available stage HEIGHT (old code capped at 329, leaving black space); derive 16:9 width and
-  // clamp to the stage width. Never smaller than the previous 588x330 baseline.
-  var camH = Math.max(330, avail > 0 ? avail : 330);
-  var camW = Math.round(camH * 16/9);
-  if (camW > stageW && stageW > 0) { camW = stageW; camH = Math.round(camW * 9/16); }
-  if (camW < 588) { camW = 588; camH = 330; }
-  document.documentElement.style.setProperty('--cam-h', camH + 'px');
+  // Vertical budget the camera may occupy. The canvas fills the column WIDTH at 16:9 (CSS) and is
+  // capped to this height so it never pushes the teleprompter/controls off-screen. This removes the
+  // black side-gaps (camera now grows with the stage) without overflowing vertically.
+  var avail = Math.max(300, totalH - barH - ctrlH - tpH - 8);
+  document.documentElement.style.setProperty('--cam-max-h', avail + 'px');
+  // Keep legacy vars in sync for any code that still reads them.
+  var camW = Math.round(avail * 16/9);
+  document.documentElement.style.setProperty('--cam-h', avail + 'px');
   document.documentElement.style.setProperty('--cam-w', camW + 'px');
 };
 window.addEventListener('resize', function() { if(typeof _fitStudioLayout==='function') _fitStudioLayout(); });
