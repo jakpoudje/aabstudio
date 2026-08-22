@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-prog-playnow">
+<meta name="aab-build" content="20260817-src-playnow">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -33619,14 +33619,16 @@ window.aps_showPresenterPhoto = function(dataUrlOrB64, mime, name){
     } else {
       if (si) si.style.display = 'none';
       sv.style.display = 'block'; sv.muted = false; sv.volume = 1;
-      if (sv.getAttribute('src') !== url) { sv.src = url; sv.load(); }
+      if (sv.getAttribute('src') !== url) { sv.src = url; }
       if (lbl) lbl.textContent = (name || url.split('/').pop()).slice(0, 30);
-      // autoplay once loaded, and flip the play button label
-      sv.addEventListener('loadeddata', function onld() {
-        sv.removeEventListener('loadeddata', onld);
-        sv.play().catch(function () {});
-        var b = el('e-src-play'); if (b) b.innerHTML = '&#9646;&#9646;';
-      }, { once: true });
+      // Play immediately — sv.load()+waiting for 'loadeddata' leaves the element at readyState 0
+      // forever on this setup (the fetch never starts from load() alone). An active play() kicks off
+      // the load, fires the media events, and makes this the audible monitor (aabAudioFocus unmutes it).
+      var _srcBtn = el('e-src-play');
+      sv.addEventListener('playing', function opl() { sv.removeEventListener('playing', opl); if (_srcBtn) _srcBtn.innerHTML = '&#9646;&#9646;'; }, { once: true });
+      sv.muted = false; sv.volume = 1;
+      var _p = sv.play();
+      if (_p && _p.catch) _p.catch(function () { setTimeout(function () { sv.muted = false; sv.play().catch(function () {}); }, 60); });
     }
     if (window.AABLog) AABLog.info('editsuite', 'source monitor loaded: ' + (name || url).slice(0, 40));
   };
