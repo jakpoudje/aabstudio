@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-tp-jitter-v2">
+<meta name="aab-build" content="20260817-tp-startstop-fix">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -9505,9 +9505,9 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
       <span id="tp-spd-val2" style="font-size:10px;color:var(--gold);min-width:34px;">80wpm</span>
       <span style="font-size:9px;color:rgba(255,255,255,.2);">|</span>
       <div id="tp-mode-btns" role="group" aria-label="Teleprompter scroll mode" style="display:inline-flex;gap:3px;">
-        <button type="button" class="tp-mode-btn" data-tpmode="auto" onclick="setTpScrollMode('auto');window._tpSyncModeBtns&&window._tpSyncModeBtns('auto')" title="Auto-scroll" style="font-size:9px;padding:3px 7px;border-radius:4px;cursor:pointer;border:.5px solid rgba(37,99,235,.5);background:rgba(37,99,235,.25);color:#93c5fd;white-space:nowrap;">📜 Auto</button>
-        <button type="button" class="tp-mode-btn" data-tpmode="word" onclick="setTpScrollMode('word');window._tpSyncModeBtns&&window._tpSyncModeBtns('word')" title="Word-by-word" style="font-size:9px;padding:3px 7px;border-radius:4px;cursor:pointer;border:.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:rgba(255,255,255,.55);white-space:nowrap;">💡 Word</button>
-        <button type="button" class="tp-mode-btn" data-tpmode="manual" onclick="setTpScrollMode('manual');window._tpSyncModeBtns&&window._tpSyncModeBtns('manual')" title="Manual" style="font-size:9px;padding:3px 7px;border-radius:4px;cursor:pointer;border:.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:rgba(255,255,255,.55);white-space:nowrap;">✋ Manual</button>
+        <button type="button" class="tp-mode-btn" data-tpmode="auto" onclick="tpSelectMode('auto')" title="Auto-scroll" style="font-size:9px;padding:3px 7px;border-radius:4px;cursor:pointer;border:.5px solid rgba(37,99,235,.5);background:rgba(37,99,235,.25);color:#93c5fd;white-space:nowrap;">📜 Auto</button>
+        <button type="button" class="tp-mode-btn" data-tpmode="word" onclick="tpSelectMode('word')" title="Word-by-word" style="font-size:9px;padding:3px 7px;border-radius:4px;cursor:pointer;border:.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:rgba(255,255,255,.55);white-space:nowrap;">💡 Word</button>
+        <button type="button" class="tp-mode-btn" data-tpmode="manual" onclick="tpSelectMode('manual')" title="Manual" style="font-size:9px;padding:3px 7px;border-radius:4px;cursor:pointer;border:.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:rgba(255,255,255,.55);white-space:nowrap;">✋ Manual</button>
       </div>
       <select id="tp-mode-sel" onchange="setTpScrollMode(this.value)" aria-hidden="true" tabindex="-1" style="display:none;"><option value="auto" selected>Auto-scroll</option><option value="word">Word-by-word</option><option value="manual">Manual</option></select>
       </div>
@@ -25843,6 +25843,19 @@ window.stopTpForMode = function(){
   if(window._studioWBW) _studioWBW.running = false;
   if(typeof studioTpStop==='function') studioTpStop();
   if(typeof TP!=='undefined' && TP.playing && typeof tpToggle==='function') tpToggle();
+};
+
+// Teleprompter mode BUTTON handler: selecting a mode must NOT start playback (that is the Practice/
+// play button's job). It records the mode, syncs the dropdowns + button highlight, and only re-applies
+// the live engine via setTpScrollMode when the teleprompter is ALREADY running (a mode switch mid-run).
+window.tpSelectMode = function(mode){
+  window._tpMode = mode; window._tpScrollMode = mode;
+  ['tp-mode-sel','tp-scroll-mode','studio-scroll-mode'].forEach(function(id){
+    var s=document.getElementById(id); if(s&&s.value!==mode) s.value=mode;
+  });
+  if(typeof window._tpSyncModeBtns==='function') window._tpSyncModeBtns(mode);
+  var running = window._practiceRunning || (window.STUDIO_TP && window.STUDIO_TP.running) || (window.STUDIO && window.STUDIO.recording);
+  if(running && typeof setTpScrollMode==='function') setTpScrollMode(mode);
 };
 
 function setTpScrollMode(mode){
