@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-cam-fillwidth2">
+<meta name="aab-build" content="20260817-prog-signedurl">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -28086,17 +28086,20 @@ function _esUpdateProg(t){
   // (only one MediaElementSource may ever exist per element; competing wirings silenced audio).
   window._aabWireProgAudio&&window._aabWireProgAudio(pv);
   var cT=Math.max(0,t-(clip.start||0));
-  
-  if(pv._curUrl!==clip.url){
+  // Clip URLs are Supabase SIGNED urls whose ?token signature changes every call, so comparing the
+  // full url reloaded the video every frame (readyState never advanced = frozen + silent). Compare a
+  // STABLE key instead: the clip id, or the url path without its query string.
+  var _clipKey=clip.id||(clip.url?String(clip.url).split('?')[0]:'');
+  if(pv._curClipKey!==_clipKey){
     // Check if we have a preloaded version
     var pre=_preVids[clip.url];
     if(pre&&pre._ready&&pre.readyState>=3){
       // Swap: copy position from preloaded video
-      pv.src=clip.url; pv._curUrl=clip.url; pv._rdy=true;
+      pv.src=clip.url; pv._curUrl=clip.url; pv._curClipKey=_clipKey; pv._rdy=true;
       pv.currentTime=cT; pv.muted=false; pv.volume=1;
       if(window._esPlaying)pv.play().catch(()=>{});
     } else {
-      pv._curUrl=clip.url; pv._rdy=false;
+      pv._curUrl=clip.url; pv._curClipKey=_clipKey; pv._rdy=false;
       pv.src=clip.url; pv.muted=false; pv.volume=1; pv.load();
       pv.addEventListener('canplay',function oncp(){
         pv.removeEventListener('canplay',oncp); pv._rdy=true;
