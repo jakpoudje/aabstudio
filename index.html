@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-cam-nooverlap">
+<meta name="aab-build" content="20260817-cam-tp-logolib">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -9370,7 +9370,7 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
       </div><!-- end studio-cam-row -->
           <div id="studio-tp-panel" style="width:100%;align-self:stretch;flex-shrink:0;position:relative;background:#000;border-top:.5px solid rgba(255,255,255,.06);overflow:hidden;min-height:160px;max-height:220px;">
           <!-- TP Header -->
-          <div style="display:flex;align-items:center;gap:6px;padding:5px 12px;height:32px;border-bottom:.5px solid rgba(255,255,255,.06);overflow-x:auto;flex-shrink:0;">
+          <div style="display:flex;align-items:center;justify-content:center;gap:6px;padding:5px 12px;height:32px;border-bottom:.5px solid rgba(255,255,255,.06);overflow-x:auto;flex-shrink:0;">
             <span style="font-size:9px;font-weight:700;color:rgba(255,255,255,.3);letter-spacing:.08em;flex-shrink:0;">TELEPROMPTER</span>
             <div style="display:flex;align-items:center;gap:3px;flex-shrink:0;">
               <span style="font-size:8px;color:rgba(255,255,255,.2);">Speed</span>
@@ -9393,17 +9393,17 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
               <option value="manual">Manual</option>
               <option value="sentence">Sentence</option>
             </select>
-            <div style="margin-left:auto;display:flex;align-items:center;gap:5px;flex-shrink:0;">
+            <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
               <button onclick="resetTpScroll()" style="background:none;border:none;cursor:pointer;font-size:9px;color:rgba(255,255,255,.2);">↺ Reset</button>
               <button onclick="toggleTpPanel()" id="tp-toggle-btn" style="background:none;border:.5px solid rgba(255,255,255,.1);border-radius:4px;padding:1px 7px;font-size:9px;color:rgba(255,255,255,.3);cursor:pointer;">▼</button>
             </div>
           </div>
           <!-- Script display -->
           <div id="studio-tp" class="studio-tp" style="overflow:hidden;position:relative;flex:1;min-height:113px;height:113px;">
-            <div class="tp-body" id="tp-body" style="padding:8px 24px 10px;display:flex;flex-direction:column;gap:3px;height:100%;overflow:auto;scroll-behavior:smooth;scrollbar-width:none;">
-              <div class="tp-prev-txt" id="tp-prev" style="font-size:11px;color:rgba(255,255,255,.2);line-height:1.3;flex-shrink:0;height:15px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;"></div>
-              <div class="tp-cur-txt"  id="tp-cur"  style="flex:1;overflow:hidden;font-size:var(--tp-font-size,clamp(18px,2vw,28px));line-height:1.6;color:rgba(255,255,255,.92);"></div>
-              <div class="tp-next-txt" id="tp-next" style="font-size:11px;color:rgba(255,255,255,.15);line-height:1.3;flex-shrink:0;height:15px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;"></div>
+            <div class="tp-body" id="tp-body" style="padding:8px 24px 10px;display:flex;flex-direction:column;align-items:center;gap:3px;height:100%;overflow:auto;scroll-behavior:smooth;scrollbar-width:none;text-align:center;">
+              <div class="tp-prev-txt" id="tp-prev" style="font-size:11px;color:rgba(255,255,255,.2);line-height:1.3;flex-shrink:0;height:15px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;text-align:center;width:100%;"></div>
+              <div class="tp-cur-txt"  id="tp-cur"  style="flex:1;overflow:hidden;font-size:var(--tp-font-size,clamp(18px,2vw,28px));line-height:1.6;color:rgba(255,255,255,.92);text-align:center;width:100%;"></div>
+              <div class="tp-next-txt" id="tp-next" style="font-size:11px;color:rgba(255,255,255,.15);line-height:1.3;flex-shrink:0;height:15px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;text-align:center;width:100%;"></div>
             </div>
           </div>
         </div>
@@ -9429,6 +9429,10 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
               <input type="file" style="display:none;" accept="image/*"
                 onchange="uploadSignatureLogo(this)">
             </label>
+            <div style="margin-top:8px;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:.06em;color:rgba(255,255,255,.3);margin-bottom:3px;">SAVED LOGOS <span style="font-weight:400;color:rgba(255,255,255,.25);">· click to reuse</span></div>
+              <div id="aab-saved-logos" style="display:flex;flex-wrap:wrap;align-items:flex-start;"></div>
+            </div>
           </div>
           <div class="sp-assets" id="sp-assets">
             <div style="font-size:11px;color:rgba(255,255,255,.2);text-align:center;padding:14px;">No assets yet</div>
@@ -12739,7 +12743,7 @@ window._loadStudioTpText = function() {
   // from the start so there is NO 40px->19px snap (which showed as a font "fluctuation" at scroll start).
   if (_isMobileTp) { fontCss = '19px'; lineH = '1.5'; }
   var _txtColor = getComputedStyle(document.documentElement).getPropertyValue('--tp-text-color').trim() || 'rgba(255,255,255,0.7)';
-  tpBody.innerHTML = '<div id="tp-cur" data-scene="'+n1+'" style="font-family:Sora,monospace;font-size:'+fontCss+';line-height:'+lineH+';color:'+_txtColor+';padding:12px 20px;white-space:pre-wrap;word-break:keep-all;">'+text.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>';
+  tpBody.innerHTML = '<div id="tp-cur" data-scene="'+n1+'" style="font-family:Sora,monospace;font-size:'+fontCss+';line-height:'+lineH+';color:'+_txtColor+';padding:12px 20px;white-space:pre-wrap;word-break:keep-all;text-align:center;width:100%;">'+text.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>';
   // Update every scene counter element (fragmented across ids + unlabeled divs)
   if(typeof window._syncUpdateSceneCounter==='function') window._syncUpdateSceneCounter(n1, scenes.length);
 };
@@ -15400,7 +15404,10 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
         if (!PROJECT.assets) PROJECT.assets = [];
         PROJECT.assets.push(asset);
         if (typeof saveProject === 'function') saveProject();
+        // Auto-save to the global saved-logos library so it can be reused in any project with one click.
+        if (typeof window.aabSaveLogo === 'function') window.aabSaveLogo(e.target.result, file.name);
         if (typeof renderStudioAssets === 'function') renderStudioAssets();
+        if (typeof window.aabRenderSavedLogos === 'function') window.aabRenderSavedLogos();
         // Show immediately as a draggable overlay (smaller default size for a logo/signature)
         STUDIO._lastAssetSize = 22;
         if (typeof showAssetNow === 'function') showAssetNow(asset.id);
@@ -15411,6 +15418,86 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
       try { inp.value = ''; } catch (_e) {}
     }
     window.uploadSignatureLogo = uploadSignatureLogo;
+
+    // ── Saved-logos library (global, persists across projects via localStorage) ──────────
+    // Lets the user upload a logo once and reuse it in any project with a single click.
+    var AAB_LOGOS_KEY = 'aab_saved_logos';
+    window.aabGetSavedLogos = function(){
+      try { return JSON.parse(localStorage.getItem(AAB_LOGOS_KEY) || '[]'); } catch(_e){ return []; }
+    };
+    function _aabPutSavedLogos(list){
+      try { localStorage.setItem(AAB_LOGOS_KEY, JSON.stringify(list)); return true; } catch(_e){
+        // storage full — drop the oldest and retry once
+        try { list = list.slice(-8); localStorage.setItem(AAB_LOGOS_KEY, JSON.stringify(list)); return true; } catch(_e2){ return false; }
+      }
+    }
+    window.aabSaveLogo = function(dataUrl, name){
+      if(!dataUrl) return null;
+      var list = window.aabGetSavedLogos();
+      // Dedupe by dataUrl — don't save the same logo twice.
+      var existing = list.filter(function(l){ return l.dataUrl === dataUrl; })[0];
+      if(existing){ existing.lastUsed = Date.now(); _aabPutSavedLogos(list); return existing.id; }
+      var item = { id:'svlogo_'+Date.now()+'_'+Math.floor(Math.random()*99999), name:(name||'Logo').slice(0,40), dataUrl:dataUrl, saved:Date.now(), lastUsed:Date.now() };
+      list.push(item);
+      // Cap the library so localStorage doesn't overflow (keep the 12 most recent).
+      if(list.length > 12) list = list.slice(-12);
+      _aabPutSavedLogos(list);
+      return item.id;
+    };
+    window.aabDeleteSavedLogo = function(id){
+      var list = window.aabGetSavedLogos().filter(function(l){ return l.id !== id; });
+      _aabPutSavedLogos(list);
+      if(typeof window.aabRenderSavedLogos==='function') window.aabRenderSavedLogos();
+      if(typeof toast==='function') toast('Saved logo removed', 'info');
+    };
+    // Apply a saved logo to the CURRENT project with one click: add it as a draggable overlay asset
+    // AND register it as the AI-presenter logo, so it's ready wherever branding is used.
+    window.aabApplySavedLogo = function(id){
+      var item = window.aabGetSavedLogos().filter(function(l){ return l.id===id; })[0];
+      if(!item){ if(typeof toast==='function') toast('Logo not found', 'error'); return; }
+      item.lastUsed = Date.now(); _aabPutSavedLogos(window.aabGetSavedLogos().map(function(l){return l.id===id?item:l;}));
+      // 1) add as a studio overlay asset
+      var asset = { id:'logo_'+Date.now()+'_'+Math.floor(Math.random()*99999), name:item.name, dataUrl:item.dataUrl, type:'image', isLogo:true, position:'bot-right', sizePercent:22, animation:'fade' };
+      if(window.PROJECT){ if(!PROJECT.assets) PROJECT.assets=[]; PROJECT.assets.push(asset); if(typeof saveProject==='function') saveProject(); }
+      if(typeof renderStudioAssets==='function') renderStudioAssets();
+      // 2) register as AI-presenter logo
+      if(!window.APS) window.APS = { settings:{} };
+      APS.logoDataUrl = item.dataUrl; APS.logoB64 = (item.dataUrl.split(',')[1]||null); APS.logoPos = APS.logoPos || 'top-right';
+      if(window.PROJECT){ window.PROJECT.apsLogo = { dataUrl:item.dataUrl, pos:APS.logoPos }; if(typeof saveProject==='function') saveProject(); }
+      // reflect in the APS preview if present
+      var img=document.getElementById('aps-logo-preview'), wrap=document.getElementById('aps-logo-preview-wrap'), nm=document.getElementById('aps-logo-name');
+      if(img) img.src=item.dataUrl; if(nm) nm.textContent=item.name; if(wrap) wrap.style.display='flex';
+      // 3) show it immediately on the studio canvas
+      STUDIO._lastAssetSize = 22;
+      if(typeof showAssetNow==='function') showAssetNow(asset.id);
+      if(typeof window.aabRenderSavedLogos==='function') window.aabRenderSavedLogos();
+      if(typeof toast==='function') toast('Logo applied — drag it anywhere', 'ok');
+    };
+    // Render the saved-logos strip (clickable thumbnails) into #aab-saved-logos, if present.
+    window.aabRenderSavedLogos = function(){
+      var host = document.getElementById('aab-saved-logos');
+      if(!host) return;
+      var list = window.aabGetSavedLogos().slice().sort(function(a,b){ return (b.lastUsed||0)-(a.lastUsed||0); });
+      if(!list.length){ host.innerHTML = '<div style="font-size:10px;color:rgba(255,255,255,.25);padding:4px 2px;">No saved logos yet. Upload one above — it\'ll be saved here to reuse.</div>'; return; }
+      host.innerHTML = list.map(function(l){
+        return '<div class="aab-savedlogo" data-id="'+l.id+'" title="'+ (l.name||'Logo').replace(/"/g,'') +'" style="position:relative;display:inline-flex;align-items:center;justify-content:center;width:52px;height:40px;margin:3px;border:1px solid rgba(255,255,255,.12);border-radius:6px;background:rgba(255,255,255,.04);cursor:pointer;overflow:hidden;vertical-align:top;">'
+          + '<img src="'+l.dataUrl+'" alt="'+(l.name||'Logo').replace(/"/g,'')+'" style="max-width:46px;max-height:34px;object-fit:contain;pointer-events:none;">'
+          + '<span class="aab-savedlogo-del" data-id="'+l.id+'" title="Delete" style="position:absolute;top:-1px;right:-1px;width:14px;height:14px;line-height:13px;text-align:center;font-size:10px;color:#fff;background:rgba(220,38,38,.9);border-radius:0 5px 0 6px;cursor:pointer;">&times;</span>'
+          + '</div>';
+      }).join('');
+      // wire clicks (apply on thumbnail, delete on the x)
+      host.querySelectorAll('.aab-savedlogo').forEach(function(el){
+        el.addEventListener('click', function(ev){
+          var delBtn = ev.target.closest ? ev.target.closest('.aab-savedlogo-del') : null;
+          if(delBtn || (ev.target.classList && ev.target.classList.contains('aab-savedlogo-del'))){
+            ev.stopPropagation(); window.aabDeleteSavedLogo(el.getAttribute('data-id')); return;
+          }
+          window.aabApplySavedLogo(el.getAttribute('data-id'));
+        });
+      });
+    };
+    // Render the strip on load if the host exists.
+    try { if(document.getElementById('aab-saved-logos')) window.aabRenderSavedLogos(); } catch(_e){}
 
     // ── AI Presenter: logo / watermark overlay ────────────────────────────────
     window.aps_loadLogo = function(inp){
@@ -15424,6 +15511,8 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
         APS.logoDataUrl = url;
         APS.logoPos = APS.logoPos || 'top-right';
         if(window.PROJECT){ window.PROJECT.apsLogo = { dataUrl:url, pos: APS.logoPos }; if(typeof saveProject==='function') saveProject(); }
+        if(typeof window.aabSaveLogo==='function') window.aabSaveLogo(url, f.name);
+        if(typeof window.aabRenderSavedLogos==='function') window.aabRenderSavedLogos();
         var wrap = document.getElementById('aps-logo-preview-wrap');
         var img  = document.getElementById('aps-logo-preview');
         var nm   = document.getElementById('aps-logo-name');
@@ -15641,6 +15730,7 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
 
     // ── renderStudioAssets — DOM-based to avoid quote issues ──────────────────────
     function renderStudioAssets() {
+      try { if (typeof window.aabRenderSavedLogos === 'function') window.aabRenderSavedLogos(); } catch(_e){}
       var el = document.getElementById('sp-assets'); if (!el) return;
       if (!PROJECT.assets || !PROJECT.assets.length) {
         el.innerHTML = '<div style="font-size:11px;color:rgba(255,255,255,.2);text-align:center;padding:16px;line-height:1.7;">No assets.<br>Upload images or videos above.</div>';
@@ -21669,8 +21759,9 @@ window._fitStudioLayout=function(){
   var reserveCtrl=Math.max(barH, 146);    // bottom controls dock
   var reserveAct=actH||0;                 // cam action buttons row
   var leftoverH=stackH - reserveTp - reserveCtrl - reserveAct - 24;
-  // Reduce the camera by a fifth vs the old 72% cap (0.72 x 0.8 = 0.576).
-  var capH=Math.round(stackH*0.576);
+  // Camera a touch bigger than the reduced 57.6% (Julius: slightly increase height / less side-gap),
+  // still guarded by the leftover reserve so the teleprompter + controls are never squashed.
+  var capH=Math.round(stackH*0.64);
   var camMaxH=Math.max(240, Math.min(fillH, capH, leftoverH));
   document.documentElement.style.setProperty('--cam-max-h',camMaxH+'px');
   // Legacy vars kept in sync for any code that still reads them.
