@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-scene-follow">
+<meta name="aab-build" content="20260817-scene-follow-v2">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -20783,13 +20783,23 @@ window._scrollSceneIntoView = function(n){
       strip.scrollTo ? strip.scrollTo({ left: Math.max(0, target), behavior: 'smooth' }) : (strip.scrollLeft = Math.max(0, target));
     }
   }
-  // Desktop vertical queue + any scene-item list.
+  // Desktop vertical queue + any scene-item list. Use the authoritative idx (not .active, which a
+  // separate renderer can leave stale) to pick and center the current scene's row.
   var lists = [document.getElementById('studio-q-list')];
   document.querySelectorAll('#aps-scene-list').forEach(function(l){ lists.push(l); });
   lists.forEach(function(list){
     if (!list || !list.children.length) return;
-    var item = list.querySelector('.active') || list.children[Math.max(0, Math.min(list.children.length - 1, idx))];
-    if (item && item.scrollIntoView) item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    var item = list.children[Math.max(0, Math.min(list.children.length - 1, idx))];
+    if (!item) return;
+    // Keep the highlight in sync with the live scene.
+    [].forEach.call(list.children, function(c, i){ c.classList.toggle('active', i === idx); });
+    // Scroll within the list itself (avoid scrollIntoView, which can scroll the page instead).
+    if (getComputedStyle(list).overflowY !== 'visible' && list.scrollHeight > list.clientHeight) {
+      list.scrollTo ? list.scrollTo({ top: Math.max(0, item.offsetTop - list.clientHeight / 2 + item.offsetHeight / 2), behavior: 'smooth' })
+                    : (list.scrollTop = Math.max(0, item.offsetTop - list.clientHeight / 2 + item.offsetHeight / 2));
+    } else if (item.scrollIntoView) {
+      item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
   });
 };
 window.studioPrev=function(){window.studioGoTo((window.STUDIO_SCENE||1)-1);};
