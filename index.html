@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-cam-tpbg-flicker">
+<meta name="aab-build" content="20260817-cam-fill-height">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -12675,11 +12675,13 @@ window._fitStudioLayout = function() {
   var ctrlH = ctrl ? ctrl.offsetHeight : 150;
   var tpH = tpPanel ? tpPanel.offsetHeight : 160;
   var avail = totalH - barH - ctrlH - tpH;
-  var camH = Math.max(220, avail);
+  var stageW = Math.max(0, wrap.clientWidth - 8);
+  // Fill the available stage HEIGHT (old code capped at 329, leaving black space); derive 16:9 width and
+  // clamp to the stage width. Never smaller than the previous 588x330 baseline.
+  var camH = Math.max(330, avail > 0 ? avail : 330);
   var camW = Math.round(camH * 16/9);
-  // Don't let the 16:9 width exceed the stage width (would overflow); cap to the wrap width if needed.
-  var stageW = wrap.clientWidth - 8;
-  if (camW > stageW) { camW = stageW; camH = Math.round(camW * 9/16); }
+  if (camW > stageW && stageW > 0) { camW = stageW; camH = Math.round(camW * 9/16); }
+  if (camW < 588) { camW = 588; camH = 330; }
   document.documentElement.style.setProperty('--cam-h', camH + 'px');
   document.documentElement.style.setProperty('--cam-w', camW + 'px');
 };
