@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-prog-signedurl">
+<meta name="aab-build" content="20260817-prog-playnow">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -28100,11 +28100,17 @@ function _esUpdateProg(t){
       if(window._esPlaying)pv.play().catch(()=>{});
     } else {
       pv._curUrl=clip.url; pv._curClipKey=_clipKey; pv._rdy=false;
-      pv.src=clip.url; pv.muted=false; pv.volume=1; pv.load();
-      pv.addEventListener('canplay',function oncp(){
-        pv.removeEventListener('canplay',oncp); pv._rdy=true;
-        if(window._esPlaying){pv.currentTime=Math.max(0,window._esPH-(clip.start||0));pv.muted=false;pv.play().catch(()=>{});}
-      },{once:true});
+      pv.src=clip.url; pv.muted=false; pv.volume=1;
+      // NOTE: pv.load() + waiting for 'canplay' leaves this element at networkState/readyState 0/0
+      // forever on this setup (the fetch never starts from load() alone). Actively calling play()
+      // kicks off the network load and fires the media events, so we play immediately and seek once
+      // metadata arrives. Mark ready on loadedmetadata/playing so the "keep playing" branch proceeds.
+      var _seekWhenReady=function(){
+        try{ if(isFinite(pv.duration)&&pv.duration>0){ pv.currentTime=Math.max(0,Math.min((window._esPH||0)-(clip.start||0),pv.duration-0.05)); } }catch(e){}
+      };
+      pv.addEventListener('loadedmetadata',function olm(){ pv.removeEventListener('loadedmetadata',olm); pv._rdy=true; _seekWhenReady(); },{once:true});
+      pv.addEventListener('playing',function opl(){ pv.removeEventListener('playing',opl); pv._rdy=true; },{once:true});
+      if(window._esPlaying){ pv.play().catch(function(){ /* retry once on next tick */ setTimeout(function(){ if(window._esPlaying)pv.play().catch(function(){}); },60); }); }
     }
     return;
   }
