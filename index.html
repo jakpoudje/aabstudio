@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-ai-bg-endpoint">
+<meta name="aab-build" content="20260817-ai-bg-apibase">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -15560,11 +15560,11 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
     // AI fallback hook — used when the in-browser key isn't clean enough. Calls the server, which needs a
     // provider key configured. If no key/endpoint, rejects so the UI can say "AI removal isn't enabled yet".
     window.aabAiStripBg=function(dataUrl){
-      return fetch('/api/remove-bg',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:dataUrl})})
+      var _api=(window.API||'https://aabstudio-production.up.railway.app');
+      return fetch(_api+'/api/remove-bg',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:dataUrl})})
         .then(function(r){ return r.json().catch(function(){ throw new Error('ai-bg bad response'); }); })
         .then(function(j){
           if(j && j.ok && j.dataUrl) return j.dataUrl;
-          // notEnabled (no key) or any error -> reject so the UI falls back to in-browser removal.
           var e=new Error(j&&j.notEnabled?'ai-not-enabled':((j&&j.error)||'ai-bg failed')); e.notEnabled=!!(j&&j.notEnabled); throw e;
         });
     };
