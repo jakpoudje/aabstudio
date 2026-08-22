@@ -545,6 +545,53 @@ app.get('/api/did/test', async (req, res) => {
 });
 
 
+// ── Logo background removal (withoutBG) — dormant until WITHOUTBG_API_KEY is set ──────────────
+const WITHOUTBG_API_KEY = process.env.WITHOUTBG_API_KEY;
+// Simple in-memory per-minute rate guard (withoutBG allows ~7 req/min per key).
+let _bgWindowStart = 0, _bgWindowCount = 0;
+function _bgRateOk() {
+  const now = Date.now();
+  if (now - _bgWindowStart > 60000) { _bgWindowStart = now; _bgWindowCount = 0; }
+  if (_bgWindowCount >= 6) return false;
+  _bgWindowCount++;
+  return true;
+}
+// Lets the client know whether AI removal is available (so the UI can label the button).
+app.get('/api/remove-bg/status', (req, res) => {
+  res.json({ enabled: !!WITHOUTBG_API_KEY });
+});
+app.post('/api/remove-bg', async (req, res) => {
+  // Not configured yet — tell the client to fall back to in-browser removal.
+  if (!WITHOUTBG_API_KEY) return res.json({ ok: false, notEnabled: true, error: 'AI background removal not enabled' });
+  if (!_bgRateOk()) return res.status(429).json({ ok: false, error: 'Rate limit — try again in a minute' });
+  try {
+    const image = req.body && req.body.image;
+    if (!image || typeof image !== 'string') return res.status(400).json({ ok: false, error: 'No image provided' });
+    // Accept a full data URL or a bare base64 string; withoutBG's base64 endpoint wants bare base64.
+    const b64 = image.indexOf(',') > -1 ? image.split(',')[1] : image;
+    const r = await fetch('https://api.withoutbg.com/v1.0/image-without-background-base64', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': WITHOUTBG_API_KEY },
+      body: JSON.stringify({ image_base64: b64 })
+    });
+    const text = await r.text();
+    if (!r.ok) {
+      // 402 = out of credits; surface a clean message so the client falls back gracefully.
+      return res.status(r.status).json({ ok: false, error: 'withoutBG ' + r.status, detail: text.slice(0, 200) });
+    }
+    let data = {};
+    try { data = JSON.parse(text); } catch (e) {}
+    // withoutBG returns the transparent PNG as base64 (field name varies: img_without_background_base64 / image_base64 / result).
+    const out = data.img_without_background_base64 || data.image_base64 || data.result || data.data;
+    if (!out) return res.status(502).json({ ok: false, error: 'No image in withoutBG response' });
+    const dataUrl = out.indexOf('data:') === 0 ? out : ('data:image/png;base64,' + out);
+    res.json({ ok: true, dataUrl });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+
 // Credits status endpoint — lets UI show which providers are available
 app.get('/api/credits-status', (req, res) => {
   res.json({
