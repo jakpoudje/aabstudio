@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-cam-tppanel">
+<meta name="aab-build" content="20260817-cam-fillwidth2">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -21654,15 +21654,17 @@ window._fitStudioLayout=function(){
   var barH=ctrl?ctrl.offsetHeight:0;
   var tpH=tpPanel?tpPanel.offsetHeight:0;
   var actH=camActions?camActions.offsetHeight:0;
-  // All the vertical space the camera row may use (everything except controls, teleprompter, cam-actions).
-  var camAvail=Math.max(240, totalH-barH-tpH-actH-6);
-  // Camera fills the FULL column width with a cinematic crop (object-fit:cover), so use the full available
-  // height — don't cap to the 16:9-of-width height (that would leave side-gaps).
-  var camMaxH=camAvail;
+  // Column width the camera sits in.
+  var colW=camRow?camRow.offsetWidth:(tpPanel?tpPanel.offsetWidth:wrap.offsetWidth);
+  // Height needed for a 16:9 camera to FILL the column width (this is what removes side-gaps).
+  var fillH=Math.round(colW*9/16);
+  // Don't let the camera eat the whole screen: cap at 72% of the studio height (leaves room for the
+  // teleprompter + controls below). Never below a 300px floor. Julius: prefer wider/taller, small gaps OK.
+  var capH=Math.round(totalH*0.72);
+  var camMaxH=Math.max(300, Math.min(fillH, capH));
   document.documentElement.style.setProperty('--cam-max-h',camMaxH+'px');
   // Legacy vars kept in sync for any code that still reads them.
-  var colW2=camRow?camRow.offsetWidth:(tpPanel?tpPanel.offsetWidth:wrap.offsetWidth);
-  document.documentElement.style.setProperty('--cam-w',colW2+'px');
+  document.documentElement.style.setProperty('--cam-w',colW+'px');
   document.documentElement.style.setProperty('--cam-h',camMaxH+'px');
 };
 
