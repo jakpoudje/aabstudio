@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-cam-fitwin">
+<meta name="aab-build" content="20260817-cam-cinematic">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -2358,41 +2358,39 @@
       flex-shrink: 0;
     }
 
-    /* Camera canvas — fill the available column width, keep 16:9, cap height so it never overflows.
-       (Was a fixed --cam-w box centered in a wide column, which left big black bars on each side.) */
+    /* Camera canvas — fill the FULL column width and available height (cinematic). The inner #studio-cam
+       video uses object-fit:cover, so it crops top/bottom rather than leaving black side-gaps. */
     .studio-canvas {
       position: relative;
       background: #000;
       overflow: hidden;
       width: 100%;
-      aspect-ratio: 16 / 9;
-      height: auto;
-      max-height: var(--cam-max-h, 62vh);
-      flex: 0 1 auto;
+      height: var(--cam-max-h, 60vh);
+      max-height: var(--cam-max-h, 60vh);
+      flex: 0 0 auto;
     }
     /* NOTE: the element is <div id="studio-cam-row"> with NO class — target the id, not .studio-cam-row. */
     #studio-cam-row {
       flex: 1 1 auto;
       min-height: 0;
       display: flex;
-      align-items: center;
-      justify-content: center;
+      align-items: stretch;
+      justify-content: stretch;
       overflow: hidden;
       background: #000;
       width: 100%;
     }
-    /* Desktop: camera fills the column width at 16:9, capped by available height so it never pushes the
-       controls off-screen. Fills the black side-space that the old fixed 588px box left. */
+    /* Desktop: camera fills the FULL column width at the available height (cinematic crop via object-fit). */
     @media (min-width: 768px) {
-      #record-pg #studio-cam-row { width: 100% !important; flex: 1 1 auto !important; min-height: 300px !important; display: flex !important; align-items: center !important; justify-content: center !important; }
+      #record-pg #studio-cam-row { width: 100% !important; flex: 0 0 auto !important; height: var(--cam-max-h, 60vh) !important; display: block !important; }
       #record-pg .studio-canvas {
         width: 100% !important;
-        max-width: calc(var(--cam-max-h, 60vh) * 16 / 9) !important;
-        aspect-ratio: 16 / 9 !important;
-        height: auto !important;
+        max-width: 100% !important;
+        height: var(--cam-max-h, 60vh) !important;
         max-height: var(--cam-max-h, 60vh) !important;
-        margin: 0 auto !important;
+        margin: 0 !important;
       }
+      #record-pg #studio-cam, #record-pg video.studio-preview { width: 100% !important; height: 100% !important; object-fit: cover !important; }
     }
 
     #studio-cam {
@@ -21653,17 +21651,14 @@ window._fitStudioLayout=function(){
   var actH=camActions?camActions.offsetHeight:0;
   // All the vertical space the camera row may use (everything except controls, teleprompter, cam-actions).
   var camAvail=Math.max(240, totalH-barH-tpH-actH-6);
-  // Column width available for the camera (the middle column the cam-row sits in).
-  var colW=camRow?camRow.offsetWidth:(tpPanel?tpPanel.offsetWidth:wrap.offsetWidth);
-  // The camera fills the column WIDTH at 16:9 (CSS handles this); it only needs a height cap so it does
-  // not push controls off-screen. Cap = the smaller of (available height) and (height that width implies).
-  var hByWidth=Math.round(colW*9/16);
-  var camMaxH=Math.min(camAvail, hByWidth);
+  // Camera fills the FULL column width with a cinematic crop (object-fit:cover), so use the full available
+  // height — don't cap to the 16:9-of-width height (that would leave side-gaps).
+  var camMaxH=camAvail;
   document.documentElement.style.setProperty('--cam-max-h',camMaxH+'px');
   // Legacy vars kept in sync for any code that still reads them.
-  var camW=Math.round(camMaxH*16/9),camH=camMaxH;
-  document.documentElement.style.setProperty('--cam-w',camW+'px');
-  document.documentElement.style.setProperty('--cam-h',camH+'px');
+  var colW2=camRow?camRow.offsetWidth:(tpPanel?tpPanel.offsetWidth:wrap.offsetWidth);
+  document.documentElement.style.setProperty('--cam-w',colW2+'px');
+  document.documentElement.style.setProperty('--cam-h',camMaxH+'px');
 };
 
 /* ── charLib save fix ── */
