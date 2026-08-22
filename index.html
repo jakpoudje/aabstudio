@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-master-vol">
+<meta name="aab-build" content="20260817-cam-reduce5th">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -21656,12 +21656,18 @@ window._fitStudioLayout=function(){
   var actH=camActions?camActions.offsetHeight:0;
   // Column width the camera sits in.
   var colW=camRow?camRow.offsetWidth:(tpPanel?tpPanel.offsetWidth:wrap.offsetWidth);
-  // Height needed for a 16:9 camera to FILL the column width (this is what removes side-gaps).
+  // Height needed for a 16:9 camera to FILL the column width.
   var fillH=Math.round(colW*9/16);
-  // Don't let the camera eat the whole screen: cap at 72% of the studio height (leaves room for the
-  // teleprompter + controls below). Never below a 300px floor. Julius: prefer wider/taller, small gaps OK.
-  var capH=Math.round(totalH*0.72);
-  var camMaxH=Math.max(300, Math.min(fillH, capH));
+  // GUARANTEE the teleprompter panel + its settings bar + the controls dock are never hidden: reserve
+  // their real heights (with sane fallbacks if not yet measured) plus a safety margin, and give the
+  // camera only the genuine leftover. tpH here is the teleprompter panel which includes the settings bar.
+  var reserveTp=Math.max(tpH, 150);       // teleprompter text + speed/A-/A+/Mirror/BG/mode/Reset bar
+  var reserveCtrl=Math.max(barH, 140);    // bottom controls dock
+  var reserveAct=actH||0;                 // cam action buttons row
+  var leftoverH=totalH - reserveTp - reserveCtrl - reserveAct - 16;
+  // Reduce the camera by a fifth vs the old 72% cap (0.72 x 0.8 = 0.576).
+  var capH=Math.round(totalH*0.576);
+  var camMaxH=Math.max(260, Math.min(fillH, capH, leftoverH));
   document.documentElement.style.setProperty('--cam-max-h',camMaxH+'px');
   // Legacy vars kept in sync for any code that still reads them.
   document.documentElement.style.setProperty('--cam-w',colW+'px');
