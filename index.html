@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-mobile-tp2line-v4">
+<meta name="aab-build" content="20260817-tp-mode-buttons">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -9504,7 +9504,12 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14p
       <input type="range" min="20" max="220" value="80" id="tp-spd-range" oninput="setTpSpd(this.value); var v2=document.getElementById('tp-spd-val2'); if(v2) v2.textContent=this.value+'wpm';; if(window.studioTpUpdateSpeed) studioTpUpdateSpeed(+this.value);" style="width:60px;accent-color:var(--gold);">
       <span id="tp-spd-val2" style="font-size:10px;color:var(--gold);min-width:34px;">80wpm</span>
       <span style="font-size:9px;color:rgba(255,255,255,.2);">|</span>
-      <select id="tp-mode-sel" onchange="setTpScrollMode(this.value); document.getElementById('tp-scroll-mode') && (document.getElementById('tp-scroll-mode').value=this.value);" title="Scroll mode" style="font-size:9px;background:rgba(255,255,255,.06);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.5);border-radius:4px;padding:2px 4px;cursor:pointer;"><option value="auto" selected>📜 Auto-scroll</option><option value="word">💡 Word-by-word</option><option value="manual">✋ Manual</option></select>
+      <div id="tp-mode-btns" role="group" aria-label="Teleprompter scroll mode" style="display:inline-flex;gap:3px;">
+        <button type="button" class="tp-mode-btn" data-tpmode="auto" onclick="setTpScrollMode('auto')" title="Auto-scroll" style="font-size:9px;padding:3px 7px;border-radius:4px;cursor:pointer;border:.5px solid rgba(37,99,235,.5);background:rgba(37,99,235,.25);color:#93c5fd;white-space:nowrap;">📜 Auto</button>
+        <button type="button" class="tp-mode-btn" data-tpmode="word" onclick="setTpScrollMode('word')" title="Word-by-word" style="font-size:9px;padding:3px 7px;border-radius:4px;cursor:pointer;border:.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:rgba(255,255,255,.55);white-space:nowrap;">💡 Word</button>
+        <button type="button" class="tp-mode-btn" data-tpmode="manual" onclick="setTpScrollMode('manual')" title="Manual" style="font-size:9px;padding:3px 7px;border-radius:4px;cursor:pointer;border:.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:rgba(255,255,255,.55);white-space:nowrap;">✋ Manual</button>
+      </div>
+      <select id="tp-mode-sel" onchange="setTpScrollMode(this.value)" aria-hidden="true" tabindex="-1" style="display:none;"><option value="auto" selected>Auto-scroll</option><option value="word">Word-by-word</option><option value="manual">Manual</option></select>
       </div>
       <button class="s-btn" onclick="resetTpScroll()" style="font-size:10px;padding:4px 8px;" title="Reset scroll to top">↺</button>
       <div style="display:flex;align-items:center;gap:3px;">
@@ -24893,6 +24898,8 @@ window.setTpScrollMode=function(mode){
   ['tp-mode-sel','tp-scroll-mode','studio-scroll-mode'].forEach(function(id){
     var el=document.getElementById(id); if(el&&el.value!==mode) el.value=mode;
   });
+  // Highlight the active mode BUTTON (record-studio mode buttons replaced the old dropdown).
+  if(typeof window._tpSyncModeBtns==='function') window._tpSyncModeBtns(mode);
   // If the teleprompter is currently running, restart the ONE consolidated engine so the
   // newly-selected mode takes effect immediately (auto / word / sentence / manual).
   if((window.STUDIO_TP&&STUDIO_TP.running)||(window.STUDIO&&STUDIO.tpAuto)){
@@ -24900,6 +24907,17 @@ window.setTpScrollMode=function(mode){
     if(window.STUDIO_TP) STUDIO_TP.running=true; if(window.STUDIO) STUDIO.tpAuto=true;
     if(typeof startTpAutoTimer==='function') setTimeout(startTpAutoTimer,60);
   }
+};
+// Highlight the active teleprompter mode button; dim the others.
+window._tpSyncModeBtns=function(mode){
+  var wrap=document.getElementById('tp-mode-btns'); if(!wrap) return;
+  [].forEach.call(wrap.querySelectorAll('.tp-mode-btn'),function(b){
+    var on=b.getAttribute('data-tpmode')===mode;
+    b.style.background=on?'rgba(37,99,235,.25)':'rgba(255,255,255,.05)';
+    b.style.color=on?'#93c5fd':'rgba(255,255,255,.55)';
+    b.style.borderColor=on?'rgba(37,99,235,.5)':'rgba(255,255,255,.12)';
+    b.setAttribute('aria-pressed',on?'true':'false');
+  });
 };
 
 // ── aps_generateScene: SINGLE async wrapper ──────────────────────
