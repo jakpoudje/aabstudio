@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-tp-mode-btns2">
+<meta name="aab-build" content="20260817-tp-jitter-fix">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -12684,9 +12684,14 @@ window._loadStudioTpText = function() {
   // Stop any word-by-word run — the renderer owns the DOM
   if(window._studioWBW) { _studioWBW.running=false; clearInterval(_studioWBW.timer); _studioWBW.idx=0; _studioWBW.words=[]; _studioWBW.highlight=null; }
   // Fixed structure the whole TP system relies on: tp-body(viewport) > tp-cur(content)
+  var _isMobileTp = window.innerWidth <= 767;
   var _fpx = (window.STUDIO && STUDIO.tpFontPx) ? STUDIO.tpFontPx : (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tp-font-size'))||0);
   var fontCss = _fpx ? (_fpx+'px') : 'clamp(18px,2vw,26px)';
-  tpBody.innerHTML = '<div id="tp-cur" style="font-family:Sora,monospace;font-size:'+fontCss+';line-height:1.7;color:rgba(255,255,255,0.7);padding:12px 20px;white-space:pre-wrap;word-break:keep-all;">'+text.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>';
+  var lineH = '1.7';
+  // On mobile the record-studio teleprompter is capped to ~2 lines; render at the enforced 19px
+  // from the start so there is NO 40px->19px snap (which showed as a font "fluctuation" at scroll start).
+  if (_isMobileTp) { fontCss = '19px'; lineH = '1.5'; }
+  tpBody.innerHTML = '<div id="tp-cur" style="font-family:Sora,monospace;font-size:'+fontCss+';line-height:'+lineH+';color:rgba(255,255,255,0.7);padding:12px 20px;white-space:pre-wrap;word-break:keep-all;">'+text.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>';
   // Update every scene counter element (fragmented across ids + unlabeled divs)
   if(typeof window._syncUpdateSceneCounter==='function') window._syncUpdateSceneCounter(n1, scenes.length);
 };
