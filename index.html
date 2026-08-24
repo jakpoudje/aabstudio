@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-<meta name="aab-build" content="20260817-ai-bg-apibase">
+<meta name="aab-build" content="20260817-tp-modes-raf">
 <script src="https://aabstudio-production.up.railway.app/socket.io/socket.io.js" async></script>
 <script id="aab-stale-guard">
 /* One-shot stale-build auto-refresh. The deployed HTML is served no-cache by Cloudflare, but the
@@ -14931,7 +14931,7 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
       // ── SINGLE teleprompter scroll engine, FOUR distinct modes ──
       window._aabTpActive = false;
       if (window._studioTpTimer) { clearInterval(window._studioTpTimer); window._studioTpTimer = null; }
-      if (window._tpAutoTimer) { cancelAnimationFrame(window._tpAutoTimer); window._tpAutoTimer = null; }
+      if (window._tpAutoTimer) { clearInterval(window._tpAutoTimer); cancelAnimationFrame(window._tpAutoTimer); window._tpAutoTimer = null; }
       if (window._studioTpModeTimer) { clearInterval(window._studioTpModeTimer); window._studioTpModeTimer = null; }
 
       // Read the ACTUAL selected mode from the dropdown (not a stale global).
@@ -14942,8 +14942,11 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
       // Render the current scene through the ONE renderer.
       if (typeof _loadStudioTpText === 'function') _loadStudioTpText();
 
-      requestAnimationFrame(function() {
-        // If a Stop happened between the call and this frame, abort — don't spawn timers.
+      // Run the mode logic via setTimeout, NOT requestAnimationFrame: rAF callbacks don't fire when the
+      // page isn't actively painting (backgrounded, slow paint), which silently killed every mode. A short
+      // timeout lets layout settle and always fires.
+      setTimeout(function() {
+        // If a Stop happened between the call and this tick, abort — don't spawn timers.
         if (!STUDIO_TP.running && !STUDIO.tpAuto && !window._practiceRunning) return;
         var viewport = document.getElementById('tp-body');
         var content  = document.getElementById('tp-cur');
@@ -15038,7 +15041,7 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
         // ═══════════════════════════════════════════════════════════
         content.style.transition = 'none';
         content.style.transform = 'translateY(0px)';
-        requestAnimationFrame(function(){
+        setTimeout(function(){
           var contentH = content.scrollHeight;
           var viewH = viewport.offsetHeight || 120;
           var scrollable = Math.max(0, contentH - viewH);
@@ -15046,19 +15049,20 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
           var totalMs = Math.max(2500, (words.length / wpm) * 60000);
           var pxPerMs = scrollable / totalMs;
           var startTs = null;
-          function frame(ts){
-            if (!STUDIO_TP.running && !STUDIO.tpAuto) { window._tpAutoTimer = null; return; }
-            if (!startTs) startTs = ts;
+          // setInterval ticker instead of rAF (rAF doesn't fire when the page isn't painting).
+          if (window._tpAutoTimer) { clearInterval(window._tpAutoTimer); window._tpAutoTimer = null; }
+          window._tpAutoTimer = setInterval(function(){
+            if (!STUDIO_TP.running && !STUDIO.tpAuto) { clearInterval(window._tpAutoTimer); window._tpAutoTimer = null; return; }
+            var ts = performance.now();
+            if (startTs === null) startTs = ts;
             var scrolled = Math.min((ts - startTs) * pxPerMs, scrollable);
             content.style.transform = 'translateY(-' + scrolled + 'px)';
             var pf = document.getElementById('scene-prog-fill');
             if (pf) pf.style.width = Math.min(100, (scrolled / scrollable) * 100) + '%';
-            if (scrolled < scrollable) { window._tpAutoTimer = requestAnimationFrame(frame); }
-            else { window._tpAutoTimer = null; _advanceSceneOrStop(); }
-          }
-          window._tpAutoTimer = requestAnimationFrame(frame);
-        });
-      });
+            if (scrolled >= scrollable) { clearInterval(window._tpAutoTimer); window._tpAutoTimer = null; _advanceSceneOrStop(); }
+          }, 16);
+        }, 16);
+      }, 16);
 
       function _advanceSceneOrStop(){
         // If Sync REC is driving, IT owns scene advancement + per-scene recording.
@@ -15084,7 +15088,7 @@ function tpClose() { var disp = document.getElementById('tp-display-screen'), se
       // ── THE single stop: kill EVERY teleprompter timer/engine + reset state ──
       STUDIO_TP.running = false; STUDIO_TP.wasRunning = false;
       if(window.STUDIO) STUDIO.tpAuto = false;
-      if (window._tpAutoTimer) { cancelAnimationFrame(window._tpAutoTimer); window._tpAutoTimer = null; }
+      if (window._tpAutoTimer) { clearInterval(window._tpAutoTimer); cancelAnimationFrame(window._tpAutoTimer); window._tpAutoTimer = null; }
       if (window._studioTpModeTimer) { clearInterval(window._studioTpModeTimer); window._studioTpModeTimer = null; }
       if (window._studioTpTimer) { clearInterval(window._studioTpTimer); window._studioTpTimer = null; }
       if (window._studioWBW) { window._studioWBW.running = false; if(_studioWBW.timer){clearInterval(_studioWBW.timer);_studioWBW.timer=null;} }
@@ -21055,7 +21059,7 @@ window.studioGoTo=function(n){
   var sc=p.scenes[n-1];if(!sc)return;
   // Stop scroll + word engines before re-render
   if(typeof STUDIO_TP!=='undefined'&&STUDIO_TP.timer){clearInterval(STUDIO_TP.timer);STUDIO_TP.timer=null;STUDIO_TP.running=false;}
-  if(window._tpAutoTimer){cancelAnimationFrame(window._tpAutoTimer);window._tpAutoTimer=null;}
+  if(window._tpAutoTimer){clearInterval(window._tpAutoTimer);cancelAnimationFrame(window._tpAutoTimer);window._tpAutoTimer=null;}
   if(window._studioWBW){if(_studioWBW.timer)clearInterval(_studioWBW.timer);_studioWBW.timer=null;_studioWBW.running=false;_studioWBW.idx=0;_studioWBW.words=[];}
   if(window._studioTpModeTimer){clearInterval(window._studioTpModeTimer);window._studioTpModeTimer=null;}
   if(window._tpSent){_tpSent.idx=0;}
